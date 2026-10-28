@@ -70,7 +70,7 @@ void main() {
         if (atten <= 0.0) continue;
         // spot.w is a directional's cascade base or a light's shadow slot. Every shadowed light is
         // shadowed here, or a lamp scatters through the wall in front of it.
-        atten *= pointShadow(type, int(light.spot.w), worldP);
+        atten *= pointShadow(shadowTypeOf(light, type), int(light.spot.w), worldP);
         if (atten <= 0.0) continue;
         // Phase angle between the photon's travel (-L) and the scatter toward the eye (V), so
         // forward scattering peaks looking into the light.

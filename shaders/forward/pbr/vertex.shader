@@ -3,11 +3,17 @@ layout(location = ATTR_POSITION) in vec3 aPos;
 layout(location = ATTR_NORMAL) in vec3 aNormal;
 layout(location = ATTR_UV) in vec2 aUV;
 layout(location = ATTR_TANGENT) in vec4 aTangent;  // xyz = tangent, w = handedness
+#ifndef SKINNED
+layout(location = ATTR_LIGHTMAP_UV) in vec2 aLightmapUV;  // the static layout's alone
+#endif
 #include "../../instancing.glsl"
 #include "../../camera.glsl"
 #include "../../viewmodel.glsl"
 #include "../../material.glsl"
 #include "../../ocean.glsl"
+#ifdef BAKED
+#include "../../lightmap.glsl"
+#endif
 
 out vec3 vWorldPos;
 out vec3 vNormal;
@@ -20,6 +26,10 @@ out vec3  vAlongX;       // the waves' tangents there (OceanPoint): the pixel's 
 out vec3  vAlongZ;
 out float vLingering;    // the foam a crest left there (oceanLingering)
 flat out uint vViewmodel; // drawn through the viewmodel projection: its lights are found by vWorldPos
+#ifdef BAKED
+out vec2      vLightmapUV;   // where in its lightmap page
+flat out int  vLightmapPage; // which page, -1 for none
+#endif
 
 // Bit-exact with the depth prepass so the two agree under GLDepth::EYE_TEST_EQUAL.
 invariant gl_Position;
@@ -78,6 +88,16 @@ void main() {
 #endif
     vWorldPos  = worldPos.xyz;
     vViewmodel = instanceIsViewmodel() ? 1u : 0u;
+
+#ifdef BAKED
+    vLightmapUV   = vec2(0.0);
+    vLightmapPage = -1;
+    if (u_hasLightmaps == 1) {
+        const ObjectLightmap lightmap = b_lightmaps[aInstance];
+        vLightmapUV   = aLightmapUV * lightmap.scaleOffset.xy + lightmap.scaleOffset.zw;
+        vLightmapPage = lightmap.page.x;
+    }
+#endif
 
     gl_Position = eyeClip(worldPos);
     gl_ClipDistance[0] = dot(vec4(worldPos.xyz, 1.0), u_clipPlane);

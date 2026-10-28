@@ -5,11 +5,12 @@
 #include <algorithm>
 
 #include <GL/glew.h>
+#include <glm/ext/scalar_integer.hpp>
+#include <glm/gtc/round.hpp>
 
 #include "logger.h"
 
 #include "gl_context.h"
-#include "gl_error_handle.h"
 #include "gl_sampler.h"
 #include "gl_texture.h"
 #include "gl_texture_cube_array.h"
@@ -23,20 +24,6 @@ static_assert(
     "Shadow atlas too small to hold MAX_SHADOW_CASTERS_2D half-size tiles"
 );
 
-namespace {
-
-bool isPowerOfTwo(uint32_t v) {
-    return v != 0 && (v & (v - 1)) == 0;
-}
-
-uint32_t floorPowerOfTwo(uint32_t v) {
-    uint32_t p = 1;
-    while (p <= v / 2) p *= 2;
-    return p;
-}
-
-} // namespace
-
 GLShadowAtlas::GLShadowAtlas()  = default;
 GLShadowAtlas::~GLShadowAtlas() = default;
 
@@ -45,7 +32,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     const uint32_t widest = static_cast<uint32_t>(std::max(gl.maxTextureSize(), 1));
     const uint32_t fits   = widest / SHADOW_ATLAS_BLOCKS;
     // A power of two, as smaller tiles are its quarters.
-    const uint32_t wanted = floorPowerOfTwo(
+    const uint32_t wanted = glm::floorPowerOfTwo(
         std::clamp(tileRes, SHADOW_ATLAS_MIN_BLOCK_RES, std::max(fits, SHADOW_ATLAS_MIN_BLOCK_RES))
     );
 
@@ -103,7 +90,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
 
         m_rawSampler = std::make_unique<Vkm::GL::Sampler>(read);
 
-        read.compare = Vkm::GL::TextureCompare::LessEqual;
+        read.compare = GLDepth::SHADOW_COMPARE;
         m_cmpSampler = std::make_unique<Vkm::GL::Sampler>(read);
 
         // The cubes likewise, clamped on the third axis too, which a cube lookup can reach at
@@ -112,6 +99,20 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         m_cubeSampler = std::make_unique<Vkm::GL::Sampler>(read);
         read.compare = Vkm::GL::TextureCompare::None;
         m_cubeRawSampler = std::make_unique<Vkm::GL::Sampler>(read);
+    }
+
+    // The layer alongside, as the atlas is built and read: its cascade's tile.
+    const uint32_t edge = cascadeTileRes(SHADOW_LAYERED_CASCADE, m_tileRes);
+    m_layer = {0, 0, edge};
+    params.width  = edge;
+    params.height = edge;
+    m_layer2D = std::make_unique<Vkm::GL::Texture2D>("shadow_layer", params);
+    m_layerSignature = 0;
+    m_fboLayer.attachTexture(GL_DEPTH_ATTACHMENT, m_layer2D->getID());
+    m_fboLayer.setDrawBuffer(GL_NONE);
+    m_fboLayer.setReadBuffer(GL_NONE);
+    if (!m_fboLayer.isComplete()) {
+        LOG_ERROR("GLShadowAtlas layer framebuffer incomplete (%ux%u)", edge, edge);
     }
 
     m_fbo2D.bind();
@@ -139,7 +140,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         );
         m_faceSignature.assign(Config::MAX_SHADOW_CASTERS_CUBE * 6, 0);
 
-        // No colour buffer; the draw/read buffer state set once persists across beginCubeFace.
+        // No color buffer; the draw/read buffer state set once persists across beginCubeFace.
         m_fboCube.bind();
         m_fboCube.setDrawBuffer(GL_NONE);
         m_fboCube.setReadBuffer(GL_NONE);
@@ -158,7 +159,7 @@ bool GLShadowAtlas::layout(const std::vector<uint32_t>& sizes) {
     if (sizes.size() > m_tiles.size()) return false;
     uint64_t area = 0;
     for (const uint32_t size : sizes) {
-        if (!isPowerOfTwo(size) || size < SHADOW_ATLAS_MIN_TILE_RES || size > m_tileRes) return false;
+        if (!glm::isPowerOfTwo(size) || size < SHADOW_ATLAS_MIN_TILE_RES || size > m_tileRes) return false;
         area += static_cast<uint64_t>(size) * size;
     }
     if (area > capacity(m_tileRes)) return false;
@@ -210,14 +211,12 @@ void GLShadowAtlas::begin2D(const Vkm::GL::Context& gl) const {
     gl.setViewport(0, 0, side, side);
 }
 
-void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature) {
-    if (slot >= m_tiles.size() || m_tiles[slot].size == 0) return;
-    m_tileSignature[slot] = signature;
-    const int32_t tile = static_cast<int32_t>(m_tiles[slot].size);
-    const int32_t x    = static_cast<int32_t>(m_tiles[slot].x);
-    const int32_t y    = static_cast<int32_t>(m_tiles[slot].y);
+void GLShadowAtlas::clearRect(Vkm::GL::Context& gl, const ShadowTileRect& rect) {
+    const int32_t tile = static_cast<int32_t>(rect.size);
+    const int32_t x    = static_cast<int32_t>(rect.x);
+    const int32_t y    = static_cast<int32_t>(rect.y);
     gl.setViewport(x, y, tile, tile);
-    // The clear is scissored to the tile: its neighbours may be holding a
+    // The clear is scissored to the rectangle: its neighbours may be holding a
     // picture from an earlier frame that nothing this frame will redraw.
     gl.setScissor(x, y, tile, tile);
     gl.enableScissor(true);
@@ -225,8 +224,34 @@ void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t sign
     gl.enableScissor(false);
 }
 
+void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature) {
+    if (slot >= m_tiles.size() || m_tiles[slot].size == 0) return;
+    m_tileSignature[slot] = signature;
+    clearRect(gl, m_tiles[slot]);
+}
+
+void GLShadowAtlas::beginLayer(Vkm::GL::Context& gl, uint64_t signature) {
+    if (!m_layer2D) return;
+    m_layerSignature = signature;
+    m_fboLayer.bind();
+    clearRect(gl, m_layer);
+}
+
+void GLShadowAtlas::resumeTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature) {
+    if (slot >= m_tiles.size() || m_tiles[slot].size == 0) return;
+    m_tileSignature[slot] = signature;
+    m_fbo2D.bind();
+    const ShadowTileRect& tile = m_tiles[slot];
+    const auto            at   = [](uint32_t texels) { return static_cast<int32_t>(texels); };
+    gl.setViewport(at(tile.x), at(tile.y), at(tile.size), at(tile.size));
+}
+
 bool GLShadowAtlas::tileHolds(uint32_t slot, uint64_t signature) const {
     return slot < m_tileSignature.size() && signature != 0 && m_tileSignature[slot] == signature;
+}
+
+bool GLShadowAtlas::layerHolds(uint64_t signature) const {
+    return signature != 0 && m_layerSignature == signature;
 }
 
 bool GLShadowAtlas::faceHolds(uint32_t slot, uint32_t face, uint64_t signature) const {
@@ -237,6 +262,7 @@ bool GLShadowAtlas::faceHolds(uint32_t slot, uint32_t face, uint64_t signature) 
 void GLShadowAtlas::forgetHeld() {
     std::fill(m_tileSignature.begin(), m_tileSignature.end(), 0);
     std::fill(m_faceSignature.begin(), m_faceSignature.end(), 0);
+    m_layerSignature = 0;
 }
 
 void GLShadowAtlas::beginCubeFace(
@@ -262,6 +288,12 @@ void GLShadowAtlas::bind2D(uint32_t unit) const {
 void GLShadowAtlas::bind2DRaw(uint32_t unit) const {
     if (!m_atlas2D) return;
     m_atlas2D->bindSlot(unit);
+    m_rawSampler->bindSlot(unit);
+}
+
+void GLShadowAtlas::bindLayer(uint32_t unit) const {
+    if (!m_layer2D) return;
+    m_layer2D->bindSlot(unit);
     m_rawSampler->bindSlot(unit);
 }
 

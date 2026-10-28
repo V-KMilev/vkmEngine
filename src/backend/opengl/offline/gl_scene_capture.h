@@ -22,6 +22,7 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
+class GLForwardPrograms;
 class GLIBL;
 class GLIrradianceVolume;
 class GLMesh;
@@ -42,8 +43,9 @@ struct RenderView;
  * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
  * surfaces; the caller owns the FBO and the state around the loop. beginLighting() prepares the
  * lights and the sun's map alone, for a relight of what was captured. Lent to every consumer (see
- * GLBackend): the PBR ubershader is the engine's most expensive program. It binds its own camera,
- * lights and shadow blocks and the 2D shadow slot, so capture at the end of a frame.
+ * GLBackend); it draws with the forward programs (GLForwardPrograms) and the unit cube it borrows.
+ * It binds its own camera, lights and shadow blocks and the 2D shadow slot, so capture at the end
+ * of a frame.
  */
 class GLSceneCapture {
     public:
@@ -53,11 +55,12 @@ class GLSceneCapture {
         /**
          * @brief Compile the capture programs, drawing the sky with @p cube.
          *
-         * @param cube    The backend's unit cube, outliving this capture.
-         * @param objects The backend's object buffer, outliving this capture; a capture draws
-         *                through the frame's uploaded transforms, so it runs inside that frame.
+         * @param cube     The backend's unit cube, outliving this capture.
+         * @param objects  The backend's object buffer, outliving this capture; a capture draws
+         *                 through the frame's uploaded transforms, so it runs inside that frame.
+         * @param programs The backend's forward programs, outliving this capture: what it draws with.
          */
-        GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects);
+        GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects, GLForwardPrograms& programs);
         ~GLSceneCapture();
 
         GLSceneCapture(const GLSceneCapture& other) = delete;
@@ -120,7 +123,7 @@ class GLSceneCapture {
          *
          * @param volume A grid other than the one being written, outliving the captures; null
          *               for the sky alone.
-         * @param box    The world box @p volume fills.
+         * @param box    The volume as the frame asks for it; @p volume lies where it was baked.
          */
         void setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box);
 
@@ -198,57 +201,17 @@ class GLSceneCapture {
         );
 
         /**
-         * @brief The rig's PBR program, lent to whatever else draws the scene's surfaces.
+         * @brief The forward programs the capture draws with, for another offline drawing.
          *
-         * Its uniforms are the last caller's: begin() puts every one back as linked before
+         * Their uniforms are the last caller's: begin() puts every one back as linked before
          * setting its own, so a borrower sets each it reads before drawing, and never draws
          * between a begin() and the captures after it.
          *
-         * @return The capture's forward PBR program.
+         * @return The backend's forward programs.
          */
-        Vkm::GL::Shader& pbrProgram() { return m_pbr; }
-
-        /**
-         * @brief The rig's program for a layered material (GLMaterial::layered), lent as
-         *        pbrProgram() is.
-         *
-         * @return The capture's layered PBR program.
-         */
-        Vkm::GL::Shader& layeredProgram() { return m_layered; }
+        GLForwardPrograms& programs() { return m_programs; }
 
     private:
-        /// A uniform outside a block and not a sampler, which resetPbr() zeroes.
-        struct PlainUniform {
-            int32_t  location = -1;
-            int32_t  count    = 0;  ///< Its array's length, 1 for a single value.
-            uint32_t type     = 0;  ///< Its GL type.
-        };
-
-        /// One program's plain uniforms, listed once a link, and zeros enough for the largest.
-        struct PlainUniforms {
-            std::vector<PlainUniform> uniforms;
-            uint32_t                  listed = 0;  ///< The program they list, 0 for none.
-            std::vector<GLfloat>      zeros;
-            std::vector<GLint>        intZeros;
-            std::vector<GLuint>       uintZeros;
-        };
-
-        /**
-         * @brief Put every plain uniform of m_pbr and m_layered back as linked - zero, as no shader
-         *        gives one another value - leaving m_pbr bound.
-         *
-         * Whatever else drew with the programs last left its own there (pbrProgram()).
-         */
-        void resetPbr();
-
-        /**
-         * @brief Put @p program's plain uniforms back as linked.
-         *
-         * @param program The program, bound by this.
-         * @param plain   Its uniforms, listed again when its link changed.
-         */
-        static void resetProgram(Vkm::GL::Shader& program, PlainUniforms& plain);
-
         /**
          * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
          *
@@ -276,20 +239,28 @@ class GLSceneCapture {
             const AttachFace& attach
         );
 
+        /**
+         * @brief The draws of what one face sees: begin()'s opaque objects its frustum holds.
+         *
+         * A face drawing the whole scene would pay for the five others'. Bind pose: no palette.
+         *
+         * @param viewProjection The face's projection times its view.
+         * @return The face's draws, until the next call.
+         */
+        const std::vector<InstanceDraw>& faceDraws(const glm::mat4& viewProjection);
+
     private:
-        Vkm::GL::Shader m_pbr;             ///< Capture geometry (full forward PBR).
-        Vkm::GL::Shader m_layered;         ///< The same, for a layered material.
-        Vkm::GL::Shader m_skybox;          ///< Capture background.
-        Vkm::GL::Shader m_surfels;         ///< Capture what a probe sees, as surfels.
-        Vkm::GL::Shader m_surfelsLayered;  ///< The same, for a layered material.
+        GLForwardPrograms& m_programs;        ///< Capture geometry, borrowed.
+        Vkm::GL::Shader    m_skybox;          ///< Capture background.
+        Vkm::GL::Shader    m_surfels;         ///< Capture what a probe sees, as surfels.
+        Vkm::GL::Shader    m_surfelsLayered;  ///< The same, for a layered material.
 
         const GLMesh&         m_cube;     ///< Unit cube the skybox draws; the backend's.
         const GLObjectBuffer& m_objects;  ///< The frame's transforms the batch indexes; the backend's.
 
         GLCamera          m_camera;         ///< Per-face camera UBO.
-        GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
+        GLOcean           m_ocean;          ///< No sea: a Sea surface is an ordinary one here.
         GLLights          m_lights;         ///< The frame's lights, the sun alone shadowed.
-        GLInstanceBatcher m_batcher;        ///< The surfel captures' draws.
         GLInstanceBatcher m_faceBatcher;    ///< One cube face's draws: what its frustum holds.
         GLCaptureShadow   m_shadow;         ///< The sun's map over what is captured.
 
@@ -297,35 +268,13 @@ class GLSceneCapture {
         std::vector<uint32_t> m_faceOpaque;  ///< Those a probe face sees.
         std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
 
-        PlainUniforms m_pbrPlain;      ///< m_pbr's plain uniforms.
-        PlainUniforms m_layeredPlain;  ///< m_layered's.
-
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
         const RenderObjects* m_drawn = nullptr;  ///< begin()'s objects, which m_opaque indexes.
-        bool m_surfelsBatched = false;  ///< m_batcher holds m_opaque's draws.
         const GLIBL*  m_ibl      = nullptr;
         float         m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's viewport.
 
         const GLIrradianceVolume* m_volume = nullptr;  ///< The captured surfaces' ambient; null for the sky.
         IrradianceVolumeData      m_volumeBox{};       ///< Where m_volume lies, as the captures read it.
 };
-
-/**
- * @brief Bind @p pbr and set the uniforms every offline draw shares.
- *
- * The per-frame inputs (AO, clusters, probes, irradiance volume, fog) exist for no offscreen
- * draw, so each is off - the volume until GLSceneCapture::setAmbientVolume lends one;
- * u_probeCount = 0 also stops probe bakes recursing.
- * u_iblIntensity is one, not the scene's: the shader scales probe and volume reads by it, so a
- * capture would carry it twice. Set, because unset is 0 and drops the indirect term. The render
- * size is the camera's (GLCamera::update).
- *
- * The scene colour a transmissive surface reads is left to the caller: a PLAIN program, as the
- * layered one is, has no such read.
- *
- * @param pbr Forward PBR program the offline draw uses.
- * @param ibl Global IBL, bound as the ambient term once it is ready.
- */
-void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl);
 
 } // namespace Vkm::Engine

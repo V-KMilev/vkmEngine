@@ -4,9 +4,9 @@
  * the fog per froxel of its integrated volume (shaders/fog/integrate), the air per froxel of the
  * aerial-perspective volume (shaders/atmosphere/aerial_perspective).
  *
- * A surface is fogged at its own depth: colour * a + rgb, right for an alpha-blended one too, whose
- * blend scales both terms. An additive one, added to fog already behind it, takes only colour * a.
- * The air lies beneath the fog: (colour * T_air + S_air) * T_fog + S_fog.
+ * A surface is fogged at its own depth: color * a + rgb, right for an alpha-blended one too, whose
+ * blend scales both terms. An additive one, added to fog already behind it, takes only color * a.
+ * The air lies beneath the fog: (color * T_air + S_air) * T_fog + S_fog.
  */
 
 #include "bspline.glsl"

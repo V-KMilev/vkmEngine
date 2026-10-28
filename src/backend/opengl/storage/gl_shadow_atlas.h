@@ -8,6 +8,8 @@
 
 #include "gl_frame_buffer.h"
 
+#include "core/engine_config.h"
+
 namespace Vkm::GL {
     class Context;
     class Sampler;
@@ -25,6 +27,26 @@ constexpr uint32_t SHADOW_ATLAS_MIN_TILE_RES  = 256;
 // The floor for the largest tile, so its half - the sun's last cascade - is still a tile.
 constexpr uint32_t SHADOW_ATLAS_MIN_BLOCK_RES = 2 * SHADOW_ATLAS_MIN_TILE_RES;
 constexpr uint32_t SHADOW_CUBE_RES            = 1024;
+
+// The sun's nearest cascades take the largest tile; those past them take half, as each of their
+// texels already spans more of the world. Four at full size would fill the atlas.
+constexpr uint32_t FULL_CASCADES = 3;
+static_assert(FULL_CASCADES < Config::NUM_CASCADES, "Every cascade at full size leaves the spots no room");
+
+/**
+ * @brief The edge of the sun's cascade @p cascade's tile.
+ *
+ * @param cascade The cascade, nearest first.
+ * @param tileRes The largest tile's edge, in texels.
+ * @return Its tile's edge, in texels.
+ */
+constexpr uint32_t cascadeTileRes(uint32_t cascade, uint32_t tileRes) {
+    return cascade < FULL_CASCADES ? tileRes : tileRes / 2;
+}
+
+// The cascade that keeps what its fixed casters draw apart from its tile, in a layer of its own
+// its tile's size (GLShadowData): the sun's last.
+constexpr uint32_t SHADOW_LAYERED_CASCADE = Config::NUM_CASCADES - 1;
 
 /// Where one 2D tile sits in the atlas, in texels; a size of 0 is no tile.
 struct ShadowTileRect {
@@ -106,6 +128,30 @@ class GLShadowAtlas {
         void beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature);
 
         /**
+         * @brief Restrict draws to the layer, clear it, and record @p signature for it.
+         *
+         * @param gl        Context the viewport goes through.
+         * @param signature What the following draws put in it (ShadowCasterBatch::fixedSignature).
+         */
+        void beginLayer(Vkm::GL::Context& gl, uint64_t signature);
+
+        /**
+         * @brief beginTile without the clear: for a tile whose every texel the next draw writes,
+         *        as a layer's restore does (shaders/shadow/restore).
+         *
+         * @param gl        Context the viewport goes through.
+         * @param slot      The tile.
+         * @param signature What the following draws put in it.
+         */
+        void resumeTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature);
+
+        /// Bind the layer, uncompared, to @p unit.
+        void bindLayer(uint32_t unit) const;
+
+        /// Whether the layer already holds the picture @p signature names; tileHolds for the layer.
+        bool layerHolds(uint64_t signature) const;
+
+        /**
          * @brief Attach layer @p slot's @p face to the cube FBO, clear it, and record @p signature.
          *
          * @param gl        Context the viewport goes through.
@@ -136,7 +182,7 @@ class GLShadowAtlas {
         bool faceHolds(uint32_t slot, uint32_t face, uint64_t signature) const;
 
         /**
-         * @brief Forget what every tile and face holds, so each is drawn again.
+         * @brief Forget what every tile and face, and the layer, hold, so each is drawn again.
          *
          * For a replaced world or asset graph, or a reloaded program: either can hash the same
          * as before while drawing something else.
@@ -203,6 +249,10 @@ class GLShadowAtlas {
         static uint64_t capacity(uint32_t tileRes);
 
     private:
+        /// Restrict draws to @p rect of the bound framebuffer and clear it to the far plane.
+        static void clearRect(Vkm::GL::Context& gl, const ShadowTileRect& rect);
+
+    private:
         uint32_t m_tileRes = 0;
 
         std::vector<ShadowTileRect> m_tiles;  ///< Per 2D slot, where layout() placed it.
@@ -215,10 +265,15 @@ class GLShadowAtlas {
         std::vector<uint64_t> m_tileSignature;  ///< Per 2D slot: what it holds, 0 = nothing worth keeping.
         std::vector<uint64_t> m_faceSignature;  ///< Per cube slot and face, slot * 6 + face.
 
+        ShadowTileRect m_layer{};             ///< The layer, at its texture's origin.
+        uint64_t       m_layerSignature = 0;  ///< What it holds.
+
         Vkm::GL::FrameBuffer m_fbo2D;
+        Vkm::GL::FrameBuffer m_fboLayer;
         Vkm::GL::FrameBuffer m_fboCube;
 
         std::unique_ptr<Vkm::GL::Texture2D>        m_atlas2D;
+        std::unique_ptr<Vkm::GL::Texture2D>        m_layer2D;  ///< The layer.
         std::unique_ptr<Vkm::GL::TextureCubeArray> m_cubes;  ///< A layer per point caster
 
         // Samplers rather than toggling the texture's compare mode: a sampler overrides the unit's

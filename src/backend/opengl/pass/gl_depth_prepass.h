@@ -12,9 +12,9 @@ namespace Vkm::Engine {
  * @brief Lays down opaque depth before the forward pass for early-Z.
  *
  * Primes depth for the opaque/unlit batch so GLForwardPass runs GLDepth::EYE_TEST_EQUAL with depth
- * writes off, writes the G-buffer (the view normal) to colour attachment 1, and owns the scene
+ * writes off, writes the G-buffer (the view normal) to color attachment 1, and owns the scene
  * target's clear, so it is unconditional. Alpha-masked geometry is not in this batch. It binds a
- * material's block, for a `waves` surface's vertices, and none of its maps.
+ * material's block, for a Sea surface's vertices, and none of its maps.
  *
  * With the GPU occlusion cull on it draws twice, each after a phase of the cull (GLOcclusionCull).
  *

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <glm/glm.hpp>
+
 #include "asset/gl_mesh_pool.h"
 
 namespace Vkm::Engine {
@@ -79,10 +81,25 @@ class GLMesh {
          */
         uint64_t uploadId() const { return m_uploadId; }
 
+        /**
+         * @brief The surface its lightmap holds (MeshAsset::lightmapUVs), seen along X, Y and Z, in
+         *        its own units: what a lightmap is sized by; zero when it carries none.
+         *
+         * Each axis's share scales by how far a model stretches the plane across it, so a box
+         * stretched into a floor is sized as the floor it is.
+         *
+         * @return The areas, model space.
+         */
+        const glm::vec3& lightmapArea() const { return m_lightmapArea; }
+
+        /// Whether it carries lightmap coordinates a lightmap can be read through.
+        bool lightmapped() const { return m_lightmapArea != glm::vec3(0.0f); }
+
     private:
         GLMeshPool& m_pool;
         MeshRange   m_range;
-        uint64_t    m_uploadId = 0;
+        uint64_t    m_uploadId     = 0;
+        glm::vec3   m_lightmapArea{0.0f};
 };
 
 } // namespace Vkm::Engine

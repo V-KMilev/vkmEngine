@@ -5,22 +5,26 @@
 #include <GL/glew.h>
 
 #include "gl_context.h"
-#include "gl_error_handle.h"
 
+#include "gl_forward_programs.h"
 #include "gl_frame_context.h"
 #include "gl_mip_levels.h"
 #include "gl_view.h"
 #include "asset/gl_material.h"
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
+#include "convention/gl_sky_projection.h"
 #include "frame/gl_camera.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 #include "offline/gl_scene_capture.h"
+#include "pass/gl_cluster_pass.h"
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_reflection_pass.h"
 #include "storage/gl_ibl.h"
+#include "storage/gl_lightmaps.h"
 #include "storage/gl_ocean_fields.h"
+#include "storage/gl_ocean_shore.h"
 #include "storage/gl_shadow_atlas.h"
 #include "core/math/frustum.h"
 #include "debug/profiler.h"
@@ -83,6 +87,11 @@ glm::mat4 narrowedTo(const glm::mat4& projection, const glm::vec4& rect) {
     return crop * projection;
 }
 
+/// How far @p box lies from @p point: 0 when it holds it.
+float distanceTo(const Math::AABB& box, const glm::vec3& point) {
+    return glm::distance(glm::clamp(point, box.min, box.max), point);
+}
+
 /// How far @p box reaches in front of @p plane: its farthest corner's signed distance.
 float reachInFront(const Math::AABB& box, const glm::vec4& plane) {
     const glm::vec3 n(plane);
@@ -93,16 +102,23 @@ float reachInFront(const Math::AABB& box, const glm::vec4& plane) {
 
 GLPlanarReflectionPass::GLPlanarReflectionPass(
     GLSceneCapture& capture,
+    GLForwardPrograms& programs,
     GLCamera& camera,
-    GLParticlePass& particles
+    GLParticlePass& particles,
+    GLClusterPass& lightCull
 )
     : m_capture(capture)
+    , m_programs(programs)
     , m_camera(camera)
     , m_particles(particles)
-    , m_skinned("shaders/forward/pbr_skinned")
+    , m_lightCull(lightCull)
     , m_source("shaders/reflection/source")
     , m_downsample("shaders/reflection/downsample") {
-    for (auto& target : m_targets) target = std::make_unique<GLTarget>(GLTarget::Layout::ColorDepth);
+    for (Slot& slot : m_slots) {
+        slot.target   = std::make_unique<GLTarget>(GLTarget::Layout::ColorDepth);
+        slot.backdrop = std::make_unique<GLTarget>(GLTarget::Layout::Color);
+        slot.depth    = std::make_unique<GLTarget>(GLTarget::Layout::ColorDepth, GL_R8);
+    }
 }
 
 GLPlanarReflectionPass::~GLPlanarReflectionPass() = default;
@@ -134,11 +150,32 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
         }
     }
 
+    // Each into the slot it drew into last, the rest into those left.
+    std::array<int, MAX_DRAWN> slotFor{};
+    slotFor.fill(-1);
+    std::array<bool, MAX_DRAWN> taken{};
+    const auto place = [&](bool itsOwn) {
+        for (int k = 0; k < MAX_DRAWN; ++k) {
+            if (best[k].second < 0 || slotFor[k] >= 0) continue;
+            for (int s = 0; s < MAX_DRAWN; ++s) {
+                if (taken[s] || (itsOwn && m_slots[s].reflector != best[k].second)) continue;
+                slotFor[k] = s;
+                taken[s]   = true;
+                break;
+            }
+        }
+    };
+    place(true);
+    place(false);
+
     const std::vector<Math::AABB>& bounds = view.objects->bounds;
     const std::vector<ObjectDraw>& draws  = view.objects->draws;
-    for (const auto& [cover, index] : best) {
+    for (int k = 0; k < MAX_DRAWN; ++k) {
+        const int index = best[k].second;
         if (index < 0) continue;
         Drawn& drawn = m_drawn[m_count++];
+        drawn.slot = slotFor[k];
+        m_slots[drawn.slot].reflector = index;
         const PlanarReflectorData& r = view.planarReflectors[index];
         drawn.reflector = r;
         drawn.plane     = glm::vec4(r.normal, -glm::dot(r.normal, r.center));
@@ -168,6 +205,7 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
         for (const uint32_t object : view.objects->scene) {
             if (draws[object].viewmodel) continue;
             if (reachInFront(bounds[object], drawn.plane) <= CLIP_OFFSET) continue;
+            if (r.drawDistance > 0.0f && distanceTo(bounds[object], r.center) > r.drawDistance) continue;
             if (!Math::frustumIntersectsAABB(mirrored, bounds[object])) continue;
             const GLMaterial* material = glView.getMaterial(draws[object].material);
             if (!material) continue;
@@ -177,32 +215,38 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
     }
 }
 
+int GLPlanarReflectionPass::slotOf(int reflector) const {
+    for (int s = 0; s < MAX_DRAWN; ++s) {
+        if (m_slots[s].reflector == reflector) return s;
+    }
+    return -1;
+}
+
 void GLPlanarReflectionPass::execute(GLFrameContext& ctx) {
     if (m_count == 0) return;
     for (int i = 0; i < m_count; ++i) {
         draw(ctx, i);
-        m_pictures[i] = {&m_drawn[i].reflector, &m_chains[i], m_drawn[i].rect};
+        m_pictures[i] = {&m_drawn[i].reflector, &m_slots[m_drawn[i].slot].chain, m_drawn[i].rect};
     }
     ctx.planarPictures = m_pictures.data();
     ctx.planarCount    = m_count;
 
-    // The frame's camera back, for every pass after.
+    // The frame's camera and light lists back, for every pass after.
     const RenderView& view = ctx.view;
+    ctx.clusters.bind();
     m_camera.update(view.camera, glm::vec2(view.sceneWidth(), view.sceneHeight()));
-    VKM_GL_CHECK(glFrontFace(GL_CCW));
-    VKM_GL_CHECK(glDisable(GL_CLIP_DISTANCE0));
-    ctx.gl.setFaceCulling(false);
 }
 
 void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
     Drawn&            drawn  = m_drawn[i];
-    GLTarget&         target = *m_targets[i];
+    Slot&             slot   = m_slots[drawn.slot];
+    GLTarget&         target = *slot.target;
 
     const uint32_t width  = drawn.size.x;
     const uint32_t height = drawn.size.y;
-    target.resize(width, height, 1, false);
+    target.resize(ctx.gl, width, height, 1, false);
     target.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(true);
@@ -211,14 +255,21 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     ctx.gl.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});
     ctx.gl.clear(true, true, false, GLDepth::EYE_CLEAR);
     m_camera.update(drawn.camera, glm::vec2(width, height));
+
+    // Its lights culled for its camera as the camera's are, into lists of its own.
+    slot.clusters.init();
+    m_lightCull.cull(slot.clusters);
+
     const glm::ivec2 from(glm::floor(glm::vec2(drawn.rect.x, drawn.rect.y) * glm::vec2(drawn.size)));
     const glm::ivec2 to(glm::ceil(glm::vec2(drawn.rect.z, drawn.rect.w) * glm::vec2(drawn.size)));
     ctx.gl.enableScissor(true);
     ctx.gl.setScissor(from.x, from.y, to.x - from.x, to.y - from.y);
 
-    // The sky behind it all, where depth is still clear.
-    if (ctx.ibl.isReady()) {
-        m_capture.drawSky(ctx.gl, ctx.ibl, drawn.camera.projection, view.environment.sky.intensity);
+    // The sky behind it all, where depth is still clear, as the frame shows one; none past a draw
+    // distance, a closed room's.
+    const bool sky = ctx.ibl.isReady() && view.environment.sky.showSkybox;
+    if (sky && drawn.reflector.drawDistance <= 0.0f) {
+        m_capture.drawSky(ctx.gl, ctx.ibl, skyProjection(drawn.camera), view.environment.sky.intensity);
     }
 
     // Lit as the forward pass lights, less what is the camera's screen.
@@ -230,44 +281,48 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     ctx.objects.bind();
     ctx.oceanFields.bind();
+    ctx.oceanShore.bind();
     const bool posed = ctx.skinPalette.count() > 0;
     if (posed) ctx.skinPalette.bind();
+    // What a fixed light baked, read as the frame reads it: a point behind the camera has no
+    // cascade, and would show lit.
+    const bool baked = ctx.lightmaps && ctx.lightmaps->any();
+    if (baked) ctx.lightmaps->bindPages();
 
     // Clipped where the plane is: what lies behind it is not in the mirror.
     const glm::vec4 clip(glm::vec3(drawn.plane), drawn.plane.w - CLIP_OFFSET);
-    Vkm::GL::Shader& pbr     = m_capture.pbrProgram();
-    Vkm::GL::Shader& layered = m_capture.layeredProgram();
-    for (Vkm::GL::Shader* program : {&pbr, &layered, &m_skinned}) {
-        if (program == &m_skinned && !posed) continue;
+    m_programs.forEach(posed, true, [&](Vkm::GL::Shader& shown) {
+        Vkm::GL::Shader* program = &shown;
+        if (program->hasUniform("u_hasLightmaps")) program->setUniform1i("u_hasLightmaps", baked ? 1 : 0);
         program->bind();
         bindAmbient(ctx, *program);
         program->setUniform1i("u_hasFog", 0);
         program->setUniform1i("u_hasAir", 0);
         program->setUniform1i("u_hasAO", 0);
         program->setUniform1i("u_hasScreenShadow", 0);
-        program->setUniform1i("u_useClusters", 0);
-        program->setUniform1i("u_hardShadows", 0);
+        program->setUniform1i("u_useClusters", 1);
+        program->setUniform1i("u_hardShadows", 1);
         program->setUniform1i("u_renderMode", 0);
         program->setUniform1i("u_wirePass", 0);
-        // The layered program is built without transmission, so is told of no backdrop.
-        if (program != &layered) program->setUniform1i("u_hasSceneColor", 0);
+        // The plain and layered programs are built without transmission, so are told of no backdrop.
+        if (program->hasUniform("u_hasSceneColor")) program->setUniform1i("u_hasSceneColor", 0);
         program->setUniform1i("u_alphaToCoverage", 0);
-        program->setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
+        program->setUniform4fv("u_oceanShore", ctx.oceanShore.area());
         program->setUniform4fv("u_clipPlane", clip);
-    }
-    VKM_GL_CHECK(glEnable(GL_CLIP_DISTANCE0));
+    });
+    ctx.gl.setClipDistance(0, true);
     // A mirror image turns every triangle's winding.
-    VKM_GL_CHECK(glFrontFace(GL_CW));
+    ctx.gl.setFrontFace(GL_CW);
     ctx.gl.setCullFace(GL_BACK);
 
     const GLMaterial*      boundMaterial = nullptr;
     const Vkm::GL::Shader* boundProgram  = nullptr;
     const uint32_t bones = ctx.skinPalette.count();
     for (const InstanceDraw& run : m_batcher.buildGrouped(drawn.objects, *view.objects, glView, bones)) {
+        // A cut-out is never baked into, so reads no lightmap.
         const GLMaterial* material = glView.getMaterial(run.material);
-        Vkm::GL::Shader&  program  = run.skinned ? m_skinned
-            : material && material->layered() ? layered
-            : pbr;
+        const bool        opaque   = material && material->getType() == MaterialType::Opaque;
+        Vkm::GL::Shader&  program  = m_programs.programFor(material, run.skinned, opaque);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
@@ -281,19 +336,18 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         m_batcher.draw(ctx.gl, run);
     }
     if (!drawn.glass.empty()) drawGlass(ctx, i);
-    m_particles.drawMirrored(ctx, target, drawn.size, drawn.camera, clip);
+    m_particles.drawMirrored(ctx, target, *slot.depth, drawn.size, drawn.camera, clip);
 
     // Unclipped again for whoever draws with these programs next.
-    for (Vkm::GL::Shader* program : {&pbr, &layered, &m_skinned}) {
-        if (program == &m_skinned && !posed) continue;
-        program->setUniform4fv("u_clipPlane", glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-    }
-    VKM_GL_CHECK(glDisable(GL_CLIP_DISTANCE0));
-    VKM_GL_CHECK(glFrontFace(GL_CCW));
+    m_programs.forEach(posed, true, [](Vkm::GL::Shader& program) {
+        program.setUniform4fv("u_clipPlane", glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    });
+    ctx.gl.setClipDistance(0, false);
+    ctx.gl.setFrontFace(GL_CCW);
     ctx.gl.enableScissor(false);
 
     // Filtered down, as the reflection pass filters the scene, so a rough surface reads it blurred.
-    Vkm::GL::MipChainTexture& chain = m_chains[i];
+    Vkm::GL::MipChainTexture& chain = slot.chain;
     if (!chain.isReady() || chain.mipWidth(0) != static_cast<int>(width)
         || chain.mipHeight(0) != static_cast<int>(height)) {
         const int w = static_cast<int>(width);
@@ -302,14 +356,14 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         chain.create(w, h, levels, GL_RGBA16F, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR);
     }
     constexpr uint32_t TARGET_UNIT = 0;
+    namespace Groups = GLBindings::ComputeGroups;
     const auto dispatchLevel = [&](const Vkm::GL::ComputeShader& shader, int mip) {
         chain.bindImage(mip, TARGET_UNIT, GL_WRITE_ONLY);
-        namespace Groups = GLBindings::ComputeGroups;
         shader.dispatch(
             Groups::covering(static_cast<uint32_t>(chain.mipWidth(mip)),  Groups::IMAGE),
             Groups::covering(static_cast<uint32_t>(chain.mipHeight(mip)), Groups::IMAGE)
         );
-        VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+        Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     };
     m_source.bind();
     target.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
@@ -326,7 +380,8 @@ void GLPlanarReflectionPass::drawGlass(GLFrameContext& ctx, int i) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
     Drawn&            drawn  = m_drawn[i];
-    GLTarget&         target = *m_targets[i];
+    GLTarget&         target = *m_slots[drawn.slot].target;
+    GLTarget&         behind = *m_slots[drawn.slot].backdrop;
 
     // Far to near from the mirror's eye, so the blend composes.
     const std::vector<glm::mat4>& models = view.objects->models;
@@ -340,18 +395,18 @@ void GLPlanarReflectionPass::drawGlass(GLFrameContext& ctx, int i) {
     });
 
     // What is behind the glass, to refract: the picture so far.
-    m_backdrop.resize(drawn.size.x, drawn.size.y, 1, false);
-    m_backdrop.blitColorFrom(target);
+    behind.resize(ctx.gl, drawn.size.x, drawn.size.y, 1, false);
+    behind.blitColorFrom(target);
     target.bind(ctx.gl);
-    m_backdrop.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
+    behind.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
 
-    Vkm::GL::Shader& pbr   = m_capture.pbrProgram();
-    const bool       posed = ctx.skinPalette.count() > 0;
-    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
-        if (program == &m_skinned && !posed) continue;
-        program->bind();
-        program->setUniform1i("u_hasSceneColor", 1);
-    }
+    const bool posed = ctx.skinPalette.count() > 0;
+    const auto backdrop = [&](int shown) {
+        m_programs.forEach(posed, false, [&](Vkm::GL::Shader& program) {
+            if (program.hasUniform("u_hasSceneColor")) program.setUniform1i("u_hasSceneColor", shown);
+        });
+    };
+    backdrop(1);
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     ctx.gl.setDepthWrite(false);
@@ -361,12 +416,12 @@ void GLPlanarReflectionPass::drawGlass(GLFrameContext& ctx, int i) {
     const Vkm::GL::Shader* boundProgram  = nullptr;
     const uint32_t bones = ctx.skinPalette.count();
     for (const InstanceDraw& run : m_batcher.buildSequential(drawn.glass, *view.objects, glView, bones)) {
-        Vkm::GL::Shader& program = run.skinned ? m_skinned : pbr;
+        const GLMaterial* material = glView.getMaterial(run.material);
+        Vkm::GL::Shader&  program  = m_programs.programFor(material, run.skinned, false);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
-        const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(glView);
@@ -381,11 +436,7 @@ void GLPlanarReflectionPass::drawGlass(GLFrameContext& ctx, int i) {
         m_batcher.draw(ctx.gl, run);
     }
 
-    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
-        if (program == &m_skinned && !posed) continue;
-        program->bind();
-        program->setUniform1i("u_hasSceneColor", 0);
-    }
+    backdrop(0);
     ctx.gl.setBlending(false);
     ctx.gl.setDepthWrite(true);
 }

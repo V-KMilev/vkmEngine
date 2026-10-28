@@ -111,15 +111,27 @@ class GLIrradianceVolume {
         void download(ProbeGridSH& sh) const;
 
         /**
-         * @brief Record whether the grid holds a finished bake of the current volume.
+         * @brief Record that the grid holds a finished bake of @p box.
          *
-         * A finished bake also takes a new bakeId(), by which a capture that read the grid knows
-         * it is stale.
+         * It takes a new bakeId(), by which a capture that read the grid knows it is stale.
          *
-         * @param baked False while a bake runs or after it refused the volume;
-         *              true once it filled and repaired the grid.
+         * @param box The volume the bake filled the grid for.
          */
-        void setBaked(bool baked);
+        void setBaked(const IrradianceVolumeData& box);
+
+        /// Record that the grid holds no bake to show: the bake refused it, or the world changed.
+        void setUnbaked() { m_ready = false; }
+
+        /**
+         * @brief @p asked, placed where the grid was baked.
+         *
+         * A grid shown while its box is moved, or while the next one bakes, stays where its light
+         * was gathered.
+         *
+         * @param asked The volume as the frame asks for it, its intensity and fade.
+         * @return @p asked over the baked box.
+         */
+        IrradianceVolumeData placed(const IrradianceVolumeData& asked) const;
 
         /**
          * @brief Trade grids with @p other: this shows what it held, and it what this did.
@@ -144,9 +156,11 @@ class GLIrradianceVolume {
 
     private:
         std::unique_ptr<Vkm::GL::Texture3D> m_sh[SH_COEFFS];
-        bool     m_ready   = false;
-        uint32_t m_bakeId  = 0;
-        uint32_t m_lightId = 0;
+        bool      m_ready   = false;
+        glm::vec3 m_center{0.0f};       ///< The baked box, which placed() puts the grid over.
+        glm::vec3 m_halfExtents{0.0f};
+        uint32_t  m_bakeId  = 0;
+        uint32_t  m_lightId = 0;
 };
 
 } // namespace Vkm::Engine

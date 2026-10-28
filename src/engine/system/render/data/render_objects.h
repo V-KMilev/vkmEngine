@@ -30,15 +30,15 @@ struct ObjectDraw {
      */
     uint32_t skinCount = 0;
 
-    /// Its surface is the scene's ocean: a `waves` material, in a scene with an ocean. A skinned
-    /// one is shaded as the water and not moved.
+    /// Its surface is the scene's ocean: a Sea material (`WaterKind::Sea`), in a scene with an
+    /// ocean. A skinned one is shaded as the water and not moved.
     bool waves = false;
 
     /// A Viewmodel mesh seen through the eye: drawn through CameraData::viewmodelViewProjection.
     bool viewmodel = false;
 
-    /// A fixed mesh (Mesh::movable off) the cull can keep: while RenderObjects::fixedSerial holds,
-    /// it is as it was.
+    /// A fixed mesh the cull can keep - not movable (Mesh::movable), not skinned, not riding a sea
+    /// and not a viewmodel: while RenderObjects::fixedSerial holds, it is as it was.
     bool fixed = false;
 
     bool operator==(const ObjectDraw& other) const {
@@ -67,6 +67,30 @@ struct RenderObjects {
      * Zero when ObjectDraw::skinCount is.
      */
     std::vector<uint32_t>   skinFirst;
+
+    /**
+     * @brief Per object: what names it whatever its index - its entity and the mesh it was given
+     *        (not a level of detail), and for a terrain's chunk or plant which one.
+     *
+     * An index moves as meshes come and go; a key does not, but for a plant's, which is its place
+     * among its own terrain's plants in TerrainFrame::plants and moves as they are grown again or
+     * a mesh of theirs loads.
+     */
+    std::vector<uint64_t>   keys;
+
+    /**
+     * @brief Per object: the version of the mesh it was given (not a level of detail), so what is
+     *        baked from its shape can tell the shape changed under the same mesh.
+     */
+    std::vector<uint64_t>   shapes;
+
+    /**
+     * @brief Per object: the mesh it was given, not the level of detail drawn - the one `shapes`
+     *        versions: the Mesh component's, a terrain chunk's finest level, a plant's.
+     *
+     * What is baked from an object's shape is baked from this, wherever the eye stands.
+     */
+    std::vector<MeshHandle> bases;
 
     /**
      * @brief The objects the camera sees, in object order, unsorted.

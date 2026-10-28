@@ -3,6 +3,7 @@
 #include "gl_view.h"
 
 #include <algorithm>
+#include <cstring>
 #include <type_traits>
 #include <vector>
 
@@ -82,6 +83,7 @@ void GLView::invalidate() {
     m_textures.slots.clear();
     m_fontAtlases.slots.clear();
     m_reportedMissing.clear();
+    m_charts.clear();
     m_syncedRevision = 0;
 }
 
@@ -101,6 +103,17 @@ void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& r
     ++m_syncStamp;
     ensure(m_textures, handle, resources);
     reportIfMissing(handle, resources);
+}
+
+void GLView::ensureDrawn(
+    const MeshHandle& mesh,
+    const MaterialHandle& material,
+    const ResourceManager& resources
+) {
+    // Asked between syncs, for the assets as they are now, not as the last sync saw them.
+    ++m_syncStamp;
+    ensure(m_meshes, mesh, resources);
+    ensureMaterial(material, resources);
 }
 
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
@@ -154,8 +167,12 @@ void GLView::readyLayers(const MaterialAsset& asset, GLMaterial& material, const
         mix(textureUploadId(value.normalTexture));
         mix(textureUploadId(surface));
     }
-    if (!m_layerCopy) m_layerCopy = std::make_unique<Vkm::GL::ComputeShader>("shaders/material/layer_copy");
+    if (!m_layerCopy) buildPrograms();
     material.updateLayers(asset, values, maps, key, *m_layerCopy);
+}
+
+void GLView::buildPrograms() {
+    m_layerCopy = std::make_unique<Vkm::GL::ComputeShader>("shaders/material/layer_copy");
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
@@ -169,7 +186,9 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         surfaceWidth,
         surfaceHeight,
         frameSeconds,
+        bakeBudget,
         worldSeconds,
+        worldArriving,
         camera,
         hasCamera,
         objects,
@@ -189,10 +208,17 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         hasIrradianceVolume,
         ocean,
         skinMatrices,
+        debug,
         settings,
         environment,
         ui,
         splash,
+        cover,
+        loadingOpacity,
+        loadingContent,
+        loadingProgress,
+        loadingWater,
+        pointer,
         worldEpoch
     ] = view;
 
@@ -219,6 +245,22 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
             for (const uint32_t object : objects->visible) ensureDraw(draws[object]);
         }
 
+        // A fixed object's given mesh too, whatever level the eye picked: the lightmap bake draws it,
+        // and the level reads the bake only through charts laid out as its.
+        const std::vector<MeshHandle>& bases = objects->bases;
+        MeshHandle runBase;
+        const auto ensureObject = [&](uint32_t object) {
+            ensureDraw(draws[object]);
+            if (!draws[object].fixed || object >= bases.size()) return;
+            const MeshHandle& given = bases[object];
+            if (given == draws[object].mesh) return;
+            if (given != runBase) {
+                ensure(m_meshes, given, resources);
+                runBase = given;
+            }
+            checkCharts(draws[object].mesh, given, resources);
+        };
+
         // The whole scene's meshes and materials, not only what the camera sees, so an object first
         // turned to uploads nothing that frame. Walked whole when the objects or the assets changed
         // (any ResourceManager commit, swap or replace); otherwise only the changed objects.
@@ -228,10 +270,10 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
                 || resources.revision() != m_syncedRevision;
             m_syncedSerial = objects->serial;
             if (whole) {
-                for (const uint32_t object : objects->scene) ensureDraw(draws[object]);
+                for (const uint32_t object : objects->scene) ensureObject(object);
                 m_syncedRevision = resources.revision();
             } else {
-                for (const uint32_t object : objects->changed) ensureDraw(draws[object]);
+                for (const uint32_t object : objects->changed) ensureObject(object);
             }
         }
     }
@@ -247,15 +289,58 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     }
 
     // Font atlases live inside FontAssets, so ensure them off the text commands; images are
-    // ordinary textures.
-    if (ui) {
-        for (const UIDrawCmd& cmd : ui->commands) {
+    // ordinary textures. The cover is drawn as the UI is.
+    for (const UIDrawData* overlay : {ui, cover}) {
+        if (!overlay) continue;
+        for (const UIDrawCmd& cmd : overlay->commands) {
             ensure(m_fontAtlases, cmd.font, resources);
             if (!cmd.image) continue;
             ensure(m_textures, cmd.image, resources);
             reportIfMissing(cmd.image, resources);
         }
     }
+}
+
+void GLView::checkCharts(const MeshHandle& drawn, const MeshHandle& given, const ResourceManager& resources) {
+    const GLMesh* drawnMesh = getMesh(drawn);
+    const GLMesh* givenMesh = getMesh(given);
+    if (!drawnMesh || !givenMesh) return;
+    ChartsCheck& check = m_charts[(static_cast<uint64_t>(drawn.id()) << 32) | given.id()];
+    if (check.drawnUpload == drawnMesh->uploadId() && check.givenUpload == givenMesh->uploadId()) return;
+    check.drawnUpload = drawnMesh->uploadId();
+    check.givenUpload = givenMesh->uploadId();
+
+    // Bit for bit: a decimation keeps the coordinates of the vertices it keeps, and a terrain chunk's
+    // levels lay one grid out alike.
+    const MeshAsset* reader = resources.tryGet(drawn);
+    const MeshAsset* source = resources.tryGet(given);
+    check.reads = false;
+    if (!reader || !source || reader->lightmapUVs.empty()) return;
+    static_assert(sizeof(glm::vec2) == sizeof(uint64_t), "a coordinate is compared as its bits");
+    const auto bitsOf = [](const glm::vec2& uv) {
+        uint64_t bits = 0;
+        std::memcpy(&bits, &uv, sizeof(bits));
+        return bits;
+    };
+    std::vector<uint64_t> charts(source->lightmapUVs.size());
+    std::transform(source->lightmapUVs.begin(), source->lightmapUVs.end(), charts.begin(), bitsOf);
+    std::sort(charts.begin(), charts.end());
+    const auto inCharts = [&](const glm::vec2& uv) {
+        return std::binary_search(charts.begin(), charts.end(), bitsOf(uv));
+    };
+    check.reads = std::all_of(reader->lightmapUVs.begin(), reader->lightmapUVs.end(), inCharts);
+}
+
+bool GLView::readsChartsOf(const MeshHandle& drawn, const MeshHandle& given) const {
+    if (drawn == given) return true;
+    const GLMesh* drawnMesh = getMesh(drawn);
+    const GLMesh* givenMesh = getMesh(given);
+    if (!drawnMesh || !givenMesh) return false;
+    const auto found = m_charts.find((static_cast<uint64_t>(drawn.id()) << 32) | given.id());
+    if (found == m_charts.end()) return false;
+    const ChartsCheck& check = found->second;
+    return check.reads && check.drawnUpload == drawnMesh->uploadId()
+        && check.givenUpload == givenMesh->uploadId();
 }
 
 const GLMesh* GLView::getMesh(const MeshHandle& handle) const {
@@ -289,7 +374,7 @@ const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
 const Vkm::GL::Texture2D& GLView::missingTexture() const {
     if (m_missingTexture) return *m_missingTexture;
 
-    // Magenta because nothing in a PBR scene is legitimately that colour; a checker because a
+    // Magenta because nothing in a PBR scene is legitimately that color; a checker because a
     // flat fill can pass for an authored material.
     constexpr uint32_t SIZE  = 8;
     constexpr uint32_t CHECK = 2;   // pixels per square
@@ -308,7 +393,7 @@ const Vkm::GL::Texture2D& GLView::missingTexture() const {
     Vkm::GL::Texture2DParams params;
     params.width           = SIZE;
     params.height          = SIZE;
-    params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as colour, like any albedo map
+    params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as color, like any albedo map
     params.format          = GL_RGBA;
     params.type            = GL_UNSIGNED_BYTE;
     params.wrapS           = Vkm::GL::TextureWrap::Repeat;

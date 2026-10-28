@@ -15,7 +15,7 @@ layout(binding = REFLECT_SLOT_WEIGHT)     uniform sampler2D u_weight;
 
 uniform float u_maxRoughness;  // rougher pixels reflect only probes and sky
 uniform float u_maxDistance;   // world length a ray is traced
-uniform float u_maxLod;        // the colour chain's last level
+uniform float u_maxLod;        // the color chain's last level
 uniform int   u_traceStep;     // pixels a hit stands for on each axis: 1, or 2 at half resolution
 
 #include "../reflection.glsl"

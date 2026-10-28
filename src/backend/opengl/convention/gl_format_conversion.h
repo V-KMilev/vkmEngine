@@ -28,12 +28,13 @@ inline GLenum toGLenum(TextureInternalFormat fmt) {
         case TextureInternalFormat::BC5RG:    return GL_COMPRESSED_RG_RGTC2;
         case TextureInternalFormat::BC7RGBA:  return GL_COMPRESSED_RGBA_BPTC_UNORM;
         case TextureInternalFormat::BC7SRGBA: return GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM;
+        case TextureInternalFormat::Count:    break;
     }
     return GL_RGBA8;
 }
 
 /**
- * @brief Whether a texture uploaded as @p glFormat stores colour in sRGB.
+ * @brief Whether a texture uploaded as @p glFormat stores color in sRGB.
  *
  * Answered through toGLenum and isSrgbFormat, so the engine's rule is the only list.
  *
@@ -41,8 +42,7 @@ inline GLenum toGLenum(TextureInternalFormat fmt) {
  * @return True when an engine sRGB format uploads as @p glFormat.
  */
 inline bool isSrgbGLFormat(GLenum glFormat) {
-    // BC7SRGBA is the enum's last value.
-    for (int f = 0; f <= static_cast<int>(TextureInternalFormat::BC7SRGBA); ++f) {
+    for (int f = 0; f < static_cast<int>(TextureInternalFormat::Count); ++f) {
         const auto format = static_cast<TextureInternalFormat>(f);
         if (toGLenum(format) == glFormat) return isSrgbFormat(format);
     }

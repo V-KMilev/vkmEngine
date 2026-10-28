@@ -25,6 +25,23 @@ struct BackendInfo {
     std::string device;  ///< The GPU, as its driver names it.
 };
 
+/**
+ * @brief How far the backend is through what it owes before a world shows: the programs it builds
+ *        at startup, then the bakes a world's first frames start - its light, its reflections,
+ *        its lightmaps - in steps of each.
+ *
+ * A world with nothing to bake is ready once nothing holds its bakes back (RenderView::worldArriving).
+ * The steps are not of one length: a share of them is a share of the work only roughly.
+ */
+struct RenderReadiness {
+    uint32_t done     = 0;  ///< Bake steps done.
+    uint32_t total    = 0;  ///< Bake steps started, or one owed while an arriving world holds them.
+    uint32_t compiled = 0;  ///< Startup programs compiled and checked; no world is drawn before all are.
+    uint32_t programs = 0;  ///< Startup programs still owed or compiled; 0 once all are.
+
+    bool ready() const { return done >= total && compiled >= programs; }
+};
+
 /// The widest texture edge every backend takes, in texels: one that cannot refuses to init, so a
 /// bake may count on it.
 inline constexpr uint32_t BACKEND_MIN_TEXTURE_EDGE = 16384;
@@ -119,6 +136,13 @@ class RenderBackend {
          * @return Hooks the editor may use, or null.
          */
         virtual EditorRenderHooks* editorHooks() = 0;
+
+        /**
+         * @brief How far the startup programs and the bakes the frames so far started or hold have come.
+         *
+         * @return After the last render(); ready when nothing is owed.
+         */
+        virtual RenderReadiness readiness() const = 0;
 
     public:
         BackendInfo info() const { return m_info; }

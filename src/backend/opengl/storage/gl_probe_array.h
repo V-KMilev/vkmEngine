@@ -73,10 +73,10 @@ class GLProbeArray {
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
         /**
-         * @brief Attach the transient env cube @p face as colour 0 (geometry capture).
+         * @brief Attach the transient env cube @p face as color 0 (geometry capture).
          *
          * @param gl   Live GL context whose viewport is set to the env-capture size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
         void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             m_fbo->attachLayer(GL_COLOR_ATTACHMENT0, m_env.getID(), 0, face);
@@ -85,11 +85,11 @@ class GLProbeArray {
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
         /**
-         * @brief Attach one face of irradiance-array @p layer as colour 0.
+         * @brief Attach one face of irradiance-array @p layer as color 0.
          *
          * @param gl    Live GL context whose viewport is set to the irradiance size.
          * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
-         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         * @param face  Cube face index (0..5) attached as the color-0 target.
          */
         void attachIrradianceFace(const Vkm::GL::Context& gl, int layer, int face) const {
             m_fbo->attachLayer(GL_COLOR_ATTACHMENT0, m_irradiance.getID(), 0, layer * 6 + face);
@@ -97,11 +97,11 @@ class GLProbeArray {
         }
 
         /**
-         * @brief Attach one face/mip of prefilter-array @p layer as colour 0.
+         * @brief Attach one face/mip of prefilter-array @p layer as color 0.
          *
          * @param gl    Live GL context whose viewport is set to the mip's size.
          * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
-         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         * @param face  Cube face index (0..5) attached as the color-0 target.
          * @param mip   Roughness mip level being baked; halves the viewport per level.
          */
         void attachPrefilterFace(const Vkm::GL::Context& gl, int layer, int face, int mip) const {

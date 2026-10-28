@@ -42,6 +42,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     const bool seeThrough = material.albedo.a < 1.0f || static_cast<bool>(material.albedoTexture);
     m_cutsShadow  = m_type == MaterialType::AlphaMask || (m_type == MaterialType::Transparent && seeThrough);
     m_layered     = material.layered();
+    m_water       = material.water == WaterKind::Body;
     m_plain       = !m_layered
         && material.anisotropy == 0.0f
         && material.subsurface == 0.0f
@@ -93,7 +94,10 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.alphaCutoff        = material.alphaCutoff;
     data.type               = static_cast<int>(material.type);
     data.textureFlags       = flags;
-    data.waves              = material.waves ? 1 : 0;
+    data.waves              = material.water == WaterKind::Sea ? 1 : 0;
+    data.water              = material.water == WaterKind::Body ? 1 : 0;
+    data.flowSpeed          = material.flowSpeed;
+    data.rippleScale        = material.rippleScale;
     data.boxMapping         = material.boxMapping;
 
     if (m_ubo) m_ubo->update(&data, sizeof(data));

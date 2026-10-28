@@ -1,5 +1,7 @@
 #pragma once
 
+#include "test_shard.h"
+
 namespace Vkm::Test {
 
 class GLContext;
@@ -12,7 +14,8 @@ class GLContext;
  *
  * @param gl       The suite's context.
  * @param failures Incremented once per mismatching frame.
+ * @param shard    Which of the checks this run takes.
  */
-void runGoldenTests(GLContext& gl, int& failures);
+void runGoldenTests(GLContext& gl, int& failures, const Shard& shard);
 
 } // namespace Vkm::Test

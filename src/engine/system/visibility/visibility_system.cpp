@@ -10,6 +10,7 @@
 #include "logger.h"
 
 #include "core/clock.h"
+#include "core/fnv1a.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/window_manager.h"
@@ -34,6 +35,21 @@
 namespace Vkm::Engine {
 
 namespace {
+
+/**
+ * @brief An object's key (RenderObjects::keys): its entity, and @p part, which tells apart the
+ *        objects one entity draws.
+ *
+ * @tparam Part  Hashed by its bytes.
+ * @param entity The entity that draws it.
+ * @param part   Which of that entity's objects it is.
+ * @return The key.
+ */
+template <typename Part>
+uint64_t objectKey(EntityId entity, const Part& part) {
+    const uint64_t named = fnv1a64Bytes(&entity, sizeof(entity));
+    return fnv1a64Bytes(&part, sizeof(part), named);
+}
 
 /**
  * @brief The box this frame's pose actually occupies, in the mesh's own space.
@@ -66,6 +82,12 @@ constexpr uint8_t STATE_CHANGED = 1u << 3;  ///< Its columns or its lists differ
 
 // The bits that put an object in the scene-wide list and its caster prefix.
 constexpr uint8_t STATE_LISTED = STATE_DRAWN | STATE_CASTS;
+
+/// The version of @p mesh, or 0 when none is loaded.
+uint64_t versionOf(const ResourceManager& resources, MeshHandle mesh) {
+    const MeshAsset* asset = resources.tryGet(mesh);
+    return asset ? asset->version() : 0;
+}
 
 /**
  * @brief Pick the geometry for this entity at this distance.
@@ -184,7 +206,7 @@ bool computeObject(const ObjectInputs& in, uint32_t index, ObjectColumns& out) {
 
     out.bounds = Math::transform(out.model, {localMin, localMax});
     const MaterialAsset* surface = in.sea ? in.resources.tryGet(mesh.material) : nullptr;
-    const bool           waves   = in.sea && surface && surface->waves;
+    const bool           waves   = in.sea && surface && surface->water == WaterKind::Sea;
     if (waves) {
         out.bounds.min -= glm::vec3(in.swell.x, in.swell.y, in.swell.x);
         out.bounds.max += glm::vec3(in.swell.x, in.swell.y, in.swell.x);
@@ -243,18 +265,12 @@ bool keepsItsComponents(const ObjectInputs& in, uint32_t index, uint8_t fixed) {
 
 void VisibilitySystem::publishCamera(
     const Camera& camera,
-    const glm::vec3& position,
-    const glm::quat& rotation,
+    const CameraView& seen,
     float viewportAspect,
     EntityId entity
 ) {
-    Transform pose;
-    pose.position = position;
-    pose.rotation = rotation;
-
-    const glm::mat4 projection = Camera::computeProjection(camera, viewportAspect);
-    CameraData&     data       = m_result.camera;
-    data = CameraData::from(Transform::computeView(pose), projection, position);
+    CameraData& data = m_result.camera;
+    data = CameraData::from(seen.view, seen.projection, seen.position);
     data.viewmodelViewProjection = Camera::computeViewmodelProjection(camera, viewportAspect) * data.view;
     data.focusDistance = camera.focusDistance;
     data.dofAmount     = camera.dofAmount;
@@ -268,7 +284,8 @@ bool VisibilitySystem::resolveCamera(const FrameContext& ctx, float viewportAspe
     const Scene& scene = ctx.scene;
     const HostView* host = ctx.hostView;
     if (host && !host->through) {
-        publishCamera(host->camera, host->position, host->rotation, viewportAspect, {});
+        const CameraView seen = viewThrough(host->camera, host->position, host->rotation, viewportAspect);
+        publishCamera(host->camera, seen, viewportAspect, {});
         return true;
     }
 
@@ -286,18 +303,10 @@ bool VisibilitySystem::resolveCamera(const FrameContext& ctx, float viewportAspe
         m_cachedCameraEntity = findActiveCamera(scene, m_cachedCameraEntity);
         entity = m_cachedCameraEntity;
     }
-    const Camera*    camera    = scene.tryGet<Camera>(entity);
-    const Transform* transform = scene.tryGet<Transform>(entity);
-    if (!camera || !transform) return false;
-
     // A camera parented to a rig renders from its world pose, not its local offset.
-    publishCamera(
-        *camera,
-        resolvedWorldPosition(scene, entity, *transform),
-        resolvedWorldRotation(scene, entity, *transform),
-        viewportAspect,
-        entity
-    );
+    const std::optional<CameraView> seen = viewThrough(scene, entity, viewportAspect);
+    if (!seen) return false;
+    publishCamera(scene.get<Camera>(entity), *seen, viewportAspect, entity);
     return true;
 }
 
@@ -380,7 +389,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const auto* lodStorage = ctx.scene.storage<LOD>();
     const PoseBuffer* poses = ctx.poses;
 
-    // A `waves` surface the scene's ocean moves is carried past its mesh's box by as far as the
+    // A Sea surface the scene's ocean moves is carried past its mesh's box by as far as the
     // sea moves water, and casts no shadow: a held shadow tile would picture one moment of it.
     // With no ocean it draws, and casts, as any surface.
     const bool      sea   = ctx.ocean && ctx.ocean->present;
@@ -439,6 +448,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
     objects.bounds.resize(total);
     objects.draws.resize(total);
     objects.skinFirst.resize(total);
+    objects.keys.resize(total);
+    objects.shapes.resize(total);
+    objects.bases.resize(total);
     m_result.entities.resize(total);
 
     const ObjectInputs inputs{
@@ -532,6 +544,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
             objects.bounds[i]    = now.bounds;
             objects.draws[i]     = now.draw;
             objects.skinFirst[i] = now.skinFirst;
+            objects.keys[i]      = objectKey(now.entity, meshStorage->dataAt(idx).mesh);
+            objects.shapes[i]    = versionOf(inputs.resources, meshStorage->dataAt(idx).mesh);
+            objects.bases[i]     = meshStorage->dataAt(idx).mesh;
             m_result.entities[i] = now.entity;
             m_fixed[i]           = authoring ? 0 : now.fixedState;
 
@@ -575,6 +590,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
         objects.bounds[i]    = chunk.bounds;
         objects.draws[i]     = draw;
         objects.skinFirst[i] = 0;
+        objects.keys[i]      = objectKey(chunk.entity, chunk.levels[0]);
+        objects.shapes[i]    = versionOf(resources, chunk.levels[0]);
+        objects.bases[i]     = chunk.levels[0];
         m_result.entities[i] = chunk.entity;
         const bool inView = Math::frustumIntersectsAABB(context.frustum, chunk.bounds);
         if (inView && Culling::isNearEnough(chunk.bounds, context)) state |= STATE_VISIBLE;
@@ -603,9 +621,13 @@ void VisibilitySystem::update(FrameContext& ctx) {
             }
         }
     } else {
+        // A terrain's plants are one run; each is keyed by its place in its own terrain's run, so
+        // another terrain growing its plants again moves no key of this one's.
+        uint32_t terrainFirst = 0;
         for (uint32_t p = 0; p < plantCount; ++p) {
             const TerrainPlantDraw& plant = terrains->plants[p];
             const uint32_t          i     = plantFirst + p;
+            if (p > 0 && plant.entity != terrains->plants[p - 1].entity) terrainFirst = p;
 
             ObjectDraw draw;
             draw.mesh     = plant.mesh;
@@ -622,6 +644,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
             objects.bounds[i]    = plant.bounds;
             objects.draws[i]     = draw;
             objects.skinFirst[i] = 0;
+            objects.keys[i]      = objectKey(plant.entity, p - terrainFirst);
+            objects.shapes[i]    = versionOf(resources, plant.mesh);
+            objects.bases[i]     = plant.mesh;
             m_result.entities[i] = plant.entity;
             m_state[i]           = seenPlant(plant) ? state | STATE_VISIBLE : state;
         }

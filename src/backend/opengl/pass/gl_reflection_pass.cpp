@@ -5,7 +5,6 @@
 #include <GL/glew.h>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
 #include "gl_shader.h"
 #include "gl_context.h"
 #include "gl_screen_triangle.h"
@@ -93,7 +92,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     // With no sky baked the forward pass still writes the reflection weight,
     // and an environment reflection of zero: the traced one only adds.
     const bool traced = view.settings.ssr;
-    if (!traced && ctx.planarCount == 0) return;
+    if (!reflecting(ctx)) return;
 
     const int step = view.settings.ssrHalfResolution ? 2 : 1;
     ensureTargets(view.sceneWidth(), view.sceneHeight(), static_cast<uint32_t>(step));
@@ -104,7 +103,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectWeight, Slots::WEIGHT);
     if (traced) trace(ctx, step);
 
-    // The traced colour and the planar pictures in place of the environment's, into the chain's
+    // The traced color and the planar pictures in place of the environment's, into the chain's
     // next link. The depth, G-buffer and weight are still bound from above, and the chain when
     // traced.
     ctx.colorDst->bind(ctx.gl);
@@ -167,7 +166,7 @@ void GLReflectionPass::trace(GLFrameContext& ctx, int step) {
             Groups::covering(static_cast<uint32_t>(m_chain.mipWidth(mip)),  Groups::IMAGE),
             Groups::covering(static_cast<uint32_t>(m_chain.mipHeight(mip)), Groups::IMAGE)
         );
-        VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+        Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     };
 
     m_source.bind();

@@ -50,15 +50,17 @@ class GLParticlePass : public GLPass {
          * clusters are the camera's. No fog or aerial perspective, which are the camera's, no
          * distortion, which bends the camera's screen, and nothing on the viewmodel layer.
          *
-         * @param ctx    The frame: its particles, with the shadow atlas bound.
-         * @param target The picture, drawn opaque already.
-         * @param size   Its size.
-         * @param eye    The mirrored camera.
-         * @param clip   The plane, as the PBR program takes it.
+         * @param ctx       The frame: its particles, with the shadow atlas bound.
+         * @param target    The picture, drawn opaque already.
+         * @param depthCopy Scratch the picture's depth is copied into, to fade on: the picture's own.
+         * @param size      Its size.
+         * @param eye       The mirrored camera.
+         * @param clip      The plane, as the PBR program takes it.
          */
         void drawMirrored(
             GLFrameContext& ctx,
             GLTarget& target,
+            GLTarget& depthCopy,
             glm::uvec2 size,
             const CameraData& eye,
             const glm::vec4& clip
@@ -163,9 +165,6 @@ class GLParticlePass : public GLPass {
 
         /// The scene's depth, copied: the particles test against it attached and fade on it here.
         GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};
-
-        /// A planar reflection's picture's depth, copied the same way.
-        GLTarget m_mirrorDepth{GLTarget::Layout::ColorDepth, GL_R8};
 
         /// What a mirror sees, off the viewmodel layer: additive billboards, alpha ones, and strips of each.
         std::vector<ParticleData>  m_seenAdditive;

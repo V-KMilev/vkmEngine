@@ -5,7 +5,7 @@
 #include <GL/glew.h>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
+#include "gl_context.h"
 
 #include "gl_frame_context.h"
 #include "convention/gl_bindings.h"
@@ -41,7 +41,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
             Groups::covering(static_cast<uint32_t>(bloom.mipWidth(mip)),  Groups::IMAGE),
             Groups::covering(static_cast<uint32_t>(bloom.mipHeight(mip)), Groups::IMAGE)
         );
-        VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+        Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     };
 
     // Down: the first tap soft-knee prefilters and Karis-averages the scene; the rest are plain

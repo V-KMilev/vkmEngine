@@ -10,7 +10,6 @@
 #include "gl_context.h"
 #include "gl_frame_buffer.h"
 #include "gl_vertex_array.h"
-#include "gl_error_handle.h"
 #include "gl_stream_ring.h"
 #include "gl_texture.h"
 
@@ -31,8 +30,9 @@ constexpr uint32_t VERTEX_BINDING = 0;
 
 } // namespace
 
-GLUIPass::GLUIPass()
-    : m_shader("shaders/ui")
+GLUIPass::GLUIPass(List list)
+    : m_list(list)
+    , m_shader("shaders/ui")
     , m_vao(std::make_unique<Vkm::GL::VertexArray>())
 {
     const uint8_t zero = 0;
@@ -53,17 +53,14 @@ GLUIPass::GLUIPass()
         sizeof(UIVertex) == (2 + 2 + 4 + 4 + 4 + 1) * sizeof(float),
         "UIVertex no longer matches the attributes below"
     );
-    const GLuint vao       = m_vao->getID();
-    const auto   attribute = [vao](uint32_t index, GLint count, uint32_t at) {
-        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, index));
-        VKM_GL_CHECK(glVertexArrayAttribFormat(vao, index, count, GL_FLOAT, GL_FALSE, at));
-        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, index, VERTEX_BINDING));
+    const auto attribute = [this](uint32_t index, int32_t count, uint32_t at) {
+        m_vao->setAttribute(index, VERTEX_BINDING, count, GL_FLOAT, at);
     };
     attribute(0, 2, offsetof(UIVertex, pos));
     attribute(1, 2, offsetof(UIVertex, uv));
     attribute(2, 4, offsetof(UIVertex, color));
     attribute(3, 4, offsetof(UIVertex, shape));   // quad size, corner radius, border width
-    attribute(4, 4, offsetof(UIVertex, border));  // border colour
+    attribute(4, 4, offsetof(UIVertex, border));  // border color
     attribute(5, 1, offsetof(UIVertex, image));   // whether a solid samples its run's image
 }
 
@@ -71,20 +68,13 @@ GLUIPass::~GLUIPass() = default;
 
 void GLUIPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
-    if (!view.ui || view.ui->vertices.empty() || view.ui->commands.empty()) return;
-    const UIDrawData& ui = *view.ui;
+    const UIDrawData* drawn = m_list == List::Cover ? view.cover : view.ui;
+    if (!drawn || drawn->vertices.empty() || drawn->commands.empty()) return;
+    const UIDrawData& ui = *drawn;
 
     const auto                bytes    = static_cast<uint32_t>(ui.vertices.size() * sizeof(UIVertex));
     const Vkm::GL::BufferSpan vertices = ctx.resources.stream().write(ui.vertices.data(), bytes);
-    VKM_GL_CHECK(
-        glVertexArrayVertexBuffer(
-            m_vao->getID(),
-            VERTEX_BINDING,
-            vertices.buffer,
-            vertices.offset,
-            sizeof(UIVertex)
-        )
-    );
+    m_vao->setVertexBuffer(VERTEX_BINDING, vertices, sizeof(UIVertex));
 
     // Draw into the same backbuffer rect Composite resolved to.
     bindBackbufferViewport(ctx);
@@ -122,9 +112,6 @@ void GLUIPass::execute(GLFrameContext& ctx) {
             static_cast<int32_t>(cmd.vertexCount)
         );
     }
-
-    // Not reset between passes, so this pass turns off what it turned on.
-    ctx.gl.enableScissor(false);
 }
 
 void GLUIPass::bindImage(GLFrameContext& ctx, const TextureHandle& image) const {

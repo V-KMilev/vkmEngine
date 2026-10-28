@@ -37,7 +37,7 @@ void GLAtmosphere::setSky(
 void GLAtmosphere::createAir() {
     if (m_transmittance) return;
     m_fbo = std::make_unique<Vkm::GL::FrameBuffer>();
-    // RGBA16F, as GL makes RGB16F colour-renderable only optionally.
+    // RGBA16F, as GL makes RGB16F color-renderable only optionally.
     m_transmittance = std::make_unique<Vkm::GL::Texture2D>(
         "sky_transmittance_lut",
         lookupTableParams(TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT, GL_RGBA16F, GL_RGBA)

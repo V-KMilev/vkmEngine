@@ -76,6 +76,9 @@ class GLProbeManager {
          */
         void init(GLSceneCapture& capture, GLCubeConvolver& convolver);
 
+        /// Probes the arrays have room for now: as many as have been seen, to the next power of two.
+        int capacity() const;
+
         /**
          * @brief Collect the baked probes and bind them for the frame.
          *
@@ -121,6 +124,12 @@ class GLProbeManager {
          * everything the capture contains does.
          */
         void invalidate();
+
+        /// Layers a probe in the scene holds.
+        uint32_t ownedLayers() const;
+
+        /// Of ownedLayers(), those baked since their probe or the world last changed.
+        uint32_t bakedLayers() const;
 
     private:
         /// Metres from the eye over which a probe waiting to be refreshed counts half as urgent.

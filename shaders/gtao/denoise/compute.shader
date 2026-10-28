@@ -8,13 +8,14 @@
  * adjacent edge does not tilt it (XeGTAO's edge-aware weighting). So occlusion
  * never bleeds across a silhouette.
  *
- * Every pixel's alpha is written 1, unoccluded: GLScreenShadowPass darkens it where it shades.
+ * At the search's half size, each pixel standing for the scene texel at its 2x2's corner, whose
+ * depth it weighs by; upsample/compute.shader widens the result.
  */
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
 // r = encoded visibility, gb = oct bent normal.
 layout(binding = POST_SLOT_AO)       uniform sampler2D u_raw;
-// Linear view depth; level 0 is full size.
+// Linear view depth; level 0 is the scene's size.
 layout(binding = POST_SLOT_AO_DEPTH) uniform sampler2D u_depthMips;
 layout(binding = 0, rgba8) uniform writeonly image2D u_dst;
 
@@ -59,7 +60,7 @@ void main() {
     for (int i = thread; i < TILE * TILE; i += GROUP_IMAGE * GROUP_IMAGE) {
         const ivec2 q = clamp(base + ivec2(i % TILE, i / TILE), ivec2(0), last);
         const vec4 raw = texelFetch(u_raw, q, 0);
-        s_depth[i]  = texelFetch(u_depthMips, q, 0).r;
+        s_depth[i]  = texelFetch(u_depthMips, q * 2, 0).r;
         s_aoBent[i] = vec4(decodeVisibility(raw.r), octDecode(raw.gb));
     }
     barrier();

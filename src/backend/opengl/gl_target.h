@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "gl_frame_buffer.h"
+#include "gl_texture.h"
 
 namespace Vkm::GL {
     class Context;
@@ -13,7 +14,7 @@ namespace Vkm::GL {
 namespace Vkm::Engine {
 
 /**
- * @brief An off-screen target: HDR colour and sampleable depth in one FBO, and for the scene the
+ * @brief An off-screen target: HDR color and sampleable depth in one FBO, and for the scene the
  *        G-buffer and reflection inputs the screen-space passes read.
  *
  * The layout is fixed at construction; a Scene target gains or drops the reflection inputs as
@@ -31,8 +32,8 @@ class GLTarget {
          * a screen-space reflection replaces where a ray finds the scene.
          */
         enum class Layout {
-            Color,       ///< Colour only.
-            ColorDepth,  ///< Colour + sampleable depth.
+            Color,       ///< Color only.
+            ColorDepth,  ///< Color + sampleable depth.
             Scene,       ///< Both, plus the G-buffer and the reflection inputs.
         };
 
@@ -42,11 +43,11 @@ class GLTarget {
          * A layout carries a prefix of this list.
          */
         enum class Attachment {
-            Color,          ///< Colour 0: the lit HDR colour, or a colour-only target's image.
+            Color,          ///< Color 0: the lit HDR color, or a color-only target's image.
             Depth,          ///< The sampleable depth.
-            GBuffer,        ///< Colour 1: oct view normal.
-            ReflectWeight,  ///< Colour 2: the environment reflection's weight (rgb) and roughness (a).
-            ReflectEnv,     ///< Colour 3: that weight times the environment radiance.
+            GBuffer,        ///< Color 1: oct view normal.
+            ReflectWeight,  ///< Color 2: the environment reflection's weight (rgb) and roughness (a).
+            ReflectEnv,     ///< Color 3: that weight times the environment radiance.
             Count,
         };
 
@@ -54,7 +55,7 @@ class GLTarget {
          * @brief Build an unallocated target of @p layout; resize() gives it storage.
          *
          * @param layout      Which attachments it will carry, for its whole life.
-         * @param colorFormat The colour's sized format: HDR by default; a target holding data
+         * @param colorFormat The color's sized format: HDR by default; a target holding data
          *                    rather than a picture names what its data needs.
          */
         explicit GLTarget(Layout layout, GLenum colorFormat = GL_RGBA16F);
@@ -70,8 +71,10 @@ class GLTarget {
         /**
          * @brief Allocate (or reallocate) the attachments at this size and sample count.
          *
-         * A no-op when nothing changed, so a pass may call it every frame.
+         * A no-op when nothing changed, so a pass may call it every frame; gaining or dropping the
+         * reflection inputs alone allocates or frees those two.
          *
+         * @param gl            Live GL context, asked for the driver's sample caps.
          * @param width         Width in pixels; zero allocates nothing.
          * @param height        Height in pixels; zero allocates nothing.
          * @param samples       Per-pixel samples, clamped to what the driver holds for every
@@ -79,7 +82,13 @@ class GLTarget {
          * @param reflectInputs Whether a Scene target carries the reflection inputs; other
          *                      layouts ignore it.
          */
-        void resize(uint32_t width, uint32_t height, uint32_t samples, bool reflectInputs);
+        void resize(
+            const Vkm::GL::Context& gl,
+            uint32_t width,
+            uint32_t height,
+            uint32_t samples,
+            bool reflectInputs
+        );
 
         /**
          * @brief Allocate at this size, keeping the last sample count and attachments.
@@ -92,12 +101,12 @@ class GLTarget {
         /**
          * @brief Free the attachment storage, keeping the FBO object.
          *
-         * The next resize re-allocates. Leaves the default framebuffer bound.
+         * The next resize re-allocates. Binds nothing: the attachments are let go through DSA.
          */
         void release();
 
         /**
-         * @brief Bind for rendering into colour 0, the common case.
+         * @brief Bind for rendering into color 0, the common case.
          *
          * Non-const: it mutates GL draw-buffer state.
          *
@@ -106,21 +115,30 @@ class GLTarget {
         void bind(const Vkm::GL::Context& gl);
 
         /**
-         * @brief Bind colour, and the reflection inputs while carried, at fragment outputs 0, 2 and 3.
+         * @brief Clear the first draw buffer the last bind set, to @p rgba.
          *
-         * @param gl Live GL context whose viewport is set.
+         * @param rgba Four values.
          */
-        void bindForwardPass(const Vkm::GL::Context& gl);
+        void clearColor(const float rgba[4]) const { m_fbo.clearColor(0, rgba); }
 
         /**
-         * @brief Bind for writing depth and the G-buffer: colour 1 is the only colour drawn.
+         * @brief Bind color, and the reflection inputs while carried, at fragment outputs 0, 2 and 3.
+         *
+         * @param gl         Live GL context whose viewport is set.
+         * @param reflecting Whether a pass reads the inputs this frame (GLPass::reflecting);
+         *                   without one they are carried but not drawn.
+         */
+        void bindForwardPass(const Vkm::GL::Context& gl, bool reflecting);
+
+        /**
+         * @brief Bind for writing depth and the G-buffer: color 1 is the only color drawn.
          *
          * @param gl Live GL context whose viewport is set.
          */
         void bindGBufferPass(const Vkm::GL::Context& gl);
 
         /**
-         * @brief Clear the whole target for a new frame: every colour attachment and the depth.
+         * @brief Clear the whole target for a new frame: every color attachment and the depth.
          *
          * The first pass to touch the target calls this.
          *
@@ -151,7 +169,7 @@ class GLTarget {
         void bindImage(Attachment attachment, uint32_t unit, GLenum access) const;
 
         /**
-         * @brief Copy @p src's colour into this target, both the scene's size.
+         * @brief Copy @p src's color into this target, both the scene's size.
          *
          * @param src The target copied from, resolved if it is multisample.
          */
@@ -185,19 +203,19 @@ class GLTarget {
         bool hasReflectInputs() const { return carries(Attachment::ReflectWeight); }
 
     private:
-        /// One attachment's storage: a texture, multisample or not. Defined in the .cpp.
-        class Texture;
-
         static constexpr size_t ATTACHMENT_COUNT = static_cast<size_t>(Attachment::Count);
 
         /// Whether this target's layout carries @p attachment.
         bool carries(Attachment attachment) const;
 
         /// The storage behind @p attachment; null when not carried or not allocated.
-        const Texture* texture(Attachment attachment) const;
+        const Vkm::GL::Texture2D* texture(Attachment attachment) const;
 
         /// Detach @p attachment from the FBO and free its storage.
         void detach(Attachment attachment);
+
+        /// Allocate @p attachment at the target's size and samples, and attach it.
+        void allocate(Attachment attachment);
 
         /**
          * @brief Bind the FBO to draw into @p buffers, sized to the viewport.
@@ -210,9 +228,6 @@ class GLTarget {
 
         /**
          * @brief Bind the FBO with @p buffers as its draw buffers.
-         *
-         * Issued only when it differs from this FBO's last set: a driver revalidates the
-         * framebuffer on every change, and most binds ask for the set already there.
          *
          * @param buffers Draw buffers, indexed by fragment output location.
          * @param count   How many of them, at most four.
@@ -229,10 +244,8 @@ class GLTarget {
         GLenum   m_colorFormat;
 
         Vkm::GL::FrameBuffer m_fbo;
-        std::array<GLenum, 4> m_drawBuffers{};  ///< The FBO's draw-buffer set, as last issued.
-        int                   m_drawBufferCount = -1;  ///< Its length; -1 until the first is issued.
 
-        std::array<std::unique_ptr<Texture>, ATTACHMENT_COUNT> m_textures;
+        std::array<std::unique_ptr<Vkm::GL::Texture2D>, ATTACHMENT_COUNT> m_textures;
 };
 
 } // namespace Vkm::Engine

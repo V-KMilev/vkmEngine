@@ -43,6 +43,9 @@ class ScreenTriangle {
 
         void unbind() const { m_vao.unbind(); }
 
+        /// The empty VAO, which another attribute-less draw issues through once bind() has bound it.
+        const Vkm::GL::VertexArray& array() const { return m_vao; }
+
         /**
          * @brief Issue the 3-vertex fullscreen draw.
          *

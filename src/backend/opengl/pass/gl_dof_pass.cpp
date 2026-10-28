@@ -23,7 +23,7 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (view.camera.dofAmount <= 0.0f) return;
 
-    // Into the free scratch while sampling the current colour, then flip the chain.
+    // Into the free scratch while sampling the current color, then flip the chain.
     ctx.colorDst->bind(ctx.gl);
     ctx.gl.setDepthTest(false);
 

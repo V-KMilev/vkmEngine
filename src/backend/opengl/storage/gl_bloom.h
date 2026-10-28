@@ -13,8 +13,9 @@ namespace Vkm::Engine {
 /**
  * @brief The bloom's mip chain (COD/Jimenez).
  *
- * RGBA16F at half the viewport, filled by GLBloomPass; mip 0 holds the final bloom. Owns only
- * the policy (size, mip count, format); the Vkm::GL::MipChainTexture owns the GL.
+ * RGBA16F at half the scene's size (after renderScale), filled by GLBloomPass; mip 0 holds the
+ * final bloom. Owns only the policy (size, mip count, format); the Vkm::GL::MipChainTexture owns
+ * the GL.
  */
 class GLBloom {
     public:

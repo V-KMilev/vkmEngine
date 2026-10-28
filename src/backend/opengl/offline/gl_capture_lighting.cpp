@@ -26,7 +26,7 @@ uint64_t lightingDigest(const std::vector<LightData>& lights, const Math::AABB* 
     uint64_t digest = FNV1A_OFFSET_BASIS;
     const auto mix = [&digest](const auto& field) { digest = fnv1a64Bytes(&field, sizeof(field), digest); };
     for (const LightData& light : lights) {
-        if (light.transient || (region && !reaches(light, *region))) continue;
+        if (!light.inCaptures || (region && !reaches(light, *region))) continue;
         mix(light.type);
         mix(light.color);
         mix(light.intensity);

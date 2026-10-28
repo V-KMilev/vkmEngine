@@ -2,12 +2,14 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 #include "resource/asset/material_asset.h"
 
 namespace Vkm::GL {
     class ComputeShader;
     class Texture2D;
+    class Texture2DArray;
 }
 
 namespace Vkm::Engine {
@@ -46,7 +48,7 @@ class GLLayerMaps {
         };
 
     public:
-        GLLayerMaps() = default;
+        GLLayerMaps();
         ~GLLayerMaps();
 
         GLLayerMaps(const GLLayerMaps& other) = delete;
@@ -73,15 +75,6 @@ class GLLayerMaps {
         void bind() const;
 
     private:
-        /// One array: its storage, the view it is sampled through, and its size.
-        struct Array {
-            uint32_t texture = 0;
-            uint32_t view    = 0;  ///< The albedo's sRGB view; the storage itself for the others.
-            uint32_t width   = 0;
-            uint32_t height  = 0;
-            uint32_t levels  = 0;
-        };
-
         /// The maps one array is filled from, what each holds, and what fills a layer without one.
         struct Fill {
             std::array<const Vkm::GL::Texture2D*, MaterialAsset::MAX_LAYERS> sources{};
@@ -98,15 +91,18 @@ class GLLayerMaps {
          * @param fill  Its sources.
          * @param copy  The layer copy program.
          */
-        static void fillArray(Array& array, const Fill& fill, const Vkm::GL::ComputeShader& copy);
-
-        /// Delete @p array's textures.
-        static void release(Array& array);
+        static void fillArray(
+            std::unique_ptr<Vkm::GL::Texture2DArray>& array,
+            const Fill& fill,
+            const Vkm::GL::ComputeShader& copy
+        );
 
     private:
-        std::array<Array, 3> m_arrays;      ///< Albedo, normal, AO/roughness/metallic.
-        uint64_t             m_key   = 0;   ///< What they were last built from.
-        bool                 m_built = false;
+        /// Albedo, normal, AO/roughness/metallic.
+        std::array<std::unique_ptr<Vkm::GL::Texture2DArray>, 3> m_arrays;
+
+        uint64_t m_key   = 0;  ///< What they were last built from.
+        bool     m_built = false;
 };
 
 } // namespace Vkm::Engine

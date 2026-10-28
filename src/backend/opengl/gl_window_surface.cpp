@@ -7,6 +7,7 @@
 #include <GL/glew.h>
 
 #include "gl_debug.h"
+#include "gl_shader_base.h"
 #include "logger.h"
 
 #include "platform/window/glfw_include.h"
@@ -39,6 +40,9 @@ void GLWindowSurface::attach(GLFWwindow* window) {
 
     // Asynchronous: synchronous debug output keeps the driver from running ahead of the caller.
     Vkm::GL::enableGLDebugLogging(false);
+    // Every program built after this compiles on the driver's threads; the backend's startup
+    // waits for them behind the chrome rather than one at a time with the window frozen.
+    if (!Vkm::GL::ShaderBase::compileInParallel()) LOG_INFO("This driver compiles shaders one at a time");
     glfwSwapInterval(0);
 }
 

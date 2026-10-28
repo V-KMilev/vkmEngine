@@ -1,12 +1,10 @@
 #include "pass/gl_shadow_pass.h"
 
-#include <GL/glew.h>
-
 #include "gl_context.h"
 #include "gl_shader.h"
-#include "gl_error_handle.h"
 
 #include "gl_frame_context.h"
+#include "gl_screen_triangle.h"
 #include "gl_view.h"
 #include "asset/gl_material.h"
 #include "asset/gl_mesh.h"
@@ -35,6 +33,7 @@ GLShadowPass::GLShadowPass()
         {Vkm::GL::Shader("shaders/shadow/depth_masked"), true},
         {Vkm::GL::Shader("shaders/shadow/depth_masked_skinned"), true}
     }
+    , m_restore("shaders/shadow/restore")
 {}
 
 GLShadowPass::~GLShadowPass() = default;
@@ -67,23 +66,39 @@ bool GLShadowPass::uploadCasters(GLFrameContext& ctx) {
     const GLShadowData& plan = ctx.shadowData;
 
     // Which tiles and faces draw is asked once, here. The atlas records a tile's contents when
-    // render2D and renderCube clear it, so every tile not held is cleared below, casters or none.
+    // render2D and renderCube begin it, so every tile not held is drawn below, casters or none:
+    // cleared, or for a tile with a layer written whole from the layer.
     m_list.clear();
     m_draws.clear();
     std::vector<uint32_t>& instances = m_list.instances();
-    const auto place = [&](const ShadowCasterBatch& batch, bool held) {
-        if (held) return TileDraws{HELD, HELD};
+    const auto take = [&](const ShadowCasterBatch& batch) {
         const uint32_t first = static_cast<uint32_t>(instances.size());
         instances.insert(instances.end(), batch.order.begin(), batch.order.end());
         ++m_tilesDrawn;
-        return addCasters(ctx, batch, first);
+        return first;
+    };
+    const auto place = [&](const ShadowCasterBatch& batch, bool held) {
+        if (held) return TileDraws{HELD, HELD};
+        return addCasters(ctx, batch, take(batch), Casters::All);
     };
 
+    // A tile with a layer draws its fixed casters into the layer only when it does not hold them,
+    // and over it only what moves.
     const std::vector<Shadow2DJob>& jobs2D = plan.jobs2D();
     m_tiles2D.resize(jobs2D.size());
+    m_layers2D.assign(jobs2D.size(), TileDraws{HELD, HELD});
     for (size_t j = 0; j < jobs2D.size(); ++j) {
         const ShadowCasterBatch& batch = plan.batch2D(j);
-        m_tiles2D[j] = place(batch, ctx.shadowAtlas.tileHolds(jobs2D[j].slot, batch.signature));
+        const bool               held  = ctx.shadowAtlas.tileHolds(jobs2D[j].slot, batch.signature);
+        if (held || !jobs2D[j].layered) {
+            m_tiles2D[j] = place(batch, held);
+            continue;
+        }
+        const uint32_t first = take(batch);
+        if (!ctx.shadowAtlas.layerHolds(batch.fixedSignature)) {
+            m_layers2D[j] = addCasters(ctx, batch, first, Casters::Fixed);
+        }
+        m_tiles2D[j] = addCasters(ctx, batch, first, Casters::Moving);
     }
     const std::vector<ShadowCubeJob>& jobsCube = plan.jobsCube();
     m_tilesCube.resize(jobsCube.size() * 6);
@@ -107,7 +122,8 @@ bool GLShadowPass::uploadCasters(GLFrameContext& ctx) {
 GLShadowPass::TileDraws GLShadowPass::addCasters(
     const GLFrameContext& ctx,
     const ShadowCasterBatch& batch,
-    uint32_t first
+    uint32_t first,
+    Casters which
 ) {
     const GLView&                  glView = ctx.resources;
     const std::vector<ObjectDraw>& draws  = ctx.view.objects->draws;
@@ -118,6 +134,7 @@ GLShadowPass::TileDraws GLShadowPass::addCasters(
     std::vector<DrawCommand>& commands = m_list.commands();
     const uint32_t tileFirst = static_cast<uint32_t>(m_draws.size());
     for (const ShadowRun& run : batch.runs) {
+        if (which != Casters::All && run.fixed != (which == Casters::Fixed)) continue;
         const ObjectDraw& draw = draws[batch.order[run.first]];
         const GLMesh*     mesh = glView.getMesh(draw.mesh);
         if (!mesh) continue;
@@ -145,26 +162,48 @@ void GLShadowPass::render2D(GLFrameContext& ctx) {
     if (jobs.empty()) return;
 
     // A cascade's casters nearer the sun than its near plane are flattened onto
-    // it rather than clipped (Shadow2DJob::cascade). Enabled raw: the Context
-    // does not model depth clamping, and it is off again before the cubes.
-    bool clamped = false;
-    const auto clampDepth = [&](bool clamp) {
-        if (clamp == clamped) return;
-        if (clamp) VKM_GL_CHECK(glEnable(GL_DEPTH_CLAMP));
-        else       VKM_GL_CHECK(glDisable(GL_DEPTH_CLAMP));
-        clamped = clamp;
-    };
+    // it rather than clipped (Shadow2DJob::cascade); it is off again before the cubes.
+    const auto clampDepth = [&](bool clamp) { ctx.gl.setDepthClamp(clamp); };
 
     ctx.shadowAtlas.begin2D(ctx.gl);
+    bool restored = false;
     for (size_t j = 0; j < jobs.size(); ++j) {
         if (m_tiles2D[j].first == HELD) continue;
-        clampDepth(jobs[j].cascade);
-        ctx.shadowAtlas.beginTile(ctx.gl, jobs[j].slot, ctx.shadowData.batch2D(j).signature);
-        // gl_FragCoord counts from the atlas's corner, the grid from the tile's.
-        beginTile(jobs[j].lightVP, jobs[j].ditherOrigin - ctx.shadowAtlas.tileCorner(jobs[j].slot));
+        const Shadow2DJob&       job   = jobs[j];
+        const ShadowCasterBatch& batch = ctx.shadowData.batch2D(j);
+        clampDepth(job.cascade);
+        // gl_FragCoord counts from the drawn texture's corner, the grid from the tile's; the layer
+        // lies at its texture's.
+        if (job.layered) {
+            if (m_layers2D[j].first != HELD) {
+                ctx.shadowAtlas.beginLayer(ctx.gl, batch.fixedSignature);
+                beginTile(job.lightVP, job.ditherOrigin);
+                drawTile(ctx.resources, m_layers2D[j]);
+            }
+            ctx.shadowAtlas.resumeTile(ctx.gl, job.slot, batch.signature);
+            restoreLayer(ctx, job.slot);
+            restored = true;
+        } else {
+            ctx.shadowAtlas.beginTile(ctx.gl, job.slot, batch.signature);
+        }
+        beginTile(job.lightVP, job.ditherOrigin - ctx.shadowAtlas.tileCorner(job.slot));
         drawTile(ctx.resources, m_tiles2D[j]);
     }
     clampDepth(false);
+    // The layer borrowed the raw atlas's unit.
+    if (restored) ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
+}
+
+void GLShadowPass::restoreLayer(GLFrameContext& ctx, uint32_t slot) {
+    ctx.shadowAtlas.bindLayer(GLBindings::ShadowTextureSlots::LAYER);
+    m_restore.bind();
+    m_bound = &m_restore;
+    const glm::ivec2 shift(-ctx.shadowAtlas.tileCorner(slot));
+    m_restore.setUniform2i("u_shift", shift.x, shift.y);
+    // Written whatever the tile held: it is not cleared first.
+    ctx.gl.setDepthFunc(GL_ALWAYS);
+    ctx.screenTri.draw();
+    ctx.gl.setDepthFunc(GLDepth::SHADOW_TEST);
 }
 
 void GLShadowPass::renderCube(GLFrameContext& ctx) {

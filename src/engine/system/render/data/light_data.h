@@ -57,9 +57,11 @@ struct LightData {
      */
     float sourceRadius = 0.0f;
 
-    /// A particle emitter's (ParticleEmitter::lightIntensity): gone in a moment, so it is made with
-    /// castShadows off and no capture bakes it.
-    bool transient = false;
+    /// Whether a capture takes it: Light::inCaptures, and never a particle emitter's
+    /// (ParticleEmitter::lightIntensity), which is gone in a moment and casts no shadow either.
+    bool inCaptures = true;
+
+    bool movable = true;  ///< Light::movable: off, its shadow on fixed meshes is their lightmap's.
 };
 
 /**

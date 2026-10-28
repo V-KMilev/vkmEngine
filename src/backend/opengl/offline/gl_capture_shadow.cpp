@@ -14,7 +14,6 @@
 
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
-#include "asset/gl_material.h"
 #include "frame/gl_lights.h"
 #include "frame/gl_object_buffer.h"
 #include "gl_view.h"
@@ -36,9 +35,7 @@ constexpr float SHADOW_DIRECTION_STEPS = 256.0f;
 
 } // namespace
 
-GLCaptureShadow::GLCaptureShadow()
-    : m_depth("shaders/shadow/depth")
-    , m_masked("shaders/shadow/depth_masked") {}
+GLCaptureShadow::GLCaptureShadow() = default;
 
 GLCaptureShadow::~GLCaptureShadow() = default;
 
@@ -162,46 +159,16 @@ void GLCaptureShadow::draw(
         compare.magFilter = Vkm::GL::TextureMagFilter::Linear;
         compare.wrapS     = Vkm::GL::TextureWrap::ClampToEdge;
         compare.wrapT     = Vkm::GL::TextureWrap::ClampToEdge;
-        compare.compare   = Vkm::GL::TextureCompare::LessEqual;
+        compare.compare   = GLDepth::SHADOW_COMPARE;
         m_sampler = std::make_unique<Vkm::GL::Sampler>(compare);
     }
 
-    // Casters through the static depth programs (bind pose, as the capture draws a character),
-    // a cutout through the one its material cuts.
+    // Casters in their bind pose, as the capture draws a character.
     m_fbo.bind();
     m_fbo.attachTexture(GL_DEPTH_ATTACHMENT, shadow.map->getID());
     m_fbo.setDrawBuffer(GL_NONE);
     m_fbo.setReadBuffer(GL_NONE);
-    gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));
-    gl.setDepthTest(true);
-    gl.setDepthWrite(true);
-    gl.setDepthFunc(GLDepth::SHADOW_TEST);
-    gl.setBlending(false);
-    gl.setFaceCulling(false);
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
-
-    m_batcher.buildGrouped(m_overRegion, scene, glView, 0);
-    m_masked.bind();
-    m_masked.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    m_masked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
-    m_depth.bind();
-    m_depth.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    objects.bind();
-    const Vkm::GL::Shader* bound = &m_depth;
-    for (const InstanceDraw& draw : m_batcher.draws()) {
-        const GLMaterial* material = glView.getMaterial(draw.material);
-        const bool        masked   = material && material->cutsItsShadow();
-        Vkm::GL::Shader&  program  = masked ? m_masked : m_depth;
-        if (&program != bound) {
-            program.bind();
-            bound = &program;
-        }
-        if (masked) {
-            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-            material->bindTextures(glView);
-        }
-        m_batcher.draw(gl, draw);
-    }
+    m_casters.draw(gl, m_overRegion, scene, glView, objects, GLDepth::shadowProjection(lightVP), SHADOW_RES);
 
     // One "cascade" covering everything: the whole map, and a split no view
     // depth reaches.

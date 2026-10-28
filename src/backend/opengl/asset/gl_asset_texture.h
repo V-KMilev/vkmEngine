@@ -12,6 +12,7 @@ namespace Vkm::Engine {
 
 struct TextureAsset;
 struct FontAsset;
+struct DecodedImage;
 
 /**
  * @brief GPU copy of a 2D texture-shaped asset (wraps Vkm::GL::Texture2D).
@@ -87,7 +88,7 @@ class GLTexture {
 };
 
 /**
- * @brief Decode the image at @p path and upload it as sRGB colour, with a mip chain.
+ * @brief Decode the image at @p path and upload it as sRGB color, with a mip chain.
  *
  * For a picture the host shows and no asset describes, so it is read straight off disk. The
  * chain keeps an image drawn several times smaller than its pixels from shedding its fine
@@ -98,5 +99,14 @@ class GLTexture {
  * @return The texture, or null when the file does not decode.
  */
 std::unique_ptr<Vkm::GL::Texture2D> uploadImageFile(const std::string& path);
+
+/**
+ * @brief uploadImageFile's upload, for pixels already decoded.
+ *
+ * @param image The decoded pixels; isValid().
+ * @param name  What the texture is called, for the debugger.
+ * @return The texture.
+ */
+std::unique_ptr<Vkm::GL::Texture2D> uploadImage(const DecodedImage& image, const std::string& name);
 
 } // namespace Vkm::Engine

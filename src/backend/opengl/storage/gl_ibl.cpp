@@ -12,7 +12,7 @@ void GLIBL::createTargets() {
     if (m_cubes[0].env.getID() != 0) return;
     if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::GL::FrameBuffer>();
 
-    // RGBA16F: rendered into, and GL makes RGB16F colour-renderable only optionally. Not
+    // RGBA16F: rendered into, and GL makes RGB16F color-renderable only optionally. Not
     // R11F_G11F_B10F: this cube is an HDR sky's skybox, and a sky gradient bands at 6-bit mantissas.
     for (Cubes& set : m_cubes) {
         set.env.create(ENV_SIZE, ENV_MIPS, GL_RGBA16F, true);

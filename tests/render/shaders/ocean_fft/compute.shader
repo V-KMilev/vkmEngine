@@ -1,5 +1,5 @@
 /**
- * ocean_ripples.glsl's line transform of two single frequencies, one in each half of a line;
+ * The line transform the ripples take (ocean_fft.glsl) of two single frequencies, one in each half of a line;
  * tests/render/render_tests.cpp checks each against its plane wave.
  */
 layout(local_size_x = GROUP_OCEAN_FFT) in;
@@ -17,8 +17,8 @@ void main() {
     for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) {
         const vec2 first  = int(i) == u_bins.x ? vec2(1.0, 0.0) : vec2(0.0);
         const vec2 second = int(i) == u_bins.y ? vec2(1.0, 0.0) : vec2(0.0);
-        s_line[rippleShuffled(i)] = vec4(first, second);
+        s_fft[fftShuffled(i)] = vec4(first, second);
     }
-    rippleTransform(t);
-    for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) u_line.texel[i] = s_line[i];
+    fftTransform(t);
+    for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) u_line.texel[i] = s_fft[i];
 }

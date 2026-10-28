@@ -1,9 +1,6 @@
 #include "gl_pass.h"
 
-#include <GL/glew.h>
-
 #include "gl_context.h"
-#include "gl_error_handle.h"
 #include "gl_frame_buffer.h"
 #include "gl_shader.h"
 
@@ -22,6 +19,10 @@ void GLPass::promoteColorChain(GLFrameContext& ctx) const {
     if (ctx.colorSrc != &ctx.sceneHDR) return;
     ctx.colorDst->blitColorFrom(*ctx.colorSrc);
     ctx.flipColor();
+}
+
+bool GLPass::reflecting(const GLFrameContext& ctx) {
+    return ctx.view.settings.ssr || ctx.planarCount > 0;
 }
 
 void GLPass::bindBackbufferViewport(GLFrameContext& ctx) const {
@@ -76,16 +77,16 @@ void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader,
 
     // The baked SH volume, and the box that places a point in its grid.
     if (ctx.irradiance.isReady() && view.hasIrradianceVolume) {
-        ctx.irradiance.bindForShading(shader, view.irradianceVolume);
+        ctx.irradiance.bindForShading(shader, ctx.irradiance.placed(view.irradianceVolume));
     } else {
         shader.setUniform1i("u_hasIrradianceVolume", 0);
     }
 }
 
-void GLPass::setReflectRoughnessWritable(bool writable) const {
+void GLPass::setReflectRoughnessWritable(Vkm::GL::Context& gl, bool writable) const {
     // A draw-buffer index, which is the output location.
-    constexpr GLuint WEIGHT = GLBindings::FragmentOutputs::REFLECT_WEIGHT;
-    VKM_GL_CHECK(glColorMaski(WEIGHT, GL_TRUE, GL_TRUE, GL_TRUE, writable ? GL_TRUE : GL_FALSE));
+    constexpr uint32_t WEIGHT = GLBindings::FragmentOutputs::REFLECT_WEIGHT;
+    gl.setColorMask(WEIGHT, true, true, true, writable);
 }
 
 } // namespace Vkm::Engine

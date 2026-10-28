@@ -13,7 +13,7 @@ namespace Vkm::Engine {
  *
  * Columns: GLBindings namespace, name, value, the #define GLBackend::shaderConstants gives every
  * stage, and a note. Material maps take the lowest units, then shadows, IBL and post; a pass that
- * reads no material map reuses the low ones. A fragment output is the scene target's colour
+ * reads no material map reuses the low ones. A fragment output is the scene target's color
  * attachment of that number: GLTarget indexes draw-buffer lists by location.
  *
  * Every texture unit up to MAX_TEXTURE_UNIT is spoken for: a new one shares a unit whose owner no
@@ -35,6 +35,8 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
+    X(SSBOBindingPoints,      INSTANCE_LIGHTMAP,     8,  SSBO_INSTANCE_LIGHTMAP,              Per object: its lightmap page and place (shaders/lightmap.glsl))     \
+    X(SSBOBindingPoints,      OCEAN_SWELL,           9,  SSBO_OCEAN_SWELL,                    The ocean swell grids and their foam - read by the wave vertices)    \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
     X(SSBOBindingPoints,      INSTANCE_BOXES,        11, SSBO_INSTANCE_BOXES,                 Per object: its world box from the CPU cull (read by the GPU cull))  \
     X(SSBOBindingPoints,      CULL_VISIBLE,          12, SSBO_CULL_VISIBLE,                   Per object: whether the last cull saw it)                            \
@@ -43,16 +45,19 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      RELIGHT_LIGHTS,        15, SSBO_RELIGHT_LIGHTS,                 The lights reaching each irradiance probe cell (the relight))        \
     X(SSBOBindingPoints,      CULL_SOURCE,           16, SSBO_CULL_SOURCE,                    The opaque batch instances the GPU cull sorts)                       \
     X(SSBOBindingPoints,      EXPOSURE_HISTOGRAM,    17, SSBO_EXPOSURE_HISTOGRAM,             The log-luminance histogram of the frame (auto-exposure))            \
+    X(SSBOBindingPoints,      OCEAN_SWELL_SPECTRUM,  18, SSBO_OCEAN_SWELL_SPECTRUM,           The ocean swell cascades spectra the swell is drawn from)            \
+    X(SSBOBindingPoints,      DEBUG_LINES,           19, SSBO_DEBUG_LINES,                    The frame debug lines (shaders/debug))                               \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
     X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \
-    X(ShadowTextureSlots,     ATLAS_2D_RAW,          25, SHADOW_SLOT_ATLAS_2D_RAW,            The atlas uncompared (sampler2D): a unit holds one comparison mode) \
+    X(ShadowTextureSlots,     ATLAS_2D_RAW,          25, SHADOW_SLOT_ATLAS_2D_RAW,            The atlas uncompared (sampler2D): a unit holds one compare mode)     \
+    X(ShadowTextureSlots,     LAYER,                 25, SHADOW_SLOT_LAYER,                   The shadow layer - ATLAS_2D_RAW unit: the shadow pass binds it back) \
     X(IBLTextureSlots,        IRRADIANCE,            14, IBL_SLOT_IRRADIANCE,                 Diffuse irradiance cubemap (samplerCube))                            \
     X(IBLTextureSlots,        PREFILTER,             15, IBL_SLOT_PREFILTER,                  Roughness-prefiltered specular cubemap (samplerCube))                \
     X(IBLTextureSlots,        BRDF_LUT,              16, IBL_SLOT_BRDF_LUT,                   Split-sum BRDF/DFG LUT (sampler2D))                                  \
     X(IBLTextureSlots,        ENV_CUBE,              17, IBL_SLOT_ENV_CUBE,                   Sharp environment cubemap for the skybox (samplerCube))              \
-    X(OceanTextureSlots,      SHORE,                 17, OCEAN_SLOT_SHORE,                    Metres to what breaks the ocean (sampler2D) - ENV_CUBE unit: the sky is drawn) \
-    X(CompositeTextureSlots,  SCENE,                 0,  COMPOSITE_SLOT_SCENE,                Final post-chain colour (u_hdr))                                     \
+    X(OceanTextureSlots,      SHORE,                 17, OCEAN_SLOT_SHORE,                    Metres to what breaks the ocean - ENV_CUBE unit: the sky is drawn)   \
+    X(CompositeTextureSlots,  SCENE,                 0,  COMPOSITE_SLOT_SCENE,                Final post-chain color (u_hdr))                                      \
     X(CompositeTextureSlots,  BLOOM,                 1,  COMPOSITE_SLOT_BLOOM,                Bloom mip 0 (u_bloom))                                               \
     X(BloomTextureSlots,      SOURCE,                0,  BLOOM_SLOT_SOURCE,                   Downsample/upsample source (u_src))                                  \
     X(BakeTextureSlots,       SOURCE,                0,  BAKE_SLOT_SOURCE,                    The equirect (u_equirect) or the env cube (u_envCube))               \
@@ -65,7 +70,13 @@ namespace Vkm::Engine {
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
     X(OverlayTextureSlots,    SPLASH_CAPTION,        1,  SPLASH_SLOT_CAPTION,                 The line at the foot of the splash (u_caption))                      \
+    X(OverlayTextureSlots,    SPLASH_SHAPE,          2,  SPLASH_SLOT_SHAPE,                   How far inside the splash logo each texel is (u_shape))              \
+    X(OverlayTextureSlots,    SPLASH_GLOW,           3,  SPLASH_SLOT_GLOW,                    The splash logo blurred near and wide past its edge (u_glow))        \
+    X(OverlayTextureSlots,    LOADING_WATER,         0,  LOADING_SLOT_WATER,                  The loading screen water: its heights and their speeds (u_water))    \
     X(IrradianceRelightSlots, SURFELS,               0,  RELIGHT_SLOT_SURFELS,                What the irradiance probes see as surfaces to light (u_surfels))     \
+    X(LightmapBakeSlots,      POSITION,              0,  LIGHTMAP_BAKE_SLOT_POSITION,         Where each lightmap texel lies - w = 1 where a receiver does)        \
+    X(LightmapBakeSlots,      NORMAL,                1,  LIGHTMAP_BAKE_SLOT_NORMAL,           The way each lightmap texel faces)                                   \
+    X(LightmapBakeSlots,      DEPTH,                 2,  LIGHTMAP_BAKE_SLOT_DEPTH,            The maps of a fixed light - a layer a view (sampler2DArray))         \
     X(CullTextureSlots,       DEPTH,                 0,  CULL_SLOT_DEPTH,                     The scene depth the pyramid is built from (u_depth))                 \
     X(CullTextureSlots,       DEPTH_MS,              1,  CULL_SLOT_DEPTH_MS,                  The same while it is multisample (u_depthMS))                        \
     X(CullTextureSlots,       PYRAMID,               2,  CULL_SLOT_PYRAMID,                   The farthest-depth pyramid the cull tests boxes against)             \
@@ -73,11 +84,12 @@ namespace Vkm::Engine {
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \
     X(ReflectionTextureSlots, CHAIN,                 3,  REFLECT_SLOT_CHAIN,                  The lit scene as a filtered mip chain that a hit reads)              \
-    X(ReflectionTextureSlots, PLANAR_0,              4,  REFLECT_SLOT_PLANAR_0,               The first planar reflector picture as a filtered mip chain)           \
+    X(ReflectionTextureSlots, PLANAR_0,              4,  REFLECT_SLOT_PLANAR_0,               The first planar reflector picture as a filtered mip chain)          \
     X(ReflectionTextureSlots, PLANAR_1,              5,  REFLECT_SLOT_PLANAR_1,               The second planar reflector picture)                                 \
-    X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene colour: refraction backdrop and a post pass source)            \
+    X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene color: refraction backdrop and a post pass source)             \
     X(PostTextureSlots,       SCENE_DEPTH,           19, POST_SLOT_SCENE_DEPTH,               Scene depth texture)                                                 \
     X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: the oct view-normal)                                 \
+    X(LightmapTextureSlots,   MASK,                  20, LIGHTMAP_SLOT_MASK,                  Baked shadows - SCENE_GBUFFER unit: unread by the forward pass)      \
     X(PostTextureSlots,       AO,                    21, POST_SLOT_AO,                        GTAO factor + bent normal; the cascaded sun screen shadow in alpha)  \
     X(ProbeTextureSlots,      IRRADIANCE,            22, PROBE_SLOT_IRRADIANCE,               samplerCubeArray of every probe irradiance)                          \
     X(ProbeTextureSlots,      PREFILTER,             23, PROBE_SLOT_PREFILTER,                samplerCubeArray of every probe prefilter)                           \
@@ -88,7 +100,7 @@ namespace Vkm::Engine {
     X(IrradianceVolumeSlots,  SH3,                   29, IRRADIANCE_SLOT_SH3,                 Baked SH-L1 coefficient 3 (sampler3D))                               \
     X(PostTextureSlots,       AERIAL_PERSPECTIVE,    30, POST_SLOT_AERIAL_PERSPECTIVE,        The sky air in front of the view (sampler3D) read through fog.glsl)  \
     X(PostTextureSlots,       AO_DEPTH,              31, POST_SLOT_AO_DEPTH,                  GTAO linear-depth mip chain)                                         \
-    X(OceanTextureSlots,      RIPPLES,               31, OCEAN_SLOT_RIPPLES,                  The ocean ripple fields (sampler2DArray) - AO_DEPTH unit: GTAO is done)   \
+    X(OceanTextureSlots,      RIPPLES,               31, OCEAN_SLOT_RIPPLES,                  Ocean ripple fields (sampler2DArray) - AO_DEPTH unit: GTAO is done)  \
     X(TextureSlots,           ALBEDO,                0,  MATERIAL_SLOT_ALBEDO,                Material map; the slot is also its bit in MaterialUBO.textureFlags)  \
     X(TextureSlots,           NORMAL,                1,  MATERIAL_SLOT_NORMAL,                Material map)                                                        \
     X(TextureSlots,           METALLIC_ROUGHNESS,    2,  MATERIAL_SLOT_METALLIC_ROUGHNESS,    Material map)                                                        \
@@ -105,9 +117,10 @@ namespace Vkm::Engine {
     X(VertexAttributes,       UV,                    2,  ATTR_UV,                             Mesh-pool stream)                                                    \
     X(VertexAttributes,       TANGENT,               3,  ATTR_TANGENT,                        Mesh-pool stream)                                                    \
     X(VertexAttributes,       INSTANCE,              4,  ATTR_INSTANCE,                       The object an instance draws: its index into the per-object buffers) \
+    X(VertexAttributes,       LIGHTMAP_UV,           5,  ATTR_LIGHTMAP_UV,                    Mesh-pool lightmap stream; static layout alone)                      \
     X(VertexAttributes,       BONES,                 8,  ATTR_BONES,                          Mesh-pool skin stream)                                               \
     X(VertexAttributes,       WEIGHTS,               9,  ATTR_WEIGHTS,                        Mesh-pool skin stream)                                               \
-    X(FragmentOutputs,        COLOR,                 0,  OUT_COLOR,                           The lit HDR colour)                                                  \
+    X(FragmentOutputs,        COLOR,                 0,  OUT_COLOR,                           The lit HDR color)                                                   \
     X(FragmentOutputs,        GBUFFER,               1,  OUT_GBUFFER,                         Oct view normal)                                                     \
     X(FragmentOutputs,        REFLECT_WEIGHT,        2,  OUT_REFLECT_WEIGHT,                  The environment reflection weight (rgb) + roughness (a))             \
     X(FragmentOutputs,        REFLECT_ENV,           3,  OUT_REFLECT_ENV,                     That weight times the probe / sky radiance)                          \
@@ -116,7 +129,8 @@ namespace Vkm::Engine {
     X(ComputeGroups,          SCREEN_SHADOW,         64, GROUP_SCREEN_SHADOW,                 Pixels a wavefront marches toward the light)                         \
     X(ComputeGroups,          CULL,                  64, GROUP_CULL,                          Instances the GPU occlusion cull sorts per group)                    \
     X(ComputeGroups,          FILL,                  64, GROUP_FILL,                          Refused irradiance probes filled per group)                          \
-    X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across a line of an ocean ripple field: half its texels)
+    X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across an ocean ripple field line: half its texels) \
+    X(ComputeGroups,          SWELL_FFT,             32, GROUP_SWELL_FFT,                     A butterfly each across a line of a swell cascade: half its texels)
 
 /**
  * @brief The fixed contract between the OpenGL backend and its GLSL shaders.

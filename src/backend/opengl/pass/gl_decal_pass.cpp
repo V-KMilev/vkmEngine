@@ -29,7 +29,7 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     const GLView&     glView = ctx.resources;
     if (view.decals.empty()) return;
 
-    // Blends into the colour chain while sampling the geometry target's depth +
+    // Blends into the color chain while sampling the geometry target's depth +
     // G-buffer - a different FBO, so no read-while-write feedback.
     promoteColorChain(ctx);
     ctx.colorSrc->bind(ctx.gl);
@@ -58,11 +58,16 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     bindAmbient(ctx, m_shader);
     bindAO(ctx, m_shader);
 
+    const GLMaterial* bound = nullptr;
     for (const DecalData& decal : view.decals) {
         const GLMaterial* material = glView.getMaterial(decal.material);
         if (!material) continue;
-        material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-        material->bindTextures(glView);
+        // RenderView keeps a material's decals together, so each binds once.
+        if (material != bound) {
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            material->bindTextures(glView);
+            bound = material;
+        }
 
         // A decal projects along its forward; a surface facing back up that ray
         // is the one it lands on.

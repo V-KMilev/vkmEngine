@@ -10,23 +10,9 @@
 #include "gl_texture_cube.h"
 #include "gl_context.h"
 
-namespace Vkm::Engine {
+#include "resource/texture_format.h"
 
-/**
- * @brief The levels of a whole mip chain from @p size down to one texel.
- *
- * What an environment the convolutions sample keeps: each sample reads the level its share of the
- * lobe covers, and the rarest samples of the widest lobes reach the last levels, which a cut chain
- * would clamp to texels each spanning several of theirs.
- *
- * @param size The base level's width, in texels.
- * @return How many levels, the base included.
- */
-constexpr int fullMipChain(int size) {
-    int levels = 1;
-    while ((size >> levels) > 0) ++levels;
-    return levels;
-}
+namespace Vkm::Engine {
 
 /**
  * @brief GPU-side image-based lighting product set (split-sum).
@@ -51,7 +37,9 @@ constexpr int fullMipChain(int size) {
 class GLIBL {
     public:
         static constexpr int ENV_SIZE        = 512;  ///< Environment cubemap face size
-        static constexpr int ENV_MIPS        = fullMipChain(ENV_SIZE);  ///< The whole chain.
+        /// The whole chain: each convolution sample reads the level its share of the lobe covers, and
+        /// the widest lobes' rarest samples reach the last, which a cut chain would clamp.
+        static constexpr int ENV_MIPS        = int(mipChainLength(ENV_SIZE, ENV_SIZE));
         static constexpr int IRRADIANCE_SIZE = 32;   ///< Diffuse irradiance face size
         static constexpr int PREFILTER_SIZE  = 512;  ///< Prefiltered specular base face size
         /// Roughness mip count, 512 down to 8.
@@ -100,10 +88,10 @@ class GLIBL {
         void unbindCaptureFbo() const { m_captureFbo->unbind(); }
 
         /**
-         * @brief Attach the back env cube's @p face as colour 0, sized to its viewport.
+         * @brief Attach the back env cube's @p face as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the env face size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
         void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             attachFace(gl, back().env, face, 0, ENV_SIZE);
@@ -115,20 +103,20 @@ class GLIBL {
         void generateEnvMips() const { back().env.generateMipmaps(); }
 
         /**
-         * @brief Attach the back irradiance cube's @p face as colour 0, sized to its viewport.
+         * @brief Attach the back irradiance cube's @p face as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the irradiance face size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
         void attachIrradianceFace(const Vkm::GL::Context& gl, int face) const {
             attachFace(gl, back().irradiance, face, 0, IRRADIANCE_SIZE);
         }
 
         /**
-         * @brief Attach the back prefilter cube's @p face / @p mip as colour 0, sized to its viewport.
+         * @brief Attach the back prefilter cube's @p face / @p mip as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the mip's size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          * @param mip  Roughness mip level being baked; halves the viewport per level.
          */
         void attachPrefilterFace(const Vkm::GL::Context& gl, int face, int mip) const {
@@ -136,7 +124,7 @@ class GLIBL {
         }
 
         /**
-         * @brief Attach the BRDF/DFG LUT as colour 0, sized to its viewport.
+         * @brief Attach the BRDF/DFG LUT as color 0, sized to its viewport.
          *
          * @param gl Live GL context whose viewport is set to the LUT size.
          */

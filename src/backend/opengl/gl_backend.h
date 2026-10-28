@@ -15,13 +15,16 @@
 #include "system/render/render_backend.h"
 #include "system/render/editor_render_hooks.h"
 
+#include "gl_forward_programs.h"
 #include "gl_target.h"
 #include "gl_view.h"
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_bloom.h"
 #include "frame/gl_camera.h"
 #include "frame/gl_ocean.h"
+#include "storage/gl_lightmaps.h"
 #include "storage/gl_ocean_fields.h"
+#include "storage/gl_ocean_shore.h"
 #include "storage/gl_cluster_grid.h"
 #include "offline/gl_cube_convolver.h"
 #include "storage/gl_fog_volume.h"
@@ -29,6 +32,7 @@
 #include "offline/gl_ibl_baker.h"
 #include "frame/gl_instance_batcher.h"
 #include "offline/gl_irradiance_baker.h"
+#include "offline/gl_lightmap_baker.h"
 #include "storage/gl_exposure.h"
 #include "storage/gl_irradiance_volume.h"
 #include "frame/gl_lights.h"
@@ -49,6 +53,7 @@ namespace Vkm::Engine {
 
 class GLPass;
 class GLPlanarReflectionPass;
+struct GLFrameContext;
 class WindowSurface;
 struct Environment;
 
@@ -115,6 +120,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         uint32_t reloadChangedShaders() override;
         uint32_t maxAnisotropy() const override;
         bool holdsPixels(const TextureHandle& texture, uint64_t version) const override;
+        RenderReadiness readiness() const override;
         bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override;
 
         /**
@@ -123,6 +129,27 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * @return The backend's cull of the opaque batch.
          */
         const GLOcclusionCull& occlusionCull() const { return m_occlusion; }
+
+        /**
+         * @brief The lightmap baker, as its last frame left it: for tests.
+         *
+         * @return The backend's baker.
+         */
+        const GLLightmapBaker& lightmapBaker() const { return m_lightmapBaker; }
+
+        /**
+         * @brief The reflection probes, as their last frame left them: for tests.
+         *
+         * @return The backend's probe manager.
+         */
+        const GLProbeManager& probeManager() const { return m_probes; }
+
+        /**
+         * @brief The planar reflection pass, as its last frame left it: for tests.
+         *
+         * @return The pass; init() has run.
+         */
+        const GLPlanarReflectionPass& planarReflections() const { return *m_planar; }
 
         /**
          * @brief The engine constants every shader stage is compiled with.
@@ -165,10 +192,44 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void onWorldReplaced(const RenderView& view, const ResourceManager& resources);
 
         /**
+         * @brief Whether every program built so far has compiled and been checked, latched once it
+         *        has; checks those the driver is done with, for a share of the frame.
+         *
+         * Until then a frame draws the chrome alone (drawChrome()): a world pass would wait on its
+         * program, holding the window. Programs built later, lazily, are waited on where used.
+         *
+         * @param quickOnly Whether to check only while checks are quick: what asks must not stall
+         *                  (the splash, a preview). A check that proved slow then stops them.
+         * @return True once all were ready.
+         */
+        bool programsReady(bool quickOnly);
+
+        /**
+         * @brief Draw a frame of the chrome alone - the splash and the loading screen, its water,
+         *        its UI and its bar - over black: until the world's programs are compiled and
+         *        checked, and while a loading screen covers the frame whole.
+         *
+         * @param view The frame's view, whose chrome is drawn.
+         */
+        void drawChrome(const RenderView& view);
+
+        /**
+         * @brief The context the passes of a frame of @p view read.
+         *
+         * @param view        The frame's view.
+         * @param sceneRender Where the scene draws: the multisampled target or the resolved one.
+         * @return The context, its frame-varying parts left at their defaults.
+         */
+        GLFrameContext frameContext(const RenderView& view, GLTarget& sceneRender);
+
+        /// Put the state every pass starts from: the default, with this frame's depth convention.
+        void passState();
+
+        /**
          * @brief Split the camera's objects into the opaque, alpha-mask and transparent buckets once.
          *
          * One material resolve each, shared by the passes. An object whose material has no GPU
-         * copy counts as opaque.
+         * copy counts as opaque. Notes whether any is water that is not the sea (m_waterShown).
          *
          * @param view Whose visible objects are split.
          */
@@ -263,11 +324,12 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         /// Every object's model matrix, once a frame.
         GLObjectBuffer m_objects;
 
-        // Lent to the offline renderers below and the forward pass in m_passes: one compile of
-        // the PBR ubershader and the convolution programs. Declared ahead of them, as they bind
+        // Lent to the offline renderers below and the passes in m_passes: one compile of each
+        // forward variant and of the convolution programs. Declared ahead of them, as they bind
         // references to them.
-        GLSceneCapture  m_sceneCapture;
-        GLCubeConvolver m_cubeConvolver;
+        GLForwardPrograms m_forwardPrograms;
+        GLSceneCapture    m_sceneCapture;
+        GLCubeConvolver   m_cubeConvolver;
 
         GLIBL         m_ibl;
         GLIBLBaker    m_iblBaker;     ///< Persistent: the procedural sky re-bakes whenever the sun moves.
@@ -277,22 +339,34 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
         GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
 
-        GLOceanFields      m_oceanFields;  ///< The ocean's ripple fields and shore.
+        GLOceanFields      m_oceanFields;  ///< The ocean's swell and ripple fields.
+        GLOceanShore       m_oceanShore;   ///< The sea's shore, for its waterline foam.
+        GLLightmaps        m_lightmaps;    ///< What fixed meshes read their fixed lights' shadows from.
         GLIrradianceVolume m_irradiance;       ///< Baked SH irradiance volume (GI).
         GLIrradianceBaker  m_irradianceBaker;  ///< Its bake, relight and their bookkeeping.
+        GLLightmapBaker    m_lightmapBaker;    ///< Fills m_lightmaps when the fixed world changes.
 
         GLProbeManager m_probes;        ///< Reflection-probe arrays, baker, bake state, UBO.
         GLExposure     m_exposure;      ///< Auto-exposure's histogram and its readback.
         GLPreview      m_preview;       ///< Editor material/mesh preview renders.
         PreviewScene   m_previewScene;  ///< The last frame's light and grade, which a preview takes.
 
+        // What the last frame went on to bake, of what readiness() counts.
+        bool m_bakes       = false;  ///< Anything: it had a camera to gather from.
+        bool m_bakesHeld   = false;  ///< Nothing yet: its world was arriving (RenderView::worldArriving).
+        bool m_bakesProbes = false;  ///< Its probes: they are on.
+
         // Per-frame draw buckets of object indices, refilled each frame with capacity kept.
         std::vector<uint32_t> m_opaque;
         std::vector<uint32_t> m_alphaMask;
         std::vector<uint32_t> m_transparent;
+        bool                  m_waterShown = false;  ///< A drawn surface is water: its ripples are wanted.
 
         std::vector<PassEntry> m_passes;
-        GLPlanarReflectionPass* m_planar = nullptr;  ///< In m_passes; readied before they run.
+        GLPlanarReflectionPass* m_planar = nullptr;       ///< In m_passes; readied before they run.
+        std::vector<GLPass*>    m_chrome;                 ///< In m_passes: what drawChrome() runs.
+        bool                    m_programsReady = false;  ///< programsReady(), latched.
+        bool                    m_checksSlow    = false;  ///< A program's check took long (programsReady()).
 
         /// HDR path of the currently baked IBL; empty when none (or the sky is procedural).
         std::string m_bakedEnvPath;

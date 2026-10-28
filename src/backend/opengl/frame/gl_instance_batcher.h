@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <GL/glew.h>
+
 #include "resource/asset/material_asset.h"
 
 #include "frame/gl_draw_list.h"
@@ -15,6 +17,22 @@ namespace Vkm::Engine {
 
 class GLView;
 struct RenderObjects;
+
+/**
+ * @brief Turn the winding for a draw that is mirrored, against the one in use: a mirror's own pass
+ *        has already turned it once.
+ *
+ * @param gl       The context, whose winding is turned.
+ * @param mirrored Whether the draw's instances are mirrored; false turns nothing.
+ * @return The winding to put back after the draw.
+ */
+GLenum turnForMirror(Vkm::GL::Context& gl, bool mirrored);
+
+/// Which of an object's meshes a build draws.
+enum class MeshOf {
+    Level,  ///< The level of detail the cull picked for the eye (ObjectDraw::mesh).
+    Base    ///< The mesh it was given (RenderObjects::bases), as what is baked from its shape draws it.
+};
 
 /**
  * @brief One multi-draw: consecutive runs sharing a program, material and vertex layout.
@@ -75,13 +93,16 @@ class GLInstanceBatcher {
          * @param view    GPU mirror the mesh handles resolve against.
          * @param bones   Matrices in the frame's palette. Zero means nothing posed: no mesh is
          *                resolved for the program bit, so a scene without characters pays nothing.
+         * @param meshes  Which of each object's meshes is drawn; Base only for objects the cull
+         *                wrote, which fills RenderObjects::bases.
          * @return The draws, in batch order.
          */
         const std::vector<InstanceDraw>& buildGrouped(
             const std::vector<uint32_t>& list,
             const RenderObjects& objects,
             const GLView& view,
-            uint32_t bones
+            uint32_t bones,
+            MeshOf meshes = MeshOf::Level
         );
 
         /**

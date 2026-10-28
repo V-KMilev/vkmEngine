@@ -35,14 +35,23 @@ class GLPass {
 
     protected:
         /**
-         * @brief Move the scene into the colour chain if it is still on the geometry target.
+         * @brief Move the scene into the color chain if it is still on the geometry target.
          *
          * An overlay samples the geometry target's depth and G-buffer, so drawing there would be
          * read-while-write feedback. Callers blend into ctx.colorSrc afterwards and do not flip.
          *
-         * @param ctx Whose colour chain is promoted.
+         * @param ctx Whose color chain is promoted.
          */
         void promoteColorChain(GLFrameContext& ctx) const;
+
+        /**
+         * @brief Whether a reflection is drawn this frame - traced, or a planar picture - and so
+         *        whether the reflection inputs are written and resolved.
+         *
+         * @param ctx The frame, past the planar pass.
+         * @return True while ssr is on or a planar picture was drawn.
+         */
+        static bool reflecting(const GLFrameContext& ctx);
 
         /**
          * @brief Bind the default framebuffer with the view's window-space viewport rect.
@@ -109,12 +118,12 @@ class GLPass {
          *
          * A blended surface writes zero into the reflection inputs at its opacity, dimming the
          * surface behind's reflection; that surface's roughness must not dim, so blended draws
-         * mask it. GLBackend::render does not reset a colour mask, and one left on would stop
-         * next frame's clear, so a pass that masks it unmasks it before returning.
+         * mask it. GLBackend::render puts the whole mask back before the next pass.
          *
+         * @param gl       The context the mask is set through.
          * @param writable False to protect the roughness, true to put it back.
          */
-        void setReflectRoughnessWritable(bool writable) const;
+        void setReflectRoughnessWritable(Vkm::GL::Context& gl, bool writable) const;
 };
 
 } // namespace Vkm::Engine

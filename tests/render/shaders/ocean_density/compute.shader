@@ -1,6 +1,6 @@
 /**
  * ocean_ripples.glsl's ripple density at each of a row of wavenumbers;
- * tests/render/render_tests.cpp checks it against OceanRipples::density on the CPU.
+ * tests/render/render_tests.cpp checks it against OceanSpectrum::density on the CPU.
  */
 layout(local_size_x = 64) in;
 

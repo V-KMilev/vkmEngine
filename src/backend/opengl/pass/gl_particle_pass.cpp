@@ -7,7 +7,6 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
-#include "gl_error_handle.h"
 #include "gl_stream_ring.h"
 #include "gl_texture.h"
 
@@ -111,7 +110,8 @@ void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<Parti
         }
         if (bindTexture(ctx, m_shader, batch[first].params.z, batch[first].uvNext.w)) {
             m_shader.setUniform1i("u_firstInstance", static_cast<int>(first));
-            VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(end - first)));
+            const auto run = static_cast<int32_t>(end - first);
+            ctx.screenTri.array().drawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, run);
         }
         first = end;
     }
@@ -153,14 +153,8 @@ void GLParticlePass::drawStrips(
             ++end;
         }
         if (bindTexture(ctx, m_strip, m_strips[first].texture)) {
-            VKM_GL_CHECK(
-                glMultiDrawArrays(
-                    GL_TRIANGLE_STRIP,
-                    m_firsts.data(),
-                    m_counts.data(),
-                    static_cast<GLsizei>(m_firsts.size())
-                )
-            );
+            const auto runs = static_cast<int32_t>(m_firsts.size());
+            ctx.screenTri.array().multiDrawArrays(GL_TRIANGLE_STRIP, m_firsts.data(), m_counts.data(), runs);
         }
         first = end;
     }
@@ -193,7 +187,7 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     // The depth the particles fade against, a copy: the target's own is attached as they draw.
     const auto width  = static_cast<uint32_t>(view.sceneWidth());
     const auto height = static_cast<uint32_t>(view.sceneHeight());
-    m_depthCopy.resize(width, height, 1, false);
+    m_depthCopy.resize(ctx.gl, width, height, 1, false);
     m_depthCopy.blitDepthFrom(ctx.sceneRender);
     m_depthCopy.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
 
@@ -206,10 +200,10 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
 
     // Depth-tested, never depth-writing. Into the reflection inputs too: a particle hides the
     // reflection behind it as it hides the surface (shaders/particle/shade.glsl).
-    ctx.sceneRender.bindForwardPass(ctx.gl);
+    ctx.sceneRender.bindForwardPass(ctx.gl, reflecting(ctx));
     ctx.gl.setDepthWrite(false);
     ctx.gl.setBlending(true);
-    setReflectRoughnessWritable(false);
+    setReflectRoughnessWritable(ctx.gl, false);
 
     for (Vkm::GL::Shader* program : {&m_shader, &m_strip}) {
         program->bind();
@@ -217,6 +211,8 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
         bindAmbient(ctx, *program);
         program->setUniform1i("u_useClusters", 1);
     }
+    m_shader.bind();
+    m_shader.setUniformMatrix3fv("u_mirror", glm::mat3(1.0f));
 
     // An alpha-blended particle is lit as it draws: the lights by its cluster, through their
     // shadows' hard lookups, which compare and never read the raw depth, and the environment
@@ -234,7 +230,7 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
         // reads it until the post passes draw over it.
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.colorDst->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
-        ctx.sceneRender.bindForwardPass(ctx.gl);  // the blit left the scratch bound
+        ctx.sceneRender.bindForwardPass(ctx.gl, reflecting(ctx));  // the blit left the scratch bound
         drawBlend(
             ctx,
             view.camera,
@@ -243,12 +239,12 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
             view.stripsDistortion
         );
     }
-    setReflectRoughnessWritable(true);
 }
 
 void GLParticlePass::drawMirrored(
     GLFrameContext& ctx,
     GLTarget& target,
+    GLTarget& depthCopy,
     glm::uvec2 size,
     const CameraData& eye,
     const glm::vec4& clip
@@ -278,9 +274,9 @@ void GLParticlePass::drawMirrored(
     }
     PROFILE_SCOPE("Particles/Mirrored");
 
-    m_mirrorDepth.resize(size.x, size.y, 1, false);
-    m_mirrorDepth.blitDepthFrom(target);
-    m_mirrorDepth.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
+    depthCopy.resize(ctx.gl, size.x, size.y, 1, false);
+    depthCopy.blitDepthFrom(target);
+    depthCopy.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
     if (!view.stripPoints.empty()) {
         const auto bytes = static_cast<uint32_t>(view.stripPoints.size() * sizeof(StripPoint));
         const Vkm::GL::BufferSpan points = ctx.resources.stream().write(view.stripPoints.data(), bytes);
@@ -300,6 +296,11 @@ void GLParticlePass::drawMirrored(
         program->setUniform1i("u_useClusters", 0);
         program->setUniform4fv("u_clipPlane", clip);
     }
+    // A card faces its eye, built on the camera's axes, and the mirror's projection flips it as it
+    // flips the scene. A strip lies in the world, so is flipped as it is.
+    const glm::vec3 normal = glm::normalize(glm::vec3(clip));
+    m_shader.bind();
+    m_shader.setUniformMatrix3fv("u_mirror", glm::mat3(1.0f) - 2.0f * glm::outerProduct(normal, normal));
 
     drawBlend(ctx, eye, ParticleBlend::Additive, m_seenAdditive, m_seenStrips[0]);
     drawBlend(ctx, eye, ParticleBlend::Alpha, m_seenAlpha, m_seenStrips[1]);

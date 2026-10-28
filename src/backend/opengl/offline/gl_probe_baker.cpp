@@ -18,31 +18,33 @@ namespace Vkm::Engine {
 
 namespace {
 
-/// A refresh's convolution, from the arrays' env cube into their staging layer.
-class StagingTarget final : public GLCubeConvolver::Target {
+/// The convolution, from the arrays' env cube into one of their layers.
+class LayerTarget final : public GLCubeConvolver::Target {
     public:
-        StagingTarget(Vkm::GL::Context& gl, GLProbeArray& arr) : m_gl(gl), m_arr(arr) {}
-        ~StagingTarget() override = default;
+        LayerTarget(Vkm::GL::Context& gl, GLProbeArray& arr, int layer)
+            : m_gl(gl)
+            , m_arr(arr)
+            , m_layer(layer) {}
+        ~LayerTarget() override = default;
 
-        StagingTarget(const StagingTarget& other) = delete;
-        StagingTarget& operator=(const StagingTarget& other) = delete;
+        LayerTarget(const LayerTarget& other) = delete;
+        LayerTarget& operator=(const LayerTarget& other) = delete;
 
-        StagingTarget(StagingTarget && other) = delete;
-        StagingTarget& operator=(StagingTarget && other) = delete;
+        LayerTarget(LayerTarget && other) = delete;
+        LayerTarget& operator=(LayerTarget && other) = delete;
 
     public:
         void makeSourceMips() override { m_arr.generateEnvMips(); }
         void bindSource() override { m_arr.bindEnvCube(GLBindings::BakeTextureSlots::SOURCE); }
-        void attachIrradiance(int face) override {
-            m_arr.attachIrradianceFace(m_gl, m_arr.stagingLayer(), face);
-        }
+        void attachIrradiance(int face) override { m_arr.attachIrradianceFace(m_gl, m_layer, face); }
         void attachPrefilter(int face, int mip) override {
-            m_arr.attachPrefilterFace(m_gl, m_arr.stagingLayer(), face, mip);
+            m_arr.attachPrefilterFace(m_gl, m_layer, face, mip);
         }
 
     private:
         Vkm::GL::Context& m_gl;
         GLProbeArray&     m_arr;
+        int               m_layer;
 };
 
 constexpr float CAPTURE_FAR = 1000.0f;
@@ -105,8 +107,6 @@ void GLProbeBaker::captureFaces(
 
     arr.bindCaptureFbo();
     m_capture.captureCube(gl, probe.position, CAPTURE_FAR, [&](int face) { arr.attachEnvFace(gl, face); });
-
-    arr.generateEnvMips();
     arr.unbindCaptureFbo();
 }
 
@@ -144,7 +144,7 @@ bool GLProbeBaker::advance(
         m_capture.captureFace(gl, step, probe.position, CAPTURE_FAR, attach);
         arr.unbindCaptureFbo();
     } else {
-        StagingTarget target(gl, arr);
+        LayerTarget target(gl, arr, arr.stagingLayer());
         gl.setDepthTest(false);
         gl.setFaceCulling(false);
         gl.setBlending(false);
@@ -165,13 +165,8 @@ void GLProbeBaker::convolve(Vkm::GL::Context& gl, GLProbeArray& arr, int layer) 
 
     arr.bindCaptureFbo();
 
-    // Convolve the env cube into this probe's array layers; the loops are GLCubeConvolver's.
-    arr.bindEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-    m_convolver.irradiance([&](int face) { arr.attachIrradianceFace(gl, layer, face); });
-    m_convolver.prefilter(
-        GLProbeArray::PREFILTER_MIPS,
-        [&](int face, int mip) { arr.attachPrefilterFace(gl, layer, face, mip); }
-    );
+    LayerTarget target(gl, arr, layer);
+    m_convolver.convolve(gl, arr.prefilterSize(), GLProbeArray::PREFILTER_MIPS, target);
 
     arr.unbindCaptureFbo();
 }

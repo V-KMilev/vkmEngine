@@ -2,7 +2,7 @@
  * Forward PBR ubershader for the full MaterialAsset spec: metal-rough GGX base
  * (optionally anisotropic), clearcoat, sheen, subsurface, thin transmission,
  * POM, alpha mask and unlit; probes over the IBL. The reflection's weight and
- * radiance go beside the colour for the screen-space resolve
+ * radiance go beside the color for the screen-space resolve
  * (reflection/resolve/fragment.shader). Each fragment, transparent ones too, is
  * fogged here at its own depth and never again; shading-split debug views are not.
  */
@@ -23,6 +23,10 @@ in float vHeight;
 in vec3  vAlongX;
 in vec3  vAlongZ;
 in float vLingering;
+#ifdef BAKED
+in vec2      vLightmapUV;
+flat in int  vLightmapPage;
+#endif
 
 layout(location = OUT_COLOR) out vec4 FragColor;
 
@@ -38,6 +42,9 @@ layout(location = OUT_REFLECT_ENV) out vec4 ReflectEnv;  // rgb: that weight x t
 #include "../../camera.glsl"
 #include "../../fog.glsl"
 #include "../../shadows.glsl"
+#ifdef BAKED
+#include "../../lightmap.glsl"
+#endif
 #include "../../ocean_water.glsl"
 #include "../../surface.glsl"
 #include "../../parallax.glsl"
@@ -65,7 +72,7 @@ const float WIRE_ALPHA = 0.55;
 layout(binding = POST_SLOT_SCENE_COLOR) uniform sampler2D u_sceneColor;
 uniform int u_hasSceneColor;
 uniform int u_useClusters;      // 1 = per-cluster light list; 0 = every light, for an eye without clusters
-uniform int u_hardShadows;      // 1 = the 3x3 compare for the sun and spots, no blocker search
+uniform int u_hardShadows;      // 1 = every shadow's hard filter, no blocker search
 uniform int u_alphaToCoverage;  // 1 while alpha-to-coverage is on for a cutout
 
 // GTAO for the indirect term, the cascaded sun's screen shadow. Each flag is set for the opaque bucket
@@ -100,20 +107,21 @@ struct Shading {
 };
 
 // The direct lights' specular, summed apart as evaluateLight and the area lights shade it, so a
-// transmissive surface keeps its reflections when its colour blends toward what it refracts.
+// transmissive surface keeps its reflections when its color blends toward what it refracts.
 vec3 g_directSpecular = vec3(0.0);
 
-// The material's own subsurface lobe: the scene's ocean's water scatters by oceanScatter instead,
-// and with no ocean a `waves` material is an ordinary one.
+// The material's own subsurface lobe: water scatters by oceanScatter instead - the scene's ocean's,
+// and any other - and with no ocean a Sea material (`WaterKind::Sea`) is an ordinary one.
 bool hasSubsurface() {
-    return FEATURES && u_material.subsurface > 0.001 && (u_material.waves == 0 || !oceanPresent());
+    return FEATURES && u_material.subsurface > 0.001 && (u_material.waves == 0 || !oceanPresent())
+        && u_material.water == 0;
 }
 
 bool hasAnisotropy() {
     return FEATURES && u_material.anisotropy > 0.001;
 }
 
-// The sheen colour's strongest channel, 0 for no sheen.
+// The sheen color's strongest channel, 0 for no sheen.
 float sheenStrength() {
     vec3 sheenColor = u_material.sheenColor.rgb;
     return max(sheenColor.r, max(sheenColor.g, sheenColor.b));
@@ -287,7 +295,7 @@ vec3 evaluateLight(
         ccContrib = vec3(ccD * ccV * ccF) * cNoL;
     }
 
-    // A sheen over the base and under the coat, off when its colour is black. What it takes of the
+    // A sheen over the base and under the coat, off when its color is black. What it takes of the
     // light going in or coming out the base below does not get (KHR_materials_sheen).
     vec3  sheen      = vec3(0.0);
     float underSheen = 1.0;
@@ -365,7 +373,7 @@ float sphereLobe(Shading sh, Surface s, Light light, int type, inout vec3 Ls) {
 
 // Every light of the fragment's cluster - or every light, for a capture without clusters - on
 // @p s. @p count is how many were listed. Only a surface @p litFromBehind takes a light behind it;
-// the others skip one before its shadow. @p water adds the ocean's scattering, of colour @p scatter.
+// the others skip one before its shadow. @p water adds the ocean's scattering, of color @p scatter.
 vec3 directLight(
     Shading sh,
     Surface s,
@@ -376,6 +384,15 @@ vec3 directLight(
 ) {
     // The contacts the cascades are too coarse for, the cascaded sun's alone.
     float screenShadow = screenShadowAt(gl_FragCoord.xy / u_camera.viewport);
+
+    // The fixed lights' baked shadows here, a channel each, read once for every light; the texels
+    // a pixel spans are taken outside the branch, where derivatives hold.
+#ifdef BAKED
+    const bool lightmapped    = vLightmapPage >= 0;
+    const vec2 lightmapTexels = fwidth(vLightmapUV) * vec2(textureSize(u_lightmapMask, 0).xy);
+    vec4       bakedShadows   = vec4(1.0);
+    if (lightmapped) bakedShadows = lightmapShadows(vLightmapUV, vLightmapPage, lightmapTexels);
+#endif
 
     int ci = 0;
     if (u_useClusters == 1) {
@@ -415,17 +432,42 @@ vec3 directLight(
         if (atten <= 0.0) continue;
         if (!litFromBehind && dot(sh.N, L) <= 0.0) continue;
 
-        // The bias follows the geometric surface, not the normal map.
-        float ndotlGeo   = dot(sh.Ng, L);
-        float visibility = surfaceShadow(
-            type,
-            int(light.spot.w),
-            vWorldPos,
-            sh.Ng,
-            ndotlGeo,
-            screenShadow,
-            u_hardShadows == 0
-        );
+        // The bias follows the geometric surface. On a fixed mesh a fixed light's shadow is baked; where
+        // the bake saw lit the live map draws what moved, hard, and the sun's thin penumbra stays live.
+        const float ndotlGeo   = dot(sh.Ng, L);
+        bool        live       = true;
+        bool        soft       = u_hardShadows == 0;
+        float       sunBeyond  = 1.0;
+        float       visibility = 1.0;
+#ifdef BAKED
+        const int maskChannel = int(light.bake.x);
+        if (lightmapped && maskChannel >= 0) {
+            const float baked = bakedShadows[maskChannel];
+            // The cascaded sun's alone: another fixed directional light has no live map to draw a
+            // penumbra with, and the screen's contacts march toward the sun, not it.
+            const bool sun = type == LIGHT_DIRECTIONAL && int(light.spot.w) >= 0;
+            if (baked >= BAKED_LIT) {
+                soft = false;
+            } else if (sun && baked > BAKED_DARK) {
+                sunBeyond = baked;
+            } else {
+                live       = false;
+                visibility = baked * (sun ? screenShadow : 1.0);
+            }
+        }
+#endif
+        if (live) {
+            visibility = surfaceShadow(
+                shadowTypeOf(light, type),
+                int(light.spot.w),
+                vWorldPos,
+                sh.Ng,
+                ndotlGeo,
+                screenShadow,
+                soft,
+                sunBeyond
+            );
+        }
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
         if (FEATURES
@@ -463,7 +505,7 @@ vec3 directLight(
 // The environment's light on @p s - the sky, probes and irradiance volume - through GTAO and the
 // material's occlusion. Writes the reflection inputs (ReflectWeight, ReflectEnv); @p specularPart
 // is what of the result is reflected, @p FssEss the single-scatter energy a trace can replace.
-// @p water adds the ocean's own colour, @p scatter, lit by the sky it takes in.
+// @p water adds the ocean's own color, @p scatter, lit by the sky it takes in.
 vec3 environmentLight(
     Shading sh,
     Surface s,
@@ -662,11 +704,17 @@ void main() {
     vec3 Ng      = normalize(vNormal);
     vec3 tangent = vTangent;
     // The ocean's water: the waves' frame as the vertices left it, with the ripples this pixel can show.
-    const bool water   = u_material.waves != 0 && oceanPresent();
+    // Other water: its own surface, rippled and running at its flow.
+    const bool waves   = u_material.waves != 0 && oceanPresent();
+    const bool water   = waves || u_material.water != 0;
     float      seaFoam = 0.0;
     OceanShade sea;
-    if (water) {
+    if (waves) {
         sea     = waterSurface(vRest, vAlongX, vAlongZ, vLingering, vHeight, vWorldPos, seaFoam);
+        Ng      = sea.normal;
+        tangent = sea.tangent;
+    } else if (water) {
+        sea     = bodyWater(normalize(Ng), tangent, vWorldPos, u_material.flowSpeed, u_material.rippleScale);
         Ng      = sea.normal;
         tangent = sea.tangent;
     }
@@ -716,13 +764,12 @@ void main() {
 
     Surface s = sampleSurface(sh.uv);
 
-    // The water's scattering colour, its strength in it.
-    const vec3 scatter = water ? u_material.subsurfaceColor.rgb * u_material.subsurface : vec3(0.0);
+    // The water's scattering color, its strength in it; foam over it scatters none.
+    const float scatters = water ? u_material.subsurface * (1.0 - seaFoam) : 0.0;
+    const vec3  scatter  = u_material.subsurfaceColor.rgb * scatters;
     if (water) {
-        // Ripples too fine for the pixel roughen it: GGX's alpha squared takes twice their slope
-        // variance, as Beckmann's would.
-        float alpha = s.roughness * s.roughness;
-        s.roughness = sqrt(sqrt(alpha * alpha + 2.0 * sea.variance));
+        // Ripples too fine for the pixel roughen it.
+        s.roughness = sqrt(waterAlpha(s.roughness, sea.variance));
         // Whitecaps and waterlines: foam over the water.
         s.albedo       = mix(s.albedo, u_ocean.foam.rgb, seaFoam);
         s.roughness    = mix(s.roughness, FOAM_ROUGHNESS, seaFoam);
@@ -775,7 +822,7 @@ void main() {
     if (u_renderMode == MODE_CLUSTERS)    { FragColor = vec4(clusterHeat(count), 1.0); return; }
 
     // Before refraction: its scene copy is already fogged. The reflection inputs
-    // lose what the colour loses.
+    // lose what the color loses.
     vec4 fog   = fragmentFog();
     vec3 color = (ambient + Lo + s.emission) * fog.a + fog.rgb;
     ReflectWeight.rgb *= fog.a;
