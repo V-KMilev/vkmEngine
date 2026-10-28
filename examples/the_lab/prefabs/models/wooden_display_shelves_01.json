@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wooden_display_shelves_01/textures/wooden_display_shelves_01_diff_1k.jpg"

@@ -30,8 +30,8 @@ class LabCrate : public ReflectedBehavior<LabCrate> {
     public:
         float lifetime = 6.0f;  ///< Seconds it lasts once thrown.
 
-        /// Prefab made where it first strikes something, project-relative; empty makes none.
-        std::string impact = "prefabs/impact.json";
+        /// Prefab made where it first strikes something; empty makes none.
+        PrefabRef impact{"prefabs/impact.json"};
 
     private:
         glm::vec3  m_momentum{0.0f};  ///< Before this tick's contacts, kg m/s; the authority's

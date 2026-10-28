@@ -2,9 +2,9 @@
   "name": "lab:neon_gold",
   "source": {
     "albedo": [
-      0.05000000074505806,
-      0.03999999910593033,
-      0.019999999552965164,
+      0.05,
+      0.04,
+      0.02,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -27,21 +27,23 @@
     "doubleSided": false,
     "emission": [
       1.0,
-      0.699999988079071,
-      0.20000000298023224
+      0.7,
+      0.2
     ],
     "emissiveStrength": 8.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
+    "rippleScale": 0.5,
     "roughness": 0.5,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

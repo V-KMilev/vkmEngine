@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/lifebuoy/textures/lifebuoy_diff_1k.jpg"
@@ -67,19 +68,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.434336543083191,
+              "maxDistance": 1.4343365,
               "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 9.957527160644531,
+              "maxDistance": 9.957527,
               "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 39.311519622802734,
+              "maxDistance": 39.31152,
               "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 78.62303924560547,
+              "maxDistance": 78.62304,
               "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod3"
             }
           ]

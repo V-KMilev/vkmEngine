@@ -28,6 +28,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wooden_ladder/textures/wooden_ladder_diff_1k.jpg"
@@ -73,15 +74,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.16621455550193787,
+              "maxDistance": 0.16621456,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 46.57819366455078,
+              "maxDistance": 46.578194,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 93.15638732910156,
+              "maxDistance": 93.15639,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod2"
             }
           ]
@@ -100,7 +101,7 @@
         "Transform": {
           "position": [
             0.0,
-            1.1048070192337036,
+            1.104807,
             0.0
           ],
           "rotation": [
@@ -125,15 +126,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.20110976696014404,
+              "maxDistance": 0.20110977,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1"
             },
             {
-              "maxDistance": 18.182863235473633,
+              "maxDistance": 18.182863,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod1"
             },
             {
-              "maxDistance": 36.365726470947266,
+              "maxDistance": 36.365726,
               "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod2"
             }
           ]
@@ -152,7 +153,7 @@
         "Transform": {
           "position": [
             0.0,
-            1.1048070192337036,
+            1.104807,
             0.0
           ],
           "rotation": [

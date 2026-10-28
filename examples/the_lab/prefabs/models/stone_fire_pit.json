@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/stone_fire_pit/stone_fire_pit_diff_1k.jpg"
@@ -68,19 +69,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 11.816896438598633,
+              "maxDistance": 11.816896,
               "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0"
             },
             {
-              "maxDistance": 52.8650016784668,
+              "maxDistance": 52.865,
               "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 66.8604736328125,
+              "maxDistance": 66.86047,
               "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 133.720947265625,
+              "maxDistance": 133.72095,
               "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod3"
             }
           ]

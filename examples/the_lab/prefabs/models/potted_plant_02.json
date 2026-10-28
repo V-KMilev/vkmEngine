@@ -40,6 +40,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/potted_plant_02/textures/potted_plant_02_pot_diff_1k.jpg"
@@ -94,19 +95,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.9836009740829468,
+              "maxDistance": 1.983601,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 8.705835342407227,
+              "maxDistance": 8.705835,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 21.977317810058594,
+              "maxDistance": 21.977318,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 43.95463562011719,
+              "maxDistance": 43.954636,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod3"
             }
           ]
@@ -159,9 +160,9 @@
         },
         "Transform": {
           "position": [
-            -0.0029038283973932266,
-            0.30528968572616577,
-            0.0006859108689241111
+            -0.0029038284,
+            0.3052897,
+            0.00068591087
           ],
           "rotation": [
             1.0,
@@ -185,19 +186,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 2.859837532043457,
+              "maxDistance": 2.8598375,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2"
             },
             {
-              "maxDistance": 9.803290367126465,
+              "maxDistance": 9.80329,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod1"
             },
             {
-              "maxDistance": 19.358850479125977,
+              "maxDistance": 19.35885,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod2"
             },
             {
-              "maxDistance": 38.71770095825195,
+              "maxDistance": 38.7177,
               "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod3"
             }
           ]
@@ -215,9 +216,9 @@
         },
         "Transform": {
           "position": [
-            -0.12862031161785126,
-            0.31752803921699524,
-            -0.13355804979801178
+            -0.12862031,
+            0.31752804,
+            -0.13355805
           ],
           "rotation": [
             1.0,

@@ -5,6 +5,7 @@
     "meshes": [],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/effects/flames.png"
@@ -21,12 +22,12 @@
         "ParticleEmitter": {
           "acceleration": [
             0.0,
-            0.800000011920929,
+            0.8,
             0.0
           ],
-          "angle": 0.30000001192092896,
+          "angle": 0.3,
           "blend": "Additive",
-          "bounce": 0.30000001192092896,
+          "bounce": 0.3,
           "burst": 0,
           "collide": false,
           "color": {
@@ -47,14 +48,14 @@
                   1.0,
                   1.0
                 ],
-                "time": 0.20000000298023224
+                "time": 0.2
               },
               {
                 "color": [
                   1.0,
                   1.0,
                   1.0,
-                  0.8500000238418579
+                  0.85
                 ],
                 "time": 0.75
               },
@@ -70,7 +71,7 @@
             ]
           },
           "destroyWhenSpent": false,
-          "distortion": 0.029999999329447746,
+          "distortion": 0.03,
           "drag": 0.0,
           "emission": 0.0,
           "emitting": true,
@@ -84,25 +85,25 @@
           "intensity": 2.0,
           "lifeLostOnHit": 0.0,
           "lifetime": {
-            "max": 0.6000000238418579,
-            "min": 0.3499999940395355
+            "max": 0.6,
+            "min": 0.35
           },
           "lightColor": [
             1.0,
-            0.6000000238418579,
-            0.2800000011920929
+            0.6,
+            0.28
           ],
           "lightIntensity": 0.25,
           "lightRadius": 5.0,
           "maxParticles": 128,
           "normalMap": "",
-          "radius": 0.05999999865889549,
+          "radius": 0.06,
           "randomFrame": true,
           "rate": 16.0,
           "ratePerMetre": 0.0,
           "render": "Billboard",
           "rotation": {
-            "max": 6.28000020980835,
+            "max": 6.28,
             "min": 0.0
           },
           "seenBy": "All",
@@ -112,37 +113,37 @@
           "sheetFps": 24.0,
           "sheetRows": 8,
           "size": {
-            "max": 0.3199999928474426,
-            "min": 0.2199999988079071
+            "max": 0.32,
+            "min": 0.22
           },
           "sizeOverLife": {
             "keys": [
               {
                 "time": 0.0,
-                "value": 0.699999988079071
+                "value": 0.7
               },
               {
-                "time": 0.30000001192092896,
+                "time": 0.3,
                 "value": 1.0
               },
               {
                 "time": 1.0,
-                "value": 0.6000000238418579
+                "value": 0.6
               }
             ]
           },
           "softness": 1.0,
           "speed": {
-            "max": 0.3499999940395355,
-            "min": 0.15000000596046448
+            "max": 0.35,
+            "min": 0.15
           },
           "spin": {
             "max": 0.0,
             "min": 0.0
           },
-          "stretch": 0.05000000074505806,
+          "stretch": 0.05,
           "texture": "assets/effects/flames.png",
-          "trailLength": 0.30000001192092896,
+          "trailLength": 0.3,
           "turbulence": 0.0,
           "turbulenceScale": 1.0
         },
@@ -178,9 +179,9 @@
             1.0,
             0.0
           ],
-          "angle": 0.8999999761581421,
+          "angle": 0.9,
           "blend": "Additive",
-          "bounce": 0.30000001192092896,
+          "bounce": 0.3,
           "burst": 0,
           "collide": false,
           "color": {
@@ -189,7 +190,7 @@
                 "color": [
                   1.0,
                   0.75,
-                  0.3499999940395355,
+                  0.35,
                   1.0
                 ],
                 "time": 0.0
@@ -198,7 +199,7 @@
                 "color": [
                   1.0,
                   0.25,
-                  0.05000000074505806,
+                  0.05,
                   0.0
                 ],
                 "time": 1.0
@@ -206,7 +207,7 @@
             ]
           },
           "destroyWhenSpent": false,
-          "distortion": 0.029999999329447746,
+          "distortion": 0.03,
           "drag": 1.0,
           "emission": 0.0,
           "emitting": true,
@@ -220,19 +221,19 @@
           "intensity": 8.0,
           "lifeLostOnHit": 0.0,
           "lifetime": {
-            "max": 1.399999976158142,
-            "min": 0.800000011920929
+            "max": 1.4,
+            "min": 0.8
           },
           "lightColor": [
             1.0,
-            0.6000000238418579,
-            0.2800000011920929
+            0.6,
+            0.28
           ],
           "lightIntensity": 0.0,
           "lightRadius": 5.0,
           "maxParticles": 128,
           "normalMap": "",
-          "radius": 0.05000000074505806,
+          "radius": 0.05,
           "randomFrame": false,
           "rate": 36.0,
           "ratePerMetre": 0.0,
@@ -248,8 +249,8 @@
           "sheetFps": 0.0,
           "sheetRows": 1,
           "size": {
-            "max": 0.02199999988079071,
-            "min": 0.012000000104308128
+            "max": 0.022,
+            "min": 0.012
           },
           "sizeOverLife": {
             "keys": [
@@ -259,24 +260,24 @@
               },
               {
                 "time": 1.0,
-                "value": 0.30000001192092896
+                "value": 0.3
               }
             ]
           },
           "softness": 1.0,
           "speed": {
-            "max": 2.4000000953674316,
+            "max": 2.4,
             "min": 1.0
           },
           "spin": {
             "max": 0.0,
             "min": 0.0
           },
-          "stretch": 0.05000000074505806,
+          "stretch": 0.05,
           "texture": "",
-          "trailLength": 0.3499999940395355,
+          "trailLength": 0.35,
           "turbulence": 2.0,
-          "turbulenceScale": 0.800000011920929
+          "turbulenceScale": 0.8
         },
         "Transform": {
           "position": [

@@ -13,6 +13,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_diff_1k.jpg"

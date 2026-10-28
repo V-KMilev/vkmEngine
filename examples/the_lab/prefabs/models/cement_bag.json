@@ -13,6 +13,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/cement_bag/textures/cement_bag_diff_1k.jpg"

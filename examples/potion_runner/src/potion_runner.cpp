@@ -98,12 +98,21 @@ constexpr const char* ACTION_CROUCH  = "Crouch";
 constexpr const char* ACTION_RESTART = "Restart";
 
 void installRunnerBindings(InputMap& map) {
-    const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
-    map.define(ACTION_LEFT,    { key(GLFW_KEY_A),     key(GLFW_KEY_LEFT) });
-    map.define(ACTION_RIGHT,   { key(GLFW_KEY_D),     key(GLFW_KEY_RIGHT) });
-    map.define(ACTION_JUMP,    { key(GLFW_KEY_SPACE), key(GLFW_KEY_W), key(GLFW_KEY_UP) });
-    map.define(ACTION_CROUCH,  { key(GLFW_KEY_S),     key(GLFW_KEY_DOWN), key(GLFW_KEY_LEFT_CONTROL) });
-    map.define(ACTION_RESTART, { key(GLFW_KEY_R),     key(GLFW_KEY_ENTER) });
+    map.define(ACTION_LEFT,    { InputBinding::key(GLFW_KEY_A), InputBinding::key(GLFW_KEY_LEFT) });
+    map.define(ACTION_RIGHT,   { InputBinding::key(GLFW_KEY_D), InputBinding::key(GLFW_KEY_RIGHT) });
+    map.define(
+        ACTION_JUMP,
+        { InputBinding::key(GLFW_KEY_SPACE), InputBinding::key(GLFW_KEY_W), InputBinding::key(GLFW_KEY_UP) }
+    );
+    map.define(
+        ACTION_CROUCH,
+        {
+            InputBinding::key(GLFW_KEY_S),
+            InputBinding::key(GLFW_KEY_DOWN),
+            InputBinding::key(GLFW_KEY_LEFT_CONTROL),
+        }
+    );
+    map.define(ACTION_RESTART, { InputBinding::key(GLFW_KEY_R), InputBinding::key(GLFW_KEY_ENTER) });
 }
 
 // Every run reseeds with this, so a death is retryable against the same track.
@@ -195,19 +204,17 @@ void PotionRunner::onStart() {
         if (e.eventId == "potion:start") m_started = true;
         else if (e.eventId == "potion:restart" && !m_alive) m_restartAsked = true;
     });
-    // The crash rule: a contact with an obstacle hull whose normal is not mostly
-    // up. `normal` points a -> b. Every non-ended tick of a contact counts; an
-    // ended one has no normal to judge.
+    // The crash rule: a contact with an obstacle hull whose normal into the player
+    // is not mostly up. Every non-ended tick of a contact counts; an ended one has
+    // no normal to judge.
     subscribe([this](const CollisionEvent& e) {
         if (e.phase == ContactPhase::Ended) return;
-        const EntityId player = m_player;
-        const bool playerIsA = (e.a == player);
-        if (!playerIsA && e.b != player) return;
-
+        if (e.a != m_player && e.b != m_player) return;
         if (!m_alive) return;   // dead: the ragdoll IS the crash feedback
 
-        const float    up    = playerIsA ? -e.normal.y : e.normal.y;
-        const EntityId other = playerIsA ? e.b : e.a;
+        const Collision hit   = Collision::seenBy(e, m_player);
+        const float     up    = hit.normal.y;
+        const EntityId  other = hit.other;
         for (const auto& o : m_obstacles) {
             if (other != o.entity) continue;
             // Feet near the roof line are graced (ramp-to-roof seam, short hops),
@@ -569,7 +576,7 @@ void PotionRunner::buildPlayer() {
         rb.restitution    = 0.0f;
         rb.friction       = 0.2f;
         rb.freezeRotation = true;
-        rb.canSleep       = false;   // a dozing character eats jump inputs and ignores ramps
+        rb.canSleep       = false;   // standing still, its contacts still report a hit each tick
         scene().add(m_player, std::move(rb));
         const glm::vec3 halfExtents{PLAYER_HALF_X, PLAYER_HALF_Y, PLAYER_HALF_Z};
         Collider col;
@@ -850,7 +857,7 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
             rt.rotation = glm::angleAxis(-std::atan2(o.top, RAMP_RUN), Math::WORLD_AXIS_X);
         }
         o.isTrain = true;
-        // A convoy reuses its leader's colour, so the chain reads as one train.
+        // A convoy reuses its leader's color, so the chain reads as one train.
         const int style = convoyCar ? m_convoyStyle : m_rng.nextInt(0, 2);
         m_convoyStyle = style;
         const MaterialHandle hulls[3] = {m_matTrain, m_matTrainB, m_matTrainC};
@@ -967,7 +974,7 @@ void PotionRunner::resetGame() {
         box.halfExtents.y = PLAYER_HALF_Y;
         box.center.y      = 0.0f;
     }
-    for (auto& [part, mat] : m_playerParts) {        // undo the death recolour
+    for (auto& [part, mat] : m_playerParts) {        // undo the death recolor
         scene().get<Mesh>(part).material = mat;
         scene().get<Mesh>(part).visible  = true;
     }

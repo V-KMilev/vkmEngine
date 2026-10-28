@@ -19,6 +19,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/propane_tank/textures/propane_tank_diff_1k.jpg"
@@ -64,15 +65,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 2.3682379722595215,
+              "maxDistance": 2.368238,
               "mesh": "assets/models/propane_tank/propane_tank_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 25.725597381591797,
+              "maxDistance": 25.725597,
               "mesh": "assets/models/propane_tank/propane_tank_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 51.451194763183594,
+              "maxDistance": 51.451195,
               "mesh": "assets/models/propane_tank/propane_tank_1k.gltf:mesh0:lod2"
             }
           ]

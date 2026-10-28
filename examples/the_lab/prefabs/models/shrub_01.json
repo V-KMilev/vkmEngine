@@ -13,9 +13,10 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
-        "name": "assets/models/shrub_01/shrub_01_diff_1k.jpg"
+        "name": "assets/models/shrub_01/shrub_01_diff_rgba_1k.png"
       },
       {
         "name": "assets/models/shrub_01/shrub_01_nor_gl_1k.jpg"
@@ -67,7 +68,7 @@
         },
         "Transform": {
           "position": [
-            0.6002307534217834,
+            0.60023075,
             0.0,
             0.0
           ],

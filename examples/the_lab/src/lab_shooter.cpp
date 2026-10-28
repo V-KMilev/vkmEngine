@@ -15,14 +15,11 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "io/scene/prefab.h"
 #include "net/net_session.h"
 #include "net/prediction/rewind.h"
-#include "net/wire/protocol.h"
 #include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
 #include "resource/resource_manager.h"
-#include "system/audio/audio_events.h"
 #include "system/physics/query/query.h"
 
 #include "lab_actions.h"
@@ -65,7 +62,7 @@ constexpr float FLOOR_NORMAL = 0.9f;
 } // namespace
 
 void LabShooter::onStart() {
-    input().define(ACTION_FIRE, { InputBinding{InputSource::Key, GLFW_KEY_F, 1.0f} });
+    input().define(ACTION_FIRE, { InputBinding::key(GLFW_KEY_F) });
 }
 
 glm::vec3 LabShooter::muzzle() {
@@ -85,7 +82,7 @@ void LabShooter::onFixedUpdate(float) {
 
 void LabShooter::fire() {
     // Authority only: a client draws other players in the past on purpose.
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     LabScore* score = tryGet<LabScore>();
     if (!score) return;
 
@@ -149,16 +146,14 @@ void LabShooter::showShot() {
     if (length < SHORTEST_TRACER) return;
     const glm::vec3 along = path / length;
 
-    if (const AudioClipHandle sound = resources().find(zap)) {
-        events().emit(PlaySoundEvent::at(sound, from));
-    }
+    playSoundAt(zap, from);
 
     // The streak leaves along the shot and dies where it struck.
     if (!tracer.empty()) {
         Transform start;
         start.position = from + along * TRACER_START;
         start.rotation = glm::rotation(Math::WORLD_UP, along);
-        const EntityId streak = Prefab::instantiate(scene(), resources(), tracer, start);
+        const EntityId streak = instantiate(tracer, start);
         if (ParticleEmitter* emitter = scene().tryGet<ParticleEmitter>(streak)) {
             const float flight = glm::max(length - TRACER_START, SHORTEST_FLIGHT) / TRACER_SPEED;
             emitter->speed    = {TRACER_SPEED, TRACER_SPEED};
@@ -170,7 +165,7 @@ void LabShooter::showShot() {
     Transform impact;
     impact.position = score->lastHit;
     impact.rotation = glm::rotation(Math::WORLD_UP, score->lastNormal);
-    if (!hitEffect.empty()) Prefab::instantiate(scene(), resources(), hitEffect, impact);
+    if (!hitEffect.empty()) instantiate(hitEffect, impact);
 
     // Scenery keeps a mark; a prop moves on and a player gets up.
     if (score->lastShot == LabShot::World) leaveScorch(score->lastHit, score->lastNormal);

@@ -2,9 +2,9 @@
   "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat2",
   "source": {
     "albedo": [
-      0.5224650502204895,
-      0.04925941303372383,
-      0.024301469326019287,
+      0.52246505,
+      0.049259413,
+      0.02430147,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.12820515036582947,
+    "rippleScale": 0.5,
+    "roughness": 0.12820515,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

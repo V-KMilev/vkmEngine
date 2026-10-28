@@ -28,6 +28,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_chair_diff_1k.jpg"
@@ -82,11 +83,11 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 23.006423950195313,
+              "maxDistance": 23.006424,
               "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 46.012847900390625,
+              "maxDistance": 46.012848,
               "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0:lod1"
             }
           ]
@@ -109,9 +110,9 @@
             0.0
           ],
           "rotation": [
-            0.9926403164863586,
+            0.9926403,
             0.0,
-            0.12110016494989395,
+            0.121100165,
             0.0
           ],
           "scale": [
@@ -165,11 +166,11 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 24.07042121887207,
+              "maxDistance": 24.070421,
               "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2"
             },
             {
-              "maxDistance": 48.14084243774414,
+              "maxDistance": 48.140842,
               "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2:lod1"
             }
           ]
@@ -192,9 +193,9 @@
             0.0
           ],
           "rotation": [
-            0.991024374961853,
+            0.9910244,
             0.0,
-            0.13368111848831177,
+            0.13368112,
             0.0
           ],
           "scale": [

@@ -3,14 +3,10 @@
 #include <algorithm>
 
 #include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "resource/resource_manager.h"
-#include "system/audio/audio_events.h"
 
 #include "lab_state.h"
 
@@ -26,13 +22,13 @@ constexpr float BED_RECOVERY = 5.0f;
 
 void LabJumpPad::onStart() {
     reportIfSilenced(scene(), entity(), "LabJumpPad");
-    if (isAuthority(net().role()) && !has<LabTally>()) add(LabTally{});
-    m_bed = HierarchyOperations::findNamed(scene(), entity(), "Bed");
+    if (isAuthority()) getOrAdd<LabTally>();
+    m_bed = findPart("Bed");
     if (const Transform* bed = scene().tryGet<Transform>(m_bed)) m_bedScale = bed->scale;
 }
 
 void LabJumpPad::launched() {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     if (LabTally* tally = tryGet<LabTally>()) ++tally->count;
 }
 
@@ -45,11 +41,7 @@ void LabJumpPad::onUpdate(float dt) {
                 burst->burst += static_cast<uint32_t>(std::max(puff, 0));
             }
         });
-        const Transform* at = tryGet<Transform>();
-        const AudioClipHandle sound = resources().find(boing);
-        if (at && sound) {
-            events().emit(PlaySoundEvent::at(sound, resolvedWorldPosition(scene(), entity(), *at)));
-        }
+        playSound(boing);
     }
     if (m_dip <= 0.0f) return;
     m_dip = std::max(0.0f, m_dip - BED_RECOVERY * dt);

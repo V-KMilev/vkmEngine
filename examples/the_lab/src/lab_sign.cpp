@@ -7,7 +7,6 @@
 #include "core/clock.h"
 #include "core/math/axes.h"
 #include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
@@ -99,10 +98,9 @@ void LabSign::onRealtimeUpdate(float) {
 void LabSign::onUpdate(float dt) {
     UIElement* label = scene().tryGet<UIElement>(m_label);
     const UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas);
-    const Transform* at = tryGet<Transform>();
-    if (!label || !canvas || !at) return;
+    if (!label || !canvas || !has<Transform>()) return;
 
-    const glm::vec3 point = resolvedWorldPosition(scene(), entity(), *at) + Math::WORLD_UP * height;
+    const glm::vec3 point = worldPosition() + Math::WORLD_UP * height;
     const std::optional<glm::vec2> onCanvas = screen().toCanvas(point, *canvas);
     const Transform* eye = scene().tryGet<Transform>(findActiveCamera(scene()));
     if (!onCanvas || !eye) {

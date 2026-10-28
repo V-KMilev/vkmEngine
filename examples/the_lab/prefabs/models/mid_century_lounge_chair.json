@@ -19,6 +19,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_diff_1k.jpg"
@@ -64,15 +65,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 4.276334762573242,
+              "maxDistance": 4.276335,
               "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 38.14686965942383,
+              "maxDistance": 38.14687,
               "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 76.29373931884766,
+              "maxDistance": 76.29374,
               "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod2"
             }
           ]

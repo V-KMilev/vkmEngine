@@ -28,6 +28,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wine_barrel_01/textures/wine_barrel_01_diff_1k.jpg"
@@ -143,15 +144,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 6.0601487159729,
+              "maxDistance": 6.0601487,
               "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2"
             },
             {
-              "maxDistance": 40.66259002685547,
+              "maxDistance": 40.66259,
               "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod1"
             },
             {
-              "maxDistance": 81.32518005371094,
+              "maxDistance": 81.32518,
               "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod2"
             }
           ]

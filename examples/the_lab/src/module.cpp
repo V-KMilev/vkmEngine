@@ -1,7 +1,5 @@
 #define VKM_LOG_CATEGORY "LAB"
 
-#include <memory>
-#include <set>
 #include <vector>
 
 #include "logger.h"
@@ -16,7 +14,6 @@
 #include "lab_area.h"
 #include "lab_clip_reel.h"
 #include "lab_crate.h"
-#include "lab_float.h"
 #include "lab_follow_camera.h"
 #include "lab_hud.h"
 #include "lab_jump_pad.h"
@@ -55,7 +52,6 @@ void vkmRegisterBehaviors() {
         LabClipReel,
         LabArea,
         LabCrate,
-        LabFloat,
         LabHud,
         LabJumpPad,
         LabMover,
@@ -77,14 +73,13 @@ void vkmSetupNetwork(Vkm::Engine::NetSession& session) {
 
     Lab::registerLabNetTypes();
 
-    auto taken = std::make_shared<std::set<uint32_t>>();
-
+    // The session holds these callbacks, so the reference they keep to it holds too. A character a
+    // player leaves stays, score and all: it is scene content, and seatPlayer starts the next afresh.
     session.onSpawn(
-        [taken](Scene& scene, ResourceManager&, PlayerId id) -> EntityId {
+        [&session](Scene& scene, ResourceManager&, PlayerId id) -> EntityId {
             const std::vector<EntityId> characters = Lab::authoredCharacters(scene);
             for (EntityId character : characters) {
-                if (taken->count(character.slot())) continue;
-                taken->insert(character.slot());
+                if (session.isDriven(character)) continue;
                 Lab::seatPlayer(scene, character);
                 const glm::vec3 at = scene.get<Transform>(character).position;
                 LOG_INFO("Player %u takes the character at %.1f, %.1f, %.1f", id, at.x, at.y, at.z);
@@ -97,10 +92,6 @@ void vkmSetupNetwork(Vkm::Engine::NetSession& session) {
             );
             return EntityId{};
         },
-        [taken](Scene&, ResourceManager&, PlayerId, EntityId entity) {
-            // The character stays, score and all: it is scene content, and seatPlayer starts the
-            // next player's game afresh.
-            taken->erase(entity.slot());
-        }
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
     );
 }

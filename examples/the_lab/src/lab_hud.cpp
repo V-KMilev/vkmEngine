@@ -15,7 +15,6 @@
 #include "net/net_session.h"
 #include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
-#include "system/script/script_component.h"
 
 #include "lab_actions.h"
 #include "lab_area.h"
@@ -103,13 +102,13 @@ EntityId LabHud::addText(
 
 void LabHud::onStart() {
     // Defined on every end, a server too: see lab_actions.h.
-    input().define(ACTION_MAP, { InputBinding{InputSource::Key, GLFW_KEY_M, 1.0f} });
+    input().define(ACTION_MAP, { InputBinding::key(GLFW_KEY_M) });
 
-    scene().forEach<ScriptComponent, Transform>([&](EntityId id, ScriptComponent&, Transform& at) {
-        if (const LabArea* area = findBehavior<LabArea>(id)) {
-            const glm::vec3 centre = resolvedWorldPosition(scene(), id, at);
-            m_areas.push_back({id, area->title, area->blurb, {centre.x, centre.z}, area->size});
-        }
+    forEachBehavior<LabArea>([&](EntityId id, const LabArea& area) {
+        const Transform* at = scene().tryGet<Transform>(id);
+        if (!at) return;
+        const glm::vec3 centre = resolvedWorldPosition(scene(), id, *at);
+        m_areas.push_back({id, area.title, area.blurb, {centre.x, centre.z}, area.size});
     });
     std::sort(m_areas.begin(), m_areas.end(), [](const Area& a, const Area& b) {
         return a.entity.slot() < b.entity.slot();

@@ -3,6 +3,6 @@
   "source": {
     "base": "assets/models/coast_rocks_03/coast_rocks_03_1k.gltf:mesh0",
     "kind": "decimate",
-    "ratio": 0.009999999776482582
+    "ratio": 0.01
   }
 }

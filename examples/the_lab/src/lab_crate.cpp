@@ -3,9 +3,6 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/scene.h"
-#include "io/scene/prefab.h"
-#include "net/net_session.h"
-#include "net/wire/protocol.h"
 
 #include "lab_state.h"
 #include "lab_walker.h"
@@ -21,18 +18,18 @@ constexpr float KNOCK_DOWN_MOMENTUM = 10.0f;
 } // namespace
 
 void LabCrate::onStart() {
-    if (isAuthority(net().role()) && !has<LabTally>()) add(LabTally{});
+    if (isAuthority()) getOrAdd<LabTally>();
 }
 
 void LabCrate::onFixedUpdate(float dt) {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     if (const Rigidbody* body = tryGet<Rigidbody>()) m_momentum = body->linearVelocity * body->mass;
     m_age += dt;
     if (m_age >= lifetime) destroy();
 }
 
 void LabCrate::onCollisionEnter(const Collision& hit) {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     LabWalker* walker = findBehavior<LabWalker>(hit.other);
     if (walker && glm::length(m_momentum) >= KNOCK_DOWN_MOMENTUM) walker->knockDown(m_momentum, hit.point);
     LabTally* tally = tryGet<LabTally>();
@@ -47,7 +44,7 @@ void LabCrate::onUpdate(float) {
     // Upright, from the crate's middle, whichever way it lies.
     Transform puff;
     puff.position = at->position;
-    Prefab::instantiate(scene(), resources(), impact, puff);
+    instantiate(impact, puff);
 }
 
 } // namespace Lab

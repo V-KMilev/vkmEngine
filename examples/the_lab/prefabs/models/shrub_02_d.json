@@ -13,9 +13,10 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
-        "name": "assets/models/shrub_02/shrub_02_diff_1k.jpg"
+        "name": "assets/models/shrub_02/shrub_02_diff_rgba_1k.png"
       },
       {
         "name": "assets/models/shrub_02/shrub_02_nor_gl_1k.jpg"
@@ -73,10 +74,10 @@
             0.0
           ],
           "rotation": [
-            0.60198575258255,
-            0.047377295792102814,
-            -0.7383221983909607,
-            -0.300414502620697
+            0.60198575,
+            0.047377296,
+            -0.7383222,
+            -0.3004145
           ],
           "scale": [
             1.0,

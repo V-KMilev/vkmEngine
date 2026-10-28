@@ -13,9 +13,7 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "io/scene/prefab.h"
 #include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "resource/resource_manager.h"
 
 #include "lab_switch.h"
@@ -67,7 +65,7 @@ bool LabRange::detonate() {
 
         Transform where;
         where.position = resolvedWorldPosition(scene(), charge.entity, *local);
-        if (window() && !blast.empty()) Prefab::instantiate(scene(), resources(), blast, where);
+        if (window() && !blast.empty()) instantiate(blast, where);
         stand(scene(), charge.entity, false);
         blew = true;
     }
@@ -75,7 +73,7 @@ bool LabRange::detonate() {
 }
 
 void LabRange::throwFromCharges() {
-    const bool authority = isAuthority(net().role());
+    const bool authority = isAuthority();
     for (const Charge& charge : m_charges) {
         const Transform* local = scene().tryGet<Transform>(charge.entity);
         if (!local) continue;
@@ -96,12 +94,12 @@ void LabRange::throwFromCharges() {
             body.angularVelocity += glm::vec3(out.z, 0.0f, -out.x) * kick * SPIN_PER_KICK;
         });
         if (!authority) continue;
-        scene().forEach<Transform>([&](EntityId id, const Transform& t) {
-            LabWalker* walker = findBehavior<LabWalker>(id);
-            if (!walker) return;
-            const glm::vec3 offset = resolvedWorldPosition(scene(), id, t) - at;
+        forEachBehavior<LabWalker>([&](EntityId id, LabWalker& walker) {
+            const Transform* t = scene().tryGet<Transform>(id);
+            if (!t) return;
+            const glm::vec3 offset = resolvedWorldPosition(scene(), id, *t) - at;
             if (glm::length(offset) >= radius * KNOCK_DOWN_SHARE) return;
-            walker->knockDown(glm::normalize(offset + Math::WORLD_UP) * KNOCK_DOWN_MOMENTUM, at);
+            walker.knockDown(glm::normalize(offset + Math::WORLD_UP) * KNOCK_DOWN_MOMENTUM, at);
         });
     }
 }

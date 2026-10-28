@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_diff_1k.jpg"
@@ -67,19 +68,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 2.0216827392578125,
+              "maxDistance": 2.0216827,
               "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 7.5353593826293945,
+              "maxDistance": 7.5353594,
               "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 33.34038543701172,
+              "maxDistance": 33.340385,
               "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 66.68077087402344,
+              "maxDistance": 66.68077,
               "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod3"
             }
           ]

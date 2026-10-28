@@ -105,7 +105,7 @@ std::vector<std::string> renderScaleNames() {
 
 void LabPauseMenu::onStart() {
     // Defined on every end, with or without the menu: see lab_actions.h.
-    input().define(ACTION_MENU, { InputBinding{InputSource::Key, GLFW_KEY_ESCAPE, 1.0f} });
+    input().define(ACTION_MENU, { InputBinding::key(GLFW_KEY_ESCAPE) });
 
     // Offline only: in a session the clock is the session's, client spawns take
     // server-owned slots, and a restart would load a scene under every player.

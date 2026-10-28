@@ -2,9 +2,9 @@
   "name": "lab:iron",
   "source": {
     "albedo": [
-      0.11999999731779099,
-      0.11999999731779099,
-      0.12999999523162842,
+      0.12,
+      0.12,
+      0.13,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
-    "metallic": 0.8999999761581421,
+    "metallic": 0.9,
     "normalScale": 1.0,
-    "roughness": 0.550000011920929,
+    "rippleScale": 0.5,
+    "roughness": 0.55,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

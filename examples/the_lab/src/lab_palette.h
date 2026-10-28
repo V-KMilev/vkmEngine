@@ -6,7 +6,7 @@
 
 namespace Lab {
 
-// The colours the lab's screens share: the HUD, the signs and the pause menu.
+// The colors the lab's screens share: the HUD, the signs and the pause menu.
 inline const glm::vec4 INK   {0.03f, 0.04f, 0.08f, 0.92f};  ///< A panel's ground.
 inline const glm::vec4 WHITE {1.00f, 1.00f, 1.00f, 1.00f};  ///< Headings.
 inline const glm::vec4 SOFT  {0.86f, 0.90f, 0.96f, 1.00f};  ///< Text under a heading.

@@ -2,12 +2,12 @@
   "name": "assets/models/grass_cards/grass_cards.gltf:mat0",
   "source": {
     "albedo": [
-      1.2000000476837158,
+      1.2,
       1.25,
-      1.0499999523162842,
+      1.05,
       1.0
     ],
-    "alphaCutoff": 0.44999998807907104,
+    "alphaCutoff": 0.45,
     "anisotropy": 0.0,
     "anisotropyDirection": [
       1.0,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.8999999761581421,
+    "rippleScale": 0.5,
+    "roughness": 0.9,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -62,6 +64,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 1.0,
     "normalScale": 1.0,
+    "rippleScale": 0.5,
     "roughness": 1.0,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -50,8 +52,8 @@
     ],
     "textures": {
       "albedo": "assets/textures/brick_pavement_02_diff.jpg",
-      "normal": "assets/textures/brick_pavement_02_nor_gl.jpg",
-      "aoMetallicRoughness": "assets/textures/brick_pavement_02_arm.jpg"
+      "aoMetallicRoughness": "assets/textures/brick_pavement_02_arm.jpg",
+      "normal": "assets/textures/brick_pavement_02_nor_gl.jpg"
     },
     "thicknessFactor": 0.0,
     "transmission": 0.0,
@@ -64,6 +66,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }
