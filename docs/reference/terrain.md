@@ -29,8 +29,8 @@ Radius is metres, strength how fast a held brush works, hardness the share of
 the radius it works in full before fading to its rim, drawn as the brush's
 profile. `[` and `]` size the brush, Esc puts it down, and Ctrl+click with
 Flatten takes the height clicked. While a tool is up the viewport draws the
-brush's rim on the surface - in the warning colour while Shift reverses it -
-and a strip naming the tool and its keys. Each stroke is one undo step.
+brush's rim on the surface - in the warning color while Shift reverses it - and
+a strip naming the tool and its keys. Each stroke is one undo step.
 
 Below the brush, the four layers and the plant layers stand as tiles of their
 maps; a click on one picks it and the tool that uses it. Under them, the picked

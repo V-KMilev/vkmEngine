@@ -16,7 +16,7 @@ Each header in `ecs/component/ui/` documents its fields.
 | `UICanvas` | Root of a UI layer; spans the viewport. Several canvases draw - and hit-test - in ascending `sortOrder`. |
 | `UIElement` | The 2D analogue of `Transform`. `visible = false` skips the whole subtree; `opacity` multiplies down it. |
 | `UIImage` | A filled quad over the rect. `shape` (a `UIShape`) adds rounded corners, a border and a gradient; a `texture` stretches a picture over the rect, tinted. |
-| `UIText` | SDF text aligned in the rect. A `shadow` colour draws it again underneath, for text over the scene with no panel. |
+| `UIText` | SDF text aligned in the rect. A `shadow` color draws it again underneath, for text over the scene with no panel. |
 | `UIButton` | Fires `UIClickEvent`; also the drag primitive. See Interaction. |
 | `UIScroll` | Makes the element a window onto its children. Always clips. |
 | `UISlider` | Rides a `UIButton`, its track. |
@@ -30,7 +30,8 @@ viewport ([the editor names them](editor.md#a-card-names-what-its-component-is-w
 an element with no `UICanvas` ancestor is never visited - strictly an ancestor,
 so a `UIElement` on the canvas entity itself is never resolved
 (`hasCanvasAncestor`, `ecs/component/ui/ui_canvas.h`); and a `UIImage` /
-`UIText` / `UIButton` / `UIChoice` on an entity with no `UIElement` is never reached.
+`UIText` / `UIButton` / `UIChoice` on an entity with no `UIElement` is never
+reached.
 
 ## Layout: anchor / pivot
 
@@ -77,8 +78,8 @@ one bake serves a wide range of `pixelSize`. The font is referenced by **asset
 name**, not a handle; a name nothing answers to draws nothing, and the
 inspector's UI Text card shows it in red.
 
-A bake covers printable ASCII, U+00A0-U+00FF and `FontAsset::MARKS`. An uncovered character draws and advances
-nothing; a malformed byte is skipped.
+A bake covers printable ASCII, U+00A0-U+00FF and `FontAsset::MARKS`. An
+uncovered character draws and advances nothing; a malformed byte is skipped.
 
 A newline always breaks; `wrap` also breaks at the last space that fits the
 width, or mid-word for a word wider than the rect. `valign` places the whole
@@ -110,7 +111,9 @@ subscribe([this](const UIClickEvent& e) {
 A press of `UI/Click`'s mouse button that begins over a blocker belongs to the
 UI: it reads as down for `UI/Click` and up for every other action until
 released, so a click on a menu never fires a weapon and gameplay code never has
-to ask.
+to ask. Input is read before the UI lays out, so it asks the panels as last laid
+out (`InputMap::setPointerBlockers`), at the pointer where it is now: a click the
+frame the pointer arrives on a panel is the panel's.
 `input().pointerOverUI()` answers the same question for anything else, such as
 hiding a crosshair. With the cursor disabled for mouse-look
 (`CursorMode::Disabled`) nothing is hit-tested. In the editor, while the
@@ -212,11 +215,14 @@ is not listening - a menu, a pause screen.
 ## Editor authoring
 
 UI is authored through the inspector, with a card per UI component and full
-undo; there are no on-canvas rect handles. The Create menu's "UI" submenu
-(Canvas / Panel / Scroll View / Text / Button) parents a new element under the
-selected canvas or element. Dragging an element in the Hierarchy reparents it;
-a move that leaves it with no `UICanvas` ancestor still happens and raises a
-toast.
+undo; a selected element's rect also takes handles on the canvas
+([editor.md](editor.md#transform-gizmo)). The Create menu's "UI" submenu (Canvas
+/ Panel / Scroll View / Text / Button / Slider / Toggle / Choice) parents a new
+element under the selected canvas or element; a slider, toggle or choice comes
+with its parts built and named in it - fill and knob, knob, arrows and text - in
+plain colors (`EditorActions::createEntity`). Dragging an element in the
+Hierarchy reparents it; a move that leaves it with no `UICanvas` ancestor still
+happens and raises a toast.
 
 ## Not built
 
@@ -237,6 +243,9 @@ layout is the 2D sibling of resolving `WorldTransform`.
 
 ```
 UISystem::update(FrameContext)
+  |-- ctx.loading showing: the loading screen into a list of its own, on ctx.cover:
+  |     the project's screen's canvases, then the status line and a tip; their hits
+  |     are cleared before the world's walk, which keeps its own
   |-- collect visible UICanvases, sort by sortOrder
   |-- per canvas: walk its hierarchy parent-before-child, carrying the clip rect
   |     and inherited opacity:
@@ -244,6 +253,7 @@ UISystem::update(FrameContext)
   |       emit quads (UIImage, UIButton) and glyphs (UIText), each tagged with its clip
   |       record hit candidates and blockers still in sight
   |       narrow the clip / offset for scroll / measure content for the children
+  |-- RenderSettings::showFrameRate, while no host authors: the frame rate at the top right
   |-- resolveInteraction(): topmost blocker wins; button states, UIClickEvent,
   |     toggle/slider/choice changes with UIValueEvent, wheel to a scroll view
   |-- a toggle, slider or choice changed: walk the canvases again so its parts show it
@@ -251,8 +261,53 @@ UISystem::update(FrameContext)
 
 RenderSystem::update
   |-- RenderView::build points view.ui at ctx.ui (also on the no-camera path)
-  |-- backend: ... -> Composite -> ... -> GLUIPass -> Splash
+  |-- backend: ... -> Composite -> ... -> GLUIPass -> Splash -> Loading -> GLUIPass (cover)
+  |             -> LoadingBar
 ```
+
+### The loading screen
+
+A world arriving - a load, a restart, a server's next scene - moves the scene's
+epoch, and `LoadingSystem` covers it from that frame until it is ready to show:
+the renderer's startup programs compiled, none of its assets decoding
+(`assetsLoading`) and none of its first bakes owed
+([rendering.md](rendering.md#bakes)); then it fades. A world whose steps stop
+coming for `setPatience` seconds is shown as it is, with a warning - but not
+while the programs compile, which always end. Its `LoadingFrame` is drawn in
+three layers: the backend's backdrop, the water; `UISystem::layOutCover`'s draw
+list of its own (`ctx.cover`), which a second `GLUIPass` draws over the
+viewport, holding the line naming the step under way; and over both the
+backend's bar of the steps done
+([rendering.md](rendering.md#the-passes-fixed-order)). A splash shows alone: the
+bar, the line, the tip and the project's screen come in once it has gone
+(`LoadingFrame::content`). While it shows it takes the pointer: nothing under it
+is hovered, pressed or scrolled, and the pointer stirs the water instead
+(`RenderView::pointer`).
+
+A project adds to it through `LoadingSystem::setScreen`, which the runtime and
+the editor call with `Project::loading`
+([io.md](io.md#projects-and-their-roots)): tips, shown under the bar in turn; a
+prefab of UI canvases, built into a scene of the loading system's own and laid
+out into the cover's list ahead of the line, so it sits over the water and under
+the bar; and whether the water shows behind it, else plain black. The screen is
+only looked at: nothing on it is pressed, and an image on it shows once it has
+decoded, so none draws as the missing-texture checker.
+
+A host authoring the world shows it only over a world it asked to have covered
+(`HostChrome::coverNextWorld`: the editor opening a project or scene) and while
+the renderer's programs compile; for any other world the editor's viewport says
+the same line over its own bar (`ViewportOverlay::drawLoadingNotice`). The world
+under it waits only for its meshes
+([architecture.md](architecture.md#the-fixed-step)), then runs: a scene that
+starts at once is already moving when it lifts. While the cover is whole the
+world is not drawn, and the bakes have the time.
+
+A load a behavior asks for waits behind it: the loader enqueues `LoadExpected`
+(`loading_events.h`) every frame it waits and loads once a frame of the cover
+has been shown (`LoadingFrame::covering`), so its stall shows the cover; a frame
+it does not ask in - the load failed, or went - lets the cover go. The screen
+reads the renderer's readiness off `FrameContext::readiness`: no system calls
+another.
 
 ### The draw seam
 

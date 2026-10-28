@@ -154,10 +154,10 @@ Three channels carry a failure; pick by **who caused it and who can act on it**:
 
 - **`LOG_ERROR` and friends** reach the developer's console. Every failure logs.
 - **`reportError(category, source, message)`** (`debug/engine_error_log.h`)
-  reaches the editor's Errors tab and the cooker's summary: a recoverable failure
-  the **project author** caused - a throwing script hook, an asset that will not
-  resolve, a module that will not load. It logs too, so it never wants a
-  `LOG_ERROR` beside it.
+  reaches the editor Console's Errors and the cooker's summary: a recoverable
+  failure the **project author** caused - a throwing script hook, an asset that
+  will not resolve, a module that will not load. It logs too, so it never wants
+  a `LOG_ERROR` beside it.
 - **`state.pushToast(...)`** reaches the author beside the gesture, for an
   **editor action** that succeeded or failed. An editor operation that fails
   takes the log and the toast, not `reportError` - the author caused nothing.

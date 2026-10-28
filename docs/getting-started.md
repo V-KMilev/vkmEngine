@@ -74,7 +74,7 @@ vkm new lab -t the_lab          # or potion_runner, stress_arena, city_block
 ```
 
 The editor runs the same commands - New Project, File > Build Scripts and
-Package Game - and shows their output in its Build tab.
+Package Game - and shows their output in its Console's Build view.
 
 `engineVersion` in `project.json` records the engine a project was made for.
 Built against another *minor* release, configure stops and names both; set
@@ -180,7 +180,7 @@ for NVIDIA's offload, `DRI_PRIME=1` for Mesa's.
 ### The shipping engine
 
 A game ships on a second build of the engine in the SDK's `shipping/`, with
-asserts off ([building.md](reference/building.md#the-shipping-engine)).
+asserts and debug drawing off ([building.md](reference/building.md#the-shipping-engine)).
 `vkm package --development` packages on the development engine instead, for
 testing.
 

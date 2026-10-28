@@ -15,8 +15,8 @@ simulation. They never contend for a component:
 ## Animation component
 
 `Animation` holds three independent tracks - position, rotation, scale - and
-`length`, `speed`, `looping` and `playOnStart`. `time`, `playing` and `started`
-are runtime only, never serialized.
+`length`, `speed`, `looping` and `playOnStart`. `time`, `playing`, `started` and
+`movingBody` are runtime only, never serialized.
 
 **`playOnStart` is the authored flag and `playing` is the session's**
 ([engine.md](../guides/engine.md#4-what-has-already-been-decided)). The first update with a non-zero
@@ -108,8 +108,12 @@ The blend runs in unscaled simulation seconds, not scaled by `speed`.
 
 Calling it with the clip already playing leaves it alone; with that clip
 stopped, plays it again from its start; with another stopped, blends out of the
-frame it holds. No clip to blend out of, or `seconds <= 0`, is a cut. A second call mid-fade drops the clip on its way out,
-so the pose jumps by its remaining weight - the price of two slots.
+frame it holds. No clip to blend out of, or `seconds <= 0`, is a cut.
+
+A call mid-fade back to the clip on its way out **turns the fade round**, so a
+character flicking between two states does not restart a stride each time; a
+call mid-fade to a third clip drops the one on its way out - the price of two
+slots.
 
 The countdown runs on simulation time, not on `playing`: a one-shot shorter than
 the blend into it stops, and the fade still finishes on its last frame.
@@ -151,7 +155,7 @@ naming the entity carrying the `Animator`. Gameplay subscribes - there is no
 subscribe([this](const AnimationEvent& e) {
     if (e.entity != m_player || e.marker != "footstep") return;
     if (!m_grounded) return;                       // gameplay decides, not the clip
-    events().emit(PlaySoundEvent::at(m_footstep, scene().get<Transform>(m_player).position));
+    playSoundAt(footstep, scene().get<Transform>(m_player).position);
 });
 ```
 
@@ -247,15 +251,16 @@ midpoint of two world positions and shortens the limb. The single loop relies on
 the rule for the cooked reader, the writer and the system to check.
 
 The pose is composed once per tick, and once per paused frame from where the
-heads stand, so a paused scrub shows. A running frame with no tick reuses the
-last tick's pose unless the world was replaced (`Scene::epoch()` moved). A clip
-whose bone table does not match the rig, or that names another rig, is refused
-and logged once; a skeleton or clip built in code is judged by `findSkeletonFault`
-and `findClipFault` before use.
+heads stand, so a paused scrub shows. A running frame reuses the last tick's
+pose unless the world was replaced (`Scene::epoch()` moved), but for a
+ragdoll's. A clip whose bone table does not match the rig, or that names another
+rig, is refused and logged once; a skeleton or clip built in code is judged by
+`findSkeletonFault` and `findClipFault` before use.
 
-A rig an active ragdoll has taken over is composed from its bodies, which are
-read before `PhysicsSystem` moves them, so **a ragdoll's skin trails its bodies
-by one tick**.
+A rig an active ragdoll has taken over is composed from its bodies. A tick reads
+them before `PhysicsSystem` moves them, so the frame composes those rigs again
+from where the bodies landed (`reposeRagdolls`), and the skin is drawn where its
+bodies are.
 
 ### The frame a pose lives in
 

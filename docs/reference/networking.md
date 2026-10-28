@@ -64,7 +64,7 @@ Without the entry a project runs single-player in the runtime and editor, and
 `vkm_server` refuses to serve it. Returning a null id refuses the join
 (`NetRefusal::Declined`) - how a game says "the match has started".
 
-### The four questions
+### The five questions
 
 On `Behavior`, so a networked behavior reads like a single-player one:
 
@@ -73,7 +73,8 @@ On `Behavior`, so a networked behavior reads like a single-player one:
 | `isSimulated()` | before writing a transform, a velocity, anything the world can see | always true |
 | `isMine()` | before touching the camera, the pointer, the HUD - anything about *this* player | always true |
 | `command()` | instead of reading the device inside a fixed update | the local command |
-| `isReplaying()` | before anything that *presents* - a clip, a sound, an effect | always false |
+| `isReplaying()` | before anything that *presents* - a clip, an effect (`playSound` asks itself) | always false |
+| `isAuthority()` | before deciding what is shared - a score, a door - or `instantiateShared` | always true |
 
 `isSimulated()` and `isMine()` differ: a server simulates every player and owns
 none of them. `command()` is the local input offline and on the owning client,
@@ -119,11 +120,11 @@ left goes with their seat.
 `Transform`, `Rigidbody`, `CharacterController`, `Ragdoll` and `NetSpawn` are
 registered by the engine (`registerEngineNetTypes`).
 
-- **`CharacterController` sends `grounded` and `crouched` only.** An end that
-  does not simulate the character never decides `crouched`, and applies no
-  gravity so never finds the ground. Input, step-up state and slope normal stay
-  local: sent, they would overwrite the owner's prediction with an answer a round
-  trip old.
+- **`CharacterController` sends `grounded`, `jumping` and `crouched` only.** An
+  end that does not simulate the character never decides `crouched`, and
+  applies no gravity so never finds the ground or leaves it. Input, step-up
+  state and slope normal stay local: sent, they would overwrite the owner's
+  prediction with an answer a round trip old.
 - **`Ragdoll` sends `active` only**; it decides whether the bones travel (below).
 
 A project adds its own from `vkmSetupNetwork`, and only there - the schema is
@@ -175,10 +176,11 @@ world once per send round through the same rule (`NetSilenceMap`).
 
 ### Spawning
 
-`NetSession::spawn(scene, resources, prefab, at)` builds a prefab on the server
-and on every client, including later joiners; offline it is an ordinary
-instantiate. On a client it is refused - the server would never hear of it - and
-a client's own entity is a plain `Prefab::instantiate`.
+`NetSession::spawn(scene, resources, prefab, at)` - a behavior's
+`instantiateShared(prefab, at)` - builds a prefab on the server and on every
+client, including later joiners; offline it is an ordinary instantiate. On a
+client it is refused - the server would never hear of it - and a client's own
+entity is a plain `instantiate`.
 
 **There is no despawn.** Destroy the root with its subtree -
 `HierarchyOperations::destroyHierarchy` or `Behavior::destroy` - and clients drop
@@ -197,6 +199,33 @@ entity below it took (`Prefab::BuiltSlots`), for up to `NET_SPAWN_MAX_SLOTS`; a
 bigger instance is sent with none, so its slots can differ between the ends. The
 client builds the same file into those slots, so the subtree's state is never on
 the wire.
+
+### Changing scene
+
+A server that loads another scene mid-session (`Behavior::loadScene`) takes its
+players along. `BehaviorSystem` tells the session the world it loaded and the
+project-relative path (`NetSession::setWorld`). The server then spawns every
+seated player again through `SpawnPlayer`, keeping their player numbers; no
+`DespawnPlayer` runs for the old world, whose entities went with it, and a spawn
+that seats players on scene characters asks `NetSession::isDriven` which are
+taken. Each client is sent `World` (the scene, its fingerprint and the
+client's entity) in place of snapshots until it says it holds that world. A
+client loads the scene the same way (`NetSession::takeSceneToLoad`) and plays on
+in it; one that does not load ends its session (`NetSession::worldFailed`), as
+it cannot play on in the world it left.
+
+- **The world is numbered** (`NetCore::worldGeneration`): a snapshot carries
+  its number, and a client drops one of a world it does not hold. So does a
+  command: the server runs none made for the world before, queued or sent while
+  the client loads.
+- **A client opens the path on the server's word**, so it must name a JSON file
+  inside the project (`isProjectJsonPath`). A scene that differs from the
+  server's (by fingerprint) ends the session.
+- **A player the game declines in the new world is let go** with a `Goodbye`.
+- **A late joiner** whose entry scene is not the server's current one is seated
+  anyway, and told which to load; it drives nothing until it has.
+- **A player still loading is waited for longer** than a silent one: a load can
+  hold its frames, and every packet with them.
 
 ### Lag compensation
 
@@ -297,12 +326,14 @@ A snapshot carries a component only when its quantised bytes differ from what
 that connection has **confirmed receiving** - confirmed, not sent, or a client
 that missed a packet is never told again. The delta is on presence, never on
 values: every entry decodes from the packet alone. Joining and playing are one
-code path: a connection that has confirmed nothing gets the whole world. A
-settled world goes quiet.
+code path: a connection that has confirmed nothing gets the whole world, and is
+told what has gone from the world as loaded (`NetServer::adoptWorld`), which its
+own copy of the scene file still holds. A settled world goes quiet.
 
 - **What has gone is reported by occupant, not by slot**, so an entity destroyed
   and replaced between two sends is not missed. The client applies losses before
-  entries.
+  entries. A late acknowledgement of a slot's earlier occupant is ignored once a
+  newer occupant, or the slot's emptying, is confirmed.
 - **A component taken away is said gone**: an entry carries the types the
   connection holds and the entity no longer does, and the client removes them.
   A removal is confirmed like any change, so a late acknowledgement of an older
@@ -314,7 +345,9 @@ settled world goes quiet.
   `Transform` takes its scale).
 - **The connection's own entity is written every snapshot**, unchanged or not,
   and never deferred: the receiver holds its own prediction, not what it was
-  told, and reconciles against it.
+  told, and reconciles against it. One too large for a snapshot even alone is
+  left out (`NetSnapshotStats::ownerTooLarge`, logged once), so the rest still
+  goes.
 - **The budget.** `NetBudget::bytes` is a ceiling (default
   `NetConnection::MAX_PAYLOAD`). What does not fit is deferred, and a deferred
   entity's priority rises until it goes.
@@ -384,10 +417,10 @@ destructor, so no tick simulates from a position chosen to look nice. There is
 one offset per predicted body, so a leased crate and the character pushing it
 ease together.
 
-Only `Transform` and `Rigidbody` of what this end predicts - its character and
-the bodies it leases - are set aside and restored when the prediction stands
-(`holdPredicted` / `restoreHeld`), and only the character's position decides; a
-disagreement elsewhere never causes a replay.
+Only `Transform`, `Rigidbody` and `CharacterController` of what this end
+predicts - its character and the bodies it leases - are set aside and restored
+when the prediction stands (`holdPredicted` / `restoreHeld`), and only the
+character's position decides; a disagreement elsewhere never causes a replay.
 
 ### Replay
 
@@ -400,6 +433,8 @@ only those run in the replay pass.
 | `BehaviorSystem` - turns a command into movement | `AnimationSystem` - a clip advanced twice gains a tick |
 | `PhysicsSystem` | `SkeletalAnimationSystem` - a marker crossed twice is a footstep played for one step |
 | `CharacterControllerSystem` | `RagdollSystem` - writes bone state from the pose, which both ends do for themselves |
+| `OceanSystem` - builds the sea the tick floats on; a client's is the drawn moment's, not the replayed tick's | |
+| `WaterSystem` - floats what is in the water | |
 
 The replay pass also runs **no `EventBus::flush()`** (it would deliver the live
 queue twice), **no `InputMap::beginTick()`** (the session hands over the original
@@ -407,7 +442,9 @@ command) and reports **no collision or trigger events**
 ([physics.md](physics.md#events)). Behaviors tick only for what this end
 simulates, and a body it does not decide is immovable for the pass.
 Unreplicated per-tick state - the controller's step latch and `walkSpeed`,
-animation, a behavior's members - is not rewound.
+animation, a behavior's members - is not rewound. Nor is the ground a character
+stood on: a snapshot says whether it stood, so a replay's first tick measures a
+crest and a moving floor's carry from the present's ground.
 
 ### Leasing
 
@@ -420,6 +457,8 @@ session:
 - **Never onto another character** (a body with a `CharacterController`) - what
   steers it is not this end's input.
 - **Joints are edges**, so a shoved ragdoll leases its jointed limbs.
+- **Only the server's bodies are leased**: one the client runs already (its own,
+  or at or below a `NetLocal`) would be run again by every replay.
 
 A lease lasts `LEASE_TICKS` after it was last reported, so it does not lapse
 on each bounce. `simulates()` gates physics' gather and writeback, so the lease
@@ -443,10 +482,13 @@ sent for acknowledgement and nothing is retransmitted (why UDP is a row in
 sixteen bits and wrap, so newer-than is a distance, not `a > b`. A packet older
 than one accepted is refused.
 
-Snapshots (`NET_SNAPSHOT_RATE`) and commands (`NET_COMMAND_RATE`) go out 64 times
-a second by wall clock, at most one packet a frame; an overrun carries forward
-but never becomes a burst. Lowering `NET_SNAPSHOT_RATE` saves bandwidth and makes
-other players look later, since the interpolation delay is counted in snapshots.
+Snapshots (`NET_SNAPSHOT_RATE`, at most) and commands (`NET_COMMAND_RATE`) go
+out at a fixed rate by wall clock, at most one packet a frame; an overrun
+carries forward but never becomes a burst. A project ticking fewer times a
+second sends a snapshot a tick (`snapshotRate`), as one between ticks says
+nothing new. Lowering `NET_SNAPSHOT_RATE` saves bandwidth and makes other
+players look later, since the interpolation delay is counted in snapshots, at
+the rate they arrive.
 
 ### The handshake
 
@@ -457,11 +499,13 @@ fingerprint (`setWorld`) and the `tickRate`. Commands carry actions by slot and
 entities are named by slot, so any difference is refused with
 `NetRefusal::Mismatch`, both ends printing what they hold; a fingerprint of zero
 (a generated world, or an end that has not ticked yet) is compared against
-nothing. A different tick rate is `NetRefusal::TickRate`. A full server (`Full`)
-and a game that declined (`Declined`) are refused the same way, with a reason a
-player can be shown. A message's header, the kinds `Hello` and `Refuse` and the
-refusal reasons are fixed across protocol versions, so another build's `Hello`
-gets `Mismatch` and anything else from it is dropped unread.
+nothing, and a different entry scene is seated once the server has moved on to
+another ([Changing scene](#changing-scene)). A different tick rate is
+`NetRefusal::TickRate`. A full server (`Full`) and a game that declined
+(`Declined`) are refused the same way, with a reason a player can be shown. A
+message's header, the kinds `Hello` and `Refuse` and the refusal reasons are
+fixed across protocol versions, so another build's `Hello` gets `Mismatch` and
+anything else from it is dropped unread.
 
 The client says hello from the frame loop, not `connect()`, because actions are
 defined in a behavior's `onStart`, inside the first tick; it repeats at the

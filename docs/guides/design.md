@@ -85,6 +85,7 @@ The directory tree encodes responsibility. Let it place your code:
 | Scene / asset / component (de)serialization   | `src/engine/io/`                     |
 | What goes on the wire, or who decides what    | `src/engine/net/` - not a system; see [engine.md](engine.md#5-what-everything-else-stands-on) |
 | GPU-specific work                             | `src/backend/opengl/`                |
+| An OpenGL object, the state it keeps or a call on it | `modules/vkmGL/` - the backend only uses it; see [2.6](#26-a-render-pass) |
 | A shader                                      | `shaders/<pass>/`                    |
 | Editor-only UI or interaction                 | `src/editor/` - read [2.5](#25-four-editor-rules-that-fail-quietly) first |
 | Importing an asset from its source art (cook-only) | `src/tools/import/`              |
@@ -183,8 +184,11 @@ Passes are a backend detail and stay in `src/backend/opengl/`
 ([engine.md](engine.md#3-what-the-engine-refuses)):
 
 1. **Subclass `GLPass`** (`gl_pass.h`) and override `execute(GLFrameContext&)`.
-   The backend resets depth, blending and culling before every pass; there is
-   no epilogue to write.
+   Before every pass and after the last, the backend resets the state
+   `Context::setDefaultState` tracks, then sets the pass depth test with culling
+   off, so there is no epilogue to write for it. The viewport, the scissor
+   rectangle, the clear color and the bindings - framebuffer, program,
+   textures - are not reset: a pass sets the ones it uses.
 2. **Gate yourself in the first lines of `execute()`** - `if
    (!ctx.view.settings.bloom) return;`. The backend runs every pass.
 3. **Register it in the ordered list** in `gl_backend.cpp`, after the passes that
@@ -201,9 +205,14 @@ Passes are a backend detail and stay in `src/backend/opengl/`
    layout, never a draw per mesh.
 7. **Per-frame data goes through the frame's stream** (`ctx.resources.stream()`,
    a `Vkm::GL::StreamRing`), not a buffer of the pass's own refilled each frame;
-   a buffer the GPU writes stays its owner's. GL objects are edited by name
-   as vkmGL does - a pass binds only to draw or sample.
-8. **Depth has one convention, reversed for the eye.** Clear, test and read it
+   a buffer the GPU writes stays its owner's.
+8. **OpenGL is vkmGL's.** A texture, buffer, vertex array, program or
+   framebuffer is a vkmGL object, edited by name through its methods - a pass
+   binds only to draw or sample - and pipeline state goes through
+   `Vkm::GL::Context`'s cache. What vkmGL cannot do yet is
+   added to vkmGL, with a test, not written as raw `gl*` calls in the backend;
+   inside vkmGL every call is under `VKM_GL_CHECK`.
+9. **Depth has one convention, reversed for the eye.** Clear, test and read it
    through `convention/gl_depth.h` and `shaders/depth.glsl` (`EYE_CLEAR`,
    `EYE_TEST`, `isFarDepth`, `nearerDepth`...), never a literal `1.0` or
    `GL_LESS`; a shadow map keeps near 0, far 1 through `GLDepth::shadowProjection`.

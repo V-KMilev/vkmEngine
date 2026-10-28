@@ -11,6 +11,7 @@ defect to report.
 
 - `#pragma once`, never include guards.
 - **ASCII only**, in source, in comments and in the manual.
+- **color**, as GL and ImGui spell it, in source, in comments and in the manual.
 - **4 spaces**, never tabs.
 - In a `.cpp`, the **own header is the first include**, alone. The only thing
   allowed before it is `#define VKM_LOG_CATEGORY`.
@@ -50,9 +51,9 @@ engine, the examples and the template: an undeclared or `static` function in a
 `.cpp`, a Windows macro name, a stray `@param`, a log category out of step with
 the logging, a line past 110 columns or a tab (shaders included), a list broken
 any way but whole or broken when it fits, a comment inside an argument list, a
-class missing a special member, a struct with a private section - and a
-reference page that is not ASCII, cites a line number, or names a file, link or
-member that does not exist.
+class missing a special member, a struct with a private section, color spelt the
+British way - and a reference page that is not ASCII, cites a line number, or
+names a file, link or member that does not exist.
 
 ---
 
@@ -276,6 +277,7 @@ void build(
     const Scene& scene,
     const Visibility& visibility,
     const UIDrawData* ui,
+    const UIDrawData* cover,
     const SplashFrame* splash,
     const PoseBuffer* poses,
     const LiveParticles* particles,
@@ -309,6 +311,7 @@ Five shapes keep a layout of their own:
       RenderSystem& renderSystem,
       RenderSettings& render,
       AudioSystem& audioSystem,
+      LoadingSystem& loadingSystem,
       BehaviorSystem& behaviorSystem,
       ScriptModule& scriptModule
   )

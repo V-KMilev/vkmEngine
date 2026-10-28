@@ -34,7 +34,8 @@ not the manual. The manual is in `docs/`, and it is the better place to start:
   serialized by *name* - the name is the identity that survives a save.
 - **Systems never call each other.** Vkm::Engine::FrameContext is the only
   per-frame channel between them: references are services, pointers are
-  per-frame products that are null until their producer has run.
+  per-frame products that are null until their producer has run, but for
+  `readiness` and `debug`, services a host may not keep.
 
 @section api_stability What is stable
 

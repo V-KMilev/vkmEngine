@@ -25,19 +25,29 @@ What the fields do not say on their own:
   [rendering.md](rendering.md#rendersettings-and-rendermode)) and keeps the
   choice in its own file ([below](#a-projects-own-files)).
 - `splash` (logos the runtime shows after the engine's) and `fonts` (a
-  `UIText` names one by its `name`) are usually empty.
+  `UIText` names one by its `name`) are usually empty; Project Settings edits
+  both, and bakes the fonts as it saves.
+- `loading` (`LoadingScreen`) is what the project adds to the loading screen:
+  `tips`, its own `screen` (a prefab) and whether the `water` shows
+  ([ui.md](ui.md#the-loading-screen)). Absent, the engine's alone shows; Project
+  Settings edits it.
 
 A missing or malformed `project.json` is **not** fatal: the defaults stand and the
-project opens under its folder's name. A `render` setting of the wrong type keeps
-its value and warns.
+project opens under its folder's name. A key or `render` setting of the wrong type
+keeps its value and warns; the rest of the file is still read.
 
 `saveProject` overwrites the fields the struct describes and leaves every other
 top-level key as it was - the file is hand-authored as often as tool-written.
 The `render` block is the exception: it is rebuilt from
-`visitShippedRenderFields`, every shipped field and nothing else. `saveProject`
-never writes `splash` or `fonts`: `loadProject` drops an entry naming nothing,
-so writing a list back would delete it. The editor's Project Settings window
-stamps `engineVersion` with the running engine before it saves.
+`visitShippedRenderFields`, every shipped field and nothing else, and
+`saveProjectRender` writes that block alone. Neither writes over a file that
+does not parse. `saveProject` writes `splash`, `fonts` or `loading` only when it
+differs from what the file reads as: `loadProject` drops an entry naming
+nothing, so a list left alone keeps such entries as written. `physicsLayers` is
+written without its trailing unnamed entries, and not at all when none is named.
+The editor's Project Settings window stamps `engineVersion` with the running
+engine before it saves; its Render Settings window writes the `render` block as
+each edit ends, outside a play session.
 
 `findProjectRoot(start)` takes a directory *or any file inside it* and walks up
 to the `project.json`.
@@ -108,7 +118,7 @@ The runtime plays a finished game; the editor is the tool you repair one with.
 | Window / graphics surface cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
 | No gameplay module in the project's `bin/` | exit 1 | opens, logs WARNING | n/a |
 | Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs ERROR | n/a |
-| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast and an Errors panel entry | exit 1 |
+| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast and an entry in the Console's Errors | exit 1 |
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | cooks every scene in `scenes/`; exit 0 if there is none |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | cooks every scene in `scenes/`; exit 0 if there is none |
 | An asset fails to cook | n/a | reported, the session continues | exit 1 |
@@ -171,12 +181,15 @@ What a load and a save promise:
   resolve leaves the component's slot empty and goes through `reportError`; a
   prefab that will not open leaves the instance holding its reference and
   overrides, so restoring the file brings the subtree back.
-- **Every number written is finite.** JSON cannot spell an infinity or a NaN, so
-  `detail::writeNonFiniteAsZero` writes one as `0` and logs its path. The read
-  stays strict: a `null` in a scalar field is a type error.
+- **Every number written is finite, and a float is written short.** JSON cannot
+  spell an infinity or a NaN, so `detail::tidyNumbers` writes one as `0` and logs
+  its path; the read stays strict: a `null` in a scalar field is a type error. A
+  float's value is written as the shortest decimal that reads back as it (`0.92`,
+  not `0.9200000166893005`), so a value saved unchanged writes the same digits.
 - **A write never truncates.** Every JSON write - scene, prefab, manifest - goes
-  through `detail::writeJsonFile`, which writes a sibling `.tmp` and renames it
-  over the target only after a clean write.
+  through `detail::writeJsonFile`, which writes a sibling temporary of its own
+  (`WholeFileWrite`; no other writer, thread or process, names it) and renames
+  it over the target only after a clean write.
 
 The play-mode snapshot (`saveToString` / `loadFromString`) is the same builder
 and the same load, so a scene that could be saved can be restored on Stop. It
@@ -266,8 +279,9 @@ from it. Each asset is its own file:
   Version-controlled.
 - `cooked/<type>/<uid>-<key>.vkmc` - the cooked body. Regenerable; git-ignored.
   Deleting `cooked/` is always safe.
-- `cooked/_manifest.json` - one row per asset: name, type, recipe hash and the
-  source files that hash read. `AssetLibrary` is the in-memory view.
+- `cooked/_manifest.json` - one row per asset: name, type, recipe hash, the
+  source files that hash read, and the recipe document's own hash.
+  `AssetLibrary` is the in-memory view.
 
 Neither filename is recorded: `AssetLibrary::recipePath()` and `cookedPath()`
 derive them from (type, name), the uid being a hash of `"<type>:<name>"`.
@@ -283,7 +297,7 @@ A model file's parts are named by the file and the part
 |------------------------|------------------|-----------------------------------------------------|
 | `generator` / `decimate` | editor, cooker | Procedural / LOD meshes                             |
 | `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; a `.terrain` file; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
-| `solid`                | editor, cooker   | Single-colour textures                              |
+| `solid`                | editor, cooker   | Single-color textures                              |
 
 A material's recipe has no `kind`: it is the material's values and its texture
 refs by name, read by every host whatever it was imported from.
@@ -346,7 +360,9 @@ materials that name them, rigs before the clips and meshes bound to them - and
 skips a name the graph already holds. Every kind but a material goes to the
 cooked loader (`io/asset/cooked_loader.h`), which finds the manifest row,
 probes the file with `AssetCook::isCookedCurrent` and reads it - a mesh or
-texture on the `ThreadPool`, the rest at once.
+texture on the `ThreadPool`, the rest at once. Where a recipe import is
+installed, a recipe whose document no longer hashes to the row's `document` (one
+edited by hand or pulled) is imported instead, and the next save cooks it.
 
 On a miss the recipe is imported through the `AssetFactory` seam
 (`io/asset/asset_factory.h`), one import per kind, which the editor and
@@ -385,12 +401,16 @@ cooker runs in dependency order. An asset served from the cache carries a
 `AssetCooker::cookStaleAssets` notices re-exported art behind it.
 
 The cooked name's key mixes the recipe hash, the kind and `COOKER_VERSION`
-(`AssetCook::cacheKey`, `io/asset/asset_cook.h`), so a stale file is simply never
-asked for. One probe, `AssetCook::isCookedCurrent`, serves the loader and the
-cooker's skip, so they cannot disagree. **Bump `COOKER_VERSION` whenever
-anything the cooker writes changes** - a layout, an importer flag, a mip
-policy; `testTheCookersOutputIsPinnedToItsVersion` fails when the bytes move
-under an unchanged version.
+(`AssetCook::cacheKey`, `io/asset/asset_cook.h`), so a stale file is simply
+never asked for. One probe, `AssetCook::isCookedCurrent`, serves the loader and
+the cooker's skip, so they cannot disagree. It reads the header and size only; a
+body the reader then refuses is reported as an error (`awaitAsyncLoads` returns
+false, and a cook counts it failed) and, where the host can import its recipe,
+removed for the next cook to bake again; a host that cannot keeps the file.
+**Bump `COOKER_VERSION` whenever anything the cooker writes changes** - a
+layout, an importer flag, a mip policy;
+`testTheCookersOutputIsPinnedToItsVersion` fails when the bytes move under an
+unchanged version.
 
 The `.vkmc` header and each body's layout are in `asset_cook.cpp`, beside the
 size constants. Its readers are defensive: every count is bounded against what

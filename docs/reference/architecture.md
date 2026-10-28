@@ -68,10 +68,10 @@ that needs more speed parallelises its own loop on the `ThreadPool`
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem` (**editor binary only** - the editor's view, published as `ctx.hostView`) |
-| Simulation | (EventBus flush), `SplashSystem`, `AsyncLoaderSystem`, `OceanSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `RagdollSystem` (after the pose it reads, before the bodies it writes), `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
+| Simulation | (EventBus flush), `SplashSystem`, `LoadingSystem` (not in a headless host), `AsyncLoaderSystem`, `OceanSystem`, `WaterSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `RagdollSystem` (after the pose it reads, before the bodies it writes), `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `BoneSocketSystem`, `HierarchySystem`, `TerrainSystem`, `UISystem` (runs in **every** host), `AudioSystem` and `ParticleSystem` (both after the world resolve they read poses from) |
 | Visibility | `VisibilitySystem`                                                            |
-| Render     | `RenderSystem`                                                                |
+| Render     | `DebugViewSystem` (the scene's components, into the debug categories shown), `RenderSystem` |
 | Editor     | `EditorSystem` (editor binary only)                                           |
 
 A new system goes at the stage its responsibility belongs to, and stage order
@@ -86,15 +86,22 @@ hook - physics, the network tick - and takes its step from
 paces how fast the accumulator fills, never the step
 ([networking.md](networking.md#pacing)).
 
+A world arriving runs no tick while a mesh decodes (`ArrivalHold`, which holds
+the clock): a floor or a water surface made of one is not there yet, and a body
+ticked meanwhile falls through it. A mesh streamed in once the world runs holds
+nothing, and loads that stop landing are given up on.
+
 ### FrameContext
 
 Every system receives a `FrameContext` (`core/system.h`). Its **references are
 the Engine's services**, valid all session; its **pointers are per-frame
 products** - the culled set, the rig poses, the UI draw list and the like - null
-until the stage that produces them has run. The fixed step runs before any
-producer stage, so inside `fixedUpdate()` they are null, except `poses` and
-`ocean`, which `SkeletalAnimationSystem` and `OceanSystem` fill in their own
-fixed step.
+until the stage that produces them has run - except `readiness` and `debug`,
+services a host may not keep, null for all of a session on one that does not.
+The fixed step runs before any producer stage, so inside `fixedUpdate()` they
+are null, except `poses`, `ocean` and `water`, which `SkeletalAnimationSystem`,
+`OceanSystem` and `WaterSystem` fill in their own fixed step; a replayed tick,
+which runs no `SkeletalAnimationSystem`, has `ocean` and `water` alone.
 
 Time is read off the clock: `getDeltaTime()` is real seconds (input, camera,
 UI), `getSimDelta()` is that scaled by play state (0 while paused, one step
@@ -139,18 +146,14 @@ Engine code, single include root `src/engine/`:
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`, `TypeRegistry`   |
 | `core/event/`              | `EventBus` (typed pub/sub) and the `EventSender` view behaviors get |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`, `PhysicsSettings`, `EntityResolver` and `EntityNamer` (in `entity_mapping.h`), `HierarchyOperations` (free functions) |
-| `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
-| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `PlanarReflector`, `IrradianceVolume`, `Ocean`, `Terrain` |
-| `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
-| `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
-| `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |
-| `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`, `UIScroll`, `UISlider`, `UIToggle`, `UIChoice`, `UIShape` |
-| `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`, `NetSpawn`                             |
+| `ecs/component/`           | the built-in components, one folder per domain ([ecs.md](ecs.md#built-in-components) lists them) |
 | `system/animation/`        | `AnimationSystem`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose`, `BoneSocketSystem` |
-| `system/async/`            | `AsyncLoaderSystem`                                                      |
-| `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
+| `system/async/`            | `AsyncLoaderSystem`, `AsyncLoadQueue`, `ArrivalHold`                     |
+| `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend), `Acoustics` (occlusion and the room, over any ray cast), `ReverbTank` |
+| `system/debug/`            | `DebugViewSystem`: the scene's colliders, lights, probes and the rest, as debug drawings |
 | `system/hierarchy/`        | `HierarchySystem`                                                        |
-| `system/ocean/`            | `OceanSystem`, `OceanData`, `OceanSurface` |
+| `system/ocean/`            | `OceanSystem`, `OceanData`, `OceanSurface`, `OceanSwell`, `OceanSpectrum` |
+| `system/water/`            | `WaterSystem`, `WaterData`: every body of water, the sea's too, and what floats on it |
 | `system/particle/`         | `ParticleSystem` (CPU simulation; `GLParticlePass` draws what it emits)  |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, and subfolders (see [physics.md](physics.md)) |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
@@ -158,6 +161,7 @@ Engine code, single include root `src/engine/`:
 | `system/sky/`              | `SkySystem` |
 | `system/terrain/`          | `TerrainSystem`, `TerrainChunks`, `TerrainPlants`, `TerrainBrush` (see [terrain.md](terrain.md)) |
 | `system/splash/`           | `SplashSystem`                                                           |
+| `system/loading/`          | `LoadingSystem`, `LoadingFrame`                                          |
 | `system/ui/`               | `UISystem`, `UIDrawData` (see [ui.md](ui.md))                            |
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `HostView`, `VisibilityContext` and `Culling` (AABB helpers are `core/math/bounds.h`) |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
@@ -174,7 +178,7 @@ Engine code, single include root `src/engine/`:
 | `platform/threading/`      | `ThreadPool` + `parallelFor` (see [threading.md](threading.md))         |
 | `platform/library/`        | `DynamicLibrary` (the gameplay module's `.dll`/`.so` loader)            |
 | `platform/process/`        | `ChildProcess` (how the editor runs vkm)                                 |
-| `debug/`                   | `build_info`, `engine_error_log`, `fault_latch`, `profiler` (Tracy facade), `screenshot` |
+| `debug/`                   | `build_info`, `debug_draw` (`DebugDraw`) and `debug_palette`, `engine_error_log`, `fault_latch`, `profiler` (Tracy facade), `screenshot` |
 
 OpenGL backend, `src/backend/opengl/` (every file `gl_`-prefixed; includes are
 module-qualified like the engine's, and flat only for the root files above and
@@ -182,12 +186,12 @@ for vkmGL's own headers):
 
 | Path          | Contents                                                                  |
 |---------------|---------------------------------------------------------------------------|
-| (top level)   | `GLBackend`, `GLView`, `GLTarget`, `GLPass`, `GLFrameContext`, and what every pass shares: the fullscreen triangle and the mip-level arithmetic |
-| `convention/` | `gl_bindings` (UBO/sampler contract), `gl_depth` (reversed depth), `gl_format_conversion` |
+| (top level)   | `GLBackend`, `GLView`, `GLTarget`, `GLPass`, `GLFrameContext`, and what every pass shares: the fullscreen triangle, the mip-level arithmetic, and the forward programs |
+| `convention/` | `gl_bindings` (UBO/sampler contract), `gl_depth` (reversed depth), `gl_format_conversion`, `gl_sky_projection` (the sky an orthographic eye sees) |
 | `asset/`      | the GPU copy of one engine asset, kept current by `GLView`: `GLMesh` (a range in the `GLMeshPool` every mesh shares), `GLMaterial`, `GLTexture` |
 | `frame/`      | what one frame uploads from the `RenderView`: `GLCamera`, `GLLights`, the object buffer, the skin palette, the instance batcher and the `GLDrawList` it and the shadow pass submit through, `GLShadowData`, `GLOcean`, `GLOcclusionCull` |
-| `storage/`    | GPU state that outlives a frame, filled by a pass or a bake and sampled by others or read back: `GLShadowAtlas`, `GLIBL`, `GLAtmosphere`, `GLIrradianceVolume`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume, `GLExposure` |
-| `offline/`    | GPU work that runs outside the pass list: the shared rig (`GLSceneCapture`, its sun map `GLCaptureShadow`, `GLCubeConvolver`) and everything it is lent to - the IBL, irradiance and probe bakers, and the editor's material preview |
+| `storage/`    | GPU state that outlives a frame, filled by a pass or a bake and sampled by others or read back: `GLShadowAtlas`, `GLIBL`, `GLAtmosphere`, `GLIrradianceVolume`, `GLLightmaps`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume, `GLExposure`, the sea's `GLOceanShore` and `GLOceanFields` |
+| `offline/`    | GPU work that runs outside the pass list: the shared rig (`GLSceneCapture`, its sun map `GLCaptureShadow`, `GLCubeConvolver`, `GLCasterDepth`) and everything it is lent to - the IBL, irradiance and probe bakers, the lightmap baker (`GLLightmapBaker`), and the editor's previews |
 | `pass/`       | the passes; [rendering.md](rendering.md) lists them in order |
 
 Editor (`src/editor/`): at the root, the parts every panel sees - `EditorSystem`,
@@ -195,7 +199,8 @@ Editor (`src/editor/`): at the root, the parts every panel sees - `EditorSystem`
 it. Beneath it, one directory per responsibility: `command/` (undo), `session/`
 (the open project, scene I/O, the play snapshot), `chrome/` (the frame around
 the viewport), `panels/`, `overlays/` (what is drawn over the viewport),
-`input/` and `ui/` (widgets, style, dialogs). Tools (`src/tools/`) build into
+`input/`, `ui/` (widgets, style, dialogs) and `asset_editors/` (an asset's own
+window, one `AssetEditor` per kind). Tools (`src/tools/`) build into
 `vkm_tools`, which every host links, and `vkm_cook`, which the runtime does not
 ([resources.md](resources.md#importing-and-cooking)).
 

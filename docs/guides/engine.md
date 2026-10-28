@@ -18,7 +18,8 @@ Breaking one of these is a design problem to raise, not a tradeoff to make.
 - **`Scene` is never edited to "support" a component.** Any plain struct is a
   component already; `scene.add<T>(entity, ...)` is the whole mechanism.
 - **Components hold `Handle<T>`, never asset pointers or copies.** Serialization
-  stores asset *names*, resolved back to handles on load.
+  stores asset *names*, resolved back to handles on load. `UIText` names its
+  font instead: a font is baked by the host, not loaded with a scene.
 - **Systems never call each other.** `FrameContext` is the only per-frame channel
   between them. `EditorSystem` is the one sanctioned exception and is not a
   precedent - section 5.
@@ -132,6 +133,7 @@ measurement for a law. A row is one of two kinds:
 | Auto-exposure | *Position.* An option, off by default (`autoExposure`): a game moving between dark interiors and daylight needs it, one lit alike keeps its authored exposure, and the look stays the project's choice. Measured on the GPU, read back without a stall, decided on the CPU (`system/render/exposure.h`), so another backend adapts alike. |
 | Shadow bias units | Texels of the map at the receiver, for every light (Castano 2013): one pair holds for any range, cascade or distance. The defaults leave no acne and keep a thin caster's shadow on a wall just behind it. Revisit if a light type or range needs a pair of its own. |
 | Shadow atlas tile sizes | The sun's first `FULL_CASCADES` cascades each take a whole `shadowResolution` block of the atlas and the rest take half: with fewer full cascades the step in texel size showed where the soft search crossed a split, and every cascade full would leave the spots no room. A spot's tile follows how much of the screen its cone covers. Revisit with another cascade count or atlas layout. |
+| Baked shadows for fixed lights | Adopted, as Unreal's stationary lights and Unity's shadowmask: a light with `movable` off has the shadows fixed meshes cast in it baked into lightmaps ([lighting.md](../reference/lighting.md#baked-shadows)). The shadows were baked first, not the light: they were most of a fixed light's cost per pixel, and the live light keeps its specular. Revisit with indirect light in the lightmaps. |
 | Settling the soft shadow's blocker search from each shadow-map square's nearest depth | Built, measured, reverted. The search is most of the soft shadow's cost, but the points it runs for are mostly casters too: their own surface lies in the square, nearer than the search's farthest compare, so the bound settled almost nothing and building it cost more than it saved. Revisit with a bound that knows the receiver's plane, or receivers that cast nothing. |
 | ACES's 1/0.6 pre-scale | Dropped. Applied, it visibly lifts every scene authored here, and the examples read washed out. Revisit with scenes authored against the reference ACES transform. |
 | The sky's brightness | Lit by the scene's sun (`Atmosphere::solarIlluminance`), with no constant: `lightIntensity` is an illuminance and the bake's scattering is per steradian, so the units agree; a separate sun intensity put far too much of the light in the sky. Tune haze as `mie`, not as a constant. Revisit if a project's sky and sun disagree in a way haze cannot tune. |
@@ -144,13 +146,14 @@ measurement for a law. A row is one of two kinds:
 | Fog read B-spline filtered across the screen | Adopted: read trilinear alone, a small glow in fog showed every froxel's square. Four trilinear reads weighted as a cubic B-spline (`shaders/bspline.glsl`) hide them; a glow one froxel wide comes out broader and dimmer at its peak. Revisit if the reads' cost shows in a capture of the passes that fog. |
 | Lighting a particle once, not at each corner | Declined: measured no faster. Revisit if a profile shows the particle pass's vertex work. |
 | Particles simulated on the GPU | Declined: the CPU steps and flattens a scene's particles in a small share of a frame, and a strike asks the physics world, which lives on the CPU. Revisit if a capture shows `ParticleSystem`'s step. |
-| An ocean of Gerstner waves drawn from a spectrum | Adopted, as Unreal's water system ships it: up to `Ocean::MAX_WAVES` waves from JONSWAP, summed on the GPU and by the same arithmetic on the CPU, so a float's query is exact and immediate. An FFT of the spectrum (Tessendorf; HDRP, Crest) gives thousands of waves, but each gameplay query wants a GPU readback a frame late or a CPU FFT, and the tiles repeat; only the ripples, which nothing afloat asks about, are FFT. Waterline foam is read off a world-space shore, not the screen's depth, which foamed only what the camera saw. Revisit when a project's sea is seen from high above or out to the horizon, where so few waves read as regular. |
-| Shader permutations | A plain variant alone, adopted: the forward program compiled without the optional features, for a material that uses none of them (`GLMaterial::plain`): the features cost even where a material does not use them. No general permutation system; revisit for a second variant when another feature's cost shows on materials that do not use it. |
+| An ocean of FFT swell drawn from a spectrum | Adopted, as HDRP and Crest draw open water (Tessendorf): every wavenumber of a few small repeating grids a wave, hundreds where a summed sea has dozens that read as regular. Floating stays exact and immediate: the CPU draws the same grids by the same transform, read between texels as the GPU reads them, only when gameplay asks - a sea nothing floats on costs the CPU nothing, and a headless server floats on the sea the clients draw. The grids' sizes are not multiples of one another, so their repeats do not line up. A Gerstner sum ran before it; a GPU readback was rejected as a frame late and absent on a server. Waterline foam is read off a world-space shore, not the screen's depth, which foamed only what the camera saw. Revisit with a cascade of finer grids if a project's water is seen at a few metres and its swell's shortest wave shows. |
+| Water beyond the sea | Adopted: one water, two kinds on the material (`WaterKind`). The sea (`Sea`) rides the scene's one `Ocean` - a swell from a spectrum over its Sea surfaces, foaming. A lake, a river or a pool (`Body`) is its mesh: any shape, its own level, and a flow along its UVs, so a river is a strip its UVs run along - no spline or flow-map tool. Both shade alike, from one set of ripple fields, and gameplay asks one question of both (`WaterData::at`); a `Buoyancy` body floats on either. Bodies take no swell, no whitecaps and no shore foam: those are the sea's, from its spectrum and its one shore capture. Revisit for a lake large enough to raise its own waves, or a river that needs foam where it breaks round a rock. |
+| Shader permutations | A fixed set, adopted, and no general permutation system: the forward program is compiled with `PLAIN`, `LAYERED`, `SKINNED` and `BAKED` in the combinations `GLForwardPrograms` builds. Layered and skinned are what a draw needs - its surface blended from layers, its vertices posed. Plain and baked are cost. Plain (`GLMaterial::plain`) compiles out the optional features for a material that uses none, as they cost even where unused. Baked (the `_baked` twins) compiles the lightmap read, and the per-light branch on it inside the light loop, into the programs of opaque static runs alone: as a uniform branch they would sit in every draw that never reads a lightmap - glass, posed meshes, the captures. Revisit for another such variant when a feature's cost shows on draws that do not use it. |
 | Hoisting the shadow pass's sort | Built, measured, reverted: sorting the casters once cost what sorting each tile's indices saved. Revisit if a caster shrinks to an index. |
 | Buffer-stall fixes | Built, measured, reverted: the shadow instances' upload was not a stall. The persistently mapped ring (the GL floor below) did win, by removing the driver's copy. Revisit if an upload shows as a stall in a capture. |
 | A radix sort of the batch keys | Built, measured, reverted: the batch's cost is building the keys, not sorting them. Revisit if the sort itself shows in a capture. |
 | Hashing shadow signatures a word at a time | Built, measured, reverted: no win against the byte-wise FNV-1a. Revisit if the hashing shows in a capture. |
-| `KHR_parallel_shader_compile` | Built, measured, reverted: the driver measured still compiled on the calling thread. Shortening a cold start means compiling on worker threads with shared contexts. Revisit on a driver that compiles in the background. |
+| `KHR_parallel_shader_compile` | Adopted: the backend's programs are linked on the driver's own threads and asked whether they are done (`ShaderBase::compileInParallel`), and until the last is compiled and checked a frame draws the chrome alone, so a cold start shows the splash, not a held window. A driver may still build a program on the calling thread, as its link status is asked; the checks are spread over frames, a share each, and stop at the first slow one while the splash shows, so it holds at most one program's build. Revisit with shared contexts on worker threads if one program's build shows as a hitch in the splash. |
 | A no-error context (`KHR_no_error`) | Built, measured, reverted: no change on the driver measured. Revisit on another vendor's driver. |
 | A subgroup-scalarised light loop | Built, measured, reverted: the forward loop taking each wave's lights one shared index at a time (`ARB_shader_ballot`) was slower where measured. It is made for a GPU with a scalar unit (Drobot, SIGGRAPH 2017); revisit on one, keeping it only if the others do not lose. |
 | Bindless textures | Not built. llvmpipe, which CI renders on, has no `ARB_bindless_texture`, so the bound-texture path would stay beside it for ever. Materials in one buffer with draw IDs waits on it. Revisit with the Vulkan backend, where descriptor indexing is core. |
@@ -194,6 +197,7 @@ measurement for a law. A row is one of two kinds:
 | Authored state and session state on one component | *Position.* Kept as separate fields. `Animation`, `Animator` and `AudioSource` carry `playOnStart` (authored, serialized), `playing` (advancing now) and `started` (was `playOnStart` honoured - without it a finished one-shot restarts every frame). A scene file is what was authored, not what was happening. |
 | Stealing a voice at the cap | *Position.* Adopted as priorities: at `MAX_ACTIVE_VOICES` a new sound takes the place of a voice of lower priority, or of its own and quieter than itself, and a voice a pause holds is kept ([audio.md](../reference/audio.md#the-voice-budget)). Oldest-first stealing stays rejected: the oldest voice is as likely to be the music as a footstep. |
 | Downmixing a stereo clip to mono | Rejected, at import and at cook: mono is right for a positioned source and wrong for a music bed, so it belongs to the pairing; the inspector and `AudioSystem` warn where a positioned source plays a stereo clip. Revisit as an authored per-clip flag in the cook, if a project asks. |
+| What sound travels through | Adopted: rays against the static and kinematic colliders, the world physics already has, for occlusion and the room's reverb, with one reverb for the room the ear is in ([audio.md](../reference/audio.md#acoustics)). Acoustic geometry, materials and a reverb per room stay unbuilt: each asks a scene for data none carries. Revisit when a project needs surfaces that absorb unlike one another, or a sound to ring in a room the ear is not in. |
 | Splitting `inspector_panel.cpp` | *Position.* Declined. It is one `VKM_INSPECTOR_CARDS` row per component over shared helpers; splitting it spreads the one index that makes adding a component one edit. |
 | A truthful roughness/metalness in the depth prepass | Declined: it would add a UV and texture samples to the pass meant to be cheap, for a debug view. The forward pass writes those views instead; the G-buffer is the normal alone. Revisit if something other than a debug view needs them in the G-buffer. |
 | Bounces in the irradiance bake | `GLIrradianceBaker::BOUNCES` gathers, each lighting the surfels from the grid the one before made ([lighting.md](../reference/lighting.md#what-a-capture-is-lit-by)): they reach nearly all the light many more would, where fewer left interiors visibly dark, and a gather is cheap. Revisit if a project's interiors still read too dark. |
@@ -201,11 +205,11 @@ measurement for a law. A row is one of two kinds:
 | Reflection probes follow their light | Adopted. A probe captured under other light than the frame's is captured and convolved again a step a frame into a staging layer copied in whole, so no frame shows half a probe; the price is one more layer of each array. Surfels would not help: most of a probe's bake is the convolution. Each probe compares only the lights that reach within half its width of its box, and the volume those reaching its own: compared scene-wide, any light moving anywhere kept a refresh running every frame. A refreshed probe rests before its next, as a capture face draws the scene: under a light that never holds still, back-to-back refreshes put that draw in a frame every few. Revisit if a light outside that reach is seen to leave a probe stale, or the rest is seen as lag. |
 | Weighting probe taps by validity at lookup time | Declined: a manual tap per corner per coefficient per fragment, where the bake's blend of trusted neighbours (`probeFillWeights`) repairs refused probes and the lookup stays one filtered fetch a coefficient. Revisit for a grid too coarse for its geometry. |
 | Interpolating fixed-step state for the drawn frame | *Position.* Extrapolated instead: `Clock::getFixedAlpha` says how far the frame is past the last tick, and a body that must move every frame carries its last tick forward by its velocity, so the local player pays no latency. Interpolation between ticks is `NetSession::interpolate`'s, for remote bodies. |
-| Splitting static from moving shadow casters | Half adopted. A tile's fixed casters (`Mesh::movable` off) are signed by the cull's `fixedSerial`, not one by one, so every tile is signed - cascades too - and a still view redraws no shadow at all. Built, measured, reverted: keeping each tile's fixed casters' depth apart and copying it back under the movers; the copy cost more than redrawing the fixed casters, even in a city of fixed meshes. Revisit with a mover beside a light over geometry too heavy to redraw each frame. |
+| Splitting static from moving shadow casters | Adopted for the sun's last cascade. A tile's fixed casters (`Mesh::movable` off) are signed by the cull's `fixedSerial`, not one by one, so every tile is signed - cascades too - and a still view redraws no shadow at all. The last cascade reaches farthest and so draws the most: it keeps its fixed casters' depth in a layer of its own, written back under the movers by a draw (`shaders/shadow/restore`) - a depth copy or blit cost more than redrawing - and is fitted a margin wider, so the layer holds as the view walks. A full-size tile costs as much to start from a layer as its fixed casters cost to draw, so the nearer cascades and the spots redraw. Revisit for a nearer tile over geometry too heavy to redraw each frame. |
 | LTC specular for area lights | Not adopted. An area light's diffuse is the exact polygon form factor; its specular is Karis's representative point, as UE4 shipped it. LTC needs two fitted tables (Heitz et al.'s, under a BSD notice the engine would carry) and their transform of the polygon a light a pixel, for a light type no project uses large. Trigger: a large rect light over a glossy floor that reads wrong in a project. |
 | Authenticating or encrypting packets | Declined. The join token stops floods and spoofed joins, but an on-path attacker can still read and forge a session. Closing that needs a key exchange - netcode.io's connect tokens from a backend, or DTLS - and a LAN game or a self-hosted server has no backend. Trigger: internet play through a matchmaker that can issue tokens - and it is required before a game is played with strangers over the internet. |
 | clang-format and clang-tidy for the mechanical rules | Not adopted. The `docs` suite holds the tree to code-style.md, including rules a formatter would need fencing off from, and runs with the build with no extra tool. Trigger: a semantic rule (linkage, `override`) the suite cannot express and review keeps catching by hand. |
-| A shipping build of the engine | *Position.* A game ships on `VKM_SHIPPING` - `Release`, asserts and the profiler off, debug info kept for reading a crash - and its module is built again against it; the editor and every other command run the development engine, asserts on. A player's game has no use for an assert's stop or a profiler's thread and listening port ([building.md](../reference/building.md#the-shipping-engine)). |
+| A shipping build of the engine | *Position.* A game ships on `VKM_SHIPPING` - `Release`, asserts, the profiler and debug drawing off, debug info kept for reading a crash - and its module is built again against it; the editor and every other command run the development engine, asserts on. A player's game has no use for an assert's stop, a profiler's thread and listening port, or a developer's debug lines ([building.md](../reference/building.md#the-shipping-engine)). |
 
 Any obvious render idea has probably been tried: read
 [../reference/rendering.md](../reference/rendering.md) before
@@ -219,23 +223,28 @@ A mistake in one of these is never local:
 
 - **`Scene` and the ECS** - open, type-erased, no registration.
 - **`FrameContext`** - references are services, pointers are per-frame stage
-  products.
+  products, but for the two services a host may not keep (`readiness`, `debug`).
 - **The host's two products** - all an authoring host writes into the frame.
   `HostView` (`ctx.hostView`, `system/visibility/host_view.h`) is a view to
   render through instead of the scene's active camera - the editor's own
   viewpoint, or a scene camera it previews. `VisibilitySystem` is its only
   reader, so nothing past the `Visibility` product knows whose view it was.
   `HostChrome` (`ctx.chrome`, `core/host_chrome.h`) is what the host's own UI
-  holds this frame - the pointer, the keyboard, the viewport - and whether the
-  world is open to its edits (`setAuthoring`). A system asks it what it must not
-  take or keep, never which host it runs under. An authoring need extends one of
-  these rather than teaching a system that the editor exists.
-- **`NetSession`** - one object, four states. `simulates(scene, entity)` decides which
-  end moves what; offline it answers yes to everything, so single-player is
-  unchanged by its existence. `Disconnected` is the opposite of `Offline`: an
-  offline end decides everything, a dropped client nothing of the world it was
-  shown. Owned by `Engine` by value, it brackets the frame rather than taking
-  part in it ([networking.md](../reference/networking.md)).
+  holds this frame - the pointer, the keyboard, the viewport - whether the
+  world is open to its edits (`setAuthoring`), and the effects it previews while
+  the world stands still (`HostChrome::EffectPreview`). A system asks it what it
+  must not take or keep, never which host it runs under. An authoring need
+  extends one of these rather than teaching a system that the editor exists.
+  `DebugDraw`'s settings - the categories shown, the focus, the point scale -
+  are that service's own, not a host's product: the editor sets them from its
+  View menu, its selection and its UI scale as a game would from its own keys,
+  and `DebugViewSystem` and `RenderSystem` read them off `DebugDraw` alone.
+- **`NetSession`** - one object, four states. `simulates(scene, entity)`
+  decides which end moves what; offline it answers yes to everything, so
+  single-player is unchanged by its existence. `Disconnected` is the opposite
+  of `Offline`: an offline end decides everything, a dropped client nothing of
+  the world it was shown. Owned by `Engine` by value, it brackets the frame
+  rather than taking part in it ([networking.md](../reference/networking.md)).
 - **`Handle<T>` and `ResourceManager`** - assets owned once, referenced by
   handle, serialized by name.
 - **The scene, prefab, project and cooked asset formats** - the clean-break rule
@@ -249,9 +258,9 @@ A mistake in one of these is never local:
   without them. It lives in `system/render` because the backend must implement
   it and cannot see editor code. An authoring-side GPU need extends this seam
   rather than inventing a third.
-- **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks of
-  the window: the hints before it exists, attaching to it, presenting, the swap
-  interval. A host hands one to `setupEngineApp` beside its backend
+- **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks
+  of the window: the hints before it exists, attaching to it, presenting, the
+  swap interval. A host hands one to `setupEngineApp` beside its backend
   (`GLWindowSurface` with `GLBackend`); a host that draws nothing hands none.
 - **Stage order** - Input, Simulation, Transform, Visibility, Render, Editor. A
   system is placed by responsibility and relies on ordering, never on manual
@@ -264,9 +273,9 @@ A mistake in one of these is never local:
   ([implementation.md](implementation.md#4-determinism)).
 
 `EditorSystem` is the one system that holds other systems, taken by constructor
-(`editor/editor_system.h`). It may because it is not in the frame's data flow: it
-is the authoring tool driving the engine, at the Editor stage, after every producer
-has run. Any other system that wants a reference to another has a
+(`editor/editor_system.h`). It may because it is not in the frame's data flow:
+it is the authoring tool driving the engine, at the Editor stage, after every
+producer has run. Any other system that wants a reference to another has a
 `FrameContext` product it has not defined yet.
 
 ### 5.1 What each format's version gate actually does

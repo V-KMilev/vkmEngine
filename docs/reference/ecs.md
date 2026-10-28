@@ -58,6 +58,7 @@ Each header documents its fields.
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (Box, Capsule, Mesh or Terrain) + `isTrigger` + `enabled`                 |
 | `CharacterController` | `component/physics/character_controller.h` | Move, jump, climb and crouch input in; ground contact out ([Physics](physics.md))                     |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | A Dynamic, Kinematic or Static body, plus the support and blocking outputs                            |
+| `Buoyancy`            | `component/physics/buoyancy.h`             | Floats a Dynamic body on whatever water it is in, its Collider's box as what floats ([Rendering](rendering.md#water)) |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe over an influence box                                                                 |
 | `PlanarReflector`     | `component/render/planar_reflector.h`      | A flat mirror: glossy surfaces on its rectangle reflect the scene drawn again from the mirrored camera |
 | `AudioSource`         | `component/audio/audio_source.h`           | A clip to play, spatial or not; `playing` is runtime state ([Audio](audio.md#starting-and-stopping-a-sound-from-gameplay)) |
@@ -65,7 +66,7 @@ Each header documents its fields.
 | `Decal`               | `component/render/decal.h`                 | A material projected onto whatever its box covers                                                     |
 | `LOD`                 | `component/render/lod.h`                   | Mesh levels, each with a `maxDistance`, chosen by the camera's distance and `bias`                    |
 | `IrradianceVolume`    | `component/render/irradiance_volume.h`     | The baked SH-L1 grid indirect diffuse comes from                                                      |
-| `Ocean`               | `component/render/ocean.h`                 | The spectrum a `waves` material's surface moves by. One a scene (`findOcean`); see [rendering.md](rendering.md#the-ocean) |
+| `Ocean`               | `component/render/ocean.h`                 | The spectrum a Sea material's surface moves by. One a scene (`findOcean`); see [rendering.md](rendering.md#the-ocean) |
 | `Terrain`             | `component/render/terrain.h`               | The terrain drawn where the entity stands, and whether it casts shadows ([Terrain](terrain.md))      |
 | `ParticleEmitter`     | `component/render/particle_emitter.h`      | How particles are emitted; the live particles are `ParticleSystem`'s                                  |
 | `ParticleTrigger`     | `component/render/particle_emitter.h`      | Makes a child's emitter spawn on its parent's particles' births, deaths or strikes                    |
@@ -80,7 +81,7 @@ Each header documents its fields.
 | `UIElement`           | `component/ui/ui_element.h`                | An element's rect - anchor, pivot, position, size - and the resolved `screenRect`                     |
 | `UIImage`             | `component/ui/ui_image.h`                  | Fills its element's rect with a tint, a shape and an optional texture                                 |
 | `UIText`              | `component/ui/ui_text.h`                   | Text in a named font                                                                                  |
-| `UIButton`            | `component/ui/ui_button.h`                 | A pressable element: four state colours, a shape, an `eventId`                                        |
+| `UIButton`            | `component/ui/ui_button.h`                 | A pressable element: four state colors, a shape, an `eventId`                                         |
 | `UIScroll`            | `component/ui/ui_scroll.h`                 | Scrolls its content by `offset`                                                                       |
 | `UISlider`            | `component/ui/ui_slider.h`                 | A value between `minValue` and `maxValue`, laid out on its `fill` and `knob` entities                 |
 | `UIToggle`            | `component/ui/ui_toggle.h`                 | An on/off switch that slides its `knob` entity                                                        |
