@@ -9,6 +9,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/math/bounds.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
@@ -429,114 +430,6 @@ bool sweepTriangle(
     return found;
 }
 
-/**
- * @brief Cast a ray or a swept sphere at one collider part.
- *
- * The one place a query decides what a shape is: a switch with no default, so a new shape warns here.
- *
- * @param collider The part's collider, for the points a mesh reads.
- * @param part Part to test.
- * @param center Its world-space centre.
- * @param basis The body's world rotation.
- * @param origin Sweep start, world space.
- * @param dir Unit sweep direction.
- * @param radius Sphere radius; zero for a ray.
- * @param limit Furthest distance of interest.
- * @param[out] t Distance travelled to first contact.
- * @param[out] normal Outward surface normal.
- * @return True when the part is met within @p limit.
- */
-bool castPart(
-    const Collider& collider,
-    const ColliderPart& part,
-    const glm::vec3& center,
-    const glm::mat3& basis,
-    const glm::vec3& origin,
-    const glm::vec3& dir,
-    float radius,
-    float limit,
-    float& t,
-    glm::vec3& normal
-) {
-    switch (part.shape) {
-        case ColliderShape::Box: {
-            const glm::mat3 toLocal = glm::transpose(basis);
-            const glm::vec3 localOrigin = toLocal * (origin - center);
-            const glm::vec3 localDir = toLocal * dir;
-            glm::vec3 localNormal(0.0f);
-
-            const bool hit = radius > 0.0f
-                ? sphereBox(localOrigin, localDir, radius, part.halfExtents, limit, t, localNormal)
-                : rayBox(localOrigin, localDir, part.halfExtents, limit, t, localNormal);
-            if (hit) normal = basis * localNormal;
-            return hit;
-        }
-
-        case ColliderShape::Capsule: {
-            // A swept sphere is a ray against the capsule grown by its radius.
-            const glm::vec3 up = basis[1] * part.halfHeight;
-            return rayCapsule(origin, dir, center - up, center + up, part.radius + radius, t, normal);
-        }
-
-        case ColliderShape::Mesh:
-        case ColliderShape::Terrain: {
-            if (collider.meshNodes.empty()) return false;
-
-            // Into the tree's frame, walked along the segment rather than through its box.
-            const glm::mat3 toLocal = glm::transpose(basis);
-            const glm::vec3 localOrigin = toLocal * (origin - center);
-            const glm::vec3 localDir = toLocal * dir;
-
-            t_scratchTriangles.clear();
-            queryMeshBvhSegment(
-                collider.meshNodes,
-                localOrigin,
-                localDir,
-                limit,
-                radius + Physics::CONTACT_TOLERANCE,
-                t_scratchTriangles
-            );
-
-            bool found = false;
-            float nearest = limit;
-            for (uint32_t triangle : t_scratchTriangles) {
-                const uint32_t base = triangle * 3;
-                if (base + 2 >= collider.meshPoints.size()) continue;
-
-                glm::vec3 face[3];
-                for (int c = 0; c < 3; ++c) {
-                    face[c] = center + basis * collider.meshPoints[base + c];
-                }
-
-                float hitT = 0.0f;
-                glm::vec3 hitNormal(0.0f);
-                const bool met = sweepTriangle(
-                    face[0],
-                    face[1],
-                    face[2],
-                    origin,
-                    dir,
-                    radius,
-                    nearest,
-                    hitT,
-                    hitNormal
-                );
-                if (!met) continue;
-                if (found && hitT >= nearest) continue;
-                nearest = hitT;
-                t = hitT;
-                normal = hitNormal;
-                found = true;
-            }
-            return found;
-        }
-
-        case ColliderShape::Count:
-            break;
-    }
-    return false;
-}
-
 bool passesMobility(const Rigidbody& rb, const QueryFilter& filter) {
     return rb.motion == RigidbodyMotion::Dynamic ? filter.hitDynamic : filter.hitStatic;
 }
@@ -576,7 +469,11 @@ void forEachPart(Scene& scene, const QueryFilter& filter, Fn&& fn) {
         if (!collider->enabled) continue;
         if (collider->isTrigger && !filter.hitTriggers) continue;
         const Rigidbody& rb = rbStorage->dataAt(i);
-        if ((rb.layer & filter.layerMask) == 0) continue;
+        // As collision asks it, the query standing for a body on casterLayer that takes layerMask.
+        const bool seen = filter.casterLayer == 0
+            ? (rb.layer & filter.layerMask) != 0
+            : layersCollide(filter.casterLayer, filter.layerMask, rb.layer, rb.collidesWith);
+        if (!seen) continue;
         if (!passesMobility(rb, filter)) continue;
 
         const BodyPose pose = worldPoseOf(scene, id, *transform);
@@ -643,6 +540,98 @@ bool prepareSweep(const glm::vec3& direction, float maxDistance, glm::vec3& dir)
 
 } // namespace
 
+bool sweepPart(
+    const Collider& collider,
+    const ColliderPart& part,
+    const glm::vec3& center,
+    const glm::mat3& basis,
+    const glm::vec3& origin,
+    const glm::vec3& dir,
+    float radius,
+    float limit,
+    float& t,
+    glm::vec3& normal
+) {
+    switch (part.shape) {
+        case ColliderShape::Box: {
+            const glm::mat3 toLocal = glm::transpose(basis);
+            const glm::vec3 localOrigin = toLocal * (origin - center);
+            const glm::vec3 localDir = toLocal * dir;
+            glm::vec3 localNormal(0.0f);
+
+            const bool hit = radius > 0.0f
+                ? sphereBox(localOrigin, localDir, radius, part.halfExtents, limit, t, localNormal)
+                : rayBox(localOrigin, localDir, part.halfExtents, limit, t, localNormal);
+            if (hit) normal = basis * localNormal;
+            return hit;
+        }
+
+        case ColliderShape::Capsule: {
+            // A swept sphere is a ray against the capsule grown by its radius.
+            const glm::vec3 up = basis[1] * part.halfHeight;
+            return rayCapsule(origin, dir, center - up, center + up, part.radius + radius, t, normal)
+                && t <= limit;
+        }
+
+        case ColliderShape::Mesh:
+        case ColliderShape::Terrain: {
+            if (collider.meshNodes.empty()) return false;
+
+            // Into the tree's frame, walked along the segment rather than through its box.
+            const glm::mat3 toLocal = glm::transpose(basis);
+            const glm::vec3 localOrigin = toLocal * (origin - center);
+            const glm::vec3 localDir = toLocal * dir;
+
+            t_scratchTriangles.clear();
+            queryMeshBvhSegment(
+                collider.meshNodes,
+                localOrigin,
+                localDir,
+                limit,
+                radius + Physics::CONTACT_TOLERANCE,
+                t_scratchTriangles
+            );
+
+            bool found = false;
+            float nearest = limit;
+            for (uint32_t triangle : t_scratchTriangles) {
+                const uint32_t base = triangle * 3;
+                if (base + 2 >= collider.meshPoints.size()) continue;
+
+                glm::vec3 face[3];
+                for (int c = 0; c < 3; ++c) {
+                    face[c] = center + basis * collider.meshPoints[base + c];
+                }
+
+                float hitT = 0.0f;
+                glm::vec3 hitNormal(0.0f);
+                const bool met = sweepTriangle(
+                    face[0],
+                    face[1],
+                    face[2],
+                    origin,
+                    dir,
+                    radius,
+                    nearest,
+                    hitT,
+                    hitNormal
+                );
+                if (!met) continue;
+                if (found && hitT >= nearest) continue;
+                nearest = hitT;
+                t = hitT;
+                normal = hitNormal;
+                found = true;
+            }
+            return found;
+        }
+
+        case ColliderShape::Count:
+            break;
+    }
+    return false;
+}
+
 bool raycast(
     Scene& scene,
     const glm::vec3& origin,
@@ -665,7 +654,7 @@ bool raycast(
         float& t,
         glm::vec3& normal
     ) {
-        return castPart(collider, part, center, basis, origin, dir, 0.0f, limit, t, normal);
+        return sweepPart(collider, part, center, basis, origin, dir, 0.0f, limit, t, normal);
     };
     return sweepBodies(scene, origin, dir, maxDistance, filter, out, castRay);
 }
@@ -698,7 +687,7 @@ bool spherecast(
         float& t,
         glm::vec3& normal
     ) {
-        return castPart(collider, part, center, basis, origin, dir, radius, limit, t, normal);
+        return sweepPart(collider, part, center, basis, origin, dir, radius, limit, t, normal);
     };
     const bool found = sweepBodies(scene, origin, dir, maxDistance, filter, out, castSphere);
 
@@ -717,12 +706,9 @@ void QueryParts::gather(Scene& scene, const QueryFilter& filter, const Math::AAB
         const glm::mat3& basis
     ) {
         // The part's own bound turned into the world, grown by what a mesh's walk tolerates.
-        const Math::AABB local = partLocalBounds(collider, part);
-        const glm::vec3  mid   = center + basis * ((local.min + local.max) * 0.5f);
-        glm::mat3 reach;
-        for (int c = 0; c < 3; ++c) reach[c] = glm::abs(basis[c]);
-        const glm::vec3 grown = glm::vec3(Physics::CONTACT_TOLERANCE);
-        const glm::vec3 half  = reach * ((local.max - local.min) * 0.5f) + grown;
+        const Math::AABB placed = Math::transform(basis, center, partLocalBounds(collider, part));
+        const glm::vec3  mid    = placed.center();
+        const glm::vec3  half   = placed.halfExtent() + glm::vec3(Physics::CONTACT_TOLERANCE);
         const bool meets = glm::all(glm::lessThanEqual(mid - half, around.max))
             && glm::all(glm::greaterThanEqual(mid + half, around.min));
         if (meets) m_parts.push_back({id, &collider, &part, center, basis, mid, half});
@@ -734,20 +720,22 @@ bool QueryParts::raycast(
     const glm::vec3& origin,
     const glm::vec3& direction,
     float maxDistance,
-    RayHit& out
+    RayHit& out,
+    EntityId ignore
 ) const {
     glm::vec3 dir(0.0f);
     if (!prepareSweep(direction, maxDistance, dir)) return false;
 
     Nearest nearest{origin, dir, maxDistance};
     for (const Placed& placed : m_parts) {
+        if (ignore && placed.entity == ignore) continue;
         // Its bound first: most gathered parts lie off any one ray.
         float     t = 0.0f;
         glm::vec3 normal(0.0f);
         if (!rayBox(origin - placed.mid, dir, placed.half, nearest.limit, t, normal)) continue;
 
         normal = glm::vec3(0.0f, 1.0f, 0.0f);
-        const bool hit = castPart(
+        const bool hit = sweepPart(
             *placed.collider,
             *placed.part,
             placed.center,

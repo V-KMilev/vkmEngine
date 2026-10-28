@@ -20,8 +20,8 @@ struct JointConstraint {
     uint32_t bodyA = 0;
     uint32_t bodyB = 0;
 
-    glm::vec3 anchorA = {0.0f, 0.0f, 0.0f};  ///< World, relative to A's origin
-    glm::vec3 anchorB = {0.0f, 0.0f, 0.0f};  ///< World, relative to B's origin
+    glm::vec3 anchorA = {0.0f, 0.0f, 0.0f};  ///< World, relative to A's centre of mass
+    glm::vec3 anchorB = {0.0f, 0.0f, 0.0f};  ///< World, relative to B's centre of mass
 
     /**
      * @brief Distance the anchors are held at; negative for a point joint.

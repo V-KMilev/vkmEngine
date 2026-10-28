@@ -5,6 +5,10 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/matrix_operation.hpp>
 
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
+#include "system/physics/collision/part_bounds.h"
+
 namespace Vkm::Engine {
 
 /**
@@ -63,21 +67,6 @@ inline glm::mat3 capsuleInertiaLocal(float mass, float radius, float halfHeight)
 }
 
 /**
- * @brief Shift an inertia tensor from the centre of mass by @p offset: I' = I + m (|d|^2 E - d d^T).
- *
- * For a collider centre offset from the entity origin, where the solver measures contact arms.
- *
- * @param inertia Tensor about the centre of mass.
- * @param mass Total mass, kg.
- * @param offset Between the centre of mass and the new origin; either sign gives the same shift.
- * @return The tensor about the shifted origin.
- */
-inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const glm::vec3& offset) {
-    const float d2 = glm::dot(offset, offset);
-    return inertia + mass * (glm::mat3(d2) - glm::outerProduct(offset, offset));
-}
-
-/**
  * @brief Rotate a body-local inverse inertia tensor into world space.
  *
  * I_world^-1 = R * I_local^-1 * R^T.
@@ -89,6 +78,63 @@ inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const g
 inline glm::mat3 inverseInertiaWorld(const glm::mat3& invInertiaLocal, const glm::quat& rotation) {
     const glm::mat3 r = glm::mat3_cast(rotation);
     return r * invInertiaLocal * glm::transpose(r);
+}
+
+/**
+ * @brief How a body's mass lies, from its collider: a lone capsule is that capsule, anything else a
+ *        solid box over the collider's bound (docs/reference/physics.md).
+ *
+ * Its centre and its inertia both come from here, so they cannot disagree.
+ */
+struct MassModel {
+    glm::vec3 centre{0.0f};        ///< Where the mass is centred: from the body's origin, in its frame.
+    bool      capsule    = false;  ///< A capsule, not a box.
+    float     radius     = 0.0f;   ///< The capsule's.
+    float     halfHeight = 0.0f;   ///< The capsule's.
+    glm::vec3 halfExtents{0.0f};   ///< The box's; zero with no collider.
+
+    /// @p collider's, or a point at the origin with none.
+    static MassModel of(const Collider* collider) {
+        MassModel model;
+        if (!collider || collider->parts.empty()) return model;
+        const ColliderPart& first = collider->parts[0];
+        if (collider->parts.size() == 1 && first.shape == ColliderShape::Capsule) {
+            model.centre     = first.center;
+            model.capsule    = true;
+            model.radius     = first.radius;
+            model.halfHeight = first.halfHeight;
+            return model;
+        }
+        const Math::AABB bounds = colliderLocalBounds(*collider);
+        model.centre      = (bounds.max + bounds.min) * 0.5f;
+        model.halfExtents = (bounds.max - bounds.min) * 0.5f;
+        return model;
+    }
+
+    /// Its inertia tensor about its centre for @p mass kilograms, body-local; mat3(0) for none.
+    glm::mat3 inertia(float mass) const {
+        return capsule ? capsuleInertiaLocal(mass, radius, halfHeight) : boxInertiaLocal(mass, halfExtents);
+    }
+};
+
+/// 1/mass of a Dynamic body of positive mass, asleep or not; zero for any other.
+inline float inverseMassOf(const Rigidbody& rb, RigidbodyMotion motion) {
+    return motion == RigidbodyMotion::Dynamic && rb.mass > 0.0f ? 1.0f / rb.mass : 0.0f;
+}
+
+/**
+ * @brief Where the solver holds a body, in its own frame: its centre of mass when Dynamic with mass
+ *        (inverseMassOf above zero), asleep or another end's to move too; its origin for any other.
+ *
+ * The point its velocity is of, and it turns about.
+ *
+ * @param rb       The body.
+ * @param motion   How it moves this tick, which a posed ragdoll bone overrides.
+ * @param collider Its collider, or null.
+ * @return The point, from the body's origin.
+ */
+inline glm::vec3 solverCentre(const Rigidbody& rb, RigidbodyMotion motion, const Collider* collider) {
+    return inverseMassOf(rb, motion) > 0.0f ? MassModel::of(collider).centre : glm::vec3(0.0f);
 }
 
 } // namespace Vkm::Engine

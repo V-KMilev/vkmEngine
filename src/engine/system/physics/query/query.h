@@ -42,6 +42,14 @@ struct QueryFilter {
      * @brief Which layers may be hit, as a mask of the bits collision uses; everything by default.
      */
     int layerMask = ~0;
+
+    /**
+     * @brief The layer of the body the query stands for: a body is seen only if its collidesWith takes
+     *        it, as collision asks both ways (layersCollide).
+     *
+     * Zero, the default, asks nothing of it.
+     */
+    int casterLayer = 0;
 };
 
 /**
@@ -95,6 +103,36 @@ bool spherecast(
 );
 
 /**
+ * @brief Cast a ray or a swept sphere at one collider part placed in the world.
+ *
+ * What raycast and spherecast ask of every part they see, for a caller holding its parts already.
+ *
+ * @param collider The part's collider, for the points a mesh reads.
+ * @param part     Part to test.
+ * @param center   Its world-space centre.
+ * @param basis    The body's world rotation.
+ * @param origin   Sweep start, world space.
+ * @param dir      Unit sweep direction.
+ * @param radius   Sphere radius; zero for a ray.
+ * @param limit    Furthest distance of interest.
+ * @param[out] t      Distance travelled to first contact.
+ * @param[out] normal Outward surface normal.
+ * @return True when the part is met within @p limit.
+ */
+bool sweepPart(
+    const Collider& collider,
+    const ColliderPart& part,
+    const glm::vec3& center,
+    const glm::mat3& basis,
+    const glm::vec3& origin,
+    const glm::vec3& dir,
+    float radius,
+    float limit,
+    float& t,
+    glm::vec3& normal
+);
+
+/**
  * @brief The parts a QueryFilter lets queries see, placed once for many rays in one moment.
  *
  * raycast walks every body per call, which suits gameplay's few casts. A caller casting many at
@@ -129,13 +167,15 @@ class QueryParts {
          * @param direction   Any non-zero vector; normalized internally.
          * @param maxDistance How far to look, in metres; non-positive finds nothing.
          * @param[out] out    The nearest hit, ties to the lower entity slot; untouched on false.
+         * @param ignore      A body the ray passes through; none by default.
          * @return True when something was struck within @p maxDistance.
          */
         bool raycast(
             const glm::vec3& origin,
             const glm::vec3& direction,
             float maxDistance,
-            RayHit& out
+            RayHit& out,
+            EntityId ignore = {}
         ) const;
 
         bool empty() const { return m_parts.empty(); }

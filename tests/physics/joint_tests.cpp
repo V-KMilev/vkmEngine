@@ -325,6 +325,32 @@ void testDistanceJointPinnedToWorld() {
     check("  while the authored field still asks to be measured", scene.get<Joint>(weight).distance < 0.0f);
 }
 
+// An anchor is authored from the body's origin, though the solver moves its centre of mass: a body
+// whose collider sits off its origin still hangs by the origin.
+void testAnAnchorIsMeasuredFromTheOrigin() {
+    std::printf("A joint on a body whose mass is off its origin:\n");
+
+    Scene scene;
+    const EntityId mark = scene.createEntity();
+    Transform markAt;
+    markAt.position = {0.0f, 5.0f, 0.0f};
+    scene.add<Transform>(mark, std::move(markAt));
+
+    const EntityId body = addFallingBody(scene, {0.0f, 5.0f, 0.0f}, 0.25f);
+    scene.get<Collider>(body).parts[0].center = {0.0f, 2.0f, 0.0f};
+
+    Joint joint;
+    joint.type = JointType::Point;
+    joint.connected = mark;
+    scene.add<Joint>(body, std::move(joint));
+
+    simulate(scene, 180);
+    check(
+        "it hangs with its origin at the anchor",
+        glm::length(scene.get<Transform>(body).position - glm::vec3(0.0f, 5.0f, 0.0f)) < 0.25f
+    );
+}
+
 // Saved as raw scene slots, a prefab joint's references would point, in another
 // scene, at whatever those slots hold there - a wall, a crate, or nothing.
 void testPrefabKeepsItsJoints() {
@@ -449,5 +475,6 @@ void runPhysicsJointTests() {
     testJointWakesASleeper();
     testABodyJointedToItselfHoldsStill();
     testDistanceJointPinnedToWorld();
+    testAnAnchorIsMeasuredFromTheOrigin();
     testPrefabKeepsItsJoints();
 }

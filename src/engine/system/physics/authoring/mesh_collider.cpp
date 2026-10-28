@@ -125,11 +125,14 @@ class TerrainTree {
         float               m_half;
 };
 
-/// Every whole triangle of @p mesh, scaled, three corners each.
+/// Every whole triangle of @p mesh, scaled, three corners each, wound to face out.
 std::vector<glm::vec3> trianglesOf(const MeshAsset& mesh, const glm::vec3& scale) {
     std::vector<glm::vec3> points;
     const size_t triangles = mesh.indices.size() / 3;
     points.reserve(triangles * 3);
+
+    // A triangle is solid on one side, told by its winding: a mirroring scale turns it inside out.
+    const bool mirrored = scale.x * scale.y * scale.z < 0.0f;
     for (size_t t = 0; t < triangles; ++t) {
         bool whole = true;
         for (size_t c = 0; c < 3; ++c) {
@@ -142,7 +145,8 @@ std::vector<glm::vec3> trianglesOf(const MeshAsset& mesh, const glm::vec3& scale
         if (!whole) continue;
 
         for (size_t c = 0; c < 3; ++c) {
-            points.push_back(mesh.vertices[mesh.indices[t * 3 + c]].position * scale);
+            const size_t corner = mirrored && c > 0 ? 3 - c : c;
+            points.push_back(mesh.vertices[mesh.indices[t * 3 + corner]].position * scale);
         }
     }
     return points;

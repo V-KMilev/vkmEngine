@@ -10,6 +10,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/clock.h"
+#include "debug/debug_draw.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
@@ -30,7 +31,8 @@
 #include "resource/resource_manager.h"
 #include "system/physics/authoring/mesh_collider.h"
 #include "system/physics/body_pose.h"
-#include "system/physics/inertia.h"
+#include "system/physics/mass_model.h"
+#include "system/physics/query/query.h"
 #include "system/physics/physics_events.h"
 #include "system/physics/ragdoll_system.h"
 #include "system/physics/collision/mesh_bvh.h"
@@ -41,6 +43,9 @@
 namespace Vkm::Engine {
 
 namespace {
+
+/// m_proxyOf for a body with no proxy: no collider, a disabled one, or a bone a ragdoll poses.
+constexpr uint32_t NO_PROXY = ~0u;
 
 /**
  * @brief Fastest any point of a body may move and still count as resting, m/s.
@@ -58,11 +63,6 @@ float horizontalLengthSq(const glm::vec3& normal) {
     return normal.x * normal.x + normal.z * normal.z;
 }
 
-// Zero for anything but a Dynamic body of positive mass: nothing the solver does moves it.
-float inverseMassOf(const Rigidbody& rb, RigidbodyMotion motion) {
-    return motion == RigidbodyMotion::Dynamic && rb.mass > 0.0f ? 1.0f / rb.mass : 0.0f;
-}
-
 template <typename Fn>
 void forEachMeshPart(const ColliderProxy& proxy, Fn&& fn) {
     for (const ColliderPart& part : proxy.collider->parts) {
@@ -70,47 +70,15 @@ void forEachMeshPart(const ColliderProxy& proxy, Fn&& fn) {
     }
 }
 
-// Every part's bound in the body's own frame, together. Empty collider: a point.
-Math::AABB colliderLocalBounds(const Collider& collider) {
-    if (collider.parts.empty()) return {glm::vec3(0.0f), glm::vec3(0.0f)};
-
-    Math::AABB out{
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::lowest())
-    };
-    for (const ColliderPart& part : collider.parts) {
-        const Math::AABB local = partLocalBounds(collider, part);
-        out.min = glm::min(out.min, part.center + local.min);
-        out.max = glm::max(out.max, part.center + local.max);
-    }
-    return out;
-}
-
 glm::mat3 localInverseInertia(const Rigidbody& rb, float invMass, const Collider* collider) {
     // freezeRotation: infinite rotational inertia, so contacts never torque it.
     if (rb.freezeRotation) return glm::mat3(0.0f);
     if (invMass == 0.0f || !collider || collider->parts.empty()) return glm::mat3(0.0f);
 
-    glm::vec3 center(0.0f);
-    glm::mat3 inertia(0.0f);
-    if (collider->parts.size() == 1 && collider->parts[0].shape == ColliderShape::Capsule) {
-        // The box approximation below is badly wrong for it; see docs/reference/physics.md.
-        const ColliderPart& part = collider->parts[0];
-        center  = part.center;
-        inertia = capsuleInertiaLocal(rb.mass, part.radius, part.halfHeight);
-    } else {
-        // A solid box of the collider's overall local extent.
-        const Math::AABB bounds = colliderLocalBounds(*collider);
-        center  = (bounds.max + bounds.min) * 0.5f;
-        inertia = boxInertiaLocal(rb.mass, (bounds.max - bounds.min) * 0.5f);
-    }
-
-    // Shifted to the entity origin, where the solver measures contact arms.
+    // About the centre of mass, where the solver measures contact arms.
+    const glm::mat3 inertia = MassModel::of(collider).inertia(rb.mass);
     if (inertia == glm::mat3(0.0f)) return glm::mat3(0.0f);
-    const glm::mat3 shifted = glm::dot(center, center) > 0.0f
-        ? parallelAxisShift(inertia, rb.mass, center)
-        : inertia;
-    return glm::inverse(shifted);
+    return glm::inverse(inertia);
 }
 
 bool aabbOverlap(const Math::AABB& a, const Math::AABB& b) {
@@ -144,15 +112,8 @@ void expandSubShapes(
 ) {
     p.boxFirst     = static_cast<uint32_t>(boxes.size());
     p.capsuleFirst = static_cast<uint32_t>(capsules.size());
-    const Math::AABB emptyBound{
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::lowest())
-    };
-    p.bounds = p.collider->parts.empty() ? Math::AABB{position, position} : emptyBound;
-    const auto enclose = [&](const Math::AABB& part) {
-        p.bounds.min = glm::min(p.bounds.min, part.min);
-        p.bounds.max = glm::max(p.bounds.max, part.max);
-    };
+    p.bounds = p.collider->parts.empty() ? Math::AABB{position, position} : Math::AABB::empty();
+    const auto enclose = [&](const Math::AABB& part) { p.bounds.expand(part); };
 
     const glm::mat3 r = glm::mat3_cast(rotation);
 
@@ -174,22 +135,12 @@ void expandSubShapes(
             case ColliderShape::Mesh:
             case ColliderShape::Terrain: {
                 // See ColliderProxy: only its tree's root bound, placed like a box, joins the proxy's.
-                const Math::AABB local = partLocalBounds(*p.collider, part);
-                const glm::vec3 middle = (local.min + local.max) * 0.5f;
-                const glm::vec3 half   = (local.max - local.min) * 0.5f;
-                const glm::vec3 at     = center + r * middle;
-                const glm::vec3 reach  = glm::abs(r[0]) * half.x
-                    + glm::abs(r[1]) * half.y
-                    + glm::abs(r[2]) * half.z;
-                enclose({at - reach, at + reach});
+                enclose(Math::transform(r, center, partLocalBounds(*p.collider, part)));
                 break;
             }
             case ColliderShape::Box: {
                 boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
-                const glm::vec3 reach = glm::abs(r[0]) * part.halfExtents.x
-                    + glm::abs(r[1]) * part.halfExtents.y
-                    + glm::abs(r[2]) * part.halfExtents.z;
-                boxBounds.push_back({center - reach, center + reach});
+                boxBounds.push_back(Math::transform(r, center, {-part.halfExtents, part.halfExtents}));
                 enclose(boxBounds.back());
                 break;
             }
@@ -259,6 +210,8 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     solve(physics, dt);
 
+    stopFastBodies();
+
     writeback(scene, replaying, dt);
 
     // After writeback, which decides what sleeps.
@@ -267,6 +220,8 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     // After the solve: reads this tick's contacts, so the island applies from the next tick; a contact's
     // first tick still pushes an immovable body.
     leaseContacts(scene, ctx.net);
+
+    drawContacts(ctx);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources, const NetSession& net) {
@@ -281,6 +236,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
     m_bodies.clear();
     m_solverBodies.clear();
     m_proxies.clear();
+    m_proxyOf.clear();
     m_shapeBoxes.clear();
     m_shapeBoxBounds.clear();
     m_shapeCapsules.clear();
@@ -304,6 +260,12 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
             syncTerrainCollider(*collider, terrain ? resources.tryGet(terrain->terrain) : nullptr);
         }
 
+        // A sleeper's velocities are zeroed as it sleeps, so one set since is a launch: it wakes rather
+        // than lose it.
+        if (rb.sleeping && (rb.linearVelocity != glm::vec3(0.0f) || rb.angularVelocity != glm::vec3(0.0f))) {
+            Rigidbody::wake(rb);
+        }
+
         if (rb.motion == RigidbodyMotion::Dynamic && rb.mass <= 0.0f && m_massless.report()) {
             const Name* name = scene.tryGet<Name>(id);
             reportError("Physics", name ? name->value : "a body", "a Dynamic body needs a positive mass");
@@ -318,10 +280,13 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         // Re-derived every tick, so edits to mass or collider need no "apply".
         frame.invMass = inverseMassOf(rb, frame.motion);
         frame.invInertiaLocal = localInverseInertia(rb, frame.invMass, collider);
+        frame.centre = solverCentre(rb, frame.motion, collider);
         if (collider) {
-            // The bound's farthest corner from the origin.
+            // The bound's farthest corner from the point it turns about.
             const Math::AABB bounds = colliderLocalBounds(*collider);
-            frame.reach = glm::length(glm::max(glm::abs(bounds.min), glm::abs(bounds.max)));
+            const glm::vec3 low  = glm::abs(bounds.min - frame.centre);
+            const glm::vec3 high = glm::abs(bounds.max - frame.centre);
+            frame.reach = glm::length(glm::max(low, high));
         }
 
         frame.pose    = worldPoseOf(scene, id, *local);
@@ -332,9 +297,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
         m_bodyFrames.push_back(frame);
+        m_proxyOf.push_back(NO_PROXY);
 
         PhysicsBody pb;
-        pb.position = worldPos;
+        pb.position = worldPos + worldRot * frame.centre;
         pb.rotation = worldRot;
         pb.linearVelocity = rb.linearVelocity;
         // A rotation-frozen body sheds residual spin, so its orientation stays script-owned.
@@ -366,6 +332,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
                 m_shapeCapsules,
                 m_shapeCapsuleBounds
             );
+            m_proxyOf[bodyIndex] = static_cast<uint32_t>(m_proxies.size());
             m_proxies.push_back(proxy);
         }
     }
@@ -409,19 +376,35 @@ void PhysicsSystem::broadphase() {
         return m_bodies[pa.body].slot() < m_bodies[pb.body].slot();
     });
 
+    // Neither end of a still pair can move, so nothing resolves - unless a trigger is asking. Two
+    // lists keep the level from walking itself; merged, they give the pairs the order one would.
+    const auto still = [](const ColliderProxy& p) { return p.immovable && !p.isTrigger; };
+    m_moving.clear();
+    m_still.clear();
+    for (uint32_t i = 0; i < m_sorted.size(); ++i) {
+        (still(m_proxies[m_sorted[i]]) ? m_still : m_moving).push_back(i);
+    }
+
+    size_t movingAfter = 0;
+    size_t stillAfter  = 0;
     for (size_t a = 0; a < m_sorted.size(); ++a) {
         const ColliderProxy& pa = m_proxies[m_sorted[a]];
-        for (size_t b = a + 1; b < m_sorted.size(); ++b) {
+        const bool aStill = still(pa);
+        ++(aStill ? stillAfter : movingAfter);
+
+        size_t m = movingAfter;
+        size_t s = aStill ? m_still.size() : stillAfter;
+        for (;;) {
+            const bool fromMoving = m < m_moving.size() && (s == m_still.size() || m_moving[m] < m_still[s]);
+            if (!fromMoving && s == m_still.size()) break;
+            const uint32_t b = fromMoving ? m_moving[m++] : m_still[s++];
+
             const ColliderProxy& pb = m_proxies[m_sorted[b]];
             if (pb.bounds.min.x > pa.bounds.max.x) break;  // sorted on X: no further overlap
-            // Neither end can move, so nothing resolves - unless a trigger is asking.
-            if (pa.immovable && pb.immovable && !pa.isTrigger && !pb.isTrigger) continue;
             // A trigger never senses the level, or it would report the floor under it every tick.
             if ((pa.isTrigger && pb.fixed) || (pb.isTrigger && pa.fixed)) continue;
 
-            // Both ways round, so the answer cannot depend on which was asked.
-            if ((pa.layer & pb.collidesWith) == 0) continue;
-            if ((pb.layer & pa.collidesWith) == 0) continue;
+            if (!layersCollide(pa.layer, pa.collidesWith, pb.layer, pb.collidesWith)) continue;
             if (!aabbOverlap(pa.bounds, pb.bounds)) continue;
 
             // A is the lower slot, not whichever sorted first (equal bounds swap by rounding): A decides
@@ -562,17 +545,18 @@ void PhysicsSystem::reportContacts(const Scene& scene, EventBus& events) {
     now.clear();
 }
 
+bool PhysicsSystem::jointed(uint32_t a, uint32_t b) const {
+    if (m_jointedPairs.empty()) return false;
+    const uint64_t low  = glm::min(a, b);
+    const uint64_t high = glm::max(a, b);
+    return std::binary_search(m_jointedPairs.begin(), m_jointedPairs.end(), (low << 32) | high);
+}
+
 void PhysicsSystem::collidePair(uint32_t pair, NarrowphaseChunk& chunk) const {
     const ColliderProxy& A = m_proxies[m_pairs[pair].first];
     const ColliderProxy& B = m_proxies[m_pairs[pair].second];
 
-    if (!m_jointedPairs.empty()) {
-        const uint64_t low  = glm::min(A.body, B.body);
-        const uint64_t high = glm::max(A.body, B.body);
-        if (std::binary_search(m_jointedPairs.begin(), m_jointedPairs.end(), (low << 32) | high)) {
-            return;
-        }
-    }
+    if (jointed(A.body, B.body)) return;
 
     // Placed in world space at gather.
     const BoxShape*     boxesA         = m_shapeBoxes.data() + A.boxFirst;
@@ -668,23 +652,12 @@ void PhysicsSystem::collidePair(uint32_t pair, NarrowphaseChunk& chunk) const {
         const glm::mat3 toLocal = glm::transpose(rotation);
         // The tree is over the raw points: the bound comes back through the body's pose and the part's
         // centre, both, or the slab test misses.
-        const glm::vec3 origin = meshBody.position + rotation * meshPart.center;
-        const glm::vec3 corners[2] = {otherBounds.min - origin, otherBounds.max - origin};
-        glm::vec3 localMin(std::numeric_limits<float>::max());
-        glm::vec3 localMax(std::numeric_limits<float>::lowest());
-        for (int i = 0; i < 8; ++i) {
-            const glm::vec3 corner = {
-                corners[(i >> 0) & 1].x,
-                corners[(i >> 1) & 1].y,
-                corners[(i >> 2) & 1].z
-            };
-            const glm::vec3 local = toLocal * corner;
-            localMin = glm::min(localMin, local);
-            localMax = glm::max(localMax, local);
-        }
+        const glm::vec3 centre = m_bodyFrames[meshProxy.body].centre;
+        const glm::vec3 origin = meshBody.position + rotation * (meshPart.center - centre);
+        const Math::AABB local = Math::transform(toLocal, toLocal * -origin, otherBounds);
 
         chunk.meshCandidates.clear();
-        queryMeshBvh(meshCollider.meshNodes, localMin, localMax, chunk.meshCandidates);
+        queryMeshBvh(meshCollider.meshNodes, local.min, local.max, chunk.meshCandidates);
 
         for (uint32_t triangle : chunk.meshCandidates) {
             if (sensed) break;
@@ -846,8 +819,11 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
         JointConstraint constraint;
         constraint.bodyA = bodyA;
         constraint.bodyB = bodyB;
-        constraint.anchorA = rotA * joint.anchor;
-        constraint.anchorB = rotB * joint.connectedAnchor;
+        // From each body's centre of mass, which its solver position is; an anchor is authored from
+        // the origin.
+        const glm::vec3 centreB = connected != NO_BODY ? m_bodyFrames[bodyB].centre : glm::vec3(0.0f);
+        constraint.anchorA = rotA * (joint.anchor - m_bodyFrames[bodyA].centre);
+        constraint.anchorB = rotB * (joint.connectedAnchor - centreB);
         constraint.stiffness = glm::clamp(joint.stiffness, 0.0f, 1.0f);
 
         // The angle a hold keeps is the pair's when they last began to move: a ragdoll keeps the pose it
@@ -977,7 +953,82 @@ void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
         if (k != ownerBody && m_leaseIslands.find(k) == island) m_leased.push_back(m_bodies[k]);
     }
 
-    net.lease(m_leased);
+    net.lease(scene, m_leased);
+}
+
+void PhysicsSystem::stopFastBodies() {
+    PROFILE_SCOPE("Physics/FastBodies");
+
+    for (size_t k = 0; k < m_bodies.size(); ++k) {
+        PhysicsBody& pb = m_solverBodies[k];
+        if (pb.invMass == 0.0f) continue;
+        const BodyFrame& frame    = m_bodyFrames[k];
+        const Collider*  collider = m_proxyOf[k] != NO_PROXY ? m_proxies[m_proxyOf[k]].collider : nullptr;
+        if (!collider || collider->isTrigger || collider->parts.empty()) continue;
+
+        // Its thinnest part's half-thickness: a move past it may have crossed a surface untouched.
+        float thickness = std::numeric_limits<float>::max();
+        for (const ColliderPart& part : collider->parts) {
+            if (part.shape == ColliderShape::Capsule) {
+                thickness = std::min(thickness, part.radius);
+            } else if (part.shape == ColliderShape::Box) {
+                const glm::vec3& half = part.halfExtents;
+                thickness = std::min(thickness, glm::min(half.x, glm::min(half.y, half.z)));
+            }
+        }
+        if (thickness == std::numeric_limits<float>::max() || thickness <= 0.0f) continue;
+
+        const glm::vec3 from  = frame.pose.position + frame.pose.rotation * frame.centre;
+        const glm::vec3 path  = pb.position - from;
+        const float     moved = glm::length(path);
+        if (moved <= thickness) continue;
+
+        // Against what it collides with and does not push: this tick's still parts, by the pairs'
+        // own rules, culled by the bound the sweep runs through.
+        const ColliderProxy& self  = m_proxies[m_proxyOf[k]];
+        const glm::vec3      along = path / moved;
+        const Math::AABB     swept{
+            glm::min(from, pb.position) - glm::vec3(thickness),
+            glm::max(from, pb.position) + glm::vec3(thickness)
+        };
+        float     nearest = moved;
+        glm::vec3 normal(0.0f);
+        bool      met = false;
+        uint32_t  metSlot = 0;  // the entity slot of what it met
+        for (const ColliderProxy& other : m_proxies) {
+            if (other.body == k || other.isTrigger) continue;
+            if (m_bodyFrames[other.body].motion == RigidbodyMotion::Dynamic) continue;
+            if (!layersCollide(self.layer, self.collidesWith, other.layer, other.collidesWith)) continue;
+            if (jointed(static_cast<uint32_t>(k), other.body) || !aabbOverlap(other.bounds, swept)) continue;
+
+            const BodyPose& pose  = m_bodyFrames[other.body].pose;
+            const glm::mat3 basis = glm::mat3_cast(pose.rotation);
+            for (const ColliderPart& part : other.collider->parts) {
+                float     t = 0.0f;
+                glm::vec3 n(0.0f);
+                const glm::vec3 centre = pose.position + basis * part.center;
+                if (!sweepPart(*other.collider, part, centre, basis, from, along, thickness, nearest, t, n)) {
+                    continue;
+                }
+                // Only a move that carries its centre past the surface crossed it: met from behind,
+                // or touched by one sliding along it, the contacts have the surface in hand.
+                if ((moved - t) * -glm::dot(n, along) <= thickness) continue;
+                // Two met at once go to the lower slot: the proxies' order is the storage's, which
+                // two ends of a session need not share.
+                const uint32_t slot = m_bodies[other.body].slot();
+                if (met && t == nearest && slot > metSlot) continue;
+                nearest = t;
+                normal  = n;
+                met     = true;
+                metSlot = slot;
+            }
+        }
+        if (!met) continue;
+
+        pb.position = from + along * nearest;
+        const float into = glm::dot(pb.linearVelocity, normal);
+        if (into < 0.0f) pb.linearVelocity -= into * normal;
+    }
 }
 
 void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
@@ -1011,19 +1062,20 @@ void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
         rb.linearVelocity = pb.linearVelocity;
         rb.angularVelocity = pb.angularVelocity;
 
-        // The solve integrated the pose; this only maps it home.
+        // The solve integrated the pose about the centre of mass; this only maps it home.
         Transform& t = scene.get<Transform>(id);
         const BodyFrame& frame = m_bodyFrames[k];
+        const glm::vec3 origin = pb.position - pb.rotation * frame.centre;
         if (frame.pose.parented) {
-            t.position = glm::vec3(glm::inverse(frame.pose.parentWorld) * glm::vec4(pb.position, 1.0f));
+            t.position = glm::vec3(glm::inverse(frame.pose.parentWorld) * glm::vec4(origin, 1.0f));
             t.rotation = glm::normalize(glm::conjugate(frame.pose.parentRot) * pb.rotation);
         } else {
-            t.position = pb.position;
+            t.position = origin;
             t.rotation = pb.rotation;
         }
 
-        // canSleep false opts out: a dozing script-driven character has its velocity writes zeroed.
-        // Whether the timer may act is sleepIslands' answer. A replayed tick was counted when lived.
+        // canSleep false never rests, which holds its island awake. Whether the timer may act is
+        // sleepIslands' answer. A replayed tick was counted when lived.
         if (rb.canSleep && !replaying) {
             const float pointSpeed = glm::length(rb.linearVelocity)
                 + frame.reach * glm::length(rb.angularVelocity);
@@ -1062,6 +1114,40 @@ void PhysicsSystem::sleepIslands(bool replaying) {
         rb.sleeping        = true;
         rb.linearVelocity  = glm::vec3(0.0f);
         rb.angularVelocity = glm::vec3(0.0f);
+    }
+}
+
+namespace {
+
+/// The longest a contact's arrow is drawn, in metres, however hard the solver pushed there.
+constexpr float CONTACT_ARROW = 0.5f;
+
+/// The push, in newtons, whose arrow is drawn half CONTACT_ARROW long: about a kilogram's weight.
+constexpr float HALF_PUSH = 10.0f;
+
+} // namespace
+
+void PhysicsSystem::drawContacts(FrameContext& ctx) const {
+    PROFILE_SCOPE("Physics/Draw");
+    if (!ctx.debug || !ctx.debug->shown(DebugCategory::Contacts)) return;
+
+    DebugDraw&       draw  = *ctx.debug;
+    const DebugStyle style = DebugStyle(DebugCategory::Contacts);
+    const float      dt    = ctx.clock.getFixedStep();
+    for (const ContactManifold& manifold : m_manifolds) {
+        // The push on B, or on A where B does not move: up out of a floor into a crate, whichever
+        // was made first.
+        const float into = m_bodyFrames[manifold.bodyB].invMass > 0.0f ? 1.0f : -1.0f;
+        for (int c = 0; c < manifold.count; ++c) {
+            const Contact& contact = manifold.contacts[c];
+            draw.point(contact.point, style);
+            if (contact.normalImpulse <= 0.0f) continue;  // touching, but not pushed
+
+            // In newtons, so what rests draws alike at any tick rate.
+            const float push   = contact.normalImpulse / dt;
+            const float length = CONTACT_ARROW * push / (push + HALF_PUSH);
+            draw.arrow(contact.point, contact.point + contact.normal * (into * length), style);
+        }
     }
 }
 

@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "l_assert.h"
+
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -49,6 +51,25 @@ struct Collision {
     glm::vec3 point  = {0.0f, 0.0f, 0.0f};      ///< A representative world-space contact position.
     glm::vec3 normal = {0.0f, 0.0f, 0.0f};      ///< Unit, from other into this entity.
     float     speed  = 0.0f;                    ///< How fast the two closed, m/s: how hard it struck.
+
+    /**
+     * @brief @p event as @p self sees it: what a collision hook is handed, for a listener on the bus.
+     *
+     * @param event A contact @p self is in.
+     * @param self  One of the pair: its `a` or its `b`.
+     * @return The other, the point, and the normal into @p self; on Ended only the other.
+     */
+    static Collision seenBy(const CollisionEvent& event, EntityId self) {
+        VKM_ASSERT(event.a == self || event.b == self, "Collision::seenBy: self is not one of the pair");
+        const bool isA = event.a == self;
+        Collision hit;
+        hit.other = isA ? event.b : event.a;
+        if (event.phase == ContactPhase::Ended) return hit;
+        hit.point  = event.point;
+        hit.normal = isA ? -event.normal : event.normal;
+        hit.speed  = event.speed;
+        return hit;
+    }
 };
 
 /**

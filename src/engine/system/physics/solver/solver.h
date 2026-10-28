@@ -11,6 +11,9 @@ namespace Vkm::Engine {
 
 struct JointConstraint;
 
+/// Below this approach speed, m/s, a contact does not bounce, however elastic it is.
+inline constexpr float RESTITUTION_THRESHOLD = 1.0f;
+
 /**
  * @brief Per-tick dynamic state the solver reads and writes, by index.
  *
@@ -18,7 +21,8 @@ struct JointConstraint;
  * asleep, or another end's): infinite mass to contacts, never pushed.
  */
 struct PhysicsBody {
-    glm::vec3 position = {0.0f, 0.0f, 0.0f};  ///< Body origin (entity world position)
+    /// Its solver centre (solverCentre), world space.
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};
 
     /**
      * @brief World orientation, as gathered and then as integrated.

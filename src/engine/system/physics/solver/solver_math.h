@@ -13,7 +13,7 @@ namespace Vkm::Engine::SolverMath {
  * @brief Velocity of the point at lever arm @p r on @p body.
  *
  * @param body Body the point rides on.
- * @param r Lever arm from the body's origin to the point, world space.
+ * @param r Lever arm from the body's centre of mass to the point, world space.
  * @return Linear velocity of that point.
  */
 inline glm::vec3 velocityAt(const PhysicsBody& body, const glm::vec3& r) {
@@ -25,7 +25,7 @@ inline glm::vec3 velocityAt(const PhysicsBody& body, const glm::vec3& r) {
  *
  * @param body Body to push.
  * @param impulse Impulse vector, world space.
- * @param r Lever arm from the body's origin to the application point.
+ * @param r Lever arm from the body's centre of mass to the application point.
  * @param sign +1 to apply, -1 for the equal-and-opposite half of a pair.
  */
 inline void applyImpulse(PhysicsBody& body, const glm::vec3& impulse, const glm::vec3& r, float sign) {

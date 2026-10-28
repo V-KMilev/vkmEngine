@@ -180,9 +180,11 @@ struct BodyFrame {
     RigidbodyMotion motion          = RigidbodyMotion::Dynamic;
     bool            decided         = false;     ///< This end decides where it goes; always true offline.
     float           invMass         = 0.0f;      ///< 1/mass this tick; 0 = nothing the solver does moves it.
-    float           reach           = 0.0f;      ///< Farthest the collider extends from the origin, m.
-    /// Body-local inverse inertia; 0 = no rotational response.
+    float           reach           = 0.0f;      ///< Farthest the collider extends from `centre`, m.
+    /// Body-local inverse inertia, about `centre`; 0 = no rotational response.
     glm::mat3       invInertiaLocal = glm::mat3(0.0f);
+    /// Its solver centre from its origin, in its own frame (solverCentre).
+    glm::vec3       centre          = glm::vec3(0.0f);
 };
 
 /**

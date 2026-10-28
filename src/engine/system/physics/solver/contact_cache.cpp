@@ -77,18 +77,20 @@ void ContactCache::record(
         if (manifold.bodyA >= entities.size() || manifold.bodyB >= entities.size()) continue;
 
         const uint64_t key = pairKey(entities[manifold.bodyA], entities[manifold.bodyB]);
-        const glm::quat toA = glm::conjugate(frames[manifold.bodyA].pose.rotation);
-        const glm::quat toB = glm::conjugate(frames[manifold.bodyB].pose.rotation);
+        const BodyPose& a = frames[manifold.bodyA].pose;
+        const BodyPose& b = frames[manifold.bodyB].pose;
+        const glm::quat toA = glm::conjugate(a.rotation);
+        const glm::quat toB = glm::conjugate(b.rotation);
         for (int c = 0; c < manifold.count; ++c) {
             const Contact& contact = manifold.contacts[c];
             const glm::vec3 friction = contact.tangentImpulse1 * contact.tangent1
                 + contact.tangentImpulse2 * contact.tangent2;
-            // Against the gathered pose, as seed measures; the integrated pose is off by the tick's travel,
-            // the whole match radius at 0.6 m/s.
+            // From the gathered origin, as seed measures: not the solver's arms, which run from the
+            // centre of mass, nor the integrated pose, off by the tick's travel.
             m_held.push_back(Held{
                 key,
-                toA * contact.rA,
-                toB * contact.rB,
+                toA * (contact.point - a.position),
+                toB * (contact.point - b.position),
                 friction,
                 contact.normalImpulse,
                 static_cast<uint32_t>(m_held.size())

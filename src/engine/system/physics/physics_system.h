@@ -156,6 +156,22 @@ class PhysicsSystem : public System {
         void solve(const PhysicsSettings& physics, float dt);
 
         /**
+         * @brief Stop a body the solve moved further than its own thickness at the first fixed surface
+         *        on its way.
+         *
+         * Contacts are found where bodies are, so a small body fast enough to cross a thin surface
+         * - a mesh or terrain floor - in one tick would be past it with nothing touched. A sphere of
+         * its thinnest part's half-thickness about its solver centre - a one-part body's inner sphere,
+         * not always inside a compound's parts - is swept along the tick's path against the static and
+         * kinematic parts it would collide with, by the pairs' own rules; struck from the front, it
+         * stops there with its speed into the surface taken away, and the contacts meet it next tick.
+         */
+        void stopFastBodies();
+
+        /// Whether bodies @p a and @p b share a joint that keeps them from colliding.
+        bool jointed(uint32_t a, uint32_t b) const;
+
+        /**
          * @brief Put whole islands to sleep, or none of their members.
          *
          * A still body on a settling stack may not sleep. An island sleeps only while something outside
@@ -200,6 +216,17 @@ class PhysicsSystem : public System {
          */
         void leaseContacts(Scene& scene, NetSession& net);
 
+        /**
+         * @brief Draw this tick's contacts while the host shows DebugCategory::Contacts: a dot at each
+         *        point, and an arrow along its normal that grows with how hard the solver pushed there.
+         *
+         * The arrow points into a body the contact pushes, and is bounded however hard the push, so a
+         * heavy body's stays readable.
+         *
+         * @param ctx Frame context supplying the host's DebugDraw and the tick's length.
+         */
+        void drawContacts(FrameContext& ctx) const;
+
     private:
         std::vector<EntityId>        m_bodies;  ///< Live body entities this tick (indexes m_solverBodies)
 
@@ -243,6 +270,7 @@ class PhysicsSystem : public System {
 
         /// Broad/narrowphase view of each collidable body
         std::vector<ColliderProxy> m_proxies;
+        std::vector<uint32_t>      m_proxyOf;  ///< Each body's proxy in m_proxies; NO_PROXY for none.
         /// World<->local frame per body, parallel to m_bodies (for writeback)
         std::vector<BodyFrame>     m_bodyFrames;
 
@@ -271,6 +299,8 @@ class PhysicsSystem : public System {
         FaultLatch m_massless;  ///< A Dynamic body with no positive mass
 
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
+        std::vector<uint32_t>                      m_moving;  ///< Places in m_sorted that can move or sense
+        std::vector<uint32_t>                      m_still;   ///< Places in m_sorted that do neither
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
 
         std::vector<BoxShape>     m_shapeBoxes;         ///< Every proxy's boxes in world space, end to end
