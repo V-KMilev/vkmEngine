@@ -12,12 +12,15 @@
 #include "logger.h"
 
 #include "core/reflect.h"
+#include "debug/debug_draw.h"
 #include "debug/engine_error_log.h"
 
 #include "ecs/entity.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/name.h"
 #include "ecs/hierarchy_operations.h"
+#include "io/scene/prefab_ref.h"
+#include "resource/asset_ref.h"
 #include "platform/window/window_manager.h"
 #include "system/render/render_settings.h"
 #include "core/event/event_bus.h"
@@ -34,20 +37,23 @@ class Clock;
 class ResourceManager;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
+struct AudioClipAsset;
 struct OceanData;
+struct Transform;
+class WaterData;
 
 /**
  * @brief Everything gameplay code may reach, bundled behind one pointer.
  *
  * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it - but for
- * `ocean`, a frame product BehaviorSystem refreshes each tick and frame. A field belongs here
+ * `ocean` and `water`, frame products BehaviorSystem refreshes each tick and frame. A field belongs here
  * exactly when behaviors are meant to use it.
  */
 struct BehaviorContext {
     Scene*                 scene            = nullptr;
     ResourceManager*       resources        = nullptr;
 
-    /// The only nullable field: a host that draws nothing has none.
+    /// Null in a host that draws nothing.
     WindowManager*         window           = nullptr;
 
     EventBus*              events           = nullptr;
@@ -61,6 +67,8 @@ struct BehaviorContext {
     std::string*           pendingSceneLoad = nullptr;
     bool*                  pendingRestart   = nullptr;
     const OceanData*       ocean            = nullptr;  ///< OceanSystem's, this tick's or frame's.
+    const WaterData*       water            = nullptr;  ///< WaterSystem's, this tick's or frame's.
+    DebugDraw*             debug            = nullptr;  ///< Null with no frames shown, or shipped.
 };
 
 namespace detail {
@@ -131,6 +139,20 @@ const Behavior* findBehaviorNamed(const Scene& scene, EntityId entity, std::stri
 EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName);
 
 /**
+ * @brief Call @p fn with every behavior named @p typeName, and the entity carrying it, lowest slot
+ *        first.
+ *
+ * @param scene    Scene to search.
+ * @param typeName Registered behavior name.
+ * @param fn       Called once per entity carrying one, with its first.
+ */
+void forEachBehaviorNamed(
+    Scene& scene,
+    std::string_view typeName,
+    const std::function<void(EntityId, Behavior&)>& fn
+);
+
+/**
  * @brief @p entity's behavior of type T, or null when it has none.
  *
  * Inside a behavior, Behavior::findBehavior says the same without the scene.
@@ -178,8 +200,26 @@ EntityId findEntityWithBehavior(Scene& scene) {
  * @return The T, or nullptr when nothing carries one.
  */
 template<typename T>
-T* findBehavior(Scene& scene) {
+T* findInScene(Scene& scene) {
     return findBehavior<T>(scene, findEntityWithBehavior<T>(scene));
+}
+
+/**
+ * @brief Call @p fn with every T in the scene and the entity carrying it.
+ *
+ * A walk of every entity with a ScriptComponent, lowest slot first, so every end of a session
+ * meets them in the same order.
+ *
+ * @tparam T  Behavior subclass with a VKM_REFLECT block.
+ * @tparam Fn Callable taking `(EntityId, T&)`.
+ * @param scene Scene to search.
+ * @param fn    Called once per entity carrying a T, with its first.
+ */
+template<typename T, typename Fn>
+void forEachBehavior(Scene& scene, Fn&& fn) {
+    forEachBehaviorNamed(scene, Reflect::Traits<T>::NAME, [&](EntityId id, Behavior& behavior) {
+        fn(id, static_cast<T&>(behavior));
+    });
 }
 
 /**
@@ -377,6 +417,50 @@ class Behavior {
         }
 
         /**
+         * @brief This entity's T, given a default one first when it has none.
+         *
+         * @tparam T Component type; default-constructible.
+         * @return Reference to this entity's T.
+         */
+        template<typename T>
+        T& getOrAdd() { return m_ctx->scene->getOrAdd<T>(m_entity); }
+
+        /**
+         * @brief Where this entity is in the world now, a move made this tick included.
+         *
+         * @return Its world position; the origin when it has no Transform.
+         */
+        glm::vec3 worldPosition() const;
+
+        /**
+         * @brief How this entity is turned in the world now, a turn made this tick included.
+         *
+         * @return Its world rotation; none (identity) when it has no Transform.
+         */
+        glm::quat worldRotation() const;
+
+        /**
+         * @brief HierarchyOperations::findNamed from this entity.
+         *
+         * @param name The Name to look for, whole.
+         * @return The entity so named, or a null id.
+         */
+        EntityId findPart(std::string_view name) const {
+            return HierarchyOperations::findNamed(*m_ctx->scene, m_entity, name);
+        }
+
+        /**
+         * @brief The entity of this one's subtree carrying a T, itself included; breadth first.
+         *
+         * @tparam T Component type.
+         * @return The nearest entity carrying one, or a null id.
+         */
+        template<typename T>
+        EntityId findPartWith() const {
+            return HierarchyOperations::findInSelfOrDescendants<T>(*m_ctx->scene, m_entity);
+        }
+
+        /**
          * @brief This entity's behavior of type T, or null when it has none.
          *
          * @tparam T Behavior subclass with a VKM_REFLECT block.
@@ -386,13 +470,29 @@ class Behavior {
         T* findBehavior() { return findBehavior<T>(m_entity); }
 
         /**
-         * @brief The scene's behavior of type T, as findBehavior(Scene&) finds it.
+         * @brief The scene's behavior of type T, as findInScene(Scene&) finds it.
          *
          * @tparam T The behavior type sought.
          * @return The lowest-slot entity's, or null when none carries one.
          */
         template<typename T>
-        T* findInScene() { return ::Vkm::Engine::findBehavior<T>(*m_ctx->scene); }
+        T* findInScene() { return ::Vkm::Engine::findInScene<T>(*m_ctx->scene); }
+
+        /**
+         * @brief Call @p fn with every T in the scene, as forEachBehavior(Scene&, Fn&&) does.
+         *
+         * @code
+         * forEachBehavior<Switch>([&](EntityId id, Switch& button) { button.reset(); });
+         * @endcode
+         *
+         * @tparam T  Behavior subclass with a VKM_REFLECT block.
+         * @tparam Fn Callable taking `(EntityId, T&)`.
+         * @param fn  Called once per entity carrying a T.
+         */
+        template<typename T, typename Fn>
+        void forEachBehavior(Fn&& fn) {
+            ::Vkm::Engine::forEachBehavior<T>(*m_ctx->scene, std::forward<Fn>(fn));
+        }
 
         /**
          * @brief @p other's behavior of type T, or null when it has none.
@@ -504,6 +604,17 @@ class Behavior {
         WindowManager* window() { return m_ctx->window; }
 
         /**
+         * @brief Lines and shapes drawn into the world: `debugDraw().sphere(centre, radius, color)`.
+         *
+         * Drawn in onFixedUpdate, one stands until the next tick's; given seconds, that long. See
+         * DebugDraw.
+         *
+         * @return The host's, or one drawing nothing on a host that shows no frames and in a
+         *         shipped game.
+         */
+        DebugDraw& debugDraw() { return m_ctx->debug ? *m_ctx->debug : DebugDraw::inert(); }
+
+        /**
          * @brief The 3D view through the scene's active camera: the pointer's ray into the world, a
          *        point of the world on a canvas.
          *
@@ -524,6 +635,17 @@ class Behavior {
          * @return The sea, or null when the scene has no ocean.
          */
         const OceanData* ocean() const;
+
+        /**
+         * @brief The scene's water at this moment, the sea's and every other's: the tick's in
+         *        onFixedUpdate, the frame's in onUpdate (WaterSystem).
+         *
+         * `at(point)` is the water over or under a world point - its surface, normal and flow. A
+         * Buoyancy component floats a body on it without a behavior.
+         *
+         * @return The water; none at all on a host that runs no WaterSystem.
+         */
+        const WaterData& water() const;
 
         /**
          * @brief The ray from the camera through the cursor.
@@ -566,6 +688,26 @@ class Behavior {
          * @return True during a replayed tick.
          */
         bool isReplaying() const { return m_ctx->net->replaying(); }
+
+        /**
+         * @brief Whether this end is the authority: offline, or a server.
+         *
+         * Where what is shared is decided - a score, a door's state - and where instantiateShared
+         * may be called. Not isSimulated(), which a client answers for what it owns.
+         *
+         * @return True offline and on a server.
+         */
+        bool isAuthority() const;
+
+        /**
+         * @brief The seconds of the authority's world this end draws, NetSession::worldTime's.
+         *
+         * What moves by the clock and must look alike at every end moves by these; cycle() turns
+         * them into a share of a period.
+         *
+         * @return Seconds of the authority's simulated time.
+         */
+        double worldTime() const;
 
         /**
          * @brief The input driving this entity on the tick now running.
@@ -617,6 +759,74 @@ class Behavior {
             const EntityId entity = spawn(name);
             HierarchyOperations::setParent(*m_ctx->scene, entity, parent);
             return entity;
+        }
+
+        /**
+         * @brief Build the prefab at @p prefab here, at this end alone: an effect, a decoration.
+         *
+         * Prefab::instantiate, against this session's scene and assets.
+         *
+         * @param prefab Project-relative path.
+         * @param at     Root pose.
+         * @return The instance root, or a null id when nothing was built.
+         */
+        EntityId instantiate(const std::string& prefab, const Transform& at);
+
+        /**
+         * @brief Build the prefab a PrefabRef field names here, at this end alone.
+         *
+         * @param prefab The field.
+         * @param at     Root pose.
+         * @return The instance root, or a null id when nothing was built.
+         */
+        EntityId instantiate(const PrefabRef& prefab, const Transform& at) {
+            return instantiate(prefab.path, at);
+        }
+
+        /**
+         * @brief Build the prefab at @p prefab here and on every client: NetSession::spawn.
+         *
+         * Authority only (isAuthority()): refused on a client.
+         *
+         * @param prefab Project-relative path.
+         * @param at     Root pose.
+         * @return The instance root, or a null id when nothing was built.
+         */
+        EntityId instantiateShared(const std::string& prefab, const Transform& at);
+
+        /**
+         * @brief Build the prefab a PrefabRef field names here and on every client; authority only.
+         *
+         * @param prefab The field.
+         * @param at     Root pose.
+         * @return The instance root, or a null id when nothing was built.
+         */
+        EntityId instantiateShared(const PrefabRef& prefab, const Transform& at) {
+            return instantiateShared(prefab.path, at);
+        }
+
+        /**
+         * @brief Play @p clip once from @p at: a PlaySoundEvent, sent now.
+         *
+         * Silent in a replayed tick (isReplaying()), which re-runs a moment already presented.
+         *
+         * @param clip   The clip; one not loaded, or none named, is heard as nothing.
+         * @param at     World position it sounds from.
+         * @param volume Linear gain.
+         */
+        void playSoundAt(const AssetRef<AudioClipAsset>& clip, const glm::vec3& at, float volume = 1.0f) {
+            sendSound(clip, at, volume, {});
+        }
+
+        /**
+         * @brief Play @p clip once from where this entity is (worldPosition()), which its own body does
+         *        not muffle (PlaySoundEvent::from).
+         *
+         * @param clip   The clip; one not loaded, or none named, is heard as nothing.
+         * @param volume Linear gain.
+         */
+        void playSound(const AssetRef<AudioClipAsset>& clip, float volume = 1.0f) {
+            sendSound(clip, worldPosition(), volume, entity());
         }
 
         /**
@@ -691,6 +901,21 @@ class Behavior {
 
     private:
         friend class BehaviorSystem;
+
+        /**
+         * @brief playSoundAt and playSound's request, sent now unless the tick is a replay.
+         *
+         * @param clip   The clip; one not loaded, or none named, is heard as nothing.
+         * @param at     World position it sounds from.
+         * @param volume Linear gain.
+         * @param from   PlaySoundEvent::from.
+         */
+        void sendSound(
+            const AssetRef<AudioClipAsset>& clip,
+            const glm::vec3& at,
+            float volume,
+            EntityId from
+        );
 
         /**
          * @brief Run @p fn, reporting anything it throws against this behavior.

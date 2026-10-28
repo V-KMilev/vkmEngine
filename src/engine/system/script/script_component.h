@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,8 +24,9 @@ struct UnknownBehavior {
     std::string type;
     std::string properties;  ///< Its property object, as JSON text, untouched.
 
-    /// Position in the list read from; list order is run order, so it must survive a save.
-    size_t index = 0;
+    /// How many constructed behaviors are listed ahead of it: list order is run order, so its place among
+    /// them must survive a save. removeBehavior keeps it in step.
+    size_t constructedBefore = 0;
 };
 
 /**
@@ -39,6 +41,20 @@ struct ScriptComponent {
     /// Behaviors held as text because no type of that name is registered.
     std::vector<UnknownBehavior> unknown;
 };
+
+/**
+ * @brief Remove @p sc's constructed behavior at @p index, each held one keeping its place among the rest.
+ *
+ * @param sc    The component.
+ * @param index Its position in ScriptComponent::behaviors; past the end removes nothing.
+ */
+inline void removeBehavior(ScriptComponent& sc, size_t index) {
+    if (index >= sc.behaviors.size()) return;
+    sc.behaviors.erase(sc.behaviors.begin() + static_cast<std::ptrdiff_t>(index));
+    for (UnknownBehavior& held : sc.unknown) {
+        if (held.constructedBefore > index) --held.constructedBefore;
+    }
+}
 
 /**
  * @brief Report a behavior added in code whose type the registry does not know.

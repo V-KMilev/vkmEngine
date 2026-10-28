@@ -199,6 +199,7 @@ class BehaviorSystem : public System, public ISceneObserver {
         /// Walked by drainPendingDestroy; a member for its capacity.
         std::vector<EntityId> m_destroying;
         std::string           m_pendingSceneLoad;  ///< Scene a behavior asked for; empty when none.
+        std::string           m_followedScene;     ///< Scene the server moved the session to, until loaded.
         bool                  m_pendingRestart = false;  ///< A behavior asked to start the scene over.
         std::string           m_loadedScene;   ///< The file loadScene last loaded this session, if any.
         std::string           m_playedScene;   ///< The file the host began play with; see setPlayedScene.

@@ -17,7 +17,10 @@
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
 #include "io/project_paths.h"
+#include "io/scene/scene_fingerprint.h"
 #include "io/scene/scene_serializer.h"
+#include "system/loading/loading_events.h"
+#include "system/loading/loading_frame.h"
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
 
@@ -77,25 +80,6 @@ ContactHook<EntityId> triggerHook(ContactPhase phase) {
         case ContactPhase::Ended:  break;
     }
     return {"onTriggerExit", &Behavior::onTriggerExit};
-}
-
-/**
- * @brief @p event as the entity on one side of it sees it.
- *
- * The normal points a to b, so a hears it negated. An ended contact touches nowhere.
- *
- * @param event The contact, named the event's way round.
- * @param forA  Whether the receiver is the event's a rather than its b.
- * @return The receiver's Collision.
- */
-Collision collisionFor(const CollisionEvent& event, bool forA) {
-    Collision hit;
-    hit.other = forA ? event.b : event.a;
-    if (event.phase == ContactPhase::Ended) return hit;
-    hit.point  = event.point;
-    hit.normal = forA ? -event.normal : event.normal;
-    hit.speed  = event.speed;
-    return hit;
 }
 
 } // namespace
@@ -203,6 +187,11 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 }
 
 void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
+    // The server moved the session to another scene: this end follows it there, whatever a
+    // behavior asks while the load waits.
+    if (std::string next = ctx.net.takeSceneToLoad(); !next.empty()) m_followedScene = std::move(next);
+    if (!m_followedScene.empty()) m_pendingSceneLoad = m_followedScene;
+
     // A restart is a load of the scene being played; a load asked in the same pass wins.
     const bool restart = m_pendingRestart;
     m_pendingRestart   = false;
@@ -221,18 +210,33 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     }
     if (m_pendingSceneLoad.empty()) return;
 
+    // The load holds this frame: put off until the frame shown is the loading screen's. A host
+    // with no loading screen loads at once.
+    if (ctx.loading && !ctx.loading->covering) {
+        ctx.events.enqueue(LoadExpected{});
+        return;
+    }
+
     // Taken before endSession clears the queue; a load an outgoing onDestroy asks for
     // belongs to the ending session.
     std::string path;
     path.swap(m_pendingSceneLoad);
+    const bool followed = !m_followedScene.empty();
+    m_followedScene.clear();
 
-    // onDestroy while they and their module are still alive; the load destroys them.
+    // onDestroy while they and their module are still alive; the load destroys them. A load
+    // that fails leaves this world standing, and with it the file a restart reloads.
+    const std::string playing = m_loadedScene;
     endSession(ctx.scene);
 
     const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
         m_loadedScene = path;
+        // A session's next world: a server tells its players which, a client says it holds it.
+        // Named as the project names it, however the host or the game spelled it.
+        const std::string named = ProjectPaths::toProjectRelative(scenePath.string());
+        ctx.net.setWorld(fingerprintScene(scenePath), ctx.scene, named);
         // Nothing starts on a frozen frame, and the behavior that could resume the clock
         // went with the old scene.
         if (ctx.clock.isPaused() || ctx.clock.getTimeScale() <= 0.0f) {
@@ -243,7 +247,10 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
             );
         }
     } else {
-        // Transactional: the current scene stands; its behaviors restart next tick.
+        // Transactional: the current scene stands; its behaviors restart next tick. A client the
+        // server moved on cannot stay in it.
+        m_loadedScene = playing;
+        if (followed) ctx.net.worldFailed();
         LOG_ERROR(
             "Requested scene '%s' failed to load; staying in the current one",
             scenePath.string().c_str()
@@ -252,8 +259,8 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
 }
 
 void BehaviorSystem::init(FrameContext& ctx) {
-    // Every field but `ocean`, refreshed each tick and frame, must be session-stable, as the
-    // FrameContext service block is.
+    // Every field but `ocean` and `water`, refreshed each tick and frame, must be session-stable, as
+    // the FrameContext service block is.
     m_context.scene         = &ctx.scene;
     m_context.resources     = &ctx.resources;
     // Null on a host with no display, so a behavior knows it cannot read a device
@@ -266,6 +273,7 @@ void BehaviorSystem::init(FrameContext& ctx) {
     m_context.render        = &ctx.render;
     m_context.projectRender = &ctx.projectRender;
     m_context.chrome        = &ctx.chrome;
+    m_context.debug         = ctx.debug;
 
     ctx.scene.addObserver(this);
 
@@ -286,6 +294,7 @@ void BehaviorSystem::onEntityDestroyed(EntityId entity) {
 void BehaviorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem");
     m_context.ocean = ctx.ocean;
+    m_context.water = ctx.water;
 
     Scene& scene = ctx.scene;
 
@@ -297,8 +306,8 @@ void BehaviorSystem::update(FrameContext& ctx) {
         for (const CollisionEvent& e : m_dispatchCollisions) {
             // A destroyed entity's Ended reaches only the survivor.
             const auto hook = collisionHook(e.phase);
-            dispatchEntityHook(scene, e.a, collisionFor(e, true), hook.name, hook.call);
-            dispatchEntityHook(scene, e.b, collisionFor(e, false), hook.name, hook.call);
+            dispatchEntityHook(scene, e.a, Collision::seenBy(e, e.a), hook.name, hook.call);
+            dispatchEntityHook(scene, e.b, Collision::seenBy(e, e.b), hook.name, hook.call);
         }
         m_dispatchTriggers.clear();
         m_dispatchTriggers.swap(m_triggers);
@@ -326,6 +335,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem::fixed");
     m_context.ocean = ctx.ocean;
+    m_context.water = ctx.water;
 
     // No pause gate: the accumulator is fed from the sim delta.
     tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate, START_IF_NEEDED);
@@ -366,6 +376,7 @@ void BehaviorSystem::endSession(Scene& scene) {
     // Last, so a request an onDestroy made goes with the rest.
     m_pendingDestroy.clear();
     m_pendingSceneLoad.clear();
+    m_followedScene.clear();
     m_pendingRestart = false;
     m_loadedScene.clear();
 }
