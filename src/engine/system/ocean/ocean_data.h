@@ -11,8 +11,9 @@ namespace Vkm::Engine {
  *        its look - what gameplay floats things on and what the renderer draws (GLOcean).
  */
 struct OceanData {
-    bool         present = false;  ///< The scene has an ocean; with none, nothing below is read.
+    bool         present = false;  ///< The scene has an ocean; with none, only `ripples` is read.
     OceanSurface surface;
+    /// The sea's ripples, which other water shows too; with no sea, a default sea's wind's.
     OceanRipples ripples;
     float        level       = 0.0f;             ///< World height the water rests at: its Transform's.
     glm::vec3    foamColor   = glm::vec3(1.0f);  ///< Linear.

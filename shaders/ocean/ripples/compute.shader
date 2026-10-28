@@ -24,10 +24,10 @@ void main() {
     }
 
     for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) {
-        s_line[rippleShuffled(i)] = rippleSpectrum(ivec2(rippleBin(int(i)), kz), field, step);
+        s_fft[fftShuffled(i)] = rippleSpectrum(ivec2(rippleBin(int(i)), kz), field, step);
     }
-    rippleTransform(t);
+    fftTransform(t);
     for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) {
-        imageStore(u_rows, ivec3(i, row, field), s_line[i]);
+        imageStore(u_rows, ivec3(i, row, field), s_fft[i]);
     }
 }

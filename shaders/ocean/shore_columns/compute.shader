@@ -1,5 +1,5 @@
 /**
- * The ocean's shore, finished (GLOceanFields): for each texel, the least of a column's
+ * The ocean's shore, finished (GLOceanShore): for each texel, the least of a column's
  * ocean/shore_rows plus its own squared distance down the column, rooted: metres to the nearest
  * thing breaking the water, its depth under counted as distance too, out to the reach.
  */

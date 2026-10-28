@@ -1,19 +1,21 @@
 /*
- * The scene's ocean: the waves a `waves` material's surface moves by. The GPU's statement of
- * OceanSurface's sum (system/ocean/ocean_surface.cpp), term for term, so what gameplay floats
- * rides what is drawn. OceanBlock matches OceanUBO (frame/gl_ocean.h); MAX_OCEAN_WAVES,
+ * The scene's ocean: the swell a Sea material's surface moves by. The GPU's statement of
+ * OceanSurface (system/ocean/ocean_surface.cpp): the swell's grids read between their texels as
+ * SwellMoment reads them, faded and surged term for term, so what gameplay floats rides what is
+ * drawn. OceanBlock matches OceanUBO (frame/gl_ocean.h); SWELL_FIELD, MAX_SWELL_CASCADES,
  * MAX_OCEAN_SURGES, OCEAN_RIPPLE_FIELDS, OCEAN_INVERSE_STEPS and OCEAN_SURGE_WHOLE come from the
  * shader prelude.
  *
- * The waves move vertices (oceanAt). The ripples - the spectrum too short for any vertex - are
- * drawn once a frame into three repeating fields (ocean_ripples.glsl, GLOceanPass), and each pixel
- * reads them over the waves' frame for its own normal and foam (ocean_water.glsl), so the light on
- * the water is as fine as the screen whatever the mesh, for a few texture reads.
+ * The swell moves vertices (oceanAt); GLOceanFields draws its grids into SSBO_OCEAN_SWELL each
+ * frame (ocean_swell.glsl). The ripples - the spectrum too short for any vertex - are drawn once a
+ * frame into three repeating fields (ocean_ripples.glsl, GLOceanPass), and each pixel reads them
+ * over the waves' frame for its own normal and foam (ocean_water.glsl), so the light on the water
+ * is as fine as the screen whatever the mesh, for a few texture reads.
  */
 
 #include "constants.glsl"
 
-// A shore's square, as GLOceanFields lays it: xy its corner on the XZ plane (least X, most Z), z
+// A shore's square, as GLOceanShore lays it: xy its corner on the XZ plane (least X, most Z), z
 // its edge. Where @p point falls across it, 0..1 each way.
 vec2 shoreUV(vec2 point, vec4 square) {
     return vec2(point.x - square.x, square.y - point.y) / square.z;
@@ -26,8 +28,8 @@ vec2 shorePoint(vec2 uv, vec4 square) {
 
 layout(std140, binding = UBO_OCEAN) uniform OceanBlock {
     vec4 place;    // xy = the centre on the XZ plane, z = calm radius, w = still radius
-    vec4 detail;   // xy = the maps' drift in repeats, z = repeats a metre (0 no ocean), w = waves summed
-    vec4 foam;     // rgb = colour, a = how readily a crest whitens
+    vec4 detail;   // xy = the maps' drift in repeats, z = repeats a metre (0 no ocean), w = swell cascades
+    vec4 foam;     // rgb = color, a = how readily a crest whitens
     vec4 squeeze;  // x = a squeeze (1 - the Jacobian) the waves' crests rarely pass, y = ripple
                    // fields (0 none), z = the waves' significant height, w = the squeeze the
                    // ripples rarely add
@@ -39,17 +41,31 @@ layout(std140, binding = UBO_OCEAN) uniform OceanBlock {
     vec4 spread;   // xy = the way the waves roll, unit; z = the spread's power; w = its scale to one
     vec4 rippling; // x = how far through the ripples' loop, 0..1; y = radians a second a turn a loop;
                    // z = choppiness; w = seed
-    vec4 waves[2 * MAX_OCEAN_WAVES];  // direction, wavenumber, phase; then amplitude, steepness,
-                                      // radians a second
+    vec4 swell;    // xyz = metres across each swell cascade, w = how far through the loop, 0..1
     vec4 surges[2 * MAX_OCEAN_SURGES];  // centre, direction; then height (0 none), half its
                                         // width along its roll, half its length along its crest
 } u_ocean;
 
+// A texel of a swell cascade: the carry (X, up, Z) and its X's change along Z; the height's change
+// along X and Z, the carry's X along X and Z along Z. SwellTexel (system/ocean/ocean_swell.h).
+struct SwellTexel {
+    vec4 moved;
+    vec4 slopes;
+};
+
+// What reads the swell only reads it; the passes that draw it say otherwise first.
+#ifndef OCEAN_SWELL_ACCESS
+#define OCEAN_SWELL_ACCESS readonly
+#endif
+
+// Every cascade's grid, SWELL_FIELD texels square, rows of Z; then the foam each crest left there.
+layout(std430, binding = SSBO_OCEAN_SWELL) OCEAN_SWELL_ACCESS buffer OceanSwellBlock {
+    SwellTexel b_swell[MAX_SWELL_CASCADES * SWELL_FIELD * SWELL_FIELD];
+    float      b_swellFoam[MAX_SWELL_CASCADES * SWELL_FIELD * SWELL_FIELD];
+};
+
 // What a crest's foam sheds a second once the crest has passed, in squeezes it rarely passes.
 const float FOAM_FADE = 0.12;
-// The moments oceanLingering looks back to: so many, so many seconds apart.
-const int   FOAM_LOOKS = 6;
-const float FOAM_LOOK  = 0.75;
 
 // The water resting at a point of the plane, once the waves have moved it.
 struct OceanPoint {
@@ -135,31 +151,43 @@ float oceanSurgeFoam(vec2 rest) {
     return most;
 }
 
-// The Gerstner sum at @p rest: where the water goes, and the surface's tangents there. A wave
-// carries water q amplitudes toward its crests and lifts it one amplitude; a surge only lifts it.
-// Summed whole, then faded: the fade's own slope tilts the tangents too, where it fades.
+// The four texels of swell cascade @p c round @p rest, and the weights between them: SwellMoment's
+// reading between texels, term for term.
+void oceanSwellCorners(int c, vec2 rest, out int at[4], out vec4 weight) {
+    const vec2  p    = rest / u_ocean.swell[c] * float(SWELL_FIELD);
+    const vec2  low  = floor(p);
+    const vec2  f    = p - low;
+    const int   x0   = ((int(low.x) % SWELL_FIELD) + SWELL_FIELD) % SWELL_FIELD;
+    const int   z0   = ((int(low.y) % SWELL_FIELD) + SWELL_FIELD) % SWELL_FIELD;
+    const int   x1   = (x0 + 1) % SWELL_FIELD;
+    const int   z1   = (z0 + 1) % SWELL_FIELD;
+    const int   base = c * SWELL_FIELD * SWELL_FIELD;
+    at[0] = base + z0 * SWELL_FIELD + x0;
+    at[1] = base + z0 * SWELL_FIELD + x1;
+    at[2] = base + z1 * SWELL_FIELD + x0;
+    at[3] = base + z1 * SWELL_FIELD + x1;
+    weight = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+}
+
+// The swell at @p rest: where the water goes, and the surface's tangents there; a surge only lifts
+// it. Faded: the fade's own slope tilts the tangents too, where it fades.
 OceanPoint oceanAt(vec2 rest) {
     float fade   = oceanReach(rest);
     vec3  offset = vec3(0.0);
     vec3  alongX = vec3(0.0);
     vec3  alongZ = vec3(0.0);
     int   count  = fade > 0.0 ? int(u_ocean.detail.w) : 0;
-    for (int i = 0; i < count; ++i) {
-        vec4  shape = u_ocean.waves[2 * i];
-        vec4  size  = u_ocean.waves[2 * i + 1];
-        vec2  dir   = shape.xy;
-        float k     = shape.z;
-        float amp   = size.x;
-        float q     = size.y;
-        float theta = k * dot(dir, rest) + shape.w;
-        float s     = sin(theta);
-        float c     = cos(theta);
-        offset += vec3(q * amp * c * dir.x, amp * s, q * amp * c * dir.y);
-        float wa   = k * amp;
-        float pull = q * wa * s;
-        float xz   = dir.x * dir.y;
-        alongX += vec3(-pull * dir.x * dir.x, wa * dir.x * c, -pull * xz);
-        alongZ += vec3(-pull * xz, wa * dir.y * c, -pull * dir.y * dir.y);
+    for (int c = 0; c < count; ++c) {
+        int  at[4];
+        vec4 weight;
+        oceanSwellCorners(c, rest, at, weight);
+        for (int i = 0; i < 4; ++i) {
+            const vec4 m = b_swell[at[i]].moved;
+            const vec4 s = b_swell[at[i]].slopes;
+            offset += m.xyz * weight[i];
+            alongX += vec3(s.z, s.x, m.w) * weight[i];
+            alongZ += vec3(m.w, s.y, s.w) * weight[i];
+        }
     }
     vec2 slope = oceanReachSlope(rest);
     vec3 surge = oceanSurgeAt(rest);
@@ -179,27 +207,20 @@ float oceanHeightAt(vec2 point) {
     return oceanAt(rest).offset.y;
 }
 
-// The foam a crest left at @p rest: the most the water there was squeezed in the last few seconds,
-// less what that foam has shed since, in oceanShadeAt's pressed. A Gerstner wave carries its water
-// round and back to its rest point, so the water's past is the sum's at earlier moments, each
-// wave's phase turned back; to first order its squeeze is the sum of q k a sin(theta).
+// The foam a crest left at @p rest: the most each cascade's water there was squeezed lately, less
+// what that foam has shed since, in oceanShadeAt's pressed - kept by ocean/swell_columns, a frame
+// at a time - summed over the cascades and faded.
 float oceanLingering(vec2 rest) {
     if (u_ocean.squeeze.x <= 0.0) return 0.0;
-    float fade  = oceanReach(rest);
     float most  = 0.0;
     int   count = int(u_ocean.detail.w);
-    for (int look = 1; look <= FOAM_LOOKS; ++look) {
-        float ago     = FOAM_LOOK * float(look);
-        float squeeze = 0.0;
-        for (int i = 0; i < count; ++i) {
-            vec4 shape = u_ocean.waves[2 * i];
-            vec4 size  = u_ocean.waves[2 * i + 1];
-            float theta = shape.z * dot(shape.xy, rest) + shape.w + size.z * ago;
-            squeeze += size.y * shape.z * size.x * sin(theta);
-        }
-        most = max(most, fade * squeeze / u_ocean.squeeze.x - FOAM_FADE * ago);
+    for (int c = 0; c < count; ++c) {
+        int  at[4];
+        vec4 weight;
+        oceanSwellCorners(c, rest, at, weight);
+        for (int i = 0; i < 4; ++i) most += b_swellFoam[at[i]] * weight[i];
     }
-    return most;
+    return oceanReach(rest) * most;
 }
 
 // The maps' coordinates at a rest point: laid over the water, drifting with the wind.
