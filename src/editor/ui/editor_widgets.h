@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -17,9 +18,6 @@
 #include "ui/editor_icons.h"
 
 namespace Vkm::Engine {
-
-class Scene;
-enum class LightType;
 
 /**
  * @brief XYZ vector control: three drag floats with colored reset buttons (X/Y/Z).
@@ -71,6 +69,36 @@ inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
     if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
     ImGui::PopID();
     return changed;
+}
+
+/**
+ * @brief A row that only says: @p label in the label column, @p value beside it.
+ *
+ * @param label What it is.
+ * @param value What it says.
+ */
+void factRow(const char* label, const char* value);
+
+/// The width of an asset window's details column, design pixels.
+inline constexpr float ASSET_DETAILS_WIDTH = 280.0f;
+
+/**
+ * @brief An asset window's layout: @p view filling the left, @p details down a column on the right.
+ *
+ * @param view    Draws the picture, in a child that neither scrolls nor takes the wheel.
+ * @param details Draws the facts and controls.
+ */
+template <typename View, typename Details>
+void viewAndDetails(View&& view, Details&& details) {
+    const float side    = EditorStyle::px(ASSET_DETAILS_WIDTH);
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float wide    = ImGui::GetContentRegionAvail().x - side - spacing;
+    const ImGuiWindowFlags still = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    if (ImGui::BeginChild("##view", ImVec2(wide, 0.0f), ImGuiChildFlags_None, still)) view();
+    ImGui::EndChild();
+    ImGui::SameLine();
+    if (ImGui::BeginChild("##details", ImVec2(0.0f, 0.0f))) details();
+    ImGui::EndChild();
 }
 
 /**
@@ -153,7 +181,7 @@ inline bool sliderInt(
 /**
  * @brief Begin a combo drawn as one flat field.
  *
- * The arrow sits on the field's colour, not a button block. Begin an editor combo here,
+ * The arrow sits on the field's color, not a button block. Begin an editor combo here,
  * and end it with ImGui::EndCombo when this returns true.
  *
  * @param id      ImGui id.
@@ -173,6 +201,71 @@ bool beginCombo(const char* id, const char* preview, ImGuiComboFlags flags = 0);
  * @return Whether a pick changed the index this frame.
  */
 bool comboList(const char* id, int* index, const char* const* labels, int count);
+
+/**
+ * @brief What a physics layer is called: the project's name for its bit, else its number.
+ *
+ * @param names Project::physicsLayers.
+ * @param bit   0 for the layer of value 1.
+ * @return The name, or "Layer <bit + 1>".
+ */
+std::string physicsLayerName(const std::vector<std::string>& names, int bit);
+
+/**
+ * @brief The stem of the file an asset's name names: "rocks" of "a/rocks.gltf:mesh0".
+ *
+ * The file is what comes before the first ':', and a name names one when that holds a '/' or a
+ * '.'; "mesh:generator:cube" names none.
+ *
+ * @param name The asset's name.
+ * @return The stem, or empty for a name that names no file.
+ */
+std::string assetFileStem(const std::string& name);
+
+/**
+ * @brief An asset's name cut to a word: its file's stem, or the last part of a name with no file.
+ *
+ * The part inside a file is dropped: "a/rocks.gltf:mesh0" reads "rocks", "mesh:generator:cube" "cube".
+ *
+ * @param name The asset's name.
+ * @return The short name.
+ */
+std::string assetShortName(const std::string& name);
+
+/**
+ * @brief A row picking the one physics layer a body is on, or none, by name.
+ *
+ * @param label   Label column text.
+ * @param layer   A single bit; a value of several shows them and is replaced by a pick.
+ * @param names   Project::physicsLayers.
+ * @param tooltip Shown on the label; null for none.
+ * @return Whether the pick changed it.
+ */
+bool propLayer(
+    const char* label,
+    int* layer,
+    const std::vector<std::string>& names,
+    const char* tooltip = nullptr
+);
+
+/**
+ * @brief A row picking a mask of physics layers: Everything, Nothing, or each by name.
+ *
+ * Lists every named layer and every one the mask holds, so no set bit is hidden but
+ * those of Everything. The popup stays open while bits are ticked.
+ *
+ * @param label   Label column text.
+ * @param mask    The bits, as a Rigidbody holds them.
+ * @param names   Project::physicsLayers.
+ * @param tooltip Shown on the label; null for none.
+ * @return Whether a tick changed it.
+ */
+bool propLayerMask(
+    const char* label,
+    int* mask,
+    const std::vector<std::string>& names,
+    const char* tooltip = nullptr
+);
 
 inline bool propSlider(
     const char* label,
@@ -437,6 +530,15 @@ inline bool rebakeButton(uint32_t& bakeVersion) {
 }
 
 /**
+ * @brief A remove button at the right end of the current line: a cross, tinted as danger.
+ *
+ * @param id      Unique among the line's items.
+ * @param tooltip What it removes, on hover.
+ * @return Whether it was pressed.
+ */
+bool removeButton(const char* id, const char* tooltip);
+
+/**
  * @brief Section heading inside a panel or popup.
  *
  * Distinct from TextDisabled, which is for hints and metadata.
@@ -479,7 +581,7 @@ void centreNextItem(float width);
  *
  * @param picture 0 shows @p glyph instead.
  * @param face Edge length, pixels.
- * @param accent The kind's colour, for the hover border.
+ * @param accent The kind's color, for the hover border.
  * @param glyph Drawn centred on a face with no picture.
  * @param glyphColor A faint one says a picture is still coming.
  * @param[out] faceMin Top-left corner of the face.
@@ -503,7 +605,7 @@ bool tileFace(
  *
  * @param faceMin Top-left corner of the face.
  * @param faceMax Bottom-right corner of the face.
- * @param color The kind's colour, faded when the asset is unused.
+ * @param color The kind's color, faded when the asset is unused.
  */
 void tileStrip(ImVec2 faceMin, ImVec2 faceMax, const ImVec4& color);
 
@@ -515,7 +617,7 @@ void tileStrip(ImVec2 faceMin, ImVec2 faceMax, const ImVec4& color);
  *
  * @param text Empty draws the "(unnamed)" placeholder.
  * @param maxWidth Pixels.
- * @param dim Draw in the disabled colour.
+ * @param dim Draw in the disabled color.
  */
 void clippedLine(const char* text, float maxWidth, bool dim);
 
@@ -536,6 +638,50 @@ std::string elidedLine(const char* text, float maxWidth);
  * @return True when filter occurs in text ignoring case, or is empty.
  */
 bool matchesFilter(const char* text, const char* filter);
+
+/// One choice of a segmented control.
+struct Segment {
+    const char*   label;            ///< What it says; it is known by its place, not by this.
+    const ImVec4* tint    = nullptr;  ///< Its text's color, or null for the usual one.
+    const char*   tooltip = nullptr;  ///< Shown on hover, or null for none.
+};
+
+/**
+ * @brief A row of choices drawn as one joined control, the chosen one filled.
+ *
+ * For a few views of one thing, where tabs would nest inside a tab.
+ *
+ * @param id       ImGui id of the control.
+ * @param segments The choices, left to right.
+ * @param count    How many there are.
+ * @param chosen   Index of the chosen one; set when another is clicked.
+ * @return Whether the choice changed.
+ */
+bool segmentedControl(const char* id, const Segment* segments, int count, int* chosen);
+
+/**
+ * @brief A pill that toggles: tinted by @p color while on, dim while off.
+ *
+ * For filters whose state is the point, where a checkbox's tick says less than the color.
+ *
+ * @param label Its text; "###" hides a changing part from the id.
+ * @param on    Its state, flipped by a click.
+ * @param color What it means: the tint of its fill, ring and text while on.
+ * @return Whether it was clicked.
+ */
+bool toggleChip(const char* label, bool* on, const ImVec4& color);
+
+/**
+ * @brief A panel's search box: Escape empties it, and Ctrl+F reaches it while its panel has focus.
+ *
+ * @param id    ImGui id, unique within the panel.
+ * @param buf   The needle.
+ * @param size  Capacity of @p buf, including the terminator.
+ * @param width Screen pixels; negative leaves that much room at the right edge.
+ * @param hint  What it shows while empty.
+ * @return Whether the needle changed.
+ */
+bool searchField(const char* id, char* buf, size_t size, float width, const char* hint = "Search...");
 
 /**
  * @brief The search box a type-to-narrow popup opens with.
@@ -591,13 +737,16 @@ bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut = nul
  * @param accent        One of EditorStyle::Accent.
  * @param defaultOpen   Whether the card starts expanded.
  * @param removeClicked Set true the frame the header's "x" is pressed; null draws no "x".
+ * @param menu          A right click on the header opens the popup of this id, which the
+ *                      caller begins before endComponentCard; null opens none.
  * @return True when the body is expanded and should be drawn.
  */
 bool beginComponentCard(
     const char* title,
     const ImVec4& accent,
     bool defaultOpen,
-    bool* removeClicked = nullptr
+    bool* removeClicked = nullptr,
+    const char* menu = nullptr
 );
 void endComponentCard();
 
@@ -615,7 +764,7 @@ struct ClipTransport {
  * Play, Pause and Stop are previews, not edits; Loop and Speed are authored and reported
  * for the caller to record. Leaves the cursor on the row for the caller's controls.
  *
- * @tparam Player Animation or Animator.
+ * @tparam Player Anything with playing, time, looping and speed.
  * @param id Prefix unique among the transports in one window.
  * @param player The player the row drives.
  * @param minSpeed The drag's lowest speed: 0 where the player cannot run backwards.
@@ -748,44 +897,11 @@ class EulerCache {
 };
 
 /**
- * @brief Write the user-visible name of @p id into @p buf.
- *
- * Falls back to kind and slot ("Camera 7") without a non-empty Name.
- *
- * @param scene   The scene @p id lives in.
- * @param id      Entity named; it need not carry a Name.
- * @param buf     Receives the name, truncated.
- * @param bufSize Capacity of @p buf.
- */
-void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
-
-/**
- * @brief Which entity-type glyph represents @p id.
- *
- * Shares getEntityDisplayName's fallback ladder, so glyph and label agree.
- *
- * @param scene The scene @p id lives in.
- * @param id Its components choose the glyph.
- * @return The glyph for its kind.
- */
-EditorIcon entityIconKind(const Scene& scene, EntityId id);
-
-/**
- * @brief The glyph for a light of @p type.
- *
- * entityIconKind's light rung on its own, so a light's row and marker agree.
- *
- * @param type The light's type.
- * @return Its glyph; the point light's for a value out of range.
- */
-EditorIcon lightIcon(LightType type);
-
-/**
  * @brief Draw a non-interactive icon centred in a @p size square at the cursor.
  *
  * @param icon  Glyph.
  * @param size  Square side, screen pixels.
- * @param color Glyph colour.
+ * @param color Glyph color.
  */
 void inlineIcon(EditorIcon icon, float size, ImU32 color);
 

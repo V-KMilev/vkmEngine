@@ -1,16 +1,22 @@
 #pragma once
 
+#include <vector>
+
 #include <glm/glm.hpp>
 
+#include "core/math/bounds.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
 struct FrameContext;
 class CameraControllerSystem;
+class ResourceManager;
+class Scene;
 
 /**
- * @brief Frame Selected and Frame All.
+ * @brief Moving the view onto what it shows - a selection, the scene, an entity's own view -
+ *        and the boxes and distances that takes.
  *
  * They move only the view, so take no undo step. A stood-down controller refuses
  * the move.
@@ -18,15 +24,53 @@ class CameraControllerSystem;
 namespace ViewFraming {
 
 /**
- * @brief Frame @p selected: centre on its world-space mesh bounds, or its origin.
+ * @brief Frame @p selection with everything under it, whole in the view.
  *
- * No-op when it is dead or has no Transform.
+ * Each entity counts by its drawn box where the frame has one (posed, so a rig frames
+ * where its bones put it), else its mesh's or terrain's box, else its position.
+ * No-op when nothing of it has a place in the world.
  *
- * @param ctx Supplies the scene and mesh bounds.
- * @param selected Entity to frame.
+ * @param ctx Supplies the scene, the frame's boxes and the mesh bounds.
+ * @param selection Entities to frame; the dead are skipped.
  * @param camera View moved.
  */
-void frameSelected(const FrameContext& ctx, EntityId selected, CameraControllerSystem& camera);
+void frameSelected(
+    const FrameContext& ctx,
+    const std::vector<EntityId>& selection,
+    CameraControllerSystem& camera
+);
+
+/**
+ * @brief Stand the view where @p entity stands, looking along its forward.
+ *
+ * The view has no roll, so an entity's is dropped. Refused by a stood-down controller.
+ *
+ * @param scene  Holds the entity, which has a Transform.
+ * @param entity Typically a camera, to look through as it will.
+ * @param camera View moved.
+ */
+void viewFromEntity(const Scene& scene, EntityId entity, CameraControllerSystem& camera);
+
+/**
+ * @brief Where an entity lies by its own parts: its terrain's box, its mesh's, or its position.
+ *
+ * Unposed: a skinned mesh counts at its bind-pose box.
+ *
+ * @param scene     Holds the entity, which has a Transform.
+ * @param resources Resolves its assets.
+ * @param id        The entity.
+ * @return World-space box; a point for an entity with neither.
+ */
+Math::AABB worldBox(const Scene& scene, const ResourceManager& resources, EntityId id);
+
+/**
+ * @brief How far back a view must stand to see a sphere whole.
+ *
+ * @param radius The sphere's, floored so a point is framed from a sensible distance.
+ * @param camera Its field of view decides.
+ * @return World units from the sphere's centre.
+ */
+float fitDistance(float radius, const CameraControllerSystem& camera);
 
 /**
  * @brief Frame the union of this frame's visible boxes.

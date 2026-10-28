@@ -10,6 +10,7 @@ struct FrameContext;
 struct EditorState;
 class EngineErrorLog;
 class AudioSystem;
+class LoadingSystem;
 class CameraControllerSystem;
 class MaterialPreviewSession;
 class EditorRenderHooks;
@@ -35,6 +36,9 @@ struct EditorContext {
      * An audition has no entity, so it reaches the device, not the components.
      */
     AudioSystem&            audioSystem;
+
+    /// Shows the project's loading screen: given it as the project opens and as it is saved.
+    LoadingSystem&          loadingSystem;
 
     /// Editor-owned recoverable-error log the engine reports into.
     EngineErrorLog&         errorLog;

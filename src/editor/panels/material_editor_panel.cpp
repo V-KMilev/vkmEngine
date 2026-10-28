@@ -1,6 +1,7 @@
 #include "panels/material_editor_panel.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,7 +20,7 @@
 #include <nlohmann/json.hpp>
 
 #include "core/fnv1a.h"
-#include "ecs/component/render/decal.h"
+#include "io/asset/asset_serializer.h"
 #include "core/system.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/scene.h"
@@ -27,6 +29,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/asset_source_kind.h"
 #include "resource/resource_manager.h"
+#include "ui/asset_drag.h"
 #include "ui/editor_icons.h"
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
@@ -37,6 +40,7 @@
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
 #include "io/project_paths.h"
+#include "import/import_formats.h"
 #include "import/material_loaders.h"
 #include "import/texture_loaders.h"
 #include "system/render/editor_render_hooks.h"
@@ -46,40 +50,6 @@
 namespace Vkm::Engine {
 
 namespace {
-
-// Everything that changes the preview image, in one stamp, so MaterialPreviewSession
-// re-bakes only on a change.
-uint64_t previewVersion(
-    uint64_t materialVersion,
-    uint32_t shapeId,
-    int shape,
-    float yaw,
-    float pitch,
-    float distance,
-    int background,
-    float lightYaw
-) {
-    auto floatBits = [](float f) {
-        uint32_t b;
-        std::memcpy(&b, &f, sizeof(b));
-        return static_cast<uint64_t>(b);
-    };
-    uint64_t h = FNV1A_OFFSET_BASIS;
-    const uint64_t fields[] = {
-        materialVersion,
-        static_cast<uint64_t>(shapeId),
-        static_cast<uint64_t>(shape),
-        floatBits(yaw),
-        floatBits(pitch),
-        floatBits(distance),
-        static_cast<uint64_t>(background),
-        floatBits(lightYaw)
-    };
-    for (uint64_t v : fields) {
-        h = fnv1a64Bytes(&v, sizeof(v), h);
-    }
-    return h;
-}
 
 /**
  * @brief One row of the preview shape strip: its button, and what it draws on.
@@ -107,6 +77,13 @@ MeshAsset previewSphere() { return generateSphere(); }
 MeshAsset previewCube() { return generateCube(); }
 MeshAsset previewPlane() { return generatePlane(2.0f, 2.0f, 1, 1); }
 
+/// The window's width, design pixels, from which the preview and the parameters stand side by side.
+constexpr float WIDE_FROM = 620.0f;
+
+/// Narrower, the preview's height, design pixels: about a third of the window, within these.
+constexpr float NARROW_LEAST = 160.0f;
+constexpr float NARROW_MOST  = 320.0f;
+
 constexpr PreviewShape SHAPES[] = {
     {"shSphere", "Sphere",      EditorIcon::Sphere, "mesh:preview_sphere", &previewSphere},
     {"shCube",   "Cube",        EditorIcon::Cube,   "mesh:preview_cube",   &previewCube},
@@ -121,16 +98,12 @@ MeshHandle previewMeshFor(ResourceManager& resources, const PreviewShape& shape)
 }
 
 /**
- * @brief One texture slot as the map grid draws it.
- *
- * A `core` slot always has a tile; the rest get one when bound or picked from the add
- * tile's menu.
+ * @brief One texture slot: what the panel calls it, where it binds, how it is read, and what it does.
  */
 struct MapDesc {
     const char* label;
     TextureHandle MaterialAsset::* member;
     TextureUsage usage;
-    bool        core;
     const char* hint;
 };
 
@@ -139,49 +112,42 @@ constexpr MapDesc MAPS[] = {
         "Albedo",
         &MaterialAsset::albedoTexture,
         TextureUsage::Color,
-        true,
-        "Base colour. Its alpha is what AlphaMask cuts and Transparent blends on"
+        "Base color. Its alpha is what AlphaMask cuts and Transparent blends on"
     },
     {
         "Normal",
         &MaterialAsset::normalTexture,
         TextureUsage::Normal,
-        true,
-        "Tangent-space normal map; Normal Scale below sets how far it bends the surface"
+        "Tangent-space normal map; the scale beside it sets how far it bends the surface"
     },
     {
         "Roughness",
         &MaterialAsset::roughnessTexture,
         TextureUsage::Data,
-        true,
         "Roughness from the red channel, multiplied by the Roughness slider"
     },
     {
         "Metallic",
         &MaterialAsset::metallicTexture,
         TextureUsage::Data,
-        true,
         "Metalness from the red channel, multiplied by the Metallic slider"
     },
     {
         "AO",
         &MaterialAsset::aoTexture,
         TextureUsage::Data,
-        true,
         "Ambient occlusion from the red channel; darkens indirect light only"
     },
     {
         "Emission",
         &MaterialAsset::emissionTexture,
         TextureUsage::Color,
-        true,
-        "Emissive colour, multiplied by the Emission tint"
+        "Emissive color, multiplied by the Emission tint"
     },
     {
         "Metal+Rough",
         &MaterialAsset::metallicRoughnessTexture,
         TextureUsage::Data,
-        false,
         "glTF packing: roughness in green, metallic in blue. Bound, it is used instead of the separate "
         "Roughness and Metallic maps"
     },
@@ -189,7 +155,6 @@ constexpr MapDesc MAPS[] = {
         "AO+M+R",
         &MaterialAsset::aoMetallicRoughnessTexture,
         TextureUsage::Data,
-        false,
         "AO in red, roughness in green, metallic in blue. Bound, it is used instead of the three separate "
         "maps"
     },
@@ -197,7 +162,6 @@ constexpr MapDesc MAPS[] = {
         "Height",
         &MaterialAsset::heightTexture,
         TextureUsage::Data,
-        false,
         "Height field for parallax, white where the surface is high; needs a Height Scale above 0 to do "
         "anything"
     },
@@ -205,19 +169,17 @@ constexpr MapDesc MAPS[] = {
         "Clearcoat",
         &MaterialAsset::clearcoatTexture,
         TextureUsage::Data,
-        false,
         "Clearcoat strength mask; needs the Clearcoat feature"
     },
     {
         "Transmission",
         &MaterialAsset::transmissionTexture,
         TextureUsage::Data,
-        false,
         "Transmission mask; needs the Transmission feature"
     },
 };
-// Order and wording are editorial (see VKM_MATERIAL_MAPS); a slot with no tile is unreachable.
-static_assert(std::size(MAPS) == MATERIAL_MAP_COUNT, "every material map needs a tile in the Maps grid");
+// Order and wording are editorial (see VKM_MATERIAL_MAPS); a slot missing here cannot be bound.
+static_assert(std::size(MAPS) == MATERIAL_MAP_COUNT, "every material map needs a row");
 
 /**
  * @brief One secondary lobe, and everything the panel needs to offer it.
@@ -234,6 +196,7 @@ struct Feature {
     void (*enable)(MaterialAsset& m);
     void (*disable)(MaterialAsset& m);
     bool (*body)(MaterialAsset& m);
+    TextureHandle MaterialAsset::* mask = nullptr;  ///< Its own map, shown in its card; null for none.
 };
 
 bool transmissionBody(MaterialAsset& m) {
@@ -255,13 +218,13 @@ bool transmissionBody(MaterialAsset& m) {
         "Volume thickness in metres. 0 = thin-walled, and nothing is absorbed"
     );
     changed |= propDrag(
-        "Absorb Dist.",
+        "Absorb Length",
         &m.attenuationDistance,
         0.01f,
         0.0001f,
         1000.0f,
         "%.3f",
-        "Path length at which white light becomes the absorption colour"
+        "Path length at which white light becomes the absorption color"
     );
     changed |= propColor3(
         "Absorb Tint",
@@ -305,14 +268,14 @@ bool subsurfaceBody(MaterialAsset& m) {
         "Tint",
         glm::value_ptr(m.subsurfaceColor),
         ImGuiColorEditFlags_Float,
-        "Colour light picks up on its way back out"
+        "Color light picks up on its way back out"
     );
     return changed;
 }
 
 bool sheenBody(MaterialAsset& m) {
     bool changed = propColor3(
-        "Colour",
+        "Color",
         glm::value_ptr(m.sheenColor),
         ImGuiColorEditFlags_Float,
         "Black is no sheen at all, which is how this feature switches off"
@@ -338,6 +301,7 @@ constexpr Feature FEATURES[] = {
             m.transmissionTexture = TextureHandle{};
         },
         &transmissionBody,
+        &MaterialAsset::transmissionTexture,
     },
     {
         "Clearcoat",
@@ -351,6 +315,7 @@ constexpr Feature FEATURES[] = {
             m.clearcoatTexture   = TextureHandle{};
         },
         &clearcoatBody,
+        &MaterialAsset::clearcoatTexture,
     },
     {
         "Anisotropy",
@@ -400,11 +365,10 @@ Mesh* selectedMesh(EditorContext& ec) {
 /**
  * @brief The selected entity's Mesh when it draws with @p material, or null.
  *
- * What replacing the tab's material may write to: a pinned material need not be the
- * selection's.
+ * What replacing the window's material may write to: the material need not be the selection's.
  *
  * @param ec Holds the selection.
- * @param material The material the tab shows.
+ * @param material The material the window shows.
  * @return The selection's Mesh, or null when it does not draw with @p material.
  */
 Mesh* selectedMeshDrawing(EditorContext& ec, MaterialHandle material) {
@@ -425,38 +389,31 @@ std::string slotDetail(const ResourceManager& resources, const TextureHandle& sl
     return file.empty() ? texture.name() : file;
 }
 
-} // namespace
-
-MaterialHandle MaterialEditorPanel::resolveTarget(EditorContext& ec) {
-    EditorState&     state     = ec.state;
-    ResourceManager& resources = ec.frame.resources;
-    const Mesh*      selMesh   = selectedMesh(ec);
-
-    // The asset can be deleted under a chosen target, and get() / edit() below are unguarded.
-    if (state.materialEditorTarget && !resources.isAlive(state.materialEditorTarget)) {
-        state.materialEditorTarget = {};
+/// The map row of @p member.
+const MapDesc& mapOf(TextureHandle MaterialAsset::* member) {
+    for (const MapDesc& map : MAPS) {
+        if (map.member == member) return map;
     }
-
-    // A hand-picked material holds until another entity with one is selected; see
-    // docs/reference/editor.md, "Which material it edits".
-    if (state.materialEditorTarget && state.selectedEntity != state.materialPinnedAt
-        && selMesh && selMesh->material) {
-        state.materialEditorTarget = {};
-        state.materialPinnedAt     = {};
-    }
-
-    if (state.materialEditorTarget) return state.materialEditorTarget;
-    return (selMesh && selMesh->material) ? selMesh->material : MaterialHandle{};
+    return MAPS[0];
 }
 
-void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, float width) {
+/// Whether @p mat's maps are laid as they are by default: one repeat over its UVs.
+bool defaultUVs(const MaterialAsset& mat) {
+    return mat.uvScale == glm::vec2(1.0f) && mat.uvOffset == glm::vec2(0.0f) && mat.boxMapping == 0.0f;
+}
+
+} // namespace
+
+MaterialEditorPanel::MaterialEditorPanel(MaterialHandle material, uint64_t previewKey)
+    : m_material(material)
+    , m_viewport(previewKey)
+{}
+
+void MaterialEditorPanel::drawChooser(EditorContext& ec, float width) {
     ResourceManager& resources = ec.frame.resources;
 
-    const char* preview = "(choose a material)";
-    if (target) {
-        const std::string& name = resources.get(target).name();
-        preview = name.empty() ? "(unnamed)" : name.c_str();
-    }
+    const std::string& name    = resources.get(m_material).name();
+    const char*        preview = name.empty() ? "(unnamed)" : name.c_str();
 
     ImGui::SetNextItemWidth(width > 0.0f ? width : -1.0f);
     if (!beginCombo("##ChooseMat", preview, ImGuiComboFlags_HeightLarge)) return;
@@ -481,7 +438,7 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
             const auto& [handle, asset] = rows[i];
             ImGui::PushID(static_cast<int>(handle.id()));
-            const bool current = handle == target;
+            const bool current = handle == m_material;
             if (ImGui::Selectable(asset->name().empty() ? "(unnamed)" : asset->name().c_str(), current)) {
                 ec.state.openMaterial(handle);
             }
@@ -491,23 +448,32 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
     ImGui::EndCombo();
 }
 
-void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle target) {
+void MaterialEditorPanel::drawIdentityRow(EditorContext& ec) {
     EditorState&      state     = ec.state;
     ResourceManager&  resources = ec.frame.resources;
     Scene&            scene     = ec.frame.scene;
     const ImGuiStyle& style     = ImGui::GetStyle();
 
-    // Users of this material: counted each frame, gathered only on the click that selects them.
-    const auto forEachUser = [&](auto&& visit) {
-        scene.forEach<Mesh>([&](EntityId id, const Mesh& mesh) {
-            if (mesh.material == target) visit(id);
-        });
-        scene.forEach<Decal>([&](EntityId id, const Decal& decal) {
-            if (decal.material == target) visit(id);
-        });
+    // The entities drawing it, as the Asset Browser counts them: whatever names it, a terrain too.
+    const std::array<uint64_t, 4> key = {
+        m_material.id(),
+        scene.epoch(),
+        resources.revision(),
+        state.commands.revision()
     };
-    size_t userCount = 0;
-    forEachUser([&](EntityId) { ++userCount; });
+    if (m_usersKey != key || ec.input.playing) {
+        m_users.clear();
+        scene.forEachEntity([&](EntityId id) {
+            AssetSerializer::EntityAssetRefs refs;
+            AssetSerializer::collectAssetRefs(scene, id, resources, refs);
+            bool       draws = false;
+            const auto match = [&](MaterialHandle material) { draws = draws || material == m_material; };
+            AssetSerializer::forEachMaterialOf(refs, resources, match);
+            if (draws) m_users.push_back(id);
+        });
+        m_usersKey = key;
+    }
+    const size_t userCount = m_users.size();
 
     char chip[32];
     if (userCount == 0) std::snprintf(chip, sizeof(chip), "unused");
@@ -522,13 +488,15 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
     // The row opens on what kind of thing it is editing.
     inlineIcon(EditorIcon::Material, glyphW, ImGui::GetColorU32(EditorStyle::Accent::MAT_BASE));
     ImGui::SameLine();
-    drawChooser(ec, target, comboW);
+    drawChooser(ec, comboW);
 
     ImGui::SameLine();
     ImGui::BeginDisabled(userCount == 0);
     if (ImGui::Button(chip, ImVec2(chipW, 0.0f))) {
         state.deselect();
-        forEachUser([&](EntityId id) { state.addToSelection(id); });
+        for (const EntityId id : m_users) {
+            if (scene.isAlive(id)) state.addToSelection(id);
+        }
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -539,24 +507,18 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("...", ImVec2(menuW, 0.0f))) ImGui::OpenPopup("##matActions");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Material actions");
+    if (iconButton("matActions", EditorIcon::More, false, true, "Material actions", menuW)) {
+        ImGui::OpenPopup("##matActions");
+    }
 
     if (!ImGui::BeginPopup("##matActions")) return;
 
-    const MaterialAsset& current = resources.get(target);
+    const MaterialAsset& current = resources.get(m_material);
     sectionLabel(current.name().empty() ? "(unnamed)" : current.name().c_str());
     ImGui::Separator();
 
     if (ImGui::MenuItem("Duplicate")) {
-        if (MaterialHandle copy = EditorActions::duplicateMaterial(resources, target)) {
-            // Through the scope: it pushes the step and records a prefab instance's override.
-            if (selectedMeshDrawing(ec, target)) {
-                EditScope<Mesh> mesh(scene, resources, state, state.selectedEntity, "Duplicate Material");
-                mesh->material = copy;
-            }
-            state.openMaterial(copy);
-        }
+        EditorActions::forkMaterial(scene, resources, state, state.selectedEntity, m_material);
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fork it, so edits stop reaching the others");
 
@@ -589,182 +551,117 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources, const Me
     return previewMeshFor(resources, shape);
 }
 
-void MaterialEditorPanel::drawPreview(EditorContext& ec, MaterialHandle target, MeshHandle entityMesh) {
+void MaterialEditorPanel::drawPreview(EditorContext& ec, MeshHandle entityMesh, glm::vec2 size) {
     ResourceManager& resources = ec.frame.resources;
-
-    const float avail = ImGui::GetContentRegionAvail().x;
-    const float room  = ImGui::GetContentRegionAvail().y * 0.55f;
-    const float face  = std::clamp(std::min(avail, room), EditorStyle::px(140.0f), EditorStyle::px(460.0f));
-    const float inset = (avail - face) * 0.5f;
-
-    const MeshHandle shape = previewMesh(resources, entityMesh);
-    uint32_t tex = 0;
-    if (shape) {
-        // Key 0, which previewKey never makes, so later thumbnails this frame cannot overwrite it
-        // before ImGui samples at Render.
-        PreviewRequest req;
-        req.key         = 0ull;
-        req.mesh        = shape;
-        req.material    = target;
-        req.yawDeg      = m_yaw;
-        req.pitchDeg    = m_pitch;
-        req.distance    = m_distance;
-        req.background  = m_background;
-        req.lightYawDeg = m_lightYaw;
-        const uint64_t version = previewVersion(
-            resources.get(target).version(),
-            shape.id(),
-            m_shape,
-            m_yaw,
-            m_pitch,
-            m_distance,
-            static_cast<int>(m_background),
-            m_lightYaw
-        );
-        const bool live = true;
-        tex = ec.materialPreviews.texture(resources, req, version, live);
-    }
-
-    if (!tex) {
+    const MeshHandle shape     = previewMesh(resources, entityMesh);
+    if (!shape) {
         ImGui::TextDisabled("(preview unavailable)");
         return;
     }
 
-    if (inset > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + inset);
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImDrawList*  dl     = ImGui::GetWindowDrawList();
+    // What it shows, stamped: the material as edited now, on the shape chosen.
+    const uint64_t fields[] = {m_material.id(), resources.get(m_material).version(), shape.id()};
+    const uint64_t version  = fnv1a64Bytes(fields, sizeof(fields));
+    const ImVec2   room     = ImGui::GetContentRegionAvail();
+    const ImVec2   extent(size.x > 0.0f ? size.x : room.x, size.y > 0.0f ? size.y : room.y);
+    const ImVec2   origin   = ImGui::GetCursorScreenPos();
+    m_viewport.draw(ec, {{shape, m_material}}, version, size);
 
-    ImGui::Image(imTexture(tex), ImVec2(face, face), ImVec2(0, 1), ImVec2(1, 0));
-    dl->AddRect(
-        origin,
-        ImVec2(origin.x + face, origin.y + face),
-        ImGui::GetColorU32(ImGuiCol_Border),
-        EditorStyle::px(3.0f)
-    );
-
-    // The orbit drag owns the active id, so the window never moves; controls over it answer first.
-    ImGui::SetCursorScreenPos(origin);
-    ImGui::SetNextItemAllowOverlap();
-    ImGui::InvisibleButton("##orbit", ImVec2(face, face));
-    const ImVec2 below = ImGui::GetCursorScreenPos();
-
-    if (ImGui::IsItemActive()) {
-        const ImVec2 drag = ImGui::GetIO().MouseDelta;
-        m_yaw   -= drag.x * 0.4f;
-        m_pitch  = std::clamp(m_pitch + drag.y * 0.4f, -85.0f, 85.0f);
-    }
-    if (ImGui::IsItemHovered()) {
-        const float wheel = ImGui::GetIO().MouseWheel;
-        if (wheel != 0.0f) m_distance = std::clamp(m_distance - wheel * 0.25f, 0.6f, 12.0f);
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            m_yaw      = 35.0f;
-            m_pitch    = 20.0f;
-            m_distance = 3.0f;
-        }
-    }
-    // Delayed, so it never flashes up mid-orbit.
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !ImGui::IsItemActive()) {
-        ImGui::SetTooltip("Drag to orbit, scroll to zoom, double-click to reset");
-    }
-
+    // The shapes over its foot, where the viewport's own strip, at its head, leaves room.
     const float height = ImGui::GetFrameHeight();
     const float pad    = EditorStyle::px(6.0f);
-
-    ImGui::SetCursorScreenPos(ImVec2(origin.x + pad, origin.y + face - height - pad));
+    ImGui::SetCursorScreenPos(ImVec2(origin.x + pad, origin.y + extent.y - height - pad));
     ImGui::BeginGroup();
     for (int i = 0; i < static_cast<int>(std::size(SHAPES)); ++i) {
         if (i > 0) ImGui::SameLine(0.0f, EditorStyle::px(3.0f));
-        const bool usable = SHAPES[i].mesh || !!entityMesh;
-        const char* tip = (!SHAPES[i].mesh && !entityMesh)
+        const bool  usable = SHAPES[i].mesh || !!entityMesh;
+        const char* tip    = (!SHAPES[i].mesh && !entityMesh)
             ? "Select an entity with a mesh to preview on it"
             : SHAPES[i].label;
-        if (iconButton(SHAPES[i].id, SHAPES[i].icon, m_shape == i, usable, tip, height)) {
-            m_shape = i;
-        }
+        if (iconButton(SHAPES[i].id, SHAPES[i].icon, m_shape == i, usable, tip, height)) m_shape = i;
     }
     ImGui::EndGroup();
-
-    // The enum's own names, so the strip matches the renderer.
-    const char* backdrop = Reflect::enumName(m_background);
-    const float backW    = ImGui::CalcTextSize(backdrop).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    ImGui::SetCursorScreenPos(ImVec2(origin.x + face - backW - pad, origin.y + face - height - pad));
-    if (ImGui::Button(backdrop, ImVec2(backW, height))) {
-        const int next = (static_cast<int>(m_background) + 1) % static_cast<int>(PreviewBackground::Count);
-        m_background = static_cast<PreviewBackground>(next);
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Backdrop the preview is lit against");
-
-    ImGui::SetCursorScreenPos(below);
-    if (inset > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + inset);
-    ImGui::SetNextItemWidth(face);
-    sliderFloat("##light", &m_lightYaw, 0.0f, 360.0f, "Light %.0f deg", 0);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Swing the key light around the material");
-    }
+    // Back under the picture, as an item of its size would leave the cursor.
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + extent.y));
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
-bool MaterialEditorPanel::mapTile(
+bool MaterialEditorPanel::textureSlot(
     ResourceManager& resources,
     EditorRenderHooks& hooks,
-    MaterialHandle owner,
     MaterialAsset& mat,
     const char* label,
     TextureHandle MaterialAsset::* member,
     TextureUsage usage,
-    const char* hint,
-    float face
+    const char* hint
 ) {
     TextureHandle& slot = mat.*member;
     bool changed = false;
-
     ImGui::PushID(label);
-    ImGui::BeginGroup();
 
     // 0 when not resident yet or empty; the live preview syncs a bound slot within a frame.
-    const GpuTextureId texId = slot ? hooks.textureId(slot) : 0;
+    const GpuTextureId texId   = slot ? hooks.textureId(slot) : 0;
+    const float        side    = ImGui::GetFrameHeight();
+    const ImVec2       min     = ImGui::GetCursorScreenPos();
+    const ImVec2       max(min.x + side, min.y + side);
+    const bool         clicked = ImGui::InvisibleButton("##thumb", ImVec2(side, side));
+    const bool         hovered = ImGui::IsItemHovered();
 
-    // An empty slot wears the kind's glyph faintly.
-    ImVec4 glyph = EditorStyle::Accent::MAT_TEXTURE;
-    glyph.w = slot ? 0.30f : 0.16f;
-    ImVec2 faceMin, faceMax;
-    const bool clicked = tileFace(
-        imTexture(texId),
-        face,
-        EditorStyle::Accent::MAT_TEXTURE,
-        EditorIcon::Texture,
-        glyph,
-        faceMin,
-        faceMax
-    );
+    ImDrawList* dl       = ImGui::GetWindowDrawList();
+    const float rounding = ImGui::GetStyle().FrameRounding;
+    const ImGuiCol well = hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg;
+    dl->AddRectFilled(min, max, ImGui::GetColorU32(well), rounding);
+    if (texId) {
+        // Loaded textures are flipped at decode, so the UVs unflip.
+        dl->AddImageRounded(imTexture(texId), min, max, ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, rounding);
+    } else {
+        // An empty slot wears the kind's glyph faintly.
+        ImVec4 glyph = EditorStyle::Accent::MAT_TEXTURE;
+        glyph.w      = hovered ? 0.6f : 0.25f;
+        const ImVec2 centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        drawEditorIcon(dl, EditorIcon::Texture, centre, side * 0.3f, ImGui::GetColorU32(glyph));
+    }
+    ImVec4 edge = EditorStyle::Accent::MAT_TEXTURE;
+    if (!slot) edge = ImGui::GetStyleColorVec4(ImGuiCol_Border);
+    dl->AddRect(min, max, ImGui::GetColorU32(edge), rounding);
 
-    if (ImGui::IsItemHovered()) {
+    if (hovered) {
         ImGui::BeginTooltip();
         sectionLabel(label);
         if (texId) {
             const float big = EditorStyle::px(128.0f);
-            // Loaded textures are flipped at decode, so the UVs unflip.
             ImGui::Image(imTexture(texId), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
             const auto& t = resources.get(slot);
             ImGui::TextDisabled("%ux%u%s", t.params.width, t.params.height, t.isSrgb() ? "  sRGB" : "");
-            ImGui::TextDisabled("%s", t.name().c_str());
+            ImGui::TextDisabled("%s", slotDetail(resources, slot).c_str());
         }
         ImGui::PushTextWrapPos(EditorStyle::px(320.0f));
         ImGui::TextDisabled("%s", hint);
         const char* action = slot
-            ? "Click to replace, right-click for more"
-            : "Click to bind a texture, right-click for more";
+            ? "Click to replace, right-click for more, or drop a texture on it"
+            : "Click to bind a texture, right-click for more, or drop one on it";
         ImGui::TextDisabled("%s", action);
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
-    if (clicked) openTexturePicker(owner, member, usage);
+    if (clicked) openTexturePicker(member, usage);
+
+    // A texture dragged from the Assets panel binds where it lands, as it was loaded.
+    if (ImGui::BeginDragDropTarget()) {
+        const std::optional<AssetDrag> drag    = peekAssetDrag();
+        const TextureHandle            dropped = drag ? TextureHandle{drag->key} : TextureHandle{};
+        const bool takes = drag && drag->type == AssetType::Texture && resources.isAlive(dropped);
+        if (takes && ImGui::AcceptDragDropPayload(ASSET_DRAG)) {
+            slot    = findLoadedTexture(resources.get(dropped).name(), resources, usage);
+            changed = true;
+        }
+        ImGui::EndDragDropTarget();
+    }
 
     if (ImGui::BeginPopupContextItem("##slot")) {
         sectionLabel(label);
         ImGui::Separator();
-        if (ImGui::MenuItem(slot ? "Replace..." : "Bind Texture...")) {
-            openTexturePicker(owner, member, usage);
-        }
+        if (ImGui::MenuItem(slot ? "Replace..." : "Bind Texture...")) openTexturePicker(member, usage);
         ImGui::BeginDisabled(!slot);
         if (ImGui::MenuItem("Clear")) {
             slot    = TextureHandle{};
@@ -787,107 +684,15 @@ bool MaterialEditorPanel::mapTile(
         ImGui::SameLine();
         if (ImGui::Button("Grey"))   bind(generateGrayTexture(resources));
 
-        const ImGuiColorEditFlags colourFlags = ImGuiColorEditFlags_Float
+        const ImGuiColorEditFlags colorFlags = ImGuiColorEditFlags_Float
             | ImGuiColorEditFlags_AlphaPreviewHalf
             | ImGuiColorEditFlags_NoInputs;
-        ImGui::ColorEdit4("##genCol", glm::value_ptr(m_genColor), colourFlags);
+        ImGui::ColorEdit4("##genCol", glm::value_ptr(m_genColor), colorFlags);
         ImGui::SameLine();
         if (ImGui::Button("Solid")) bind(createSolidColorTexture(m_genColor, resources, usage));
         ImGui::EndPopup();
     }
 
-    clippedLine(label, face, false);
-    clippedLine(slotDetail(resources, slot).c_str(), face, true);
-    ImGui::EndGroup();
-
-    ImVec4 strip = EditorStyle::Accent::MAT_TEXTURE;
-    if (!slot) strip.w *= 0.30f;
-    tileStrip(faceMin, faceMax, strip);
-
-    ImGui::PopID();
-    return changed;
-}
-
-bool MaterialEditorPanel::drawMaps(
-    ResourceManager& resources,
-    EditorRenderHooks& hooks,
-    MaterialHandle target,
-    MaterialAsset& mat
-) {
-    const float face = EditorStyle::px(84.0f);
-    const float gap     = EditorStyle::px(8.0f);
-    const float step    = face + gap;
-    const int   columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + gap) / step));
-
-    bool changed = false;
-    int  shown   = 0;
-    int  hidden  = 0;
-    for (const MapDesc& map : MAPS) {
-        const bool bound = !!(mat.*(map.member));
-        if (!map.core && !bound) {
-            ++hidden;
-            continue;
-        }
-        // Before the tile: a SameLine left pending would pull the card's next row up beside it.
-        if (shown % columns != 0) ImGui::SameLine(0.0f, gap);
-        else if (shown > 0)       ImGui::Dummy(ImVec2(0.0f, gap - ImGui::GetStyle().ItemSpacing.y));
-        changed |= mapTile(resources, hooks, target, mat, map.label, map.member, map.usage, map.hint, face);
-        ++shown;
-    }
-
-    if (hidden == 0) return changed;
-    if (shown % columns != 0) ImGui::SameLine(0.0f, gap);
-    else if (shown > 0)       ImGui::Dummy(ImVec2(0.0f, gap - ImGui::GetStyle().ItemSpacing.y));
-
-    ImGui::PushID("addMap");
-    ImGui::BeginGroup();
-    const ImVec2 faceMin = ImGui::GetCursorScreenPos();
-
-    // Hover as the tiles do: an accent border, not a filled button.
-    const ImVec4 inert = ImGui::GetStyleColorVec4(ImGuiCol_Button);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, inert);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, inert);
-    if (ImGui::Button("##addFace", ImVec2(face, face))) ImGui::OpenPopup("##addMapMenu");
-    ImGui::PopStyleColor(2);
-
-    const ImVec2 faceMax = ImGui::GetItemRectMax();
-    const bool   hovered = ImGui::IsItemHovered();
-    ImDrawList*  dl      = ImGui::GetWindowDrawList();
-    if (hovered) {
-        dl->AddRect(
-            faceMin,
-            faceMax,
-            ImGui::GetColorU32(EditorStyle::Accent::MAT_TEXTURE),
-            0.0f,
-            0,
-            EditorStyle::px(2.0f)
-        );
-        ImGui::SetTooltip("Packed and secondary maps");
-    }
-
-    ImVec4 glyph = EditorStyle::Accent::MAT_TEXTURE;
-    glyph.w = hovered ? 0.90f : 0.45f;
-    drawEditorIcon(
-        dl,
-        EditorIcon::Plus,
-        ImVec2((faceMin.x + faceMax.x) * 0.5f, (faceMin.y + faceMax.y) * 0.5f),
-        face * 0.22f,
-        ImGui::GetColorU32(glyph)
-    );
-
-    if (ImGui::BeginPopup("##addMapMenu")) {
-        sectionLabel("Add Map");
-        ImGui::Separator();
-        for (const MapDesc& map : MAPS) {
-            if (map.core || (mat.*(map.member))) continue;
-            if (ImGui::MenuItem(map.label)) openTexturePicker(target, map.member, map.usage);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", map.hint);
-        }
-        ImGui::EndPopup();
-    }
-
-    clippedLine("Add map", face, true);
-    ImGui::EndGroup();
     ImGui::PopID();
     return changed;
 }
@@ -895,17 +700,34 @@ bool MaterialEditorPanel::drawMaps(
 bool MaterialEditorPanel::drawParameters(
     ResourceManager& resources,
     EditorRenderHooks& hooks,
-    MaterialHandle target,
     MaterialAsset& mat
 ) {
     bool changed = false;
 
-    if (beginComponentCard("Base", EditorStyle::Accent::MAT_BASE, true)) {
+    // A map's thumbnail leads the row of the value it multiplies; @p value draws that value.
+    const auto slotRow = [&](TextureHandle MaterialAsset::* member, const char* tooltip, auto&& value) {
+        const MapDesc& map = mapOf(member);
+        return propRow(map.label, tooltip, [&] {
+            bool edited = textureSlot(resources, hooks, mat, map.label, map.member, map.usage, map.hint);
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            edited |= value();
+            return edited;
+        });
+    };
+    // A map with no value of its own beside it: its thumbnail, then what fills it.
+    const auto mapOnly = [&](TextureHandle MaterialAsset::* member) {
+        return slotRow(member, mapOf(member).hint, [&] {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", slotDetail(resources, mat.*member).c_str());
+            return false;
+        });
+    };
+
+    if (beginComponentCard("Surface", EditorStyle::Accent::MAT_BASE, true)) {
         if (propEnumCombo("Type", mat.type)) {
             // Turn the discard on even if the asset had cutoff = 0 (off).
-            if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {
-                mat.alphaCutoff = 0.5f;
-            }
+            if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) mat.alphaCutoff = 0.5f;
             changed = true;
         }
         static const char* const FACES[] = {"Front only", "Both sides"};
@@ -920,6 +742,41 @@ bool MaterialEditorPanel::drawParameters(
             mat.doubleSided = faces == 1;
             changed = true;
         }
+        changed |= propEnumCombo(
+            "Water",
+            mat.water,
+            "Body: a lake, a river or a pool - rippled, scattering its Subsurface color, floated "
+            "on. Sea: the surface rides the scene's Ocean"
+        );
+        if (mat.water == WaterKind::Body) {
+            changed |= propDrag(
+                "Flow",
+                &mat.flowSpeed,
+                0.05f,
+                -20.0f,
+                20.0f,
+                "%.2f m/s",
+                "How fast it runs along the mesh's +U: a river's strip carries its water along its UVs"
+            );
+            changed |= propSlider(
+                "Ripples",
+                &mat.rippleScale,
+                0.0f,
+                1.0f,
+                "%.2f",
+                "How much of the scene's ripples it shows: 1 open water, toward 0 a sheltered pool"
+            );
+            changed |= propDrag(
+                "Depth",
+                &mat.waterDepth,
+                0.1f,
+                0.0f,
+                1000.0f,
+                "%.1f m",
+                "How far below its surface the water reaches: deeper is under it, not in it - a pool "
+                    "on a deck leaves what is under the deck dry"
+            );
+        }
         if (mat.type == MaterialType::AlphaMask) {
             changed |= propSlider(
                 "Cutoff",
@@ -930,35 +787,46 @@ bool MaterialEditorPanel::drawParameters(
                 "Fragments whose albedo alpha falls below this are dropped (foliage, leaves)"
             );
         }
-
-        ImGui::Spacing();
-        changed |= propColor4(
-            "Albedo",
-            glm::value_ptr(mat.albedo),
-            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf
-        );
-        changed |= propSlider("Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
-        changed |= propSlider("Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
-        changed |= propSlider(
-            "AO",
-            &mat.ao,
-            0.0f,
-            1.0f,
-            "%.2f",
-            "Scales indirect light over the whole material"
-        );
         const char* iorTooltip =
-            "How strongly a dielectric reflects head-on. 1.0 air, 1.33 water, "
-            "1.5 glass, 2.4 diamond";
+            "How strongly a dielectric reflects head-on. 1.0 air, 1.33 water, 1.5 glass, 2.4 diamond";
         changed |= propDrag("IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f", iorTooltip);
+    }
+    endComponentCard();
 
-        changed |= propColor3(
-            "Emission",
-            glm::value_ptr(mat.emission),
-            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR,
-            "Light the material gives off on its own. Black = none"
-        );
-        // A multiplier on black is black, so the strength appears with the colour.
+    if (beginComponentCard("Base", EditorStyle::Accent::MAT_BASE, true)) {
+        const ImGuiColorEditFlags color = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf;
+        changed |= slotRow(&MaterialAsset::albedoTexture, nullptr, [&] {
+            return ImGui::ColorEdit4("##v", glm::value_ptr(mat.albedo), color);
+        });
+        changed |= slotRow(&MaterialAsset::metallicTexture, nullptr, [&] {
+            return sliderFloat("##v", &mat.metallic, 0.0f, 1.0f, "%.2f");
+        });
+        changed |= slotRow(&MaterialAsset::roughnessTexture, nullptr, [&] {
+            return sliderFloat("##v", &mat.roughness, 0.0f, 1.0f, "%.2f");
+        });
+        // A scale does nothing without its map, so it waits for one.
+        changed |= slotRow(&MaterialAsset::normalTexture, "How far the normal map bends the surface", [&] {
+            ImGui::BeginDisabled(!mat.normalTexture);
+            const bool moved = ImGui::DragFloat(
+                "##v",
+                &mat.normalScale,
+                0.01f,
+                0.0f,
+                5.0f,
+                "scale %.2f",
+                PROP_CLAMP
+            );
+            ImGui::EndDisabled();
+            return moved;
+        });
+        changed |= slotRow(&MaterialAsset::aoTexture, "Scales indirect light over the whole material", [&] {
+            return sliderFloat("##v", &mat.ao, 0.0f, 1.0f, "%.2f");
+        });
+        const ImGuiColorEditFlags glow = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR;
+        changed |= slotRow(&MaterialAsset::emissionTexture, "Light the material gives off on its own", [&] {
+            return ImGui::ColorEdit3("##v", glm::value_ptr(mat.emission), glow);
+        });
+        // A multiplier on black is black, so the strength appears with the color.
         if (mat.emission.r > 0.0f || mat.emission.g > 0.0f || mat.emission.b > 0.0f) {
             changed |= propDrag(
                 "Strength",
@@ -967,80 +835,35 @@ bool MaterialEditorPanel::drawParameters(
                 0.0f,
                 64.0f,
                 "%.2f",
-                "HDR multiplier on the emission colour; this is what drives bloom"
+                "HDR multiplier on the emission color; this is what drives bloom"
             );
         }
-    }
-    endComponentCard();
-
-    for (const Feature& feature : FEATURES) {
-        if (!feature.active(mat)) continue;
-        bool remove = false;
-        if (beginComponentCard(feature.name, *feature.accent, true, &remove)) {
-            changed |= feature.body(mat);
-        }
-        endComponentCard();
-        if (remove) {
-            feature.disable(mat);
-            changed = true;
-        }
-    }
-
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
-    const bool add = ImGui::Button("+  Add Feature", ImVec2(-1, 0));
-    ImGui::PopStyleColor(2);
-    if (add) ImGui::OpenPopup("##addFeature");
-
-    if (ImGui::BeginPopup("##addFeature")) {
-        sectionLabel("Add Feature");
-        ImGui::Separator();
-        int offered = 0;
-        for (const Feature& feature : FEATURES) {
-            if (feature.active(mat)) continue;
-            ++offered;
-            if (ImGui::MenuItem(feature.name)) {
-                feature.enable(mat);
-                changed = true;
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", feature.hint);
-        }
-        if (offered == 0) ImGui::TextDisabled("This material already uses every one.");
-        ImGui::EndPopup();
-    }
-
-    // Maps last, so an added lobe sits under the rows it extends, not below the grid.
-    ImGui::Spacing();
-    if (beginComponentCard("Maps", EditorStyle::Accent::MAT_TEXTURE, true)) {
-        changed |= drawMaps(resources, hooks, target, mat);
-
-        // Each scale shows only with its map: it multiplies the texture.
-        if (mat.normalTexture) {
-            ImGui::Spacing();
-            changed |= propDrag(
-                "Normal Scale",
-                &mat.normalScale,
-                0.01f,
-                0.0f,
-                5.0f,
-                "%.2f",
-                "How far the normal map bends the surface. 0 flat, 1 as authored"
-            );
-        }
-        if (mat.heightTexture) {
-            ImGui::Spacing();
-            changed |= propDrag(
-                "Height Scale",
+        changed |= slotRow(&MaterialAsset::heightTexture, "Parallax depth; 0.02 to 0.1 is typical", [&] {
+            ImGui::BeginDisabled(!mat.heightTexture);
+            const bool moved = ImGui::DragFloat(
+                "##v",
                 &mat.heightScale,
                 0.001f,
                 0.0f,
                 0.5f,
-                "%.3f",
-                "Parallax depth the height map displaces by. 0.02 to 0.1 is typical"
+                "depth %.3f",
+                PROP_CLAMP
             );
-        }
-        ImGui::Spacing();
+            ImGui::EndDisabled();
+            return moved;
+        });
+    }
+    endComponentCard();
+
+    // Packed maps stand in for the separate ones; the card starts folded when neither is bound.
+    const bool packed = mat.metallicRoughnessTexture || mat.aoMetallicRoughnessTexture;
+    if (beginComponentCard("Packed Maps", EditorStyle::Accent::MAT_TEXTURE, packed)) {
+        changed |= mapOnly(&MaterialAsset::metallicRoughnessTexture);
+        changed |= mapOnly(&MaterialAsset::aoMetallicRoughnessTexture);
+    }
+    endComponentCard();
+
+    if (beginComponentCard("UV", EditorStyle::Accent::MAT_TEXTURE, !defaultUVs(mat))) {
         changed |= propDrag2(
             "Tiling",
             &mat.uvScale.x,
@@ -1073,23 +896,55 @@ bool MaterialEditorPanel::drawParameters(
     }
     endComponentCard();
 
+    for (const Feature& feature : FEATURES) {
+        if (!feature.active(mat)) continue;
+        bool remove = false;
+        if (beginComponentCard(feature.name, *feature.accent, true, &remove)) {
+            changed |= feature.body(mat);
+            if (feature.mask) changed |= mapOnly(feature.mask);
+        }
+        endComponentCard();
+        if (remove) {
+            feature.disable(mat);
+            changed = true;
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
+    const bool add = ImGui::Button("+  Add Feature", ImVec2(-1, 0));
+    ImGui::PopStyleColor(2);
+    if (add) ImGui::OpenPopup("##addFeature");
+
+    if (ImGui::BeginPopup("##addFeature")) {
+        sectionLabel("Add Feature");
+        ImGui::Separator();
+        int offered = 0;
+        for (const Feature& feature : FEATURES) {
+            if (feature.active(mat)) continue;
+            ++offered;
+            if (ImGui::MenuItem(feature.name)) {
+                feature.enable(mat);
+                changed = true;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", feature.hint);
+        }
+        if (offered == 0) ImGui::TextDisabled("This material already uses every one.");
+        ImGui::EndPopup();
+    }
     return changed;
 }
 
-void MaterialEditorPanel::openTexturePicker(
-    MaterialHandle owner,
-    TextureHandle MaterialAsset::* member,
-    TextureUsage usage
-) {
+void MaterialEditorPanel::openTexturePicker(TextureHandle MaterialAsset::* member, TextureUsage usage) {
     AssetPicker::Options options;
     options.title      = "Pick Texture";
     options.root       = ProjectPaths::assets();
     options.recursive  = true;
-    options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
+    options.extensions.assign(IMAGE_EXTENSIONS.begin(), IMAGE_EXTENSIONS.end());
     options.hint       = std::string("Read as ") + Reflect::enumName(usage);
     m_texturePicker.open(options);
 
-    m_pendingMaterial     = owner;
     m_pendingSlot         = member;
     m_pendingTextureUsage = usage;
 }
@@ -1099,28 +954,19 @@ void MaterialEditorPanel::serviceTexturePicker(EditorContext& ec) {
     if (!m_texturePicker.draw(picked) || !m_pendingSlot) return;
 
     ResourceManager& resources = ec.frame.resources;
-    if (resources.isAlive(m_pendingMaterial)) {
-        // loadTexture adds without looking: reuse the asset, unless the usage differs.
-        const std::string ref = ProjectPaths::toProjectRelative(picked);
-        TextureHandle existing = resources.findByName<TextureAsset>(ref);
-        if (existing && resources.get(existing).usage() != m_pendingTextureUsage) existing = {};
-
-        const TextureHandle bound = existing
-            ? existing
-            : loadTexture(picked, resources, m_pendingTextureUsage, true);
-        if (bound) {
-            const MaterialAsset before = resources.get(m_pendingMaterial);
-            resources.edit(m_pendingMaterial).*m_pendingSlot = bound;
-            resources.commit(m_pendingMaterial);
-            auto bind = std::make_unique<MaterialEditCommand>(
-                resources,
-                m_pendingMaterial,
-                before,
-                resources.get(m_pendingMaterial),
-                "Bind Texture"
-            );
-            ec.state.pushStep(std::move(bind));
-        }
+    const TextureHandle bound = loadTexture(picked, resources, m_pendingTextureUsage, true);
+    if (bound) {
+        const MaterialAsset before = resources.get(m_material);
+        resources.edit(m_material).*m_pendingSlot = bound;
+        resources.commit(m_material);
+        auto bind = std::make_unique<MaterialEditCommand>(
+            resources,
+            m_material,
+            before,
+            resources.get(m_material),
+            "Bind Texture"
+        );
+        ec.state.pushStep(std::move(bind));
     }
     m_pendingSlot = nullptr;
 }
@@ -1133,7 +979,7 @@ void MaterialEditorPanel::openPbrFolder() {
     m_pbrFolderPicker.open(options);
 }
 
-void MaterialEditorPanel::servicePbrFolder(EditorContext& ec, MaterialHandle target) {
+void MaterialEditorPanel::servicePbrFolder(EditorContext& ec) {
     std::string folder;
     if (!m_pbrFolderPicker.draw(folder)) return;
 
@@ -1141,7 +987,7 @@ void MaterialEditorPanel::servicePbrFolder(EditorContext& ec, MaterialHandle tar
     if (!built) return;
 
     // Through the scope, which records a prefab instance's override.
-    if (selectedMeshDrawing(ec, target)) {
+    if (selectedMeshDrawing(ec, m_material)) {
         EditScope<Mesh> mesh(
             ec.frame.scene,
             ec.frame.resources,
@@ -1154,57 +1000,31 @@ void MaterialEditorPanel::servicePbrFolder(EditorContext& ec, MaterialHandle tar
     ec.state.openMaterial(built);
 }
 
-void MaterialEditorPanel::drawEmptyState(EditorContext& ec) {
-    emptyStateHeading(
-        EditorIcon::Material,
-        "No material open",
-        "Pick an entity that has one, or choose one below.",
-        2
-    );
-
-    const float width = EditorStyle::px(180.0f);
-    centreNextItem(width);
-    drawChooser(ec, MaterialHandle{}, width);
-    centreNextItem(width);
-    if (ImGui::Button("+  New Material", ImVec2(width, 0.0f))) {
-        if (MaterialHandle fresh = EditorActions::createNewMaterial(ec.frame.resources, ec.state)) {
-            ec.state.openMaterial(fresh);
-        }
-    }
-}
-
 void MaterialEditorPanel::draw(EditorContext& ec) {
     EditorState&     state     = ec.state;
     ResourceManager& resources = ec.frame.resources;
 
-    const MaterialHandle target = resolveTarget(ec);
+    // Drawn only while the material lives (AssetEditors), so there is always one to edit.
+    const Mesh*      selMesh    = selectedMesh(ec);
+    const MeshHandle entityMesh = (selMesh && selMesh->mesh) ? selMesh->mesh : MeshHandle{};
 
-    if (!target) {
-        drawEmptyState(ec);
-    } else {
-        const Mesh* selMesh = selectedMesh(ec);
+    drawIdentityRow(ec);
+    ImGui::Spacing();
 
-        drawIdentityRow(ec, target);
-        ImGui::Spacing();
-        ImGui::Spacing();
-        drawPreview(ec, target, (selMesh && selMesh->mesh) ? selMesh->mesh : MeshHandle{});
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Only the parameters scroll, so the preview stays visible while dragging.
+    // The parameters, which scroll on their own so the preview stays in view while they move.
+    const auto parameters = [&] {
         const ImVec2 rowGap(ImGui::GetStyle().ItemSpacing.x, EditorStyle::px(6.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, rowGap);
         if (ImGui::BeginChild("##meParams", ImVec2(0, 0))) {
             // Live edit; the commit bumps the version. Copied every frame: a widget reports a
             // change only after making it.
-            MaterialAsset&      mat    = resources.edit(target);
+            MaterialAsset&      mat    = resources.edit(m_material);
             const MaterialAsset before = mat;
-            if (drawParameters(resources, ec.hooks, target, mat)) {
-                resources.commit(target);
+            if (drawParameters(resources, ec.hooks, mat)) {
+                resources.commit(m_material);
                 auto edit = std::make_unique<MaterialEditCommand>(
                     resources,
-                    target,
+                    m_material,
                     before,
                     mat,
                     "Edit Material"
@@ -1214,21 +1034,58 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         }
         ImGui::EndChild();
         ImGui::PopStyleVar();
+    };
+
+    const ImVec2 room = ImGui::GetContentRegionAvail();
+    if (room.x >= EditorStyle::px(WIDE_FROM)) {
+        // Wide: the preview fills the left, the parameters a column beside it, the split movable.
+        const ImGuiTableFlags split = ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV;
+        if (ImGui::BeginTable("##meSplit", 2, split, ImVec2(0.0f, room.y))) {
+            ImGui::TableSetupColumn("##preview", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+            ImGui::TableSetupColumn("##params", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            const float tall = room.y - ImGui::GetStyle().CellPadding.y * 2.0f;
+            drawPreview(ec, entityMesh, glm::vec2(0.0f, tall));
+            ImGui::TableNextColumn();
+            parameters();
+            ImGui::EndTable();
+        }
+    } else {
+        // Narrow: the preview above, foldable, so the parameters can have the whole window.
+        ImGui::SetNextItemOpen(m_open);
+        m_open = ImGui::CollapsingHeader("Preview");
+        if (m_open) {
+            const float least = EditorStyle::px(NARROW_LEAST);
+            const float tall  = std::clamp(room.y * 0.35f, least, EditorStyle::px(NARROW_MOST));
+            drawPreview(ec, entityMesh, glm::vec2(0.0f, tall));
+            ImGui::Spacing();
+        }
+        parameters();
     }
 
-    // At panel scope (OpenPopup hashes against the calling window), and even with no
-    // material, or one deleted mid-pick would strand the picker.
+    // At panel scope: OpenPopup hashes against the calling window.
     serviceTexturePicker(ec);
-    servicePbrFolder(ec, target);
+    servicePbrFolder(ec);
 
-    if (renameDialog("Rename Material", m_renameOpen, m_renameBuf, sizeof(m_renameBuf))
-        && target && resources.isAlive(target)) {
-        EditorActions::renameAsset(resources, state, target, m_renameOldName, m_renameBuf, "Rename Material");
+    if (renameDialog("Rename Material", m_renameOpen, m_renameBuf, sizeof(m_renameBuf))) {
+        const char* label = "Rename Material";
+        EditorActions::renameAsset(resources, state, m_material, m_renameOldName, m_renameBuf, label);
     }
 }
 
 MeshHandle materialPreviewSphere(ResourceManager& resources) {
     return previewMeshFor(resources, SHAPES[0]);
+}
+
+MaterialHandle neutralPreviewMaterial(ResourceManager& resources) {
+    const MaterialHandle found = resources.findByName<MaterialAsset>("mat:thumb_neutral");
+    if (found) return found;
+    MaterialAsset grey;
+    grey.albedo    = glm::vec4(0.78f, 0.78f, 0.80f, 1.0f);
+    grey.metallic  = 0.0f;
+    grey.roughness = 0.55f;
+    return resources.addPrivate(std::move(grey), "mat:thumb_neutral");
 }
 
 } // namespace Vkm::Engine

@@ -16,6 +16,9 @@
 #include "session/play_snapshot.h"
 #include "session/terrain_files.h"
 
+#include "ecs/component/audio/audio_source.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/camera.h"
@@ -87,6 +90,23 @@ void testAnEditIsUndoneAndRedoneWhole() {
     host.stack.redo(scene, host);
     check("redo puts it forward again", nearly(scene.get<Transform>(id).position.x, 5.0f));
     check("  and the step is back on the undo side", host.stack.canUndo() && !host.stack.canRedo());
+}
+
+void testARetractedEditLeavesNothingToRedo() {
+    std::printf("An edit retracted:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    RecordingHost host;
+    const EntityId id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+
+    const Transform before = scene.get<Transform>(id);
+    scene.get<Transform>(id).position = {5.0f, 0.0f, 0.0f};
+    pushEdit<Transform>(scene, resources, host, id, before, scene.get<Transform>(id), "Move");
+
+    host.stack.retract(scene, host);
+    check("puts the value back", nearly(scene.get<Transform>(id).position.x, 0.0f));
+    check("  and leaves nothing to undo or redo", !host.stack.canUndo() && !host.stack.canRedo());
 }
 
 // A play session edits the simulation's copy, which Stop throws away. Its steps are
@@ -175,6 +195,122 @@ void testANewEditDropsWhatWasUndone() {
     );
 }
 
+// A card's Paste Values and Reset take what the scene file saves, never a run's state:
+// a sound copied while it played, pasted after Stop, must still start on the next Play.
+void testAPasteTakesTheAuthoredFieldsAlone() {
+    std::printf("A component pasted over another:\n");
+
+    AudioSource played;
+    played.volume  = 0.25f;
+    played.started = true;
+    played.playing = true;
+    AudioSource authored;
+    const AudioSource pasted = withAuthored(authored, played);
+    check("the tuning comes across", pasted.volume == 0.25f);
+    check("  and the run's state does not", !pasted.started && !pasted.playing);
+}
+
+// An edit with several entities selected reaches each holding the component: the field
+// changed, and nothing else of theirs. A drag of it is still one undo step.
+void testAnEditReachesTheWholeSelection() {
+    std::printf("An edit with several entities selected:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    RecordingHost host;
+    const auto body = [&](float friction) {
+        const EntityId id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+        Rigidbody rb;
+        rb.friction = friction;
+        scene.add(id, std::move(rb));
+        return id;
+    };
+    const EntityId active = body(0.1f);
+    const EntityId other  = body(0.9f);
+    const EntityId bare   = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const std::vector<EntityId> selection{active, other, bare};
+    scene.get<Rigidbody>(other).sleeping = true;
+
+    for (const float mass : {5.0f, 7.0f}) {
+        Rigidbody& rb = scene.get<Rigidbody>(active);
+        const Rigidbody before = rb;
+        rb.mass = mass;
+        host.pushStep(editSelectionStep<Rigidbody>(scene, resources, selection, active, before, rb, "Edit"));
+    }
+    check("the field changed reaches the others", scene.get<Rigidbody>(other).mass == 7.0f);
+    check("  and theirs stays theirs", scene.get<Rigidbody>(other).friction == 0.9f);
+    check("  settled as the edited one is: a sleeper woken", !scene.get<Rigidbody>(other).sleeping);
+    check("  an entity without the component is left as it was", !scene.has<Rigidbody>(bare));
+    check("a drag of it is one step", host.stack.undoDepth() == 1);
+    host.stack.undo(scene, host);
+    check(
+        "  and one undo takes it back from every entity",
+        scene.get<Rigidbody>(active).mass == Rigidbody{}.mass
+            && scene.get<Rigidbody>(other).mass == Rigidbody{}.mass
+    );
+
+    // A Transform moves by axis: a selection dragged along X keeps where each stood on Y and Z.
+    Transform before;
+    Transform after;
+    after.position.x = 4.0f;
+    Transform elsewhere;
+    elsewhere.position = {1.0f, 2.0f, 3.0f};
+    const Transform moved = withMovedAxes(elsewhere, before, after);
+    check("a Transform takes the axis moved alone", moved.position == glm::vec3(4.0f, 2.0f, 3.0f));
+
+    // A turn, past a right angle where Euler angles would flip, turns each by the same.
+    Transform facing;
+    facing.rotation = glm::angleAxis(glm::radians(100.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    Transform turned = after;
+    turned.rotation = glm::angleAxis(glm::radians(1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    const Transform spun = withMovedAxes(facing, after, turned);
+    const glm::quat want = glm::angleAxis(glm::radians(101.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    check(
+        "  and a turn turns each the same, past a right angle",
+        std::abs(glm::dot(spun.rotation, want)) > 0.9999f
+    );
+
+    // A list is the active entity's alone: one item edited never replaces another's list.
+    Collider crate;
+    crate.parts = {ColliderPart{}};
+    Collider character = crate;
+    character.parts[0].shape = ColliderShape::Capsule;
+    Collider wider = crate;
+    wider.parts[0].halfExtents.x = 2.0f;
+    const uint64_t mask = changedFields(crate, wider, resources);
+    check(
+        "a list's item edited is not shared",
+        withFields(character, wider, mask).parts[0].shape == ColliderShape::Capsule
+    );
+}
+
+// Edit > History lists every step by name, both ways from where the scene stands.
+void testTheHistoryNamesEveryStepBothWays() {
+    std::printf("The history, read by step:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    RecordingHost host;
+    const EntityId id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    for (const char* label : {"First", "Second", "Third"}) {
+        const Transform was = scene.get<Transform>(id);
+        scene.get<Transform>(id).position.x += 1.0f;
+        pushEdit<Transform>(scene, resources, host, id, was, scene.get<Transform>(id), label);
+        host.stack.endGesture();
+    }
+    host.stack.undo(scene, host);
+
+    const auto named = [](const char* label, const char* expected) {
+        return label && std::string(label) == expected;
+    };
+    check(
+        "behind, newest first",
+        named(host.stack.undoLabel(0), "Second") && named(host.stack.undoLabel(1), "First")
+            && host.stack.undoLabel(2) == nullptr
+    );
+    check("ahead, next first", named(host.stack.redoLabel(0), "Third") && host.stack.redoLabel(1) == nullptr);
+}
+
 // A drag writes a step per frame; merging makes it one step, and the gesture boundary
 // stops the *next* drag joining it.
 void testADragIsOneUndoStep() {
@@ -211,6 +347,61 @@ void testADragIsOneUndoStep() {
         "  and undoing that one goes back to where the drag started",
         nearly(scene.get<Transform>(id).position.x, start.position.x)
     );
+}
+
+// What a view of the edited world keeps (the Asset Browser's "in use" marks) is current while
+// the history's revision holds: every edit moves it, a merged frame of a drag too, and every
+// undo and redo, so a handle changed by any of them is seen.
+void testEveryEditMovesTheHistorysRevision() {
+    std::printf("The history's revision:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    RecordingHost host;
+    const EntityId id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    CommandStack& stack = host.stack;
+
+    bool moved = true;
+    const auto edit = [&](float x) {
+        const uint64_t  before = stack.revision();
+        const Transform was    = scene.get<Transform>(id);
+        scene.get<Transform>(id).position.x = x;
+        pushEdit<Transform>(scene, resources, host, id, was, scene.get<Transform>(id), "Move");
+        moved = moved && stack.revision() != before;
+    };
+    edit(1.0f);
+    edit(2.0f);  // merged into the first
+    check("an edit moves it, one merged into the last too", moved && stack.undoDepth() == 1);
+
+    uint64_t before = stack.revision();
+    stack.undo(scene, host);
+    check("  an undo does", stack.revision() != before);
+    before = stack.revision();
+    stack.redo(scene, host);
+    check("  a redo does", stack.revision() != before);
+    before = stack.revision();
+    stack.undo(scene, host);
+    stack.undo(scene, host);  // nothing left: changes nothing
+    check("  and an undo with nothing to take back does not", stack.revision() == before + 1);
+}
+
+// A playhead posed outside a session moves the saved Transform, a step; in one it moves session
+// state, which a step would carry past Stop; and a pose that moved nothing is no step.
+void testAPoseIsAStepOutsideASessionAlone() {
+    std::printf("A Transform a playhead posed:\n");
+
+    Scene           scene;
+    ResourceManager resources;
+    const EntityId  id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const Transform before = scene.get<Transform>(id);
+    Transform       moved  = before;
+    moved.position.y = 2.0f;
+    const auto step = [&](const Transform& now, bool playing) {
+        return poseStep(scene, resources, id, before, now, playing, "Scrub") != nullptr;
+    };
+    check("outside a session it is a step", step(moved, false));
+    check("  in one it is none", !step(moved, true));
+    check("  nor is a pose that moved nothing", !step(before, false));
 }
 
 // The Animation panel edits the keyframes and the Transform the pose writes each frame,
@@ -297,6 +488,34 @@ void testTheHistoryIsBoundedFromTheOldEnd() {
         "  landing where the oldest kept step began",
         nearly(scene.get<Transform>(id).position.x, static_cast<float>(PUSHES - kept))
     );
+}
+
+// A push on a full history drops the oldest step, so the depth stays put: what asks whether a
+// call pushed anything (the gizmo's Alt copy, taken back when never dragged) reads the revision.
+// This holds that premise; the gizmo itself needs ImGui.
+void testAPushOnAFullHistoryStillMovesTheRevision() {
+    std::printf("A push on a full history:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    RecordingHost host;
+    const EntityId id = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+
+    // Past any sane limit, as testTheHistoryIsBoundedFromTheOldEnd fills it.
+    constexpr size_t PUSHES = 1000;
+    const auto move = [&](float x) {
+        const Transform was = scene.get<Transform>(id);
+        scene.get<Transform>(id).position.x = x;
+        pushEdit<Transform>(scene, resources, host, id, was, scene.get<Transform>(id), "Move");
+        host.stack.endGesture();
+    };
+    for (size_t i = 0; i < PUSHES; ++i) move(static_cast<float>(i + 1));
+
+    const size_t   depth    = host.stack.undoDepth();
+    const uint64_t revision = host.stack.revision();
+    move(-1.0f);
+    check("the history is full: one more push keeps its depth", host.stack.undoDepth() == depth);
+    check("  but moves its revision", host.stack.revision() != revision);
 }
 
 // A command addressing a gone entity loses work: undoing it would write onto whatever
@@ -455,6 +674,37 @@ void testADeletedSubtreeComesBackInOrder() {
         scene.isAliveAtIndex(firstSlot)
             && childNames(scene, scene.entityAt(firstSlot)) == std::vector<std::string>{"Under First"}
     );
+
+    // A middle child taken away and put back stands where it stood, not at the end.
+    const EntityId second = scene.get<Hierarchy>(scene.entityAt(firstSlot)).nextSibling;
+    const SubtreeSnapshot middle = SubtreeSnapshot::capture(scene, second);
+    HierarchyOperations::destroyHierarchy(scene, second);
+    middle.apply(scene);
+    check("a middle child put back stands between its siblings again", childNames(scene, back) == before);
+
+    // As does one moved under another parent, and moved back.
+    RecordingHost host;
+    const EntityId moved       = scene.entityAt(firstSlot);
+    const EntityId stoodBefore = scene.get<Hierarchy>(moved).nextSibling;
+    HierarchyOperations::setParent(scene, moved, stoodBefore);
+    ReparentCommand step(moved, back, stoodBefore, stoodBefore, {}, Transform{}, Transform{}, "Reparent");
+    step.undo(scene, host);
+    check("a child moved away and back stands first again", childNames(scene, back) == before);
+
+    // Reordered among its siblings - the last put first - redo puts it first again, not last.
+    std::vector<EntityId> kids;
+    HierarchyOperations::forEachChild(scene, back, [&](EntityId kid) { kids.push_back(kid); });
+    const EntityId last = kids.back();
+    HierarchyOperations::setParent(scene, last, back, kids.front());
+    const std::vector<std::string> reordered = childNames(scene, back);
+    ReparentCommand reorder(last, back, {}, back, kids.front(), Transform{}, Transform{}, "Move Entity");
+    reorder.undo(scene, host);
+    check("a reorder undone puts the child back last", childNames(scene, back) == before);
+    reorder.redo(scene, host);
+    check(
+        "  and redone puts it where it was dropped",
+        childNames(scene, back) == reordered && reordered.front() != before.front()
+    );
 }
 
 // One command driven as the editor drives it: what Delete does, what undo gives
@@ -546,6 +796,73 @@ void testACopyStandsBesideTheOriginalRatherThanOnIt() {
     check(
         "reused, the same capture lands back on the slot it came from",
         back && back.slot() == snap.nodes.front().snap.slotIndex
+    );
+}
+
+// What Paste is built on. A copy taken in one world lands in another, where the slots
+// its parent and outside references named hold unrelated entities - alive, so a plain
+// fresh copy would hang under one and join another.
+void testAForeignCopyKeepsNothingOfTheWorldItLeft() {
+    std::printf("A subtree copied into another world:\n");
+
+    Scene world;
+    const EntityId parent  = oneEntityAt(world, {0.0f, 0.0f, 0.0f});
+    const EntityId outside = oneEntityAt(world, {5.0f, 0.0f, 0.0f});
+    const EntityId root    = oneEntityAt(world, {1.0f, 0.0f, 0.0f});
+    const EntityId bone    = oneEntityAt(world, {2.0f, 0.0f, 0.0f});
+    HierarchyOperations::setParent(world, root, parent);
+    HierarchyOperations::setParent(world, bone, root);
+    Joint inside;
+    inside.connected = bone;
+    world.add(root, std::move(inside));
+    Joint across;
+    across.connected = outside;
+    world.add(bone, std::move(across));
+    const SubtreeSnapshot snap = SubtreeSnapshot::capture(world, root);
+
+    // The same slots, alive, in the other world.
+    Scene other;
+    for (int i = 0; i < 4; ++i) oneEntityAt(other, {0.0f, 0.0f, 0.0f});
+    check(
+        "the other world holds live entities at those slots",
+        other.isAlive(outside) && other.isAlive(parent)
+    );
+
+    const EntityId copy = snap.apply(other, SnapshotSlots::Foreign);
+    check("the copy is made", copy && other.isAlive(copy));
+    const Hierarchy* node = other.tryGet<Hierarchy>(copy);
+    check("  at the root, under none of the other world's entities", !node || !node->parent);
+    const EntityId copiedBone = node ? node->firstChild : EntityId{};
+    check(
+        "  its reference inside itself names its own bone",
+        copiedBone && other.get<Joint>(copy).connected == copiedBone
+    );
+    check("  and one outside itself names nothing", copiedBone && !other.get<Joint>(copiedBone).connected);
+}
+
+// What a paste of several subtrees is built on: a door hung on its frame, the two copied as separate
+// roots, comes back hung on the frame's copy, not loose.
+void testSubtreesCopiedTogetherKeepWhatTheyNameOfEachOther() {
+    std::printf("Subtrees copied together:\n");
+
+    Scene world;
+    const EntityId frame = oneEntityAt(world, {0.0f, 0.0f, 0.0f});
+    const EntityId door  = oneEntityAt(world, {1.0f, 0.0f, 0.0f});
+    Joint hinge;
+    hinge.connected = frame;
+    world.add(door, std::move(hinge));
+    const std::vector<SubtreeSnapshot> trees = {
+        SubtreeSnapshot::capture(world, frame),
+        SubtreeSnapshot::capture(world, door)
+    };
+
+    Scene other;
+    for (int i = 0; i < 3; ++i) oneEntityAt(other, {0.0f, 0.0f, 0.0f});
+    const std::vector<EntityId> made = SubtreeSnapshot::applyTogether(other, trees);
+    check("both come back", made.size() == 2 && other.isAlive(made[0]) && other.isAlive(made[1]));
+    check(
+        "  the door hung on the frame's copy",
+        made.size() == 2 && other.get<Joint>(made[1]).connected == made[0]
     );
 }
 
@@ -920,6 +1237,68 @@ void testRevertingAnOverrideGivesTheFieldBackOrRefusesTo() {
     check("  with nothing pushed", host.stack.undoDepth() == steps);
 }
 
+// Revert All drops every override as one step, each field the prefab's again; undoing it puts
+// them all back.
+void testRevertAllGivesEveryFieldBackAsOneStep() {
+    std::printf("Reverting every override of an instance:\n");
+
+    Instanced world;
+    RecordingHost host;
+    Scene& scene = world.scene;
+
+    const Light was = scene.get<Light>(world.lamp);
+    Light& lamp = scene.get<Light>(world.lamp);
+    lamp.intensity = 11.0f;
+    lamp.radius    = 4.0f;
+    pushEdit<Light>(scene, world.resources, host, world.lamp, was, lamp, "Light");
+    host.stack.endGesture();
+    const size_t before = host.stack.undoDepth();
+    check("two fields are overrides", scene.get<PrefabInstance>(world.root).overrides.size() == 2);
+
+    PrefabOverrides::revertAll(scene, world.resources, host, world.root);
+    const Light& back = scene.get<Light>(world.lamp);
+    check(
+        "every field holds the prefab's value",
+        nearly(back.intensity, 3.0f) && nearly(back.radius, was.radius)
+    );
+    check("  no override is left", scene.get<PrefabInstance>(world.root).overrides.empty());
+    check("  in one step", host.stack.undoDepth() == before + 1);
+
+    host.stack.undo(scene, host);
+    const Light& again = scene.get<Light>(world.lamp);
+    check(
+        "undoing it puts both back",
+        nearly(again.intensity, 11.0f) && nearly(again.radius, 4.0f)
+            && scene.get<PrefabInstance>(world.root).overrides.size() == 2
+    );
+}
+
+// A step that changes what names its root - an unpacked instance's root loses its prefab uid - still
+// undoes and redoes: the live root is checked against the side it is on.
+void testAStepThatRenamesItsRootStillUndoes() {
+    std::printf("A subtree step that takes its root's prefab uid:\n");
+
+    Scene         scene;
+    RecordingHost host;
+    const EntityId root = scene.createEntity();
+    scene.add(root, makeName("Lamp"));
+    scene.add(root, PrefabEntity{});
+    const EntityId child = scene.createEntity();
+    scene.add(child, makeName("Bulb"));
+    HierarchyOperations::setParent(scene, child, root);
+
+    SubtreeSnapshot before = SubtreeSnapshot::capture(scene, root);
+    scene.remove<PrefabEntity>(root);
+    SubtreeSnapshot after = SubtreeSnapshot::capture(scene, root);
+    host.stack.push(std::make_unique<SubtreeReplaceCommand>(std::move(before), std::move(after), "Unpack"));
+
+    host.stack.undo(scene, host);
+    check("undone, the root has its uid again", scene.has<PrefabEntity>(scene.entityAt(root.slot())));
+    host.stack.redo(scene, host);
+    check("  and redone, it has none", !scene.has<PrefabEntity>(scene.entityAt(root.slot())));
+    check("  with nothing refused", host.toasts.empty());
+}
+
 // Delete a loose entity through the editor's step.
 void deleteThroughHistory(Scene& scene, RecordingHost& host, EntityId id) {
     SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, id);
@@ -1154,6 +1533,39 @@ void testARedonePlacementGoesBackUnderItsParent() {
     );
 }
 
+// A drag of a terrain setting is one step: its first frame records the terrain before it, the
+// rest edit the asset under that step, and undo and redo go between the drag's two ends.
+void testATerrainSettingDragIsOneStep() {
+    std::printf("A terrain's size dragged:\n");
+
+    Scene           scene;
+    ResourceManager resources;
+    RecordingHost   host;
+    TerrainAsset    flat;
+    flat.resolution = 33;
+    flat.size       = 32.0f;
+    flat.heights.assign(33 * 33, 0.0f);
+    flat.weights.assign(33 * 33 * 4, 0);
+    const TerrainHandle handle = resources.add(std::move(flat), "test:terrain");
+    const auto frame = [&](float size) {
+        const auto resize = [size](TerrainAsset& terrain) { terrain.size = size; };
+        TerrainEditCommand::apply(resources, host, handle, resize, "Edit Terrain");
+    };
+    for (int f = 1; f <= 6; ++f) frame(32.0f + static_cast<float>(f));
+    check("six frames of dragging are one step", host.stack.undoDepth() == 1);
+
+    host.stack.endGesture();
+    host.stack.undo(scene, host);
+    check("  undone, the terrain is as before the drag", resources.get(handle).size == 32.0f);
+    host.stack.redo(scene, host);
+    check("  redone, as the drag left it", resources.get(handle).size == 38.0f);
+
+    frame(40.0f);
+    check("a second drag is a second step", host.stack.undoDepth() == 2);
+    host.stack.undo(scene, host);
+    check("  undone, back to where the first left it", resources.get(handle).size == 38.0f);
+}
+
 // A stroke's step holds only the region it touched, and puts back exactly what was there - a
 // plant layer it grew from nothing included - leaving the rest of the terrain alone.
 void testAStrokeIsUndoneWhereItTouched() {
@@ -1241,23 +1653,45 @@ void testStopPutsATerrainBackAsPlayWroteIt() {
     check("  in place: the name still finds the same handle", same);
     const std::vector<float>& kept = resources.get(unsaved).heights;
     check("a terrain with no file is left as it is", !std::all_of(kept.begin(), kept.end(), zero));
+
+    // A crash copy keeps the unsaved strokes beside it, leaving the project's file as it is, and a
+    // recovery puts them back in place.
+    TerrainBrush::raise(resources.edit(handle), dab, 2.0f);
+    resources.commit(handle);
+    const std::vector<float> dug = resources.get(handle).heights;
+    const std::filesystem::path beside = project.root() / "kept";
+    check("a crash copy keeps a terrain's unsaved strokes", keepTerrainCopies(resources, beside));
+    readTerrainFiles(resources);
+    check("  leaving its file as it was saved", std::all_of(heights.begin(), heights.end(), zero));
+    readTerrainCopies(resources, beside);
+    check("  and a recovery puts them back", resources.get(handle).heights == dug);
+    check("  in place", resources.findByName<TerrainAsset>(name) == handle);
 }
 
 } // namespace
 
 void runUndoTests() {
     testAnEditIsUndoneAndRedoneWhole();
+    testARetractedEditLeavesNothingToRedo();
     testAPlaySessionKeepsItsStepsToItself();
     testANewEditDropsWhatWasUndone();
+    testTheHistoryNamesEveryStepBothWays();
+    testAPasteTakesTheAuthoredFieldsAlone();
+    testAnEditReachesTheWholeSelection();
     testADragIsOneUndoStep();
+    testEveryEditMovesTheHistorysRevision();
     testAPosingDragIsOneUndoStep();
+    testAPoseIsAStepOutsideASessionAlone();
     testTheHistoryIsBoundedFromTheOldEnd();
+    testAPushOnAFullHistoryStillMovesTheRevision();
     testStepsAddressingAGoneEntityAreForgotten();
     testUndoingADeleteDoesNotAdoptWhoeverTookTheSlot();
     testADeletedSubtreeComesBackInOrder();
     testARestoredSliderStillMovesItsOwnKnob();
     testDeleteIsOneStepThatTakesTheSelectionWithIt();
     testACopyStandsBesideTheOriginalRatherThanOnIt();
+    testAForeignCopyKeepsNothingOfTheWorldItLeft();
+    testSubtreesCopiedTogetherKeepWhatTheyNameOfEachOther();
     testADuplicateIsOneStepThatTakesTheWholeCopyBack();
     testAPruneDropsWhatADeleteTookAway();
     testACreateAfterADeleteUndoesInOrder();
@@ -1266,11 +1700,14 @@ void runUndoTests() {
     testTheFieldsNamingEntitiesAreTheSerializersAnswer();
     testAChoiceInsideAnInstanceOverridesItsIndexAlone();
     testRevertingAnOverrideGivesTheFieldBackOrRefusesTo();
+    testRevertAllGivesEveryFieldBackAsOneStep();
+    testAStepThatRenamesItsRootStillUndoes();
     testStopPutsAnInstanceBackInTheSlotsItHeld();
     testStopSaysWhenAPrefabCameBackDifferent();
     testAStepRefusesAnEntityItWasNotMadeAgainst();
     testSetAsMainCameraInsideAnInstanceIsKept();
     testARedonePlacementGoesBackUnderItsParent();
+    testATerrainSettingDragIsOneStep();
     testAStrokeIsUndoneWhereItTouched();
     testStopPutsATerrainBackAsPlayWroteIt();
 }

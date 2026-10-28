@@ -4,11 +4,12 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cctype>
 #include <system_error>
 #include <utility>
 
 #include "logger.h"
+
+#include "import/import_formats.h"
 
 #include "ui/editor_dialogs.h"
 #include "ui/editor_style.h"
@@ -17,16 +18,9 @@
 namespace Vkm::Engine {
 
 namespace {
-std::string lowerExt(const std::filesystem::path& p) {
-    std::string ext = p.extension().string();
-    for (char& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext;
-}
-
 bool extMatches(const std::vector<std::string>& exts, const std::filesystem::path& p) {
     if (exts.empty()) return true;
-    const std::string e = lowerExt(p);
+    const std::string e = lowercaseExtension(p);
     for (const std::string& ex : exts) if (e == ex) return true;
     return false;
 }
@@ -166,11 +160,12 @@ bool AssetPicker::draw(std::string& outPath) {
 
         const float footerH = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
         if (ImGui::BeginChild("##AssetPickerList", ImVec2(0, -footerH), ImGuiChildFlags_Borders)) {
-            if (view.empty()) {
-                const char* placeholder = m_entries.empty()
-                    ? "(no matching entries)"
-                    : "(nothing matches the search)";
-                ImGui::TextDisabled("%s", placeholder);
+            if (view.empty() && !m_entries.empty()) {
+                ImGui::TextDisabled("(nothing matches the search)");
+            } else if (view.empty()) {
+                // Where the files go, since the list shows only that folder.
+                ImGui::TextDisabled("No files of these kinds in %s.", m_options.root.string().c_str());
+                ImGui::TextDisabled("Drop them on the editor's window to copy them in, or copy them there.");
             } else {
                 const ImGuiSelectableFlags rowFlags = ImGuiSelectableFlags_AllowDoubleClick;
                 ImGuiListClipper clipper;

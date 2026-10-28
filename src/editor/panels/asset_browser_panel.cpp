@@ -5,11 +5,14 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <glm/glm.hpp>
 
 #include "ecs/component/animation/animator.h"
@@ -18,6 +21,7 @@
 #include "core/system.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/terrain.h"
+#include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "editor_context.h"
 #include "editor_state.h"
@@ -27,6 +31,11 @@
 #include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
+#include "input/editor_keybinds.h"
+#include "input/view_placement.h"
+#include "overlays/viewport_projection.h"
+#include "system/visibility/visibility.h"
+#include "ui/asset_drag.h"
 #include "ui/editor_icons.h"
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
@@ -34,11 +43,14 @@
 #include "command/component_edit.h"
 #include "command/editor_commands.h"
 #include "panels/material_editor_panel.h"
+#include "asset_editors/asset_editors.h"
+#include "session/file_import.h"
 #include "session/material_preview_session.h"
 #include "system/audio/audio_system.h"
+#include "system/loading/loading_system.h"
 #include "system/render/render_system.h"
-#include "import/audio_loaders.h"
-#include "import/texture_loaders.h"
+#include "import/import_formats.h"
+#include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "ui/audition_transport.h"
@@ -54,9 +66,10 @@ namespace {
  * The handle keeps its generation, so a recycled slot is not mistaken for the old asset.
  */
 struct AssetRow {
-    StorageIndex       key;
-    const std::string* name;
-    uint64_t           version;
+    StorageIndex key;
+    std::string  name;  ///< A copy: a library row loaded mid-grid can move every asset's own.
+    uint64_t     version = 0;
+    bool         held    = true;  ///< Loaded; else only in the library, and `key` is null.
 };
 
 using RowSink = std::function<void(const AssetRow&)>;
@@ -97,15 +110,16 @@ using RowsFn   = void (*)(const ResourceManager&, const RowSink&);
 using DetailFn = void (*)(const ResourceManager&, StorageIndex, bool, char*, size_t);
 using ThumbFn  = GpuTextureId (*)(TileContext&, StorageIndex, uint64_t);
 using TargetFn = bool (*)(const Scene&, EntityId);
-using AssignFn = void (*)(EditorContext&, EntityId, StorageIndex);
+using AssignFn = void (*)(Scene&, ResourceManager&, EditorState&, EntityId, StorageIndex);
 using UsedFn   = void (*)(const EntityRefs&, const Scene&, const ResourceManager&, UsedSlots&);
 using RenameFn = void (*)(EditorContext&, StorageIndex, const std::string&, const char*);
 using RemoveFn = void (*)(ResourceManager&, StorageIndex);
+using FindFn   = StorageIndex (*)(const ResourceManager&, const std::string&);
 
 /**
  * @brief Everything the browser needs to know about one asset kind.
  *
- * rows, detail, used and remove are never null.
+ * rows, detail, used, named, remove and find are never null.
  */
 struct AssetKind {
     AssetType     type;
@@ -125,8 +139,10 @@ struct AssetKind {
     TargetFn      target;
     AssignFn      assign;
     UsedFn        used;
+    UsedFn        named;        ///< used's first half: what an entity's own references name.
     RenameFn      rename;       ///< Null: renaming would break a reference, see noRename
     RemoveFn      remove;
+    FindFn        find;         ///< The loaded asset of a name, or a null key.
 };
 
 template<typename Asset>
@@ -134,7 +150,7 @@ struct KindOps {
     static void rows(const ResourceManager& resources, const RowSink& sink) {
         resources.forEachOfType<Asset>([&](Handle<Asset> h, const Asset& a) {
             if (a.isHidden()) return;  // editor helpers / preview primitives are not user-facing
-            sink(AssetRow{h.key, &a.name(), a.version()});
+            sink(AssetRow{h.key, a.name(), a.version()});
         });
     }
 
@@ -152,12 +168,11 @@ struct KindOps {
     static void remove(ResourceManager& resources, StorageIndex key) {
         resources.remove(Handle<Asset>{key});
     }
-};
 
-// One key space per kind, never 0: MaterialEditorPanel::drawPreview's live pane key.
-uint64_t previewKey(AssetType type, uint32_t id) {
-    return ((static_cast<uint64_t>(type) + 1ull) << 40) | id;
-}
+    static StorageIndex find(const ResourceManager& resources, const std::string& name) {
+        return resources.findByName<Asset>(name).key;
+    }
+};
 
 // Detail lines: a short form (a tile's ~14 characters: the one distinguishing fact) and a
 // verbose one for the tooltip.
@@ -332,9 +347,8 @@ void clipDetail(const ResourceManager& resources, StorageIndex key, bool verbose
 
 GpuTextureId materialThumb(TileContext& tc, StorageIndex key, uint64_t version) {
     PreviewRequest req;
-    req.key      = previewKey(AssetType::Material, MaterialHandle{key}.id());
-    req.material = MaterialHandle{key};
-    req.mesh     = tc.sphere;
+    req.key      = AssetEditors::thumbnailKey(AssetType::Material, MaterialHandle{key}.id());
+    req.draws    = {{tc.sphere, MaterialHandle{key}}};
     req.yawDeg   = 30.0f;
     req.pitchDeg = 18.0f;
     req.distance = 2.6f;
@@ -344,9 +358,8 @@ GpuTextureId materialThumb(TileContext& tc, StorageIndex key, uint64_t version) 
 
 GpuTextureId meshThumb(TileContext& tc, StorageIndex key, uint64_t version) {
     PreviewRequest req;
-    req.key      = previewKey(AssetType::Mesh, MeshHandle{key}.id());
-    req.material = tc.neutral;
-    req.mesh     = MeshHandle{key};
+    req.key      = AssetEditors::thumbnailKey(AssetType::Mesh, MeshHandle{key}.id());
+    req.draws    = {{MeshHandle{key}, tc.neutral}};
     req.yawDeg   = 25.0f;
     req.pitchDeg = 15.0f;
     req.distance = 2.6f;
@@ -371,26 +384,38 @@ GpuTextureId textureThumb(TileContext& tc, StorageIndex key, uint64_t) {
 
 bool meshTarget(const Scene& scene, EntityId id) { return scene.has<Mesh>(id); }
 
-void assignMaterial(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<Mesh> mesh(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Material");
+void assignMaterial(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId id,
+    StorageIndex key
+) {
+    EditScope<Mesh> mesh(scene, resources, state, id, "Assign Material");
     mesh->material = MaterialHandle{key};
 }
 
-void assignMesh(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<Mesh> mesh(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Mesh");
+void assignMesh(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id, StorageIndex key) {
+    EditScope<Mesh> mesh(scene, resources, state, id, "Assign Mesh");
     mesh->mesh = MeshHandle{key};
 }
 
 // One Animator carries both the rig and its clip.
 bool animatorTarget(const Scene& scene, EntityId id) { return scene.has<Animator>(id); }
 
-void assignSkeleton(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<Animator> animator(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Skeleton");
+void assignSkeleton(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId id,
+    StorageIndex key
+) {
+    EditScope<Animator> animator(scene, resources, state, id, "Assign Skeleton");
     animator->skeleton = SkeletonHandle{key};
 }
 
-void assignClip(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<Animator> animator(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Clip");
+void assignClip(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id, StorageIndex key) {
+    EditScope<Animator> animator(scene, resources, state, id, "Assign Clip");
     animator->clip = AnimationClipHandle{key};
     // Cut, not crossFadeTo: the editor does not advance the clock a blend runs on.
     animator->time = 0.0f;
@@ -400,13 +425,25 @@ bool audioTarget(const Scene& scene, EntityId id) { return scene.has<AudioSource
 
 bool terrainTarget(const Scene& scene, EntityId id) { return scene.has<Terrain>(id); }
 
-void assignTerrain(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<Terrain> terrain(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Terrain");
+void assignTerrain(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId id,
+    StorageIndex key
+) {
+    EditScope<Terrain> terrain(scene, resources, state, id, "Assign Terrain");
     terrain->terrain = TerrainHandle{key};
 }
 
-void assignSound(EditorContext& ec, EntityId id, StorageIndex key) {
-    EditScope<AudioSource> source(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Sound");
+void assignSound(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId id,
+    StorageIndex key
+) {
+    EditScope<AudioSource> source(scene, resources, state, id, "Assign Sound");
     source->clip = AudioClipHandle{key};
 }
 
@@ -441,23 +478,58 @@ void markReferenced(
     markNamed<Asset>(refs, resources, used);
 }
 
-void materialsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.materials, refs, resources, used);
-    // A terrain names its layers and plants in the asset, which no entity walk sees.
+// What one entity's references name of each kind, the first half of each walk below.
+
+void materialsNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    const auto mark = [&](MaterialHandle material) { used.mark(material.id()); };
+    AssetSerializer::forEachMaterialOf(refs, resources, mark);
+}
+
+void meshesNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.meshes, refs, resources, used);
+}
+
+void terrainsNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.terrains, refs, resources, used);
+}
+
+void texturesNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.textures, refs, resources, used);
+}
+
+void skeletonsNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.skeletons, refs, resources, used);
+}
+
+void clipsNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.clips, refs, resources, used);
+}
+
+void soundsNamed(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.sounds, refs, resources, used);
+}
+
+void materialsInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    materialsNamed(refs, scene, resources, used);
+    const auto mark = [&](MaterialHandle material) { used.mark(material.id()); };
+    // A terrain no entity places still names its materials in its file.
     resources.forEachOfType<TerrainAsset>([&](TerrainHandle, const TerrainAsset& terrain) {
-        for (const MaterialHandle& layer : terrain.layers) {
-            if (layer) used.mark(layer.id());
-        }
-        for (const TerrainFoliage& plant : terrain.foliage) {
-            for (const TerrainPlantPart& part : plant.parts) {
-                if (part.material) used.mark(part.material.id());
-            }
-        }
+        AssetSerializer::forEachMaterialOf(terrain, mark);
     });
 }
 
-void meshesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.meshes, refs, resources, used);
+void meshesInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    meshesNamed(refs, scene, resources, used);
     resources.forEachOfType<TerrainAsset>([&](TerrainHandle, const TerrainAsset& terrain) {
         for (const TerrainFoliage& plant : terrain.foliage) {
             for (const TerrainPlantPart& part : plant.parts) {
@@ -467,12 +539,22 @@ void meshesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& re
     });
 }
 
-void terrainsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.terrains, refs, resources, used);
+void terrainsInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    terrainsNamed(refs, scene, resources, used);
 }
 
-void texturesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.textures, refs, resources, used);
+void texturesInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    texturesNamed(refs, scene, resources, used);
     // Every material, not only drawn ones: an unplaced material still owns its textures.
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& m) {
         for (TextureHandle MaterialAsset::* slot : MATERIAL_TEXTURE_SLOTS) {
@@ -481,8 +563,13 @@ void texturesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& 
     });
 }
 
-void skeletonsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.skeletons, refs, resources, used);
+void skeletonsInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    skeletonsNamed(refs, scene, resources, used);
     // Meshes and clips name their rig as a string, invisible to a handle walk.
     const auto claimByName = [&](const std::string& name) {
         if (const SkeletonHandle rig = resources.findByName<SkeletonAsset>(name)) {
@@ -503,15 +590,20 @@ void clipsInUse(
     const ResourceManager& resources,
     UsedSlots& used
 ) {
-    markReferenced(refs.handles.clips, refs, resources, used);
+    clipsNamed(refs, scene, resources, used);
     // A crossfade's outgoing clip is unsaved session state but still sampled.
     scene.forEach<Animator>([&](EntityId, const Animator& a) {
         if (a.fadeFrom) used.mark(a.fadeFrom.id());
     });
 }
 
-void soundsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
-    markReferenced(refs.handles.sounds, refs, resources, used);
+void soundsInUse(
+    const EntityRefs& refs,
+    const Scene& scene,
+    const ResourceManager& resources,
+    UsedSlots& used
+) {
+    soundsNamed(refs, scene, resources, used);
 }
 
 // A kind is a builder below plus its place in KINDS; an omitted field is null (no picture,
@@ -524,7 +616,7 @@ AssetKind materialKind() {
     kind.icon        = EditorIcon::Material;
     kind.accent      = &EditorStyle::Accent::MAT_BASE;
     kind.verb        = "New";
-    kind.verbHint    = "Create a blank material and open it in the Material tab";
+    kind.verbHint    = "Create a blank material and open it in a window of its own";
     kind.verbAction  = Verb::NewMaterial;
     kind.assignLabel = "Assign to selected entity";
     kind.assignHint  = "(select a mesh entity to assign)";
@@ -534,8 +626,10 @@ AssetKind materialKind() {
     kind.target      = &meshTarget;
     kind.assign      = &assignMaterial;
     kind.used        = &materialsInUse;
+    kind.named       = &materialsNamed;
     kind.rename      = &KindOps<MaterialAsset>::rename;
     kind.remove      = &KindOps<MaterialAsset>::remove;
+    kind.find        = &KindOps<MaterialAsset>::find;
     return kind;
 }
 
@@ -547,15 +641,17 @@ AssetKind textureKind() {
     kind.icon       = EditorIcon::Texture;
     kind.accent     = &EditorStyle::Accent::MAT_TEXTURE;
     kind.verb       = "Import...";
-    kind.verbHint   = "Import an image as colour - PNG, JPG, TGA or BMP";
+    kind.verbHint   = "Import an image as color - PNG, JPG, TGA or BMP";
     kind.verbAction = Verb::ImportTexture;
     // No assign item: which material slot is not an entity's question.
     kind.rows       = &KindOps<TextureAsset>::rows;
     kind.detail     = &textureDetail;
     kind.thumb      = &textureThumb;
     kind.used       = &texturesInUse;
+    kind.named      = &texturesNamed;
     kind.rename     = &KindOps<TextureAsset>::rename;
     kind.remove     = &KindOps<TextureAsset>::remove;
+    kind.find       = &KindOps<TextureAsset>::find;
     return kind;
 }
 
@@ -577,8 +673,10 @@ AssetKind meshKind() {
     kind.target      = &meshTarget;
     kind.assign      = &assignMesh;
     kind.used        = &meshesInUse;
+    kind.named       = &meshesNamed;
     kind.rename      = &KindOps<MeshAsset>::rename;
     kind.remove      = &KindOps<MeshAsset>::remove;
+    kind.find        = &KindOps<MeshAsset>::find;
     return kind;
 }
 
@@ -601,7 +699,9 @@ AssetKind skeletonKind() {
     kind.target      = &animatorTarget;
     kind.assign      = &assignSkeleton;
     kind.used        = &skeletonsInUse;
+    kind.named       = &skeletonsNamed;
     kind.remove      = &KindOps<SkeletonAsset>::remove;
+    kind.find        = &KindOps<SkeletonAsset>::find;
     return kind;
 }
 
@@ -622,8 +722,10 @@ AssetKind clipKind() {
     kind.target      = &animatorTarget;
     kind.assign      = &assignClip;
     kind.used        = &clipsInUse;
+    kind.named       = &clipsNamed;
     kind.rename      = &KindOps<AnimationClipAsset>::rename;
     kind.remove      = &KindOps<AnimationClipAsset>::remove;
+    kind.find        = &KindOps<AnimationClipAsset>::find;
     return kind;
 }
 
@@ -644,8 +746,10 @@ AssetKind soundKind() {
     kind.target      = &audioTarget;
     kind.assign      = &assignSound;
     kind.used        = &soundsInUse;
+    kind.named       = &soundsNamed;
     kind.rename      = &KindOps<AudioClipAsset>::rename;
     kind.remove      = &KindOps<AudioClipAsset>::remove;
+    kind.find        = &KindOps<AudioClipAsset>::find;
     return kind;
 }
 
@@ -668,7 +772,9 @@ AssetKind terrainKind() {
     kind.target      = &terrainTarget;
     kind.assign      = &assignTerrain;
     kind.used        = &terrainsInUse;
+    kind.named       = &terrainsNamed;
     kind.remove      = &KindOps<TerrainAsset>::remove;
+    kind.find        = &KindOps<TerrainAsset>::find;
     return kind;
 }
 
@@ -682,31 +788,171 @@ const AssetKind KINDS[] = {
     terrainKind()
 };
 
-const AssetKind& kindOf(AssetType type) {
+static_assert(std::size(KINDS) == static_cast<size_t>(AssetType::Count), "as many kinds as asset types");
+
+// Null for a type no kind is: a drag's payload is bytes, and a kind is never stood in for another.
+const AssetKind* kindOf(AssetType type) {
     for (const AssetKind& k : KINDS) {
-        if (k.type == type) return k;
+        if (k.type == type) return &k;
     }
-    return KINDS[0];
+    return nullptr;
+}
+
+/**
+ * @brief The rows of @p kind matching @p filter: what is loaded, then the library's names that are
+ *        not, all by name.
+ *
+ * @param kind      The kind.
+ * @param resources What is loaded.
+ * @param library   The library's names of the kind.
+ * @param filter    The search.
+ * @param out       Filled.
+ */
+void listRows(
+    const AssetKind& kind,
+    const ResourceManager& resources,
+    const std::vector<std::string>& library,
+    const char* filter,
+    std::vector<AssetRow>& out
+) {
+    out.clear();
+    kind.rows(resources, [&](const AssetRow& row) {
+        if (matchesFilter(row.name.c_str(), filter)) out.push_back(row);
+    });
+    for (const std::string& name : library) {
+        if (!matchesFilter(name.c_str(), filter) || kind.find(resources, name)) continue;
+        out.push_back(AssetRow{{}, name, 0, false});
+    }
+    std::sort(out.begin(), out.end(), [](const AssetRow& a, const AssetRow& b) { return a.name < b.name; });
+}
+
+/**
+ * @brief What a tile calls an asset: its file's stem (assetFileStem) with what follows it,
+ *        "ArmChair_1k:mat0" of "assets/models/ArmChair/ArmChair_1k.gltf:mat0"; a name that names
+ *        no file, whole.
+ *
+ * A model's assets share its folders, which an elided full name would show alone.
+ *
+ * @param name The asset's name.
+ * @return Its caption; the tooltip keeps the whole name.
+ */
+std::string tileCaption(const std::string& name) {
+    const std::string stem = assetFileStem(name);
+    if (stem.empty()) return name;
+    const size_t colon = name.find(':');
+    return colon == std::string::npos ? stem : stem + name.substr(colon);
+}
+
+/**
+ * @brief Load a library row's asset, saying so when it cannot be.
+ *
+ * @param ec   The editor.
+ * @param kind Its kind.
+ * @param name Its name.
+ * @return Its key, or a null one.
+ */
+StorageIndex loadRow(EditorContext& ec, const AssetKind& kind, const std::string& name) {
+    if (!AssetSerializer::loadNamed(kind.type, name, ec.frame.resources)) {
+        ec.state.pushToast(ToastKind::Error, "Could not load " + name);
+        return {};
+    }
+    return kind.find(ec.frame.resources, name);
+}
+
+/// How far what @p drag makes reaches below its origin: a mesh stands on its base.
+float dropBase(const ResourceManager& resources, const AssetDrag& drag) {
+    return drag.type == AssetType::Mesh ? ViewPlacement::meshBase(resources, MeshHandle{drag.key}) : 0.0f;
 }
 
 } // namespace
+
+void AssetBrowserPanel::acceptViewportDrop(EditorContext& ec) {
+    const ImVec2 min = ec.viewportPos;
+    const ImRect rect(min, ImVec2(min.x + ec.viewportSize.x, min.y + ec.viewportSize.y));
+    if (!ImGui::BeginDragDropTargetCustom(rect, ImGui::GetID("##AssetDrop"))) return;
+
+    // Peeked first, so a drag that would neither assign nor make anything here is not taken.
+    FrameContext&                  ctx    = ec.frame;
+    const std::optional<AssetDrag> peeked = peekAssetDrag();
+    if (peeked && ctx.visibility && ctx.visibility->hasCamera) {
+        const AssetDrag  drag        = *peeked;
+        const glm::mat4& invViewProj = ctx.visibility->camera.invViewProj;
+        const Math::Ray  ray         = viewportRay(invViewProj, ImGui::GetMousePos(), min, ec.viewportSize);
+
+        EntityId hit{};
+        float    t = 0.0f;
+        ViewPlacement::firstSurface(ctx.scene, ctx.resources, ray, t, {}, &hit);
+        // What the ray meets is a drawn surface; the entity a kind assigns to may hold it, as an
+        // imported character's Animator holds its skinned meshes. A mesh dropped on a mesh is a
+        // new thing set on it, never the floor turned into a crate.
+        const AssetKind* kind = kindOf(drag.type);
+        EntityId         target{};
+        if (hit && drag.type != AssetType::Mesh && kind && kind->assign) {
+            HierarchyOperations::forSelfAndAncestors(ctx.scene, hit, [&](EntityId at) {
+                if (kind->target(ctx.scene, at)) target = at;
+                return !target;
+            });
+        }
+        if (target) {
+            if (ImGui::AcceptDragDropPayload(ASSET_DRAG)) {
+                kind->assign(ctx.scene, ctx.resources, ec.state, target, drag.key);
+                ec.state.selectEntity(target);
+            }
+        } else if (EditorActions::makesEntity(drag.type) && ImGui::AcceptDragDropPayload(ASSET_DRAG)) {
+            const float     base  = dropBase(ctx.resources, drag);
+            const float     ahead = ec.state.viewAim.focus;
+            const glm::vec3 at    = ViewPlacement::placeAlong(ctx.scene, ctx.resources, ray, ahead, base);
+            EditorActions::createFromAsset(ctx.scene, ctx.resources, ec.state, drag.type, drag.key, at);
+        }
+    }
+    ImGui::EndDragDropTarget();
+}
+
+void AssetBrowserPanel::acceptAssetOn(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId entity
+) {
+    // Peeked first, so a drag of a kind that does not assign here is not taken (nor the row lit).
+    const std::optional<AssetDrag> drag = peekAssetDrag();
+    if (!drag) return;
+    const AssetKind* kind = kindOf(drag->type);
+    if (!kind || !kind->assign || !kind->target(scene, entity)) return;
+    if (ImGui::AcceptDragDropPayload(ASSET_DRAG)) {
+        kind->assign(scene, resources, state, entity, drag->key);
+        state.selectEntity(entity);
+    }
+}
+
+void AssetBrowserPanel::acceptAssetCreate(Scene& scene, ResourceManager& resources, EditorState& state) {
+    // Peeked first: only a kind an entity is made of is taken, so a material is not swallowed.
+    const std::optional<AssetDrag> drag = peekAssetDrag();
+    if (!drag || !EditorActions::makesEntity(drag->type) || !ImGui::AcceptDragDropPayload(ASSET_DRAG)) return;
+    const float     base = dropBase(resources, *drag);
+    const glm::vec3 at   = ViewPlacement::placeInView(scene, resources, state.viewAim, base);
+    EditorActions::createFromAsset(scene, resources, state, drag->type, drag->key, at);
+}
 
 void AssetBrowserPanel::openRename(AssetType kind, StorageIndex key, const std::string& name) {
     snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
     m_rename = AssetTarget{kind, key, name, true};
 }
 
+const std::vector<std::string>& AssetBrowserPanel::libraryNames(AssetType type) {
+    const size_t   at  = static_cast<size_t>(type);
+    const uint64_t now = AssetLibrary::get().revision() + 1;
+    if (m_libraryAt[at] != now) {
+        m_library[at]   = AssetLibrary::get().namesOf(type);
+        m_libraryAt[at] = now;
+    }
+    return m_library[at];
+}
+
 void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
     m_sphere = materialPreviewSphere(resources);
 
-    m_neutral = resources.findByName<MaterialAsset>("mat:thumb_neutral");
-    if (!m_neutral) {
-        MaterialAsset m;
-        m.albedo    = glm::vec4(0.78f, 0.78f, 0.80f, 1.0f);
-        m.metallic  = 0.0f;
-        m.roughness = 0.55f;
-        m_neutral = resources.addPrivate(std::move(m), "mat:thumb_neutral");
-    }
+    m_neutral = neutralPreviewMaterial(resources);
 }
 
 void AssetBrowserPanel::draw(EditorContext& ec) {
@@ -736,12 +982,19 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float stripe = EditorStyle::px(3.0f);
 
+    // Through the grid's filter, so searching narrows the rail too; counted again only once the
+    // assets, the library or the search change.
+    const RailKey key{ec.frame.resources.revision(), AssetLibrary::get().revision(), m_filter};
+    if (key != m_railKey) {
+        std::vector<AssetRow> rows;
+        for (const AssetKind& kind : KINDS) {
+            listRows(kind, ec.frame.resources, libraryNames(kind.type), m_filter, rows);
+            m_railCounts[static_cast<size_t>(kind.type)] = rows.size();
+        }
+        m_railKey = key;
+    }
     for (const AssetKind& kind : KINDS) {
-        // Through the grid's filter, so searching narrows the rail too.
-        int count = 0;
-        kind.rows(ec.frame.resources, [&](const AssetRow& row) {
-            if (matchesFilter(row.name->c_str(), m_filter)) ++count;
-        });
+        const size_t count = m_railCounts[static_cast<size_t>(kind.type)];
 
         ImGui::PushID(static_cast<int>(kind.type));
 
@@ -771,7 +1024,7 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
         );
 
         char buf[16];
-        snprintf(buf, sizeof(buf), "%d", count);
+        snprintf(buf, sizeof(buf), "%zu", count);
         const float textW = ImGui::CalcTextSize(buf).x;
         const ImVec2 countPos(
             mx.x - textW - EditorStyle::px(6.0f),
@@ -785,7 +1038,9 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
 }
 
 void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
-    const AssetKind& kind = kindOf(m_kind);
+    const AssetKind* found = kindOf(m_kind);
+    if (!found) return;
+    const AssetKind& kind = *found;
 
     // The kind's primary action, always first; see docs/reference/editor.md, "Import".
     if (ImGui::Button(kind.verb)) {
@@ -813,15 +1068,7 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", kind.verbHint);
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(EditorStyle::px(200.0f));
-    // Escape empties the box rather than reverting it.
-    ImGui::InputTextWithHint(
-        "##assetFilter",
-        "Search...",
-        m_filter,
-        sizeof(m_filter),
-        ImGuiInputTextFlags_EscapeClearsAll
-    );
+    searchField("##assetFilter", m_filter, sizeof(m_filter), EditorStyle::px(200.0f));
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(EditorStyle::px(130.0f));
@@ -842,7 +1089,9 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
 }
 
 void AssetBrowserPanel::drawGrid(EditorContext& ec) {
-    const AssetKind& kind      = kindOf(m_kind);
+    const AssetKind* found = kindOf(m_kind);
+    if (!found) return;
+    const AssetKind& kind      = *found;
     EditorState&     state     = ec.state;
     ResourceManager& resources = ec.frame.resources;
     Scene&           scene     = ec.frame.scene;
@@ -852,22 +1101,36 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
 
     // Snapshotted for the clipper: an off-screen tile bakes no thumbnail.
     std::vector<AssetRow> rows;
-    kind.rows(resources, [&](const AssetRow& row) {
-        if (matchesFilter(row.name->c_str(), m_filter)) rows.push_back(row);
-    });
+    listRows(kind, resources, libraryNames(kind.type), m_filter, rows);
     if (rows.empty()) {
         ImGui::TextDisabled("%s", m_filter[0] ? "Nothing matches the search." : kind.empty);
         return;
     }
 
-    // Rebuilt every frame, so no scene change has to invalidate it.
-    EntityRefs refs;
-    scene.forEachEntity([&](EntityId id) {
-        AssetSerializer::collectAssetRefs(scene, id, resources, refs);
-    });
+    // The project's loading screen uses what it shows, though nothing in the scene does: deleted
+    // while it is built, its handle would die under it.
+    const Scene* screen = ec.loadingSystem.builtScreen();
+    const std::array<uint64_t, 4> stamp = {
+        scene.epoch(),
+        resources.revision(),
+        state.commands.revision(),
+        reinterpret_cast<uintptr_t>(screen)
+    };
+    if (m_refsKey != stamp || ec.input.playing) {
+        m_refs = EntityRefs{};
+        scene.forEachEntity([&](EntityId id) {
+            AssetSerializer::collectAssetRefs(scene, id, resources, m_refs);
+        });
+        if (screen) {
+            screen->forEachEntity([&](EntityId id) {
+                AssetSerializer::collectAssetRefs(*screen, id, resources, m_refs);
+            });
+        }
+        m_refsKey = stamp;
+    }
     std::fill(m_used.begin(), m_used.end(), uint8_t{0});
     UsedSlots used{m_used};
-    kind.used(refs, scene, resources, used);
+    kind.used(m_refs, scene, resources, used);
 
     TileContext tc{ec, m_sphere, m_neutral, TEXTURE_UPLOADS_PER_FRAME};
     AudioDevice& device = ec.audioSystem.device();
@@ -876,68 +1139,148 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
     const float step = face + ImGui::GetStyle().ItemSpacing.x;
     const int   cols = (std::max)(1, static_cast<int>(ImGui::GetContentRegionAvail().x / step));
 
+    // A library row's asset, loaded as it is first used; one that fails is not tried again.
+    const auto take = [&](const AssetRow& row) -> StorageIndex {
+        if (row.held) return row.key;
+        if (row.name == m_unloadable) return {};
+        const StorageIndex key = loadRow(ec, kind, row.name);
+        if (!key) m_unloadable = row.name;
+        return key;
+    };
+
+    // A loaded asset's own menu items: renaming and deleting it.
+    const auto heldItems = [&](const AssetRow& row, bool orphan) {
+        ImGui::Separator();
+        ImGui::BeginDisabled(!kind.rename);
+        if (ImGui::MenuItem("Rename...")) openRename(kind.type, row.key, row.name);
+        ImGui::EndDisabled();
+        if (!kind.rename) ImGui::TextDisabled("%s", kind.noRename);
+        // Not during a session: delete discards the undo history, the set-aside one too.
+        ImGui::BeginDisabled(!orphan || ec.input.playing);
+        if (ImGui::MenuItem("Delete...")) {
+            m_delete = AssetTarget{kind.type, row.key, row.name, true};
+        }
+        ImGui::EndDisabled();
+        if (ec.input.playing) {
+            ImGui::TextDisabled("(stop the session first)");
+        } else if (!orphan) {
+            ImGui::TextDisabled("(in use - clear the references first)");
+        }
+        // Who it is in use by: the entities naming it, or, when none does, the loading screen or
+        // another asset holding it.
+        if (!orphan && ImGui::MenuItem("Select Users")) {
+            std::vector<uint8_t>  marks;
+            std::vector<EntityId> users;
+            const auto names = [&](const Scene& in, EntityId id) {
+                EntityRefs refs;
+                AssetSerializer::collectAssetRefs(in, id, resources, refs);
+                std::fill(marks.begin(), marks.end(), uint8_t{0});
+                UsedSlots named{marks};
+                kind.named(refs, in, resources, named);
+                return named.has(row.key.index);
+            };
+            scene.forEachEntity([&](EntityId id) {
+                if (names(scene, id)) users.push_back(id);
+            });
+            bool onScreen = false;
+            if (users.empty() && screen) {
+                screen->forEachEntity([&](EntityId id) { onScreen = onScreen || names(*screen, id); });
+            }
+            // The selection stands when no entity uses it.
+            if (users.empty()) {
+                const char* why = onScreen
+                    ? " is used by the project's loading screen, not by an entity"
+                    : " is held by another asset, not by an entity";
+                state.pushToast(ToastKind::Info, row.name + why);
+            } else {
+                state.deselect();
+                for (const EntityId id : users) state.addToSelection(id);
+            }
+        }
+    };
+
+    // Into its own window; a terrain into the Terrain window, on the entity placing it.
+    const bool opens = AssetEditors::opens(kind.type) || kind.type == AssetType::Terrain;
+    const auto open  = [&](StorageIndex key) {
+        if (kind.type != AssetType::Terrain) {
+            state.openAssetEditor(kind.type, key);
+            return;
+        }
+        EntityId placing{};
+        scene.forEach<Terrain>([&](EntityId id, const Terrain& terrain) {
+            if (!placing && terrain.terrain == TerrainHandle{key}) placing = id;
+        });
+        // None yet: one is placed, as dropping it in the viewport would.
+        if (!placing) placing = EditorActions::createFromAsset(scene, resources, state, kind.type, key, {});
+        if (!placing) return;
+        state.selectEntity(placing);
+        state.openTerrain(placing);
+    };
+
     const auto drawTile = [&](const AssetRow& row) {
         const uint32_t     id     = row.key.index;
-        const GpuTextureId tex    = kind.thumb ? kind.thumb(tc, row.key, row.version) : 0u;
-        const bool         orphan = !used.has(id);
+        const GpuTextureId tex    = row.held && kind.thumb ? kind.thumb(tc, row.key, row.version) : 0u;
+        const bool         orphan = row.held && !used.has(id);
+        const char*        name   = row.name.empty() ? "(unnamed)" : row.name.c_str();
 
-        ImGui::PushID(static_cast<int>(id));
+        // By name, so a row keeps its id as it is loaded mid-drag.
+        if (row.name.empty()) ImGui::PushID(static_cast<int>(id));
+        else                   ImGui::PushID(row.name.c_str());
         ImGui::BeginGroup();
 
-        // A faint glyph means a bake is coming, unlike a kind with no thumbnail.
+        // A faint glyph means a bake is coming, unlike a kind with no thumbnail; or, for an asset not
+        // loaded, that there is nothing to show until it is.
         ImVec4 glyph = *kind.accent;
-        if (kind.thumb) glyph.w = 0.30f;
+        if (kind.thumb || !row.held) glyph.w = 0.30f;
         ImVec2 faceMin, faceMax;
-        const bool clicked = tileFace(imTexture(tex), face, *kind.accent, kind.icon, glyph, faceMin, faceMax);
+        tileFace(imTexture(tex), face, *kind.accent, kind.icon, glyph, faceMin, faceMax);
+        // The face's own hover, which a window lying over it takes; not its rectangle's.
+        const bool faceHovered = ImGui::IsItemHovered();
+        // Into the viewport, onto an asset slot, or onto an entity that takes it.
+        if (ImGui::BeginDragDropSource()) {
+            if (const StorageIndex key = take(row)) {
+                const AssetDrag drag{kind.type, key};
+                ImGui::SetDragDropPayload(ASSET_DRAG, &drag, sizeof(drag));
+            }
+            ImGui::TextUnformatted(name);
+            ImGui::EndDragDropSource();
+        }
         if (ImGui::IsItemHovered()) {
-            char full[256];
-            kind.detail(resources, row.key, true, full, sizeof(full));
-            ImGui::SetTooltip(
-                "%s\n%s%s",
-                row.name->empty() ? "(unnamed)" : row.name->c_str(),
-                full,
-                orphan ? "\nNothing in this project uses it" : ""
-            );
-            // As in the Hierarchy. Not Delete: it destroys the selected entity first, so both fire.
-            if (kind.rename && ImGui::IsKeyPressed(ImGuiKey_F2)) {
-                openRename(kind.type, row.key, *row.name);
+            if (row.held) {
+                char full[256];
+                kind.detail(resources, row.key, true, full, sizeof(full));
+                ImGui::SetTooltip("%s\n%s%s", name, full, orphan ? "\nNothing in this scene uses it" : "");
+            } else {
+                ImGui::SetTooltip("%s\nIn the library, not loaded: using it loads it", name);
+            }
+            // Not Delete: it destroys the selected entity first, so both fire.
+            if (row.held && kind.rename && ImGui::IsKeyPressed(RENAME_KEY)) {
+                openRename(kind.type, row.key, row.name);
             }
         }
 
         if (ImGui::BeginPopupContextItem("##tilectx")) {
-            sectionLabel(row.name->empty() ? "(unnamed)" : row.name->c_str());
+            sectionLabel(name);
             ImGui::Separator();
-            if (kind.type == AssetType::Material && ImGui::MenuItem("Edit Material")) {
-                state.openMaterial(MaterialHandle{row.key});
+            if (!row.held && ImGui::MenuItem("Load")) take(row);
+            if (opens && ImGui::MenuItem("Open")) {
+                if (const StorageIndex key = take(row)) open(key);
             }
             if (kind.assignLabel) {
                 ImGui::BeginDisabled(!canAssign);
-                if (ImGui::MenuItem(kind.assignLabel)) kind.assign(ec, sel, row.key);
+                if (ImGui::MenuItem(kind.assignLabel)) {
+                    if (const StorageIndex key = take(row)) kind.assign(scene, resources, state, sel, key);
+                }
                 ImGui::EndDisabled();
                 if (!canAssign) ImGui::TextDisabled("%s", kind.assignHint);
             }
-            ImGui::Separator();
-            ImGui::BeginDisabled(!kind.rename);
-            if (ImGui::MenuItem("Rename...")) openRename(kind.type, row.key, *row.name);
-            ImGui::EndDisabled();
-            if (!kind.rename) ImGui::TextDisabled("%s", kind.noRename);
-            // Not during a session: delete discards the undo history, the set-aside one too.
-            ImGui::BeginDisabled(!orphan || ec.input.playing);
-            if (ImGui::MenuItem("Delete...")) {
-                m_delete = AssetTarget{kind.type, row.key, *row.name, true};
-            }
-            ImGui::EndDisabled();
-            if (ec.input.playing) {
-                ImGui::TextDisabled("(stop the session first)");
-            } else if (!orphan) {
-                ImGui::TextDisabled("(in use - clear the references first)");
-            }
+            if (row.held) heldItems(row, orphan);
             ImGui::EndPopup();
         }
 
         // On the face, so the tile keeps the common height.
         const bool mine = kind.type == AssetType::AudioClip && m_previewClip == AudioClipHandle{row.key};
-        if (kind.type == AssetType::AudioClip) {
+        if (kind.type == AssetType::AudioClip && row.held) {
             const float ih  = ImGui::GetFrameHeight();
             const float pad = EditorStyle::px(5.0f);
             const ImVec2 back = ImGui::GetCursorScreenPos();
@@ -948,14 +1291,20 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
             ImGui::SetCursorScreenPos(back);
         }
 
-        if (kind.type == AssetType::Material && clicked) {   // left-click = edit
-            state.openMaterial(MaterialHandle{row.key});
+        // A double-click opens an asset in its own window, as other editors do; a material too. One
+        // not loaded is loaded by it.
+        const bool doubled = faceHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+        if (doubled && (opens || !row.held)) {
+            const StorageIndex key = take(row);
+            if (key && opens) open(key);
         }
 
-        clippedLine(row.name->c_str(), face, false);
+        clippedLine(tileCaption(row.name).c_str(), face, !row.held);
 
         // While heard, the detail line shows the audition's progress.
-        if (mine && device.isVoiceActive(m_previewVoice)) {
+        if (!row.held) {
+            clippedLine("not loaded", face, true);
+        } else if (mine && device.isVoiceActive(m_previewVoice)) {
             auditionScrubber(
                 "abPos",
                 device,
@@ -972,7 +1321,7 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
         ImGui::EndGroup();
 
         ImVec4 strip = *kind.accent;
-        if (orphan) strip.w *= 0.35f;
+        if (orphan || !row.held) strip.w *= 0.35f;
         tileStrip(faceMin, faceMax, strip);
 
         ImGui::PopID();
@@ -998,8 +1347,8 @@ void AssetBrowserPanel::openTextureImport() {
     options.title      = "Import Texture";
     options.root       = ProjectPaths::assets();
     options.recursive  = true;
-    options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
-    options.hint       = "PNG / JPG / TGA / BMP, read as colour (sRGB)";
+    options.extensions.assign(IMAGE_EXTENSIONS.begin(), IMAGE_EXTENSIONS.end());
+    options.hint       = "PNG / JPG / TGA / BMP, read as color (sRGB)";
     m_texturePicker.open(options);
 }
 
@@ -1007,20 +1356,7 @@ void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
     std::string picked;
     if (!m_texturePicker.draw(picked)) return;
 
-    // Asked first: loadTexture would decode again and replace the asset in place.
-    ResourceManager& resources = ec.frame.resources;
-    const std::string ref = ProjectPaths::toProjectRelative(picked);
-    if (resources.findByName<TextureAsset>(ref)) {
-        ec.state.pushToast(ToastKind::Info, ref + " is already imported");
-        return;
-    }
-
-    // Colour: a hand-picked texture is art. Data maps come with a model or a Material Editor slot.
-    if (!loadTexture(picked, resources, TextureUsage::Color)) {
-        ec.state.pushToast(ToastKind::Error, "Could not decode " + picked);
-    } else {
-        ec.state.markSceneDirty();
-    }
+    FileImport::importTexture(picked, ec.frame.resources, ec.state);
 }
 
 void AssetBrowserPanel::openSoundImport() {
@@ -1028,7 +1364,7 @@ void AssetBrowserPanel::openSoundImport() {
     options.title      = "Import Sound";
     options.root       = ProjectPaths::assets();
     options.recursive  = true;
-    options.extensions = {".wav", ".mp3", ".flac"};
+    options.extensions.assign(AUDIO_EXTENSIONS.begin(), AUDIO_EXTENSIONS.end());
     options.maxResults = 2000;
     options.hint       = "WAV / MP3 / FLAC";
     m_soundPicker.open(options);
@@ -1038,26 +1374,15 @@ void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
     std::string picked;
     if (!m_soundPicker.draw(picked)) return;
 
-    // Asked first: loadAudioClip returns a held name's clip silently, hiding which outcome it was.
-    ResourceManager& resources = ec.frame.resources;
-    const std::string ref = ProjectPaths::toProjectRelative(picked);
-    const bool alreadyHeld = static_cast<bool>(resources.findByName<AudioClipAsset>(ref));
-
-    if (!loadAudioClip(picked, resources)) {
-        ec.state.pushToast(ToastKind::Error, "Could not decode " + picked);
-    } else if (alreadyHeld) {
-        ec.state.pushToast(ToastKind::Info, ref + " is already imported");
-    } else {
-        ec.state.markSceneDirty();
-    }
+    FileImport::importSound(picked, ec.frame.resources, ec.state);
 }
 
 void AssetBrowserPanel::drawRenameModal(EditorContext& ec) {
     const bool renamed = renameDialog("Rename Asset", m_rename.open, m_renameBuf, sizeof(m_renameBuf));
     if (renamed) {
-        const AssetKind& kind = kindOf(m_rename.kind);
-        if (m_rename.key && kind.rename) {
-            kind.rename(ec, m_rename.key, m_rename.name, m_renameBuf);
+        const AssetKind* kind = kindOf(m_rename.kind);
+        if (m_rename.key && kind && kind->rename) {
+            kind->rename(ec, m_rename.key, m_rename.name, m_renameBuf);
         }
     }
     // Cleared by any close, so a dismissed dialog leaves no target armed.
@@ -1082,7 +1407,8 @@ void AssetBrowserPanel::drawDeleteModal(EditorContext& ec) {
         );
     }
 
-    const DialogResult r = dialogButtons(m_delete.open, "Delete");
+    const bool         destructive = true;
+    const DialogResult r = dialogButtons(m_delete.open, "Delete", nullptr, true, false, destructive);
     if (r == DialogResult::Confirm && m_delete.key) {
         // The voice holds the samples by shared_ptr: a removed clip would play on, unstoppable.
         if (m_delete.kind == AssetType::AudioClip && m_previewClip == AudioClipHandle{m_delete.key}) {
@@ -1090,9 +1416,9 @@ void AssetBrowserPanel::drawDeleteModal(EditorContext& ec) {
             m_previewVoice = 0;
             m_previewClip  = {};
         }
-        ec.materialPreviews.evict(previewKey(m_delete.kind, m_delete.key.index));
-        kindOf(m_delete.kind).remove(ec.frame.resources, m_delete.key);
-        ec.state.commands.clear();
+        ec.materialPreviews.evict(AssetEditors::thumbnailKey(m_delete.kind, m_delete.key.index));
+        if (const AssetKind* kind = kindOf(m_delete.kind)) kind->remove(ec.frame.resources, m_delete.key);
+        ec.state.forgetWorldState();
         ec.state.markSceneDirty();
     }
     if (r != DialogResult::None) m_delete.key = {};

@@ -67,7 +67,7 @@ void NewProjectDialog::draw(EditorState& state) {
 
     const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
     if (r == DialogResult::Confirm) {
-        // vkm makes it, as `vkm new` would from a terminal; the Build window shows how it went.
+        // vkm makes it, as `vkm new` would from a terminal; the Console's Build view shows how it went.
         state.requestVkm = {"new", dest.string(), "-t", m_source.filename().string()};
         state.requestVkmOpens = dest.string();
         m_nameBuffer[0] = '\0';

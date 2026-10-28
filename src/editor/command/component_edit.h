@@ -1,21 +1,52 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <tuple>
+#include <type_traits>
+#include <vector>
 
-#include "ecs/entity.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <nlohmann/json.hpp>
 
+#include "core/reflect.h"
 #include "core/system.h"
-
+#include "ecs/component/core/transform.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
+#include "ecs/entity.h"
+#include "ecs/scene.h"
 #include "command/command.h"
 #include "command/editor_commands.h"
 #include "command/command_host.h"
 #include "command/command_stack.h"
 #include "command/prefab_overrides.h"
+#include "system/physics/authoring/mesh_collider.h"
 
 namespace Vkm::Engine {
 
-class Scene;
 class ResourceManager;
+
+/**
+ * @brief @p into with @p from's authored fields: what the scene file saves.
+ *
+ * Session state - a voice started, a body asleep - stays @p into's, so a value copied
+ * in a session and pasted after Stop brings the tuning and nothing of the run. Only a
+ * reflected T names its authored fields.
+ *
+ * @param into The component as it is.
+ * @param from The component whose authored values are taken.
+ * @return The mix.
+ */
+template <typename T>
+T withAuthored(T into, const T& from) {
+    static_assert(Reflect::IS_REFLECTED<T>, "only a reflected component names its authored fields");
+    constexpr auto fields = Reflect::Traits<T>::fields();
+    std::apply([&](const auto&... field) { ((into.*(field.ptr) = from.*(field.ptr)), ...); }, fields);
+    return into;
+}
 
 /**
  * @brief The undo step a component edit on @p id deserves.
@@ -77,6 +108,194 @@ void pushEdit(
     const char* label
 ) {
     host.pushStep(editStep<T>(scene, resources, id, before, after, label));
+}
+
+/**
+ * @brief What an edit of a component leaves to work out, done on the live one.
+ *
+ * Called before the edit's step is cut, so the step holds what it settles. Nothing, but for
+ * the overloads below.
+ *
+ * @param component The component as edited.
+ * @param resources Resolves what it names.
+ */
+template <typename T>
+void settleEdit(T& component, const ResourceManager& resources) {
+    (void)component;
+    (void)resources;
+}
+
+/// A body woken, so it runs as edited rather than sleeping through a change nothing pushed it for.
+inline void settleEdit(Rigidbody& body, const ResourceManager&) {
+    Rigidbody::wake(body);
+}
+
+/// A mesh part's triangles built for the mesh it now names.
+inline void settleEdit(Collider& collider, const ResourceManager& resources) {
+    syncMeshCollider(collider, resources);
+}
+
+/**
+ * @brief The step for a Transform a clip's playhead posed, or null when it is none.
+ *
+ * The world is not stepping, so an editor shows the playhead by posing. Outside a session that is
+ * the saved Transform, so it is recorded; in one it is session state, and a step would drop the
+ * history Stop keeps.
+ *
+ * @param scene     Scene holding the entity.
+ * @param resources Resolves asset handles.
+ * @param id        The posed entity.
+ * @param before    Its Transform before the frame's pose.
+ * @param now       Its Transform now.
+ * @param playing   Whether a session holds the scene.
+ * @param label     History entry text; kept by pointer.
+ * @return The step, or null when nothing moved or a session holds the scene.
+ */
+inline std::unique_ptr<Command> poseStep(
+    Scene& scene,
+    ResourceManager& resources,
+    EntityId id,
+    const Transform& before,
+    const Transform& now,
+    bool playing,
+    const char* label
+) {
+    const bool posed = now.position != before.position || now.rotation != before.rotation
+        || now.scale != before.scale;
+    if (!posed || playing) return nullptr;
+    return editStep<Transform>(scene, resources, id, before, now, label);
+}
+
+/// Whether a field type is a list, which changedFields never shares.
+template <typename T>
+inline constexpr bool IS_LIST = false;
+template <typename T, typename A>
+inline constexpr bool IS_LIST<std::vector<T, A>> = true;
+
+/**
+ * @brief Which reflected fields of @p after differ from @p before in what the scene file writes.
+ *
+ * Each field is tried alone on a copy of @p before and the two written forms compared,
+ * so a field type needs no operator==. A field naming an entity is never counted: its
+ * value means the same only on the entity it was set on. Nor is a list (a collider's
+ * parts, LOD levels): it is shared whole or not at all, and one item edited must not
+ * replace another entity's whole list.
+ *
+ * @param before    The component before an edit.
+ * @param after     The component after it.
+ * @param resources Resolves asset handles, as a save does.
+ * @return Bit i for reflected field i, in Traits order.
+ */
+template <typename T>
+uint64_t changedFields(const T& before, const T& after, const ResourceManager& resources) {
+    uint64_t changed = 0;
+    if constexpr (Reflect::IS_REFLECTED<T>) {
+        constexpr auto fields = Reflect::Traits<T>::fields();
+        static_assert(std::tuple_size_v<decltype(fields)> <= 64, "a field mask is 64 bits");
+        const nlohmann::json was = PrefabOverrides::serialize(before, resources);
+        size_t index = 0;
+        const auto probe = [&](const auto& field) {
+            using Value = std::decay_t<decltype(before.*(field.ptr))>;
+            if constexpr (!std::is_same_v<Value, EntityId> && !IS_LIST<Value>) {
+                T one = before;
+                one.*(field.ptr) = after.*(field.ptr);
+                if (PrefabOverrides::serialize(one, resources) != was) changed |= uint64_t{1} << index;
+            }
+            ++index;
+        };
+        std::apply([&](const auto&... field) { (probe(field), ...); }, fields);
+    }
+    return changed;
+}
+
+/**
+ * @brief @p into with the fields of @p from that @p mask names; the rest stay its own.
+ *
+ * @param into The component taking them.
+ * @param from The component giving them.
+ * @param mask changedFields's answer.
+ * @return The mix.
+ */
+template <typename T>
+T withFields(T into, const T& from, uint64_t mask) {
+    if constexpr (Reflect::IS_REFLECTED<T>) {
+        size_t index = 0;
+        const auto take = [&](const auto& field) {
+            if (mask & (uint64_t{1} << index)) into.*(field.ptr) = from.*(field.ptr);
+            ++index;
+        };
+        std::apply([&](const auto&... field) { (take(field), ...); }, Reflect::Traits<T>::fields());
+    }
+    return into;
+}
+
+/**
+ * @brief The undo step for an edit of @p id's T, carried to every other selected entity holding a T.
+ *
+ * Each takes the fields the edit changed (changedFields) and keeps the rest of its own.
+ * One CompositeCommand, so a drag across several entities still merges into one step.
+ *
+ * @param scene     Scene holding the entities.
+ * @param resources Resolves asset handles.
+ * @param selection The selected entities; @p id is one of them.
+ * @param id        The entity edited.
+ * @param before    Its T before the edit.
+ * @param after     Its T now, already applied.
+ * @param label     History entry text; kept by pointer.
+ * @return The step: editStep's alone when no other selected entity holds a T.
+ */
+template <typename T>
+std::unique_ptr<Command> editSelectionStep(
+    Scene& scene,
+    ResourceManager& resources,
+    const std::vector<EntityId>& selection,
+    EntityId id,
+    const T& before,
+    const T& after,
+    const char* label
+) {
+    std::vector<EntityId> others;
+    for (const EntityId other : selection) {
+        if (other != id && scene.isAlive(other) && scene.has<T>(other)) others.push_back(other);
+    }
+    if (others.empty()) return editStep<T>(scene, resources, id, before, after, label);
+
+    auto step = std::make_unique<CompositeCommand>(label);
+    step->add(editStep<T>(scene, resources, id, before, after, label));
+    const uint64_t mask = changedFields(before, after, resources);
+    if (mask == 0) return step;
+    for (const EntityId other : others) {
+        T&      value = scene.get<T>(other);
+        const T was   = value;
+        value = withFields(value, after, mask);
+        settleEdit(value, resources);
+        step->add(editStep<T>(scene, resources, other, was, value, label));
+    }
+    return step;
+}
+
+/**
+ * @brief @p other with what a Transform edit moved: position and scale per axis, and the
+ *        turn the edited entity took.
+ *
+ * A move of one axis across a selection sets that axis alone, so nothing is stacked; a
+ * turn turns each by the same amount, never re-reading its angles, which would flip one
+ * past a right angle.
+ *
+ * @param other  The Transform taking the edit.
+ * @param before The edited entity's before the edit.
+ * @param after  The edited entity's now.
+ * @return @p other, the moved axes set and the turn applied.
+ */
+inline Transform withMovedAxes(Transform other, const Transform& before, const Transform& after) {
+    for (int axis = 0; axis < 3; ++axis) {
+        if (after.position[axis] != before.position[axis]) other.position[axis] = after.position[axis];
+        if (after.scale[axis] != before.scale[axis])       other.scale[axis]    = after.scale[axis];
+    }
+    if (after.rotation != before.rotation) {
+        other.rotation = glm::normalize(after.rotation * glm::inverse(before.rotation) * other.rotation);
+    }
+    return other;
 }
 
 /**

@@ -25,7 +25,10 @@ namespace CameraActions {
     inline constexpr const char* MOVE_RIGHT   = "Camera/Right";    ///< Axis: +right, -left.
     inline constexpr const char* MOVE_UP      = "Camera/Up";       ///< Axis: +up, -down.
     inline constexpr const char* BOOST        = "Camera/Boost";    ///< Held: move faster.
-    inline constexpr const char* LOOK         = "Camera/Look";     ///< Held: steer and zoom.
+    inline constexpr const char* LOOK         = "Camera/Look";     ///< Held: steer; the wheel sets fly speed.
+    inline constexpr const char* ORBIT_KEY    = "Camera/OrbitKey"; ///< Held: ORBIT orbits the focus.
+    inline constexpr const char* ORBIT        = "Camera/Orbit";    ///< Pressed under ORBIT_KEY: orbit.
+    inline constexpr const char* PAN          = "Camera/Pan";      ///< Held: slide the view across.
 } // namespace CameraActions
 
 /**
@@ -66,8 +69,8 @@ class CameraControllerSystem : public System {
          * @brief Tunable feel parameters for movement, look, and zoom.
          */
         struct Settings {
-            /// Units dollied per wheel notch while looking; orthographic zooms by the same dolly.
-            float zoomSensitivity  = 0.04f;
+            /// Share of the distance to the focus a wheel notch dollies; orthographic zooms as much.
+            float dollyStep        = 0.15f;
             float lookSensitivity  = 0.002f;    ///< Multiplier for yaw/pitch rotation.
             float moveSpeed        = 10.0f;     ///< Units per second.
             float speedBoost       = 3.0f;      ///< Move multiplier while Boost is held.
@@ -78,14 +81,29 @@ class CameraControllerSystem : public System {
             /// Furthest either pitch limit may reach from the horizon, in degrees.
             static constexpr float PITCH_LIMIT = 90.0f;
 
+            /// Fly speed multiplied or divided per wheel notch while looking.
+            static constexpr float SPEED_STEP  = 1.25f;
+            /// Furthest the wheel takes the fly speed from moveSpeed, either way.
+            static constexpr float SPEED_RANGE = 16.0f;
+
+            // What the Preferences window offers, and so all a hand-edited file is held to.
+            static constexpr float MIN_DOLLY_STEP  = 0.01f;
+            static constexpr float MAX_DOLLY_STEP  = 0.5f;
+            static constexpr float MIN_LOOK        = 0.0001f;
+            static constexpr float MAX_LOOK        = 0.01f;
+            static constexpr float MIN_MOVE_SPEED  = 0.1f;
+            static constexpr float MAX_MOVE_SPEED  = 200.0f;
+            static constexpr float MIN_SPEED_BOOST = 1.0f;
+            static constexpr float MAX_SPEED_BOOST = 20.0f;
+
             /**
-             * @brief @p settings with each pitch limit on its own side of the horizon.
+             * @brief @p settings held to what the Preferences window could have set.
              *
-             * The pitch clamp is undefined when low exceeds high, and the file is
-             * hand-editable.
+             * The file is hand-editable, and the pitch clamp is undefined when low exceeds high.
              *
              * @param settings As read.
-             * @return minPitch in [-PITCH_LIMIT, 0], maxPitch in [0, PITCH_LIMIT].
+             * @return Each field within its MIN_ and MAX_; minPitch in [-PITCH_LIMIT, 0], maxPitch
+             *         in [0, PITCH_LIMIT].
              */
             static Settings bounded(Settings settings);
         };
@@ -113,7 +131,17 @@ class CameraControllerSystem : public System {
         Settings&       getSettings()       { return m_settings; }
         const Settings& getSettings() const { return m_settings; }
         void setSettings(const Settings& s) { m_settings = s; }
-        bool isLooking() const { return m_looking; }
+        /// Whether a look, orbit or pan holds the cursor.
+        bool isNavigating() const { return m_gesture != Gesture::None; }
+
+        /// Whether an orbit holds the cursor, so the Alt it was started with is not a menu tap.
+        bool isOrbiting() const { return m_gesture == Gesture::Orbit; }
+
+        /// What the wheel has made of moveSpeed this session.
+        float speedScale() const { return m_speedScale; }
+
+        /// Seconds the fly speed is still worth showing for, since the wheel last changed it.
+        float speedShownFor() const { return m_speedShown; }
 
         /**
          * @brief Whether the viewport is the editor's this frame, or the game's.
@@ -152,6 +180,12 @@ class CameraControllerSystem : public System {
         EntityId lookingThrough() const { return m_view.through; }
 
         const EditorViewpoint& viewpoint() const { return m_viewpoint; }
+
+        /// The view's vertical field of view, in radians.
+        float fieldOfView() const { return m_view.camera.fovY; }
+
+        /// From the viewpoint to what it is on: what it last framed, carried as it moves.
+        float focusDistance() const { return m_focusDistance; }
 
         /**
          * @brief Switch the projection, keeping what is in focus the same size.
@@ -220,6 +254,17 @@ class CameraControllerSystem : public System {
         );
 
     private:
+        /// What the pointer is doing to the view; each runs until its own button lets go.
+        enum class Gesture : uint8_t {
+            None,
+            Look,   ///< Right button: turn in place and fly.
+            Orbit,  ///< Alt + left button: turn about the focus.
+            Pan,    ///< Middle button: slide across, the focus with it.
+        };
+
+        /// The gesture this frame's buttons hold; one held keeps going.
+        Gesture nextGesture() const;
+
         /**
          * @brief Apply this frame's look, dolly and move to the viewpoint.
          *
@@ -244,6 +289,24 @@ class CameraControllerSystem : public System {
          */
         void dolly(float dolly, const glm::vec3& forward);
 
+        /**
+         * @brief Turn the view about the focus by a pointer move, the focus staying put.
+         *
+         * @param turn Pointer move in pixels.
+         */
+        void orbit(const glm::vec2& turn);
+
+        /**
+         * @brief Slide the view across so the focus follows the pointer.
+         *
+         * @param drag       Pointer move in pixels.
+         * @param viewPixels Height of the viewport in pixels.
+         */
+        void pan(const glm::vec2& drag, float viewPixels);
+
+        /// Turn by a pointer move, within the pitch limits.
+        void turn(const glm::vec2& turn);
+
         /// tan(fovY / 2): the view's half-height one unit in front of it.
         float halfHeightPerUnit() const;
 
@@ -256,10 +319,12 @@ class CameraControllerSystem : public System {
         Settings m_settings;
 
         float m_focusDistance = 10.0f;  ///< From the viewpoint to its focus; see setOrthographic.
+        float m_speedScale    = 1.0f;   ///< See speedScale.
+        float m_speedShown    = 0.0f;   ///< See speedShownFor.
 
-        bool m_looking   = false;  ///< Look gesture held; drives the cursor mode.
-        bool m_active    = true;   ///< False while stood down; see setActive.
-        bool m_axisOrtho = false;  ///< Orthographic because of viewAlongAxis; turning ends it.
+        Gesture m_gesture   = Gesture::None;  ///< Drives the cursor mode.
+        bool    m_active    = true;           ///< False while stood down; see setActive.
+        bool    m_axisOrtho = false;          ///< Orthographic because of viewAlongAxis; turning ends it.
 };
 
 } // namespace Vkm::Engine

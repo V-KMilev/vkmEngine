@@ -18,6 +18,8 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "io/project.h"
+#include "io/project_paths.h"
 #include "system/render/render_system.h"
 
 namespace Vkm::Engine {
@@ -45,7 +47,7 @@ bool gridToggle(const char* name, const ImVec4& color, const ImVec4& hover, bool
     return clicked;
 }
 
-// The grid's switches, one per axis in its own colour; two on show their plane.
+// The grid's switches, one per axis in its own color; two on show their plane.
 void gridRow(RenderSettings& s) {
     struct Toggle {
         const char* name;
@@ -71,21 +73,93 @@ void gridRow(RenderSettings& s) {
 
 } // namespace
 
-void RenderSettingsPanel::draw(EditorContext& ec) {
+void RenderSettingsPanel::keepInProject(EditorContext& ec, bool playing) {
+    const std::filesystem::path root = ProjectPaths::projectRoot();
+    if (root.empty()) return;
+    // What the project opened with is what its file holds.
+    if (!m_savedKnown || root != m_savedRoot) {
+        m_saved      = ec.frame.render;
+        m_savedRoot  = root;
+        m_savedKnown = true;
+        return;
+    }
+    // Not mid-drag, which would write the file every frame of it.
+    if (playing || ImGui::IsAnyItemActive() || sameProjectRender(ec.frame.render, m_saved)) return;
+    if (!saveProjectRender(root, ec.frame.render)) {
+        const char* failed = "Could not write the render settings to project.json";
+        ec.state.pushToast(ToastKind::Error, failed);
+    }
+    // Once either way: a file that will not take them is not asked again until the next edit.
+    m_saved = ec.frame.render;
+}
+
+void RenderSettingsPanel::endPreview(EditorContext& ec) {
+    ec.state.endRenderPreview(ec.frame.render);
+    m_preview.reset();
+}
+
+void RenderSettingsPanel::drawPreview(EditorContext& ec, bool playing) {
+    static const char* const TIERS[] = {"Project", "Low", "Medium", "High", "Ultra"};
+    static_assert(std::size(TIERS) == static_cast<size_t>(GraphicsPreset::Count) + 1, "a row per tier");
+    int shown = m_preview ? static_cast<int>(*m_preview) + 1 : 0;
+    ImGui::BeginDisabled(playing);
+    const bool picked = propIndexCombo(
+        "Preview Tier",
+        TIERS,
+        static_cast<int>(std::size(TIERS)),
+        &shown,
+        "See the scene as a player's quality tier draws it (withPreset over these settings); "
+            "nothing is saved while one shows"
+    );
+    ImGui::EndDisabled();
+    if (picked) {
+        std::optional<RenderSettings>& held = ec.state.renderPreviewHeld;
+        if (!held) held = ec.frame.render;
+        if (shown == 0) {
+            endPreview(ec);
+        } else {
+            m_preview       = static_cast<GraphicsPreset>(shown - 1);
+            ec.frame.render = withPreset(*held, *m_preview);
+        }
+    }
+    if (m_preview) {
+        ImGui::TextColored(
+            EditorStyle::WARNING,
+            "Showing the %s tier. The settings below are the project's, put back on Project.",
+            TIERS[shown]
+        );
+    }
+}
+
+void RenderSettingsPanel::draw(EditorContext& ec, bool playing) {
     EditorState& state = ec.state;
+
+    // The window's own: closing it shows the project's settings again, as Play does (renderPreviewHeld).
+    if (!state.renderPreviewHeld) m_preview.reset();
+    if (m_preview && !state.showRenderSettings) endPreview(ec);
 
     const ImVec2 size(EditorStyle::px(360.0f), EditorStyle::px(480.0f));
     if (!beginToolWindow("Render Settings", state.showRenderSettings, size)) return;
 
-    RenderSettings& s = ec.frame.render;
+    drawPreview(ec, playing);
+    const bool previewing = m_preview.has_value();
+    ImGui::BeginDisabled(previewing);
+
+    RenderSettings& s = previewing ? *state.renderPreviewHeld : ec.frame.render;
 
     if (beginComponentCard("Output", EditorStyle::Accent::QUALITY, true)) {
         propEnumCombo("Debug View", s.renderMode);
+        propCheckbox(
+            "Show Frame Rate",
+            &s.showFrameRate,
+            "The frames a second and each one's milliseconds, at the top right of the game's view; "
+            "the editor shows its own while its panels do"
+        );
 
         // Unlike the debug view, this is stored in project.json and the game renders with it.
         const char* tonemapTooltip =
             "How linear HDR is landed into the display range. Reinhard "
-            "desaturates bright colour; ACES rolls it off warm; Khronos "
+            "desaturates bright color; ACES rolls it off warm; Khronos "
             "PBR Neutral holds an object's authored albedo as it brightens";
         propEnumCombo("Tonemap", s.tonemap, tonemapTooltip);
         const char* exposureTooltip =
@@ -185,7 +259,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             0.01f,
             RenderSettings::MIN_GTAO_RADIUS,
             RenderSettings::MAX_GTAO_RADIUS,
-            "%.2f",
+            "%.2f m",
             "World-space sample radius"
         );
         propSlider("Intensity", &s.gtaoIntensity, 0.0f, 3.0f, "%.2f", "Occlusion strength");
@@ -209,7 +283,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         );
         const char* thresholdTooltip =
             "Bright-pass threshold on a pixel's brightest channel (linear HDR), so a saturated "
-            "colour blooms as readily as white";
+            "color blooms as readily as white";
         propSlider("Threshold", &s.bloomThreshold, 0.0f, 4.0f, "%.2f", thresholdTooltip);
         propSlider("Knee", &s.bloomKnee, 0.0f, 1.0f, "%.2f", "Soft-knee width around the threshold");
         propSlider(
@@ -271,7 +345,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             0.5f,
             1.0f,
             500.0f,
-            "%.1f",
+            "%.1f m",
             "World-space length a reflection ray is traced before it gives up"
         );
         propCheckbox(
@@ -317,7 +391,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             5.0f,
             1.0f,
             10000.0f,
-            "%.0f",
+            "%.0f m",
             "Entities beyond this camera distance are culled"
         );
         propSlider(
@@ -361,6 +435,14 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         endDialog();
     }
 
+    ImGui::EndDisabled();
+    // Unlike Project Settings, which waits for Save: say so where the edits are made.
+    if (playing) {
+        ImGui::TextDisabled("In a session these are the game's; Stop puts the project's back.");
+    } else if (!previewing) {
+        ImGui::TextDisabled("Saved into project.json as each edit ends.");
+    }
+    if (!previewing) keepInProject(ec, playing);
     ImGui::End();
 }
 

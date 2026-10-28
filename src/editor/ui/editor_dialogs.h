@@ -86,6 +86,7 @@ inline bool beginToolWindow(const char* name, bool& show, ImVec2 size) {
  * @param altLabel       Third action left of Cancel, or nullptr.
  * @param confirmEnabled Gates the button and both Enter paths.
  * @param fieldCommitted A text field here returned true from EnterReturnsTrue this frame.
+ * @param destructive    The confirm cannot be undone: drawn in the danger color.
  * @return What fired this frame (None while the dialog stays open).
  */
 inline DialogResult dialogButtons(
@@ -93,7 +94,8 @@ inline DialogResult dialogButtons(
     const char* confirmLabel,
     const char* altLabel,
     bool confirmEnabled = true,
-    bool fieldCommitted = false
+    bool fieldCommitted = false,
+    bool destructive = false
 ) {
     const ImGuiStyle& style = ImGui::GetStyle();
 
@@ -120,9 +122,12 @@ inline DialogResult dialogButtons(
     if (ImGui::Button("Cancel", ImVec2(bw, 0))) r = DialogResult::Cancel;
     ImGui::SameLine();
     ImGui::BeginDisabled(!confirmEnabled);
-    ImGui::PushStyleColor(ImGuiCol_Button,        EditorStyle::ACCENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  EditorStyle::ACCENT);
+    // What cannot be taken back says so in its color.
+    const ImVec4& tone  = destructive ? EditorStyle::DANGER : EditorStyle::ACCENT;
+    const ImVec4& hover = destructive ? EditorStyle::DANGER_HOV : EditorStyle::ACCENT_HOV;
+    ImGui::PushStyleColor(ImGuiCol_Button,        tone);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  tone);
     if (ImGui::Button(confirmLabel, ImVec2(bw, 0))) r = DialogResult::Confirm;
     ImGui::PopStyleColor(3);
     ImGui::EndDisabled();

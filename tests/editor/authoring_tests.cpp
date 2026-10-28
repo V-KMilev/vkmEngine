@@ -9,6 +9,7 @@
 #include <string>
 
 #include "ecs/component/core/net_local.h"
+#include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/hierarchy_operations.h"
@@ -16,9 +17,15 @@
 #include "resource/resource_manager.h"
 #include "system/render/probe_fill.h"
 
+#include "session/file_import.h"
+#include "copy_parent.h"
+#include "editor_state.h"
+#include "mesh_pick.h"
+#include "overlays/click_target.h"
 #include "overlays/gizmo_snap.h"
-#include "overlays/mesh_pick.h"
+#include "overlays/ui_rect_drag.h"
 #include "session/content_pack.h"
+#include "session/log_tail.h"
 #include "ui/field_label.h"
 
 namespace {
@@ -26,6 +33,202 @@ namespace {
 // What the bake and the editor compute and then trust unchecked: a badly repaired probe grid
 // is a glowing wall, a bad snap a drifting transform, a bad pick the room instead
 // of the crate in it.
+
+// A UI element's rect drags as other editors': its body moves it, an edge resizes it with
+// the opposite side held where it stood, whatever the pivot.
+void testAUIRectResizesFromItsHeldSide() {
+    std::printf("Dragging a UI element's rect:\n");
+
+    UIElement start;  // pivot at the centre, 100 x 100
+    const auto leftEdge  = [](const UIElement& e) { return e.position.x - e.pivot.x * e.size.x; };
+    const auto rightEdge = [&](const UIElement& e) { return leftEdge(e) + e.size.x; };
+
+    const UIElement wider = dragRect(start, RectHandle::Right, {20.0f, 0.0f});
+    check(
+        "its right edge pulled, the left stays",
+        wider.size.x == 120.0f && leftEdge(wider) == leftEdge(start)
+    );
+    const UIElement narrower = dragRect(start, RectHandle::Left, {30.0f, 0.0f});
+    check(
+        "  its left pushed in, the right stays",
+        narrower.size.x == 70.0f && rightEdge(narrower) == rightEdge(start)
+    );
+    const UIElement corner = dragRect(start, RectHandle::BottomRight, {10.0f, 20.0f});
+    check("a corner resizes both ways", corner.size == glm::vec2(110.0f, 120.0f));
+    const UIElement moved = dragRect(start, RectHandle::Body, {3.4f, -7.6f});
+    check(
+        "its body moves it, to whole pixels",
+        moved.position == glm::vec2(3.0f, -8.0f) && moved.size == start.size
+    );
+    check("never narrower than a pixel", dragRect(start, RectHandle::Left, {500.0f, 0.0f}).size.x == 1.0f);
+
+    // Stretched across its parent, size is an inset: it goes on below a pixel, never jumps to one.
+    UIElement stretched;
+    stretched.relativeSize = {1.0f, 0.0f};
+    stretched.size.x       = -40.0f;
+    check(
+        "  but a stretched one's inset goes on growing",
+        dragRect(stretched, RectHandle::Left, {10.0f, 0.0f}).size.x == -50.0f
+    );
+}
+
+// The Console follows the log file as the logger writes it: each line split where vkmLog
+// joins it, a half-written line held for its end, and nothing from before the run.
+void testTheConsoleFollowsTheLog() {
+    std::printf("What the Console reads of the log:\n");
+    namespace fs = std::filesystem;
+
+    const LogLine tagged =
+        parseLogLine("[2026-10-20 05:17:33.783] [VKM-ENGINE] [WINDOW] [WARNING] FPS cap = 15");
+    check(
+        "a line is split into its time, category, level and message",
+        tagged.time == "2026-10-20 05:17:33.783" && tagged.category == "WINDOW"
+            && tagged.severity == LogSeverity::Warning && tagged.text == "FPS cap = 15"
+    );
+    const LogLine bare = parseLogLine("[2026-10-20 05:17:33.783] [VKM-ENGINE] [ERROR] [x] in the text");
+    check(
+        "  one without a category, its message's own brackets kept",
+        bare.category.empty() && bare.severity == LogSeverity::Error && bare.text == "[x] in the text"
+    );
+    check("a line of another shape is kept whole", parseLogLine("plain words").text == "plain words");
+    const LogLine quoting = parseLogLine("[t] [S] [INFO] [ERROR] was the word");
+    check(
+        "a message quoting a level keeps the line's own",
+        quoting.severity == LogSeverity::Info && quoting.text == "[ERROR] was the word"
+    );
+
+    const fs::path file = runScratch() / "vkm_console_test.log";
+    std::error_code ec;
+    fs::remove(file, ec);
+    std::ofstream(file) << "[t] [S] [INFO] before the run\n";
+    LogTail tail;
+    tail.open(file, fs::file_size(file, ec));
+    std::ofstream(file, std::ios::app) << "[t] [S] [INFO] first\n[t] [S] [DEBUG] half";
+    tail.poll();
+    check(
+        "only what the run wrote arrives, a half line held back",
+        tail.lines().size() == 1 && tail.lines().front().text == "first"
+    );
+    std::ofstream(file, std::ios::app) << " done\n";
+    tail.poll();
+    check(
+        "  and joined when its end is written",
+        tail.lines().size() == 2 && tail.lines().back().text == "half done"
+    );
+
+    const size_t debugs = tail.counts()[static_cast<size_t>(LogSeverity::Debug)];
+    check("  each severity counted as it comes", debugs == 1);
+    const uint64_t seen = tail.revision();
+    tail.clear();
+    check(
+        "  and forgotten with the lines, the change told",
+        tail.counts()[static_cast<size_t>(LogSeverity::Info)] == 0 && tail.revision() != seen
+    );
+
+    std::ofstream(file, std::ios::trunc) << "[t] [S] [INFO] again\n";
+    tail.poll();
+    check("a file started over is read from its start", tail.lines().back().text == "again");
+
+    const uint64_t followed = tail.revision();
+    tail.open(file, fs::file_size(file, ec));
+    const size_t infos = tail.counts()[static_cast<size_t>(LogSeverity::Info)];
+    check(
+        "opened again, it keeps nothing of what it followed, the change told",
+        tail.lines().empty() && infos == 0 && tail.dropped() == 0 && tail.revision() != followed
+    );
+    fs::remove(file, ec);
+
+    // A line vkmLog itself writes, into the file the run logs to (tests/main.cpp), read back whole:
+    // its format is vkmLog's, which the split restates.
+    const fs::path ran = fs::temp_directory_path() / "vkm_engine_tests.log";
+    LogTail logged;
+    logged.open(ran, fs::file_size(ran, ec));
+    Vkm::Log::Logger::getInstance().log(Vkm::Log::LogLevel::FATAL, nullptr, "ROUND", "a [held] line %d", 7);
+    logged.poll();
+    const bool read = !logged.lines().empty() && logged.lines().back().severity == LogSeverity::Fatal
+        && logged.lines().back().category == "ROUND" && logged.lines().back().text == "a [held] line 7"
+        && logged.lines().back().time.size() == std::string("YYYY-MM-DD HH:MM:SS.mmm").size();
+    check("a line vkmLog writes comes back as it was logged", read);
+}
+
+// A click on a placed thing selects the thing, not the part under the pointer; the next
+// click, made inside it, goes one level in.
+void testAClickSelectsThePlacedThingBeforeItsParts() {
+    std::printf("What a viewport click selects inside a prefab instance:\n");
+
+    Scene scene;
+    const EntityId house = scene.createEntity();
+    const EntityId door  = scene.createEntity();
+    const EntityId knob  = scene.createEntity();
+    const EntityId loose = scene.createEntity();
+    scene.add(house, PrefabInstance{});
+    scene.add(door, PrefabInstance{});  // a prefab nested in the house
+    HierarchyOperations::setParent(scene, door, house);
+    HierarchyOperations::setParent(scene, knob, door);
+
+    check("a part selects the outermost instance first", clickTarget(scene, knob, {}) == house);
+    check("  then the instance nested in it", clickTarget(scene, knob, house) == door);
+    check("  then the part itself", clickTarget(scene, knob, door) == knob);
+    check("  and stays on it", clickTarget(scene, knob, knob) == knob);
+    check("from another thing, it starts at the outside again", clickTarget(scene, knob, loose) == house);
+    check("an entity of no instance is itself", clickTarget(scene, loose, house) == loose);
+}
+
+// A copy taken from inside a prefab instance, duplicated or pasted back, lands outside it: the
+// scene does not store an instance's interior, so one landed there would be gone at the next save.
+void testACopyNeverLandsInsideAnInstance() {
+    std::printf("Where a copy of a part of a prefab instance lands:\n");
+
+    Scene scene;
+    const EntityId house = scene.createEntity();
+    const EntityId door  = scene.createEntity();
+    const EntityId knob  = scene.createEntity();
+    const EntityId shelf = scene.createEntity();
+    scene.add(house, PrefabInstance{});
+    HierarchyOperations::setParent(scene, door, house);
+    HierarchyOperations::setParent(scene, knob, door);
+
+    // The knob's copy asks for the knob's parent, as Paste in the same world and Duplicate do.
+    const EntityId knobCopyParent = copyParent(scene, door);
+    check("a part's copy is not put inside the instance", !Prefab::instanceRootOf(scene, knobCopyParent));
+    check("  it stands at the root", !knobCopyParent);
+    check("nor under the instance root itself", !copyParent(scene, house));
+    check("a copy under an ordinary parent keeps it", copyParent(scene, shelf) == shelf);
+    // The one rule a create, a re-parent and a copy all ask.
+    check("a part of an instance takes no new child", refusesNewChild(scene, knob));
+    check("  nor does the instance root", refusesNewChild(scene, house));
+    check("  an ordinary entity does", !refusesNewChild(scene, shelf));
+    check("  as does the root of the scene", !refusesNewChild(scene, EntityId{}));
+    scene.destroyEntity(shelf);
+    check("  and goes to the root once that parent is gone", !copyParent(scene, shelf));
+    check("a root's copy stays a root", !copyParent(scene, EntityId{}));
+}
+
+// A click on a toast opens the Console view its message points at, which need not be its kind's;
+// the pointer in the message is written from that view, so the two cannot disagree.
+void testAToastOpensTheViewItNames() {
+    std::printf("Which Console view a click on a toast opens:\n");
+
+    EditorState state;
+    state.pushToast(ToastKind::Error, "vkm build failed", ConsoleView::Build);
+    check("a failed build's opens the Build", state.toasts.back().opens() == ConsoleView::Build);
+    check(
+        "  and its message says so",
+        state.toasts.back().message == "vkm build failed - see the Console's Build"
+    );
+    state.pushToast(ToastKind::Error, "[Script] Door", ConsoleView::Errors);
+    check("  one the project caused opens the Errors", state.toasts.back().opens() == ConsoleView::Errors);
+    state.pushToast(ToastKind::Warning, "vkm build is still running", ConsoleView::Build);
+    check("  a warning naming the Build opens it", state.toasts.back().opens() == ConsoleView::Build);
+    // An editor operation's failure is the log's to explain; Errors holds what the project caused.
+    state.pushToast(ToastKind::Error, "Save failed: scene.json");
+    check("one naming none opens the Log, an error too", state.toasts.back().opens() == ConsoleView::Log);
+    check("  and its message is left as it was", state.toasts.back().message == "Save failed: scene.json");
+    state.pushToast(ToastKind::Warning, "Stop discarded the edits made during play");
+    check("  as does a warning", state.toasts.back().opens() == ConsoleView::Log);
+    state.pushToast(ToastKind::Info, "Saved");
+    check("  and an info one opens nothing", !state.toasts.back().opens());
+}
 
 // The repair of a refused probe as weights, found from the verdicts alone: a probe inside a wall
 // captures the far room, and the fill applies them to every grid the bake and its relights make.
@@ -197,7 +400,7 @@ void testTheDefaultLayoutNamesTabsAsImGuiDoes() {
 }
 
 // A behavior field's name is its serialized key; the inspector shows it as words,
-// and decides by it whether a vector is a colour.
+// and decides by it whether a vector is a color.
 void testABehaviorFieldIsLabelledInWords() {
     std::printf("How a behavior field is labelled:\n");
 
@@ -208,9 +411,42 @@ void testABehaviorFieldIsLabelledInWords() {
     check("  a digit ends a word", fieldLabel("lod2Bias") == "Lod2 Bias");
     check("  an underscore is a space", fieldLabel("jump_height") == "Jump Height");
 
-    check("a name ending in color is a colour", namesAColor("tintColor") && namesAColor("color"));
+    check("a field whose name ends in color is a color", namesAColor("tintColor") && namesAColor("color"));
     check("  and so is one in capitals", namesAColor("COLOR"));
     check("  and nothing else is", !namesAColor("colorful") && !namesAColor("velocity"));
+}
+
+// A pack is walked as a menu asks for it: a folder in it that cannot be read is a refusal said, not
+// an exception out of the frame.
+void testAPackWithAFolderItCannotReadIsRefused() {
+    std::printf("A content pack holding a folder that cannot be read:\n");
+    ScratchProject project("unreadable_pack");
+    const std::filesystem::path pack = project.root() / "pack";
+    std::error_code ec;
+    std::filesystem::create_directories(pack / "prefabs" / "shut", ec);
+    std::ofstream(pack / "prefabs" / "open.json") << "{}";
+    std::filesystem::permissions(pack / "prefabs" / "shut", std::filesystem::perms::none, ec);
+    // Only where the bits take reading away: on Windows they mark the folder read-only, no more.
+    std::error_code shut;
+    std::filesystem::directory_iterator probe(pack / "prefabs" / "shut", shut);
+    if (!shut) {
+        std::filesystem::permissions(pack / "prefabs" / "shut", std::filesystem::perms::owner_all, ec);
+        std::printf("      (this file system keeps the folder readable - skipped)\n");
+        return;
+    }
+
+    std::string error;
+    int         brought = 0;
+    bool        threw   = false;
+    try {
+        brought = ContentPack::bringInto(pack, project.root() / "into", error);
+        ContentPack::prefabsIn(pack, "shut");
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    std::filesystem::permissions(pack / "prefabs" / "shut", std::filesystem::perms::owner_all, ec);
+    check("nothing is thrown", !threw);
+    check("  and the bring-in is refused, with a reason", brought == -1 && !error.empty());
 }
 
 // Create > Effect brings the engine's effects pack in whole the first time and leaves the project's
@@ -262,13 +498,88 @@ void testAnEffectBringsTheEnginesPackInOnce() {
     check("  leaving a file the project edited as it is", held == "mine");
 }
 
+// A file dropped from outside the project is copied in where its kind's Import looks: a glTF in a
+// folder of its own with the buffer and image it names, an image beside the textures. Dropped again
+// it is the same copy; another file of its name takes a free one; one inside stays where it is.
+void testADroppedFileIsBroughtIntoTheProject() {
+    std::printf("A file dropped from outside the project:\n");
+
+    namespace fs = std::filesystem;
+    const ScratchProject project("vkm_file_drop");
+    const fs::path outside = runScratch() / "vkm_file_drop_outside";
+    std::error_code ec;
+    fs::remove_all(outside, ec);
+    fs::create_directories(outside / "maps", ec);
+    const auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path) << text; };
+    write(
+        outside / "boat.gltf",
+        R"({"buffers":[{"uri":"boat.bin"}],"images":[{"uri":"maps/hull%20paint.png"}]})"
+    );
+    write(outside / "boat.bin", "bytes");
+    write(outside / "maps" / "hull paint.png", "pixels");
+    write(outside / "sail.png", "canvas");
+
+    std::string error;
+    const fs::path model = FileImport::intoProject(outside / "boat.gltf", error);
+    const fs::path folder = ProjectPaths::assets() / "models" / "boat";
+    check("a glTF goes into a folder of its own", model == folder / "boat.gltf" && fs::exists(model));
+    check(
+        "  with the buffer and the image it names",
+        fs::exists(folder / "boat.bin") && fs::exists(folder / "maps" / "hull paint.png")
+    );
+    check("  and nothing left behind", error.empty());
+    check(
+        "  dropped again, it is the same copy",
+        FileImport::intoProject(outside / "boat.gltf", error) == model
+    );
+
+    const fs::path image = FileImport::intoProject(outside / "sail.png", error);
+    check("an image goes beside the textures", image == ProjectPaths::assets() / "textures" / "sail.png");
+    write(outside / "sail.png", "another canvas");
+    check(
+        "  and another of its name takes a free one",
+        FileImport::intoProject(outside / "sail.png", error)
+            == ProjectPaths::assets() / "textures" / "sail_2.png"
+    );
+    check("a file inside the project stays where it is", FileImport::intoProject(image, error) == image);
+    check(
+        "a kind the editor does not read is refused",
+        FileImport::intoProject(outside / "boat.bin", error).empty() && !error.empty()
+    );
+
+    // From anywhere: what a glTF names in a shape glTF does not is passed over, not thrown on.
+    write(outside / "odd.gltf", R"({"images":[3, {"uri": 5}, {"uri": "half%zz.png"}], "buffers": "x"})");
+    bool threw = false;
+    fs::path odd;
+    error.clear();
+    try {
+        odd = FileImport::intoProject(outside / "odd.gltf", error);
+    } catch (...) {
+        threw = true;
+    }
+    check("a glTF naming its files oddly is still brought in", !threw && !odd.empty());
+    check("  and says what it could not bring", !error.empty());
+    write(outside / "broken.gltf", "{ not json");
+    error.clear();
+    const fs::path broken = FileImport::intoProject(outside / "broken.gltf", error);
+    check("  as is one that does not parse, alone", !broken.empty());
+    fs::remove_all(outside, ec);
+}
+
 } // namespace
 
 void runAuthoringTests() {
     testTheRepairIsABlendOfTrustedProbes();
+    testAClickSelectsThePlacedThingBeforeItsParts();
+    testACopyNeverLandsInsideAnInstance();
+    testAToastOpensTheViewItNames();
+    testTheConsoleFollowsTheLog();
+    testAUIRectResizesFromItsHeldSide();
     testAGizmoSnapStepsFromWhereTheDragBegan();
     testAPickLandsOnTrianglesNotOnABox();
     testTheDefaultLayoutNamesTabsAsImGuiDoes();
     testABehaviorFieldIsLabelledInWords();
     testAnEffectBringsTheEnginesPackInOnce();
+    testAPackWithAFolderItCannotReadIsRefused();
+    testADroppedFileIsBroughtIntoTheProject();
 }

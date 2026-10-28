@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 namespace Vkm::Engine {
 
 struct EditorContext;
@@ -28,16 +30,36 @@ class EditorMenuBar {
         void draw(EditorContext& ec, SceneIOController& sceneIO);
 
     private:
+        /// Steps listed on each side of where the scene stands.
+        static constexpr size_t HISTORY_SHOWN = 30;
+
+    private:
         /**
-         * @brief The duplicate / delete / deselect items.
+         * @brief The Edit menu's selection items: cut, copy, paste, duplicate, delete, select all
+         *        and deselect.
          *
          * @param ec Per-frame editor context.
          */
         void drawSelectionItems(EditorContext& ec);
 
+        /**
+         * @brief The Entity menu's placing items: align with the view or it with the entity, and drop
+         *        to the ground.
+         *
+         * @param ec Per-frame editor context.
+         */
+        void drawPlacingItems(EditorContext& ec);
+
         void drawFileMenu(EditorContext& ec, SceneIOController& sceneIO);
 
         void drawEditMenu(EditorContext& ec);
+
+        /**
+         * @brief Edit > History: every step around where the scene stands, to walk to with a click.
+         *
+         * @param ec Supplies the history and the scene it walks.
+         */
+        void drawHistory(EditorContext& ec);
 
         /// Camera and viewport only: framing, and the debug overlays.
         void drawViewMenu(EditorContext& ec);
@@ -46,8 +68,15 @@ class EditorMenuBar {
 
         void drawEntityMenu(EditorContext& ec);
 
-        /// Only raises m_openAbout; see drawAboutPopup.
+        /// Raises m_openAbout (see drawAboutPopup), or shows the shortcuts window.
         void drawHelpMenu();
+
+        /**
+         * @brief Every keybind as bound now, and the mouse's view controls, in one window.
+         *
+         * @param state Supplies the bindings.
+         */
+        void drawShortcutsWindow(EditorState& state);
 
         /**
          * @brief The About window.
@@ -60,14 +89,15 @@ class EditorMenuBar {
         void drawAboutPopup(EditorContext& ec);
 
         /**
-         * @brief The frame rate, right-aligned in the menu bar and coloured by how it holds up.
+         * @brief The frame rate, right-aligned in the menu bar and colored by how it holds up.
          *
          * @param rate Frames a second.
          */
         static void drawFrameRate(float rate);
 
     private:
-        bool m_openAbout = false;  ///< About requested this frame.
+        bool m_openAbout     = false;  ///< About requested this frame.
+        bool m_showShortcuts = false;  ///< The shortcuts window is open.
 };
 
 } // namespace Vkm::Engine

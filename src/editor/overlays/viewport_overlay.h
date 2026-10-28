@@ -5,6 +5,7 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
+class CameraControllerSystem;
 
 /**
  * @brief In-viewport axis gizmo: click an endpoint to snap the view to that axis.
@@ -37,6 +38,24 @@ class ViewportOverlay {
          * @param ec Supplies the viewport rect.
          */
         void drawNoCameraNotice(EditorContext& ec);
+
+        /**
+         * @brief Say what the world is waiting on while it loads, with a bar of how far it is.
+         *
+         * Centred while the renderer has no world to show yet - its programs still compiling -
+         * and at the foot of the view while what it shows is still being baked.
+         *
+         * @param ec Supplies the viewport rect and the frame's loading screen.
+         */
+        void drawLoadingNotice(EditorContext& ec);
+
+        /**
+         * @brief Show the fly speed for a moment after the wheel changes it, fading out.
+         *
+         * @param ec     Supplies the viewport rect.
+         * @param camera Whose speed, and for how long it is still shown.
+         */
+        void drawFlySpeed(EditorContext& ec, const CameraControllerSystem& camera);
 
         /**
          * @brief Whether the mouse is over an axis endpoint, so the viewport does not also pick.

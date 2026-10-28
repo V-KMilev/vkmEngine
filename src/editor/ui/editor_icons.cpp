@@ -88,6 +88,16 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Flatten:    return 0xe43c;  // fold-vertical
         case EditorIcon::Paint:      return 0xe2e7;  // paintbrush
         case EditorIcon::Plants:     return 0xe1eb;  // sprout
+        case EditorIcon::Info:       return 0xe0f9;  // info
+        case EditorIcon::Warning:    return 0xe193;  // alert-triangle
+        case EditorIcon::Error:      return 0xe084;  // circle-x
+        case EditorIcon::Check:      return 0xe07c;  // check-circle
+        case EditorIcon::More:       return 0xe0b7;  // ellipsis-vertical
+        case EditorIcon::Search:     return 0xe151;  // search
+        case EditorIcon::Copy:       return 0xe09e;  // copy
+        case EditorIcon::Terminal:   return 0xe181;  // terminal
+        case EditorIcon::ArrowDown:  return 0xe042;  // arrow-down
+        case EditorIcon::ArrowUp:    return 0xe04a;  // arrow-up
     }
     return 0;
 }

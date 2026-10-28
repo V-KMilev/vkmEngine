@@ -19,6 +19,7 @@
 #include "loader/font_baker.h"
 #include "platform/window/window_manager.h"
 #include "session/scene_io_controller.h"
+#include "system/loading/loading_system.h"
 #include "project_boot.h"
 #include "system/audio/audio_system.h"
 #include "system/script/script_module.h"
@@ -60,8 +61,6 @@ bool open(
         EditorSettings::save(ec.state, ec.frame.render);
     }
 
-    ProjectPaths::setProjectRoot(root);
-
     // Reset before the read, not after: loadProject leaves untouched fields
     // alone, so opening a project with no maxPlayers would otherwise inherit the
     // one left open.
@@ -69,17 +68,24 @@ bool open(
     project = Project{};
     loadProject(root, project);
 
-    // The look the project ships, then the editor's view defaults, then - in
-    // EditorSettings::load below - this editor's persisted view state; the
-    // shipped and view sets are disjoint, so neither overwrites the other.
-    ec.frame.render = project.render;
-    EditorSettings::applyViewDefaults(ec.frame.render);
-    bakeProjectFonts(ec.frame.resources, project.fonts, uiFontPixels(ec.frame.window.displayHeight()));
-
     // Emptied before the assets it references go away, through the teardown a
     // New Scene runs: behaviors get onDestroy while the old module still holds
     // their code, and the scene-scoped editor state belongs to the project left.
     if (replacing) sceneIO.beginSceneReplace(ec.frame, ec.state);
+
+    // Re-rooted after the teardown, whose crash copy is the project left's to discard.
+    ProjectPaths::setProjectRoot(root);
+
+    // After the teardown, which ends a play session by putting back the settings
+    // the project left had before it. The look the project ships, then the
+    // editor's view defaults, then - in EditorSettings::load below - this editor's
+    // persisted view state; the shipped and view sets are disjoint, so neither
+    // overwrites the other.
+    ec.frame.render = project.render;
+    ec.state.renderPreviewHeld.reset();  // the last project's, under a tier it previewed
+    EditorSettings::applyViewDefaults(ec.frame.render);
+    bakeProjectFonts(ec.frame.resources, project.fonts, uiFontPixels(ec.frame.window.displayHeight()));
+    ec.loadingSystem.setScreen(project.loading);
 
     AssetLibrary::get().load(AssetLibrary::Truth::Recipes);
     EditorSettings::load(ec.state, ec.frame.render);
@@ -107,6 +113,8 @@ bool open(
     // author has to be able to read what it puts on the wire.
     scriptModule.setupNetwork(ec.frame.net);
 
+    // The project opens behind the loading screen, as a game's world does.
+    ec.frame.chrome.coverNextWorld();
     const SceneBootResult boot = bootProjectWorld(
         project,
         scriptModule,
@@ -121,12 +129,11 @@ bool open(
     ec.state.sceneDirty = false;
 
     pushRecentPath(ec.state.recentProjects, root.string());
-    // One slot, so the last push is the only one anyone sees.
     if (moduleFailed) {
         const char* withoutModule =
-            " without its gameplay module - see the Errors panel. Behaviors are kept but do not "
-            "run; fix the build and use File > Reload Scripts.";
-        ec.state.pushToast(ToastKind::Error, "Opened " + project.name + withoutModule);
+            " without its gameplay module: behaviors are kept but do not run; fix the build and use "
+            "File > Reload Scripts";
+        ec.state.pushToast(ToastKind::Error, "Opened " + project.name + withoutModule, ConsoleView::Errors);
     } else {
         ec.state.pushToast(ToastKind::Info, "Opened " + project.name);
     }

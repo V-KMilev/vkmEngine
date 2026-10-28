@@ -51,6 +51,7 @@ class HierarchyPanel {
          * @param sceneIO   For the context menu.
          * @param entity    The row's entity.
          * @param depth     Ancestor count, for the indent.
+         * @param found     A search's row: on its own, opening nothing.
          */
         void drawEntityNode(
             Scene& scene,
@@ -58,7 +59,8 @@ class HierarchyPanel {
             EditorState& state,
             SceneIOController& sceneIO,
             EntityId entity,
-            int depth
+            int depth,
+            bool found = false
         );
 
         /**
@@ -71,6 +73,39 @@ class HierarchyPanel {
          */
         void buildVisibleRows(const Scene& scene);
 
+        /**
+         * @brief Open every ancestor of a selection made elsewhere, and ask for its row in view.
+         *
+         * @param scene Holds the selection.
+         * @param state Supplies the active entity.
+         */
+        void revealSelection(const Scene& scene, const EditorState& state);
+
+        /// The rows drawn, in order: the filtered list or the tree.
+        const std::vector<EntityId>& rowEntities();
+
+        /**
+         * @brief Answer a click on @p entity's row: Shift spans the rows from the active one, as a list does.
+         *
+         * @param state  Takes the selection.
+         * @param entity The row clicked.
+         */
+        void clickRow(EditorState& state, EntityId entity);
+
+        /**
+         * @brief Make @p entity's row a drop target: its top and bottom edges put the dragged
+         *        entity beside it, its middle under it.
+         *
+         * An asset dragged from the Assets panel is assigned to the entity instead
+         * (AssetBrowserPanel::acceptAssetOn).
+         *
+         * @param scene     Holds both.
+         * @param resources Holds a dragged asset.
+         * @param state     Takes the step.
+         * @param entity    The row's entity.
+         */
+        void dropOnRow(Scene& scene, ResourceManager& resources, EditorState& state, EntityId entity);
+
         void drawEntityContextMenu(
             Scene& scene,
             ResourceManager& resources,
@@ -78,6 +113,18 @@ class HierarchyPanel {
             SceneIOController& sceneIO,
             EntityId entity
         );
+
+        /**
+         * @brief The field a row being renamed is drawn as, in the tree or in a search's results.
+         *
+         * Enter names it, as one undo step; Escape, leaving the field, or an empty name gives up.
+         *
+         * @param scene     Holds the entity.
+         * @param resources Its assets, for the edit's step.
+         * @param state     Takes the step.
+         * @param entity    The entity being renamed.
+         */
+        void drawRenameField(Scene& scene, ResourceManager& resources, EditorState& state, EntityId entity);
 
     private:
         char m_filter[64] = {};
@@ -95,6 +142,11 @@ class HierarchyPanel {
          * which needs the open state before ImGui knows it.
          */
         std::unordered_set<uint32_t> m_open;
+
+        std::vector<EntityId> m_rowEntities;  ///< rowEntities's answer for the tree, rebuilt each call.
+
+        EntityId m_revealed{};  ///< The active entity revealSelection last saw.
+        EntityId m_scrollTo{};  ///< Brought into view when its row is drawn, then cleared.
 
         // Inline rename; a default EntityId means none in progress.
         EntityId m_renameTarget{};

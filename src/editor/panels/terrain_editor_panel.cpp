@@ -38,6 +38,29 @@ namespace Vkm::Engine {
 
 namespace {
 
+/**
+ * @brief A plant layer's settings, without its painted density: a grid of the terrain's size, which a
+ *        copy a frame would take for nothing.
+ *
+ * Naming every member makes one added to TerrainFoliage fail to compile here until it is copied too.
+ *
+ * @param layer The plant layer copied.
+ * @return Its settings, the density empty.
+ */
+TerrainFoliage settingsOf(const TerrainFoliage& layer) {
+    const auto& [parts, density, perSquareMetre, minScale, maxScale, maxDistance, seed, castShadows] = layer;
+    static_cast<void>(density);
+    TerrainFoliage plant;
+    plant.parts          = parts;
+    plant.perSquareMetre = perSquareMetre;
+    plant.minScale       = minScale;
+    plant.maxScale       = maxScale;
+    plant.maxDistance    = maxDistance;
+    plant.seed           = seed;
+    plant.castShadows    = castShadows;
+    return plant;
+}
+
 /// The tools in the order their tiles stand, each with its glyph.
 struct ToolTile {
     TerrainTool tool;
@@ -62,34 +85,11 @@ std::string entityName(const Scene& scene, EntityId id) {
 }
 
 /**
- * @brief An asset's name cut to a tile's caption: its file's stem and what it is of that file, or
- *        with no file in the name, what follows its prefix.
- *
- * "material:default" reads "default", "a/rocks.gltf:mesh0" "rocks mesh0".
- *
- * @param name The asset's name.
- * @return The caption.
- */
-std::string shortName(const std::string& name) {
-    const size_t slash = name.find_last_of('/');
-    std::string  tail  = slash == std::string::npos ? name : name.substr(slash + 1);
-    std::string  part;
-    if (const size_t colon = tail.find(':'); colon != std::string::npos) {
-        part = tail.substr(colon + 1);
-        tail = tail.substr(0, colon);
-    }
-    if (const size_t dot = tail.find_last_of('.'); dot != std::string::npos && dot > 0) tail.resize(dot);
-    if (slash == std::string::npos && !part.empty()) return part;
-    std::replace(part.begin(), part.end(), ':', ' ');
-    return part.empty() ? tail : tail + " " + part;
-}
-
-/**
  * @brief What a tile's face shows.
  */
 struct Tile {
     GpuTextureId picture = 0;     ///< 0 shows the glyph instead.
-    ImVec4       tint{1.0f, 1.0f, 1.0f, 1.0f};  ///< The picture's tint, or the glyph's colour.
+    ImVec4       tint{1.0f, 1.0f, 1.0f, 1.0f};  ///< The picture's tint, or the glyph's color.
     EditorIcon   glyph = EditorIcon::Material;
     int          badge = 0;       ///< A number in its corner, the layer's; 0 for none.
 };
@@ -126,9 +126,9 @@ bool pictureTile(
         dl->AddImageRounded(imTexture(tile.picture), min, max, ImVec2(0, 1), ImVec2(1, 0), shade, round);
     } else {
         dl->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_FrameBg), round);
-        const ImVec4 glyphColour(tile.tint.x, tile.tint.y, tile.tint.z, 0.8f);
+        const ImVec4 glyphColor(tile.tint.x, tile.tint.y, tile.tint.z, 0.8f);
         const ImVec2 centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
-        drawEditorIcon(dl, tile.glyph, centre, face * 0.22f, ImGui::GetColorU32(glyphColour));
+        drawEditorIcon(dl, tile.glyph, centre, face * 0.22f, ImGui::GetColorU32(glyphColor));
     }
     if (tile.badge > 0) {
         char number[16];
@@ -162,7 +162,7 @@ GpuTextureId albedoPicture(
     return material && material->albedoTexture ? hooks.textureId(material->albedoTexture) : 0;
 }
 
-/// A material's albedo colour, its tile's tint.
+/// A material's albedo color, its tile's tint.
 ImVec4 albedoTint(const ResourceManager& resources, MaterialHandle handle) {
     const MaterialAsset* material = resources.tryGet(handle);
     if (!material) return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
@@ -233,19 +233,10 @@ void TerrainEditorPanel::draw(EditorContext& ec) {
     ImGui::Spacing();
     drawGrid(*terrain, edits);
     if (!edits.empty()) {
-        TerrainAsset after(*terrain);
-        for (const auto& edit : edits) edit(after);
-        // Swapped in, the copy holds what was there: the step's before.
-        TerrainAsset installed(after);
-        resources.swapValue(component.terrain, installed);
-        auto edit = std::make_unique<TerrainEditCommand>(
-            resources,
-            component.terrain,
-            std::move(installed),
-            std::move(after),
-            "Edit Terrain"
-        );
-        state.pushStep(std::move(edit));
+        const auto all = [&](TerrainAsset& live) {
+            for (const auto& edit : edits) edit(live);
+        };
+        TerrainEditCommand::apply(resources, state, component.terrain, all, "Edit Terrain");
     }
 }
 
@@ -429,7 +420,7 @@ void TerrainEditorPanel::drawLayers(EditorContext& ec, const TerrainAsset& terra
         const MaterialAsset* asset = resources.tryGet(layer);
         char id[32];
         std::snprintf(id, sizeof(id), "layer%zu", l);
-        const std::string  caption = asset ? shortName(asset->name()) : std::string("(empty)");
+        const std::string  caption = asset ? assetShortName(asset->name()) : std::string("(empty)");
         const bool         on      = brush.tool == TerrainTool::Paint && brush.layer == l;
         const GpuTextureId picture = albedoPicture(resources, ec.hooks, layer);
         const std::string  named   = asset ? asset->name() : std::string("No material");
@@ -447,8 +438,11 @@ void TerrainEditorPanel::drawLayers(EditorContext& ec, const TerrainAsset& terra
     float             tiling   = terrain.layerTiling[picked];
     const std::string label    = "Layer " + std::to_string(picked + 1);
     ImGui::PushID("layer");
-    if (pickAsset<MaterialAsset>("##LayerPick", label.c_str(), resources, material)) {
-        edits.emplace_back([picked, material](TerrainAsset& a) { a.layers[picked] = material; });
+    if (pickAsset<MaterialAsset>("##LayerPick", label.c_str(), resources, ec.state, material)) {
+        edits.emplace_back([picked, material](TerrainAsset& a) {
+            a.layers[picked] = material;
+            a.unresolvedLayers[picked].clear();  // the slot is set: what it named is replaced
+        });
     }
     const char* tileTooltip = "Metres one repeat of its maps spans";
     if (propDrag("Tile Size", &tiling, 0.05f, 0.1f, 1000.0f, "%.2f m", tileTooltip)) {
@@ -490,7 +484,7 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
         const MeshHandle      meshName = plant.parts.empty() ? MeshHandle{} : plant.parts[0].mesh;
         const MeshAsset*      mesh     = resources.tryGet(meshName);
         const MaterialAsset*  look     = resources.tryGet(material);
-        const std::string     caption  = mesh ? shortName(mesh->name()) : std::string("(no mesh)");
+        const std::string     caption  = mesh ? assetShortName(mesh->name()) : std::string("(no mesh)");
         const bool            on       = brush.tool == TerrainTool::Plants && brush.foliage == f;
         const std::string     tip      = (mesh ? mesh->name() : std::string("No mesh")) + "\n"
             + (look ? look->name() : std::string("No material")) + "\nClick to grow it";
@@ -516,7 +510,7 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     // Another terrain, or an undone Add, can leave the pick past the end: the last layer, then.
     const size_t picked = std::min<size_t>(brush.foliage, count - 1);
     brush.foliage       = static_cast<uint32_t>(picked);
-    TerrainFoliage plant = terrain.foliage[picked];
+    TerrainFoliage plant = settingsOf(terrain.foliage[picked]);
     if (plant.parts.empty()) plant.parts.emplace_back();
     bool edited = false;
     ImGui::PushID("plant");
@@ -526,8 +520,16 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
         ImGui::PushID(static_cast<int>(p));
         const bool        several = plant.parts.size() > 1;
         const std::string label   = several ? "Part " + std::to_string(p + 1) : std::string("Mesh");
-        edited |= pickAsset<MeshAsset>("##PartMesh", label.c_str(), resources, plant.parts[p].mesh);
-        edited |= pickAsset<MaterialAsset>("##PartMaterial", "Material", resources, plant.parts[p].material);
+        // A slot set replaces what its file named.
+        if (pickAsset<MeshAsset>("##PartMesh", label.c_str(), resources, ec.state, plant.parts[p].mesh)) {
+            plant.parts[p].unresolvedMesh.clear();
+            edited = true;
+        }
+        MaterialHandle& partMaterial = plant.parts[p].material;
+        if (pickAsset<MaterialAsset>("##PartMaterial", "Material", resources, ec.state, partMaterial)) {
+            plant.parts[p].unresolvedMaterial.clear();
+            edited = true;
+        }
         if (several && ImGui::SmallButton("Remove Part")) removed = static_cast<int>(p);
         ImGui::PopID();
     }
@@ -551,7 +553,6 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     ImGui::PopStyleColor();
     ImGui::PopID();
     if (edited) {
-        plant.density.clear();
         edits.emplace_back([picked, plant](TerrainAsset& a) {
             std::vector<uint8_t> density = std::move(a.foliage[picked].density);
             a.foliage[picked]         = plant;

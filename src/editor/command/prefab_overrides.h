@@ -131,6 +131,19 @@ namespace PrefabOverrides {
     );
 
     /**
+     * @brief Drop every override on the instance @p root and give each field back the prefab's
+     *        value: one undo step.
+     *
+     * Those on a component the prefab no longer defines are kept, as revert keeps one, and said.
+     *
+     * @param scene     Scene holding the instance.
+     * @param resources Resolves the prefab's asset names to handles.
+     * @param host      Whose command stack receives the step.
+     * @param root      The instance root.
+     */
+    void revertAll(Scene& scene, ResourceManager& resources, CommandHost& host, EntityId root);
+
+    /**
      * @brief Say that a component added to or removed from an instance lives in
      *        the prefab, not in the scene.
      *

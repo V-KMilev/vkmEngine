@@ -229,4 +229,47 @@ void revert(
     );
 }
 
+void revertAll(Scene& scene, ResourceManager& resources, CommandHost& host, EntityId root) {
+    const PrefabInstance* instance = scene.tryGet<PrefabInstance>(root);
+    if (!instance || instance->overrides.empty()) return;
+
+    // Each (entity, component) once: its entries go together.
+    std::vector<std::pair<uint32_t, std::string>> pairs;
+    for (const PrefabOverride& o : instance->overrides) {
+        const std::pair<uint32_t, std::string> pair{o.uid, o.component};
+        if (std::find(pairs.begin(), pairs.end(), pair) == pairs.end()) pairs.push_back(pair);
+    }
+
+    const std::string source = instance->source;
+    auto   step = std::make_unique<CompositeCommand>("Revert All Overrides");
+    size_t kept = 0;
+    for (const auto& [uid, component] : pairs) {
+        if (!Prefab::definesComponent(source, uid, component)) {
+            ++kept;
+            continue;
+        }
+        const std::vector<PrefabOverride>& held = scene.get<PrefabInstance>(root).overrides;
+        std::vector<PrefabOverride>        restore = entriesFor(held, uid, component);
+        apply(scene, resources, root, uid, component, {});
+        step->add(
+            std::make_unique<PrefabOverrideCommand>(
+                resources,
+                root,
+                uid,
+                component,
+                std::move(restore),
+                std::vector<PrefabOverride>{},
+                "Revert Override"
+            )
+        );
+    }
+    if (!step->empty()) host.pushStep(std::move(step));
+    if (kept > 0) {
+        host.pushToast(
+            ToastKind::Warning,
+            std::to_string(kept) + " override(s) are on components the prefab no longer defines - kept"
+        );
+    }
+}
+
 } // namespace Vkm::Engine::PrefabOverrides

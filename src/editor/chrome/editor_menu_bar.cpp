@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 
 #include <imgui.h>
 
+#include "chrome/dock_layout.h"
 #include "core/system.h"
 #include "core/clock.h"
 #include "ecs/scene.h"
@@ -20,6 +22,7 @@
 #include "io/project_paths.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
+#include "ui/editor_dialogs.h"
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
@@ -48,14 +51,45 @@ void EditorMenuBar::drawSelectionItems(EditorContext& ec) {
     EditorState&  state = ec.state;
 
     const bool haveSel = ctx.scene.isAlive(state.selectedEntity);
-    if (ImGui::MenuItem("Duplicate", keyLabel(state.prefs.keybinds.duplicate), false, haveSel)) {
+    const auto& kb     = state.prefs.keybinds;
+    if (ImGui::MenuItem("Cut", keyLabel(kb.cutEntity), false, haveSel)) {
+        EditorActions::cutSelection(ctx.scene, ctx.resources, state);
+    }
+    if (ImGui::MenuItem("Copy", keyLabel(kb.copyEntity), false, haveSel)) {
+        EditorActions::copySelection(ctx.scene, ctx.resources, state);
+    }
+    if (ImGui::MenuItem("Paste", keyLabel(kb.pasteEntity), false, state.entityClipboard != nullptr)) {
+        EditorActions::paste(ctx.scene, ctx.resources, state);
+    }
+    if (ImGui::MenuItem("Duplicate", keyLabel(kb.duplicate), false, haveSel)) {
         EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
     }
     if (ImGui::MenuItem("Delete", keyLabel(state.prefs.keybinds.deleteEntity), false, haveSel)) {
         EditorActions::deleteSelection(ctx.scene, state);
     }
-    if (ImGui::MenuItem("Deselect", keyLabel(state.prefs.keybinds.deselect), false, haveSel)) {
+    if (ImGui::MenuItem("Select All", keyLabel(kb.selectAll), false, ctx.scene.entityCount() > 0)) {
+        EditorActions::selectAll(ctx.scene, state);
+    }
+    if (ImGui::MenuItem("Deselect", keyLabel(kb.deselect), false, haveSel)) {
         state.deselect();
+    }
+}
+
+void EditorMenuBar::drawPlacingItems(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
+    const bool haveSel = ctx.scene.isAlive(state.selectedEntity);
+    const bool canMove = haveSel && ctx.scene.has<Transform>(state.selectedEntity);
+    if (ImGui::MenuItem("Align With View", keyLabel(state.prefs.keybinds.alignWithView), false, canMove)) {
+        EditorActions::alignWithView(ctx.scene, ctx.resources, state);
+    }
+    const bool canLook = canMove && ec.cameraController.isActive();
+    if (ImGui::MenuItem("Align View to Selected", nullptr, false, canLook)) {
+        ViewFraming::viewFromEntity(ctx.scene, state.selectedEntity, ec.cameraController);
+    }
+    if (ImGui::MenuItem("Drop to Ground", keyLabel(state.prefs.keybinds.dropToGround), false, canMove)) {
+        EditorActions::dropToGround(ctx.scene, ctx.resources, state);
     }
 }
 
@@ -121,7 +155,7 @@ void EditorMenuBar::drawFileMenu(EditorContext& ec, SceneIOController& sceneIO) 
         }
         if (playing) ImGui::TextDisabled("Stop the play session to save");
         ImGui::Separator();
-        // Run by vkm, in the Build window; a build that changes the module reloads it.
+        // Run by vkm, in the Console's Build view; a build that changes the module reloads it.
         const bool canBuild = state.projectOpen && !BuildController::launcher().empty();
         const std::string root = ProjectPaths::projectRoot().string();
         const char* why = state.projectOpen ? "This engine has no vkm beside it" : "Open a project first";
@@ -133,9 +167,10 @@ void EditorMenuBar::drawFileMenu(EditorContext& ec, SceneIOController& sceneIO) 
             state.requestVkm = {"package", root};
         }
         if (!canBuild) ImGui::SetItemTooltip("%s", why);
-        if (ImGui::MenuItem("Reload Scripts")) {
+        if (ImGui::MenuItem("Reload Scripts", nullptr, false, state.projectOpen)) {
             state.requestScriptReload = true;
         }
+        if (!state.projectOpen) ImGui::SetItemTooltip("Open a project first");
 
         if (haveCurrent) {
             ImGui::Separator();
@@ -149,6 +184,41 @@ void EditorMenuBar::drawFileMenu(EditorContext& ec, SceneIOController& sceneIO) 
         if (ImGui::MenuItem("Exit")) state.requestSceneAction(EditorState::SceneAction::Quit);
         ImGui::EndMenu();
     }
+}
+
+void EditorMenuBar::drawHistory(EditorContext& ec) {
+    FrameContext&       ctx      = ec.frame;
+    EditorState&        state    = ec.state;
+    const CommandStack& commands = state.commands;
+
+    // Oldest first, the step the scene now stands after ticked, what redo would bring dimmed.
+    // A click walks undo or redo to that step.
+    const size_t done    = commands.undoDepth();
+    const size_t undone  = commands.redoDepth();
+    const size_t shownUp = std::min(done, HISTORY_SHOWN);
+    if (done > shownUp) ImGui::TextDisabled("%zu older", done - shownUp);
+    else if (ImGui::MenuItem("(as opened)", nullptr, done == 0)) {
+        for (size_t i = 0; i < done; ++i) EditorActions::undo(ctx.scene, state);
+    }
+    for (size_t back = shownUp; back-- > 0;) {
+        ImGui::PushID(static_cast<int>(back));
+        if (ImGui::MenuItem(commands.undoLabel(back), nullptr, back == 0)) {
+            for (size_t i = 0; i < back; ++i) EditorActions::undo(ctx.scene, state);
+        }
+        ImGui::PopID();
+    }
+    const size_t shownDown = std::min(undone, HISTORY_SHOWN);
+    for (size_t ahead = 0; ahead < shownDown; ++ahead) {
+        ImGui::PushID(static_cast<int>(HISTORY_SHOWN + ahead));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        const bool picked = ImGui::MenuItem(commands.redoLabel(ahead));
+        ImGui::PopStyleColor();
+        if (picked) {
+            for (size_t i = 0; i <= ahead; ++i) EditorActions::redo(ctx.scene, state);
+        }
+        ImGui::PopID();
+    }
+    if (undone > shownDown) ImGui::TextDisabled("%zu more", undone - shownDown);
 }
 
 void EditorMenuBar::drawEditMenu(EditorContext& ec) {
@@ -165,6 +235,11 @@ void EditorMenuBar::drawEditMenu(EditorContext& ec) {
         if (ImGui::MenuItem(redoText, keyLabel(state.prefs.keybinds.redo), false, state.commands.canRedo())) {
             EditorActions::redo(ctx.scene, state);
         }
+        const bool anyHistory = state.commands.canUndo() || state.commands.canRedo();
+        if (ImGui::BeginMenu("History", anyHistory)) {
+            drawHistory(ec);
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         drawSelectionItems(ec);
         ImGui::Separator();
@@ -173,7 +248,7 @@ void EditorMenuBar::drawEditMenu(EditorContext& ec) {
         // does nothing for a window that is already up underneath another.
         if (ImGui::MenuItem("Preferences...", keyLabel(state.prefs.keybinds.openPreferences))) {
             state.showPreferences = true;
-            ImGui::SetWindowFocus("Preferences");
+            ImGui::SetWindowFocus(PREFERENCES_WINDOW);
         }
         ImGui::EndMenu();
     }
@@ -190,7 +265,7 @@ void EditorMenuBar::drawViewMenu(EditorContext& ec) {
         const bool canFrameSelected = canFrame && !!state.selectedEntity;
         const KeyLabel frameSelectedKey = keyLabel(state.prefs.keybinds.focusSelected);
         if (ImGui::MenuItem("Frame Selected", frameSelectedKey, false, canFrameSelected)) {
-            ViewFraming::frameSelected(ctx, state.selectedEntity, ec.cameraController);
+            ViewFraming::frameSelected(ctx, state.selection, ec.cameraController);
         }
         if (ImGui::MenuItem("Frame All", keyLabel(state.prefs.keybinds.frameAll), false, canFrame)) {
             ViewFraming::frameAll(ctx, ec.cameraController);
@@ -205,10 +280,12 @@ void EditorMenuBar::drawViewMenu(EditorContext& ec) {
             ImGui::MenuItem("Lights",               nullptr, &show.lights);
             ImGui::MenuItem("Cameras",              nullptr, &show.cameras);
             ImGui::MenuItem("Audio",                nullptr, &show.audio);
+            ImGui::MenuItem("Acoustics",            nullptr, &show.acoustics);
             ImGui::MenuItem("Probes and Volumes",   nullptr, &show.probes);
             ImGui::MenuItem("Decals and Emitters",  nullptr, &show.effects);
             ImGui::Separator();
             ImGui::MenuItem("Colliders and Joints", nullptr, &show.colliders);
+            ImGui::MenuItem("Contacts",             nullptr, &show.contacts);
             ImGui::MenuItem("Bounds",               nullptr, &show.bounds);
             ImGui::MenuItem("Skeletons",            nullptr, &show.skeletons);
             ImGui::EndMenu();
@@ -223,6 +300,9 @@ void EditorMenuBar::drawWindowMenu(EditorState& state) {
         ImGui::MenuItem("Inspector",    keyLabel(state.prefs.keybinds.toggleInspector), &state.showInspector);
         ImGui::MenuItem("Assets",       keyLabel(state.prefs.keybinds.toggleAssets), &state.showAssets);
         ImGui::MenuItem("Terrain",      keyLabel(state.prefs.keybinds.toggleTerrain), &state.showTerrain);
+        if (ImGui::MenuItem("Console", keyLabel(state.prefs.keybinds.showConsole))) {
+            state.revealConsole = true;
+        }
         ImGui::Separator();
         ImGui::MenuItem(
             "Render Settings",
@@ -230,7 +310,11 @@ void EditorMenuBar::drawWindowMenu(EditorState& state) {
             &state.showRenderSettings
         );
         ImGui::Separator();
-        // Back to the layout a first launch opens on, with every panel in it.
+        // The scene alone, the whole window; the key brings the editor back.
+        if (ImGui::MenuItem("Hide Editor", keyLabel(state.prefs.keybinds.toggleEditor))) {
+            state.requestHideEditor = true;
+        }
+        // Back to the layout a first launch opens on, with the panels it shows.
         if (ImGui::MenuItem("Reset Layout")) {
             state.requestResetLayout = true;
             state.showHierarchy = state.showInspector = state.showAssets = true;
@@ -246,17 +330,82 @@ void EditorMenuBar::drawEntityMenu(EditorContext& ec) {
     if (ImGui::BeginMenu("Entity")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
         ImGui::Separator();
-        drawSelectionItems(ec);
+        drawPlacingItems(ec);
+        ImGui::Separator();
+        // As the Hierarchy's menu offers it, on the selection; refused inside an instance with a toast.
+        const bool canSave = ctx.scene.isAlive(state.selectedEntity) && !ec.input.playing;
+        if (ImGui::MenuItem("Save as Prefab", nullptr, false, canSave)) {
+            EditorActions::saveAsPrefab(ctx.scene, ctx.resources, state, state.selectedEntity);
+        }
         ImGui::EndMenu();
     }
 }
 
 void EditorMenuBar::drawHelpMenu() {
     if (ImGui::BeginMenu("Help")) {
+        ImGui::MenuItem("Keyboard & Mouse", nullptr, &m_showShortcuts);
         // Deferred; drawAboutPopup says why.
         if (ImGui::MenuItem("About")) m_openAbout = true;
         ImGui::EndMenu();
     }
+}
+
+void EditorMenuBar::drawShortcutsWindow(EditorState& state) {
+    if (!m_showShortcuts) return;
+    const ImVec2 size(EditorStyle::px(460.0f), EditorStyle::px(560.0f));
+    if (!beginToolWindow("Keyboard & Mouse", m_showShortcuts, size)) return;
+
+    // The mouse's controls are fixed, not keybinds; CameraControllerSystem binds the view's.
+    static constexpr const char* MOUSE[][2] = {
+        {"Right drag",                "Look; W A S D Q E fly, Shift faster"},
+        {"Right drag + wheel",        "Fly speed"},
+        {"Alt + left drag",           "Orbit the focus"},
+        {"Middle drag",               "Pan"},
+        {"Wheel",                     "Dolly toward the focus"},
+        {"Left click",                "Select; Shift adds, Ctrl toggles"},
+        {"Right-click a card header", "Reset, Copy, Paste Values"},
+    };
+    const auto table = [](const char* id) {
+        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
+        if (!ImGui::BeginTable(id, 2, flags)) return false;
+        ImGui::TableSetupColumn("Input", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+        return true;
+    };
+    const auto row = [](const char* input, const char* action) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(input);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextDisabled("%s", action);
+    };
+
+    ImGui::SeparatorText("Mouse");
+    if (table("##mouse")) {
+        for (const auto& entry : MOUSE) row(entry[0], entry[1]);
+        ImGui::EndTable();
+    }
+
+    // In the keybind table's order, a heading each time its group changes.
+    const char* group = nullptr;
+    bool open = false;
+    for (const KeybindEntry& entry : KEYBINDS) {
+        if (!group || std::strcmp(group, entry.group) != 0) {
+            if (open) ImGui::EndTable();
+            group = entry.group;
+            ImGui::SeparatorText(group);
+            open = table(group);
+        }
+        if (open) row(keyLabel(state.prefs.keybinds.*entry.field).buf, entry.label);
+    }
+    if (open) ImGui::EndTable();
+
+    ImGui::Spacing();
+    if (ImGui::Button("Change in Preferences")) {
+        state.showPreferences = true;
+        ImGui::SetWindowFocus(PREFERENCES_WINDOW);
+    }
+    ImGui::End();
 }
 
 void EditorMenuBar::drawAboutPopup(EditorContext& ec) {
@@ -322,9 +471,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     drawHelpMenu();
     drawAboutPopup(ec);
 
-    sceneIO.drawDialogs(ctx, state);
     if (state.projectOpen) drawFrameRate(ctx.clock.getFrameRate());
     ImGui::EndMenuBar();
+    drawShortcutsWindow(state);
 }
 
 void EditorMenuBar::drawFrameRate(float rate) {

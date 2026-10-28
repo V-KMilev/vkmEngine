@@ -16,6 +16,7 @@
 #include "editor_state.h"
 #include "system/render/render_settings.h"
 #include "io/json_file.h"
+#include "io/json_vec.h"
 #include "io/project_paths.h"
 
 namespace Vkm::Engine::EditorSettings {
@@ -82,9 +83,11 @@ void visitScalarFields(State& state, Fn&& f) {
     f("showLights",        state.gizmos.lights);
     f("showCameras",       state.gizmos.cameras);
     f("showAudio",         state.gizmos.audio);
+    f("showAcoustics",     state.gizmos.acoustics);
     f("showProbes",        state.gizmos.probes);
     f("showEffects",       state.gizmos.effects);
     f("showColliders",     state.gizmos.colliders);
+    f("showContacts",      state.gizmos.contacts);
     f("showBounds",        state.gizmos.bounds);
     f("showSkeletons",     state.gizmos.skeletons);
 }
@@ -112,7 +115,7 @@ void visitPreferenceFields(Prefs& p, Fn&& f) {
     f("cameraMoveSpeed",       p.camera.moveSpeed);
     f("cameraSpeedBoost",      p.camera.speedBoost);
     f("cameraLookSensitivity", p.camera.lookSensitivity);
-    f("cameraZoomSensitivity", p.camera.zoomSensitivity);
+    f("cameraDollyStep",       p.camera.dollyStep);
     f("cameraMinPitch",        p.camera.minPitch);
     f("cameraMaxPitch",        p.camera.maxPitch);
 }
@@ -188,7 +191,7 @@ void writeField(json& j, const char* key, const M& member) {
  */
 json viewpointToJson(const EditorViewpoint& view) {
     return json{
-        {"position", {view.position.x, view.position.y, view.position.z}},
+        {"position", detail::vec3ToJson(view.position)},
         {"yaw", view.yaw},
         {"pitch", view.pitch},
         {"orthographic", view.orthographic},
@@ -220,11 +223,7 @@ bool viewpointFromJson(const json& j, EditorViewpoint& view) {
     for (const json& axis : *position) {
         if (!axis.is_number()) return false;
     }
-    view.position = glm::vec3(
-        (*position)[0].get<float>(),
-        (*position)[1].get<float>(),
-        (*position)[2].get<float>()
-    );
+    view.position     = detail::jsonToVec3(*position);
     view.yaw          = yaw->get<float>();
     view.pitch        = pitch->get<float>();
     view.orthographic = orthographic->get<bool>();
@@ -321,13 +320,25 @@ bool saveUser(const EditorState& state) {
 }
 
 std::string path() {
-    return (ProjectPaths::projectRoot() / "editor_settings.json").string();
+    return pathIn(ProjectPaths::projectRoot()).string();
+}
+
+std::filesystem::path pathIn(const std::filesystem::path& projectRoot) {
+    return projectRoot / "editor_settings.json";
 }
 
 bool load(EditorState& state, RenderSettings& render) {
-    // Before any early return: the lists belong to the project being left.
+    // Before any early return: the lists and the layout belong to the project being left, and a
+    // project with no settings of its own, or a field it never wrote, takes the defaults.
     state.recentScenes.clear();
     state.sceneViews.clear();
+    {
+        const EditorState fresh;
+        json              defaults;
+        const auto keep = [&](const char* key, const auto& member) { writeField(defaults, key, member); };
+        visitScalarFields(fresh, keep);
+        visitScalarFields(state, [&](const char* key, auto& member) { readField(defaults, key, member); });
+    }
 
     json j;
     if (!readVersioned(path(), "Editor settings", FILE_VERSION, j)) return false;

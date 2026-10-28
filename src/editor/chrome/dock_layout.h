@@ -2,17 +2,17 @@
 
 namespace Vkm::Engine {
 
-// Dockable window names. ImGui's ini keys a window by name, so two spellings
-// would be two windows.
-inline constexpr const char* HIERARCHY_WINDOW = "Hierarchy";
-inline constexpr const char* VIEWPORT_WINDOW  = "Viewport";
-inline constexpr const char* INSPECTOR_WINDOW = "Inspector";
-inline constexpr const char* MATERIAL_WINDOW  = "Material";
-inline constexpr const char* TERRAIN_WINDOW   = "Terrain";
-inline constexpr const char* ASSETS_WINDOW    = "Assets";
-inline constexpr const char* ANIMATION_WINDOW = "Animation";
-inline constexpr const char* ERRORS_WINDOW    = "Errors";
-inline constexpr const char* BUILD_WINDOW     = "Build";
+// Window names. ImGui's ini keys a window by name, so two spellings would be
+// two windows. Preferences floats; the rest dock.
+inline constexpr const char* HIERARCHY_WINDOW   = "Hierarchy";
+inline constexpr const char* VIEWPORT_WINDOW    = "Viewport";
+inline constexpr const char* INSPECTOR_WINDOW   = "Inspector";
+inline constexpr const char* TERRAIN_WINDOW     = "Terrain";
+inline constexpr const char* ASSETS_WINDOW      = "Assets";
+inline constexpr const char* ANIMATION_WINDOW   = "Animation";
+/// The id alone: its title, before it, counts the errors (`Console (2)###Console`).
+inline constexpr const char* CONSOLE_WINDOW     = "###Console";
+inline constexpr const char* PREFERENCES_WINDOW = "Preferences";
 
 // Default side sizes, in design pixels. The bottom row fits one row of
 // AssetBrowserPanel tiles at their default size.
@@ -42,15 +42,6 @@ bool hasLayout(unsigned int dockspace);
  * @param height    In screen pixels.
  */
 void buildDefaultLayout(unsigned int dockspace, float width, float height);
-
-/**
- * @brief Dock the next window begun into @p beside's node, the first time it is ever shown.
- *
- * For a window a saved layout may predate: without this it would open floating.
- *
- * @param beside A window already docked, one of the names above.
- */
-void dockBesideOnFirstUse(const char* beside);
 
 /**
  * @brief Make the next window begun the viewport's: its node never shows a tab bar.

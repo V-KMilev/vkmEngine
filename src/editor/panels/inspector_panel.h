@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -8,6 +11,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
+#include "system/ocean/ocean_spectrum.h"
 #include "system/physics/authoring/ragdoll_build.h"
 
 #include "ui/asset_picker.h"
@@ -23,50 +27,59 @@ struct EditorContext;
 class SceneIOController;
 
 /**
+ * @brief The headings Add Component lists its components under, in its order: ecs/component/'s
+ *        folders, plus Script from system/script/.
+ */
+enum class AddSection { Core, Render, Animation, Audio, Physics, UI, Script, Count };
+
+/**
  * @brief Every component card, once: the component and the method that draws it.
  *
  * Cards are declared and dispatched from this list, in panel order. Every card takes
  * the context and the entity, so anything more comes through the context.
  *
- * The last two columns are heading and accent. CardInfo builds the title and the
- * Add, Edit and Remove history labels from the heading, so inspector and undo agree.
+ * The last four columns are heading, accent, the Add Component heading it goes under
+ * (AddSection) and what Add Component says the component is for; nullptr there leaves it out
+ * of Add Component. CardInfo builds the title and the Add, Edit and Remove history labels
+ * from the heading, so inspector and undo agree.
  */
-#define VKM_INSPECTOR_CARDS(X)                                                        \
-    X(Transform,           drawTransformSection,           "Transform",           TRANSFORM) \
-    X(Mesh,                drawMeshSection,                "Mesh",                MESH)      \
-    X(Light,               drawLightSection,               "Light",               LIGHT)     \
-    X(Rigidbody,           drawRigidbodySection,           "Rigidbody",           PHYSICS)   \
-    X(Collider,            drawColliderSection,            "Collider",            COLLIDER)  \
-    X(CharacterController, drawCharacterControllerSection, "Character Controller", PHYSICS)  \
-    X(Joint,               drawJointSection,               "Joint",               PHYSICS)   \
-    X(Ragdoll,             drawRagdollSection,             "Ragdoll",             PHYSICS)   \
-    X(Camera,              drawCameraSection,              "Camera",              CAMERA)    \
-    X(ReflectionProbe,     drawReflectionProbeSection,     "Reflection Probe",    PROBE)     \
-    X(PlanarReflector,     drawPlanarReflectorSection,     "Planar Reflector",    PROBE)     \
-    X(Decal,               drawDecalSection,               "Decal",               MESH)      \
-    X(ParticleEmitter,     drawParticleSection,            "Particle Emitter",    LIGHT)     \
-    X(ParticleTrigger,     drawParticleTriggerSection,     "Particle Trigger",    LIGHT)     \
-    X(AudioSource,         drawAudioSourceSection,         "Audio Source",        AUDIO)     \
-    X(AudioListener,       drawAudioListenerSection,       "Audio Listener",      AUDIO)     \
-    X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",   PROBE)     \
-    X(Ocean,               drawOceanSection,               "Ocean",               MESH)      \
-    X(Terrain,             drawTerrainSection,             "Terrain",             TERRAIN)   \
-    X(LOD,                 drawLODSection,                 "LOD",                 MESH)      \
-    X(Animation,           drawAnimationSection,           "Animation",           ANIM)      \
-    X(Animator,            drawAnimatorSection,            "Animator",            ANIM)      \
-    X(BoneSocket,          drawBoneSocketSection,          "Bone Socket",         ANIM)      \
-    X(ScriptComponent,     drawScriptSection,              "Script",              SCRIPT)    \
-    X(UICanvas,            drawUICanvasSection,            "UI Canvas",           UI)        \
-    X(UIElement,           drawUIElementSection,           "UI Element",          UI)        \
-    X(UIImage,             drawUIImageSection,             "UI Image",            UI)        \
-    X(UIText,              drawUITextSection,              "UI Text",             UI)        \
-    X(UIButton,            drawUIButtonSection,            "UI Button",           UI)        \
-    X(UIScroll,            drawUIScrollSection,            "UI Scroll",           UI)        \
-    X(UISlider,            drawUISliderSection,            "UI Slider",           UI)        \
-    X(UIToggle,            drawUIToggleSection,            "UI Toggle",           UI)        \
-    X(UIChoice,            drawUIChoiceSection,            "UI Choice",           UI)        \
-    X(NetLocal,            drawNetLocalSection,            "Net Local",           HIERARCHY) \
-    X(Hierarchy,           drawHierarchySection,           "Hierarchy",           HIERARCHY) \
+#define VKM_INSPECTOR_CARDS(X)                                                                                                                                            \
+    X(Transform,           drawTransformSection,           "Transform",            TRANSFORM, Core,      "Where it is, how it is turned and its scale")                   \
+    X(Mesh,                drawMeshSection,                "Mesh",                 MESH,      Render,    "Draws a mesh in a material")                                    \
+    X(Light,               drawLightSection,               "Light",                LIGHT,     Render,    "A sun, a lamp, a spot or an area light")                        \
+    X(Rigidbody,           drawRigidbodySection,           "Rigidbody",            PHYSICS,   Physics,   "Moved by physics: falls, is pushed, collides")                  \
+    X(Collider,            drawColliderSection,            "Collider",             COLLIDER,  Physics,   "The shape physics sees")                                        \
+    X(CharacterController, drawCharacterControllerSection, "Character Controller", PHYSICS,   Physics,   "Walks, climbs steps and jumps under a player's input")          \
+    X(Buoyancy,            drawBuoyancySection,            "Buoyancy",             PHYSICS,   Physics,   "Floats on water and is carried by a river")                     \
+    X(Joint,               drawJointSection,               "Joint",                PHYSICS,   Physics,   "Ties this body to another: a hinge, a rope")                    \
+    X(Ragdoll,             drawRagdollSection,             "Ragdoll",              PHYSICS,   Physics,   "Bodies on a rig's bones, to fall limp")                         \
+    X(Camera,              drawCameraSection,              "Camera",               CAMERA,    Render,    "A view the game can draw through")                              \
+    X(ReflectionProbe,     drawReflectionProbeSection,     "Reflection Probe",     PROBE,     Render,    "What shiny things nearby reflect")                              \
+    X(PlanarReflector,     drawPlanarReflectorSection,     "Planar Reflector",     PROBE,     Render,    "A true mirror or still water: reflects the scene in its plane") \
+    X(Decal,               drawDecalSection,               "Decal",                MESH,      Render,    "A picture projected onto what lies in its box")                 \
+    X(ParticleEmitter,     drawParticleSection,            "Particle Emitter",     LIGHT,     Render,    "Sparks, smoke, fire: particles it spawns")                      \
+    X(ParticleTrigger,     drawParticleTriggerSection,     "Particle Trigger",     LIGHT,     Render,    "Bursts an emitter when something enters it")                    \
+    X(AudioSource,         drawAudioSourceSection,         "Audio Source",         AUDIO,     Audio,     "Plays a sound from here")                                       \
+    X(AudioListener,       drawAudioListenerSection,       "Audio Listener",       AUDIO,     Audio,     "Where sound is heard from: usually the camera")                 \
+    X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",    PROBE,     Render,    "Baked bounce light for the space in its box")                   \
+    X(Ocean,               drawOceanSection,               "Ocean",                MESH,      Render,    "The scene's sea: the waves a Sea material shows")               \
+    X(Terrain,             drawTerrainSection,             "Terrain",              TERRAIN,   Render,    nullptr)                                                         \
+    X(LOD,                 drawLODSection,                 "LOD",                  MESH,      Render,    "Simpler meshes for when it is far off")                         \
+    X(Animation,           drawAnimationSection,           "Animation",            ANIM,      Animation, "Plays a clip on its transform: a door, a bob")                  \
+    X(Animator,            drawAnimatorSection,            "Animator",             ANIM,      Animation, "Poses a rigged mesh with clips")                                \
+    X(BoneSocket,          drawBoneSocketSection,          "Bone Socket",          ANIM,      Animation, "Follows a bone of a rig: a sword in a hand")                    \
+    X(ScriptComponent,     drawScriptSection,              "Script",               SCRIPT,    Script,    "The project's behaviors: gameplay in C++")                      \
+    X(UICanvas,            drawUICanvasSection,            "UI Canvas",            UI,        UI,        "A layer of UI drawn over the scene")                            \
+    X(UIElement,           drawUIElementSection,           "UI Element",           UI,        UI,        "A rectangle placed on a canvas")                                \
+    X(UIImage,             drawUIImageSection,             "UI Image",             UI,        UI,        "Fills its rectangle with a color or a picture")                 \
+    X(UIText,              drawUITextSection,              "UI Text",              UI,        UI,        "Text in its rectangle")                                         \
+    X(UIButton,            drawUIButtonSection,            "UI Button",            UI,        UI,        "Clicked, it sends an event")                                    \
+    X(UIScroll,            drawUIScrollSection,            "UI Scroll",            UI,        UI,        "Scrolls what lies under it")                                    \
+    X(UISlider,            drawUISliderSection,            "UI Slider",            UI,        UI,        "A value dragged along a track")                                 \
+    X(UIToggle,            drawUIToggleSection,            "UI Toggle",            UI,        UI,        "On or off")                                                     \
+    X(UIChoice,            drawUIChoiceSection,            "UI Choice",            UI,        UI,        "One of a list, stepped with arrows")                            \
+    X(NetLocal,            drawNetLocalSection,            "Net Local",            HIERARCHY, Core,      "Kept off the wire: every end makes its own")                    \
+    X(Hierarchy,           drawHierarchySection,           "Hierarchy",            HIERARCHY, Core,      nullptr)                                                         \
 
 /**
  * @brief Editor panel for inspecting and editing the selected entity's components.
@@ -107,7 +120,7 @@ class InspectorPanel {
         void drawPrefabSection(EditorContext& ec, EntityId id);
         void drawWorldInspector(EditorContext& ec);
 
-#define VKM_INSPECTOR_CARD_DECL(Component, method, title, accent) \
+#define VKM_INSPECTOR_CARD_DECL(Component, method, title, accent, section, hint) \
     void method(EditorContext& ec, EntityId id);
         VKM_INSPECTOR_CARDS(VKM_INSPECTOR_CARD_DECL)
 #undef VKM_INSPECTOR_CARD_DECL
@@ -146,6 +159,16 @@ class InspectorPanel {
 
         int m_colliderFitDetail = 4;  ///< "Fit to Mesh" voxel resolution.
         int m_lodGenLevels      = 2;  ///< LOD levels Generate builds below the source.
+
+        /// The Ocean card's sea height, made again only when its shape changes: a swell is costly.
+        std::optional<OceanShape> m_seaShape;  ///< Empty until the card first draws.
+        float                     m_seaHeight = 0.0f;
+
+        /// The Script card's capture before this frame's edits, taken again only once an edit, the
+        /// entity or the world moved it (m_scriptKey), or every frame of a session, whose behaviors
+        /// change themselves.
+        std::string                            m_scriptBefore;
+        std::optional<std::array<uint64_t, 3>> m_scriptKey;  ///< Empty until the first capture.
 };
 
 } // namespace Vkm::Engine

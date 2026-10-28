@@ -17,6 +17,9 @@ namespace {
 /// Samples a curve's plot and a gradient's strip take across the span.
 constexpr int PREVIEW_SAMPLES = 48;
 
+/// How far a curve's plot reaches past its peak, so the peak does not ride its frame.
+constexpr float PLOT_HEADROOM = 1.15f;
+
 /// Put @p keys back in time order, so a key dragged past another reads as it looks.
 template <typename Key>
 void sortByTime(std::vector<Key>& keys) {
@@ -106,12 +109,15 @@ bool propCurve(const char* label, Math::Curve& curve, float lo, float hi, const 
     // The tooltip on the plot alone: over the whole row it would cover each key's own.
     return propRow(label, nullptr, [&] {
         ImGui::BeginGroup();
+        // Scaled to the curve's own peak, not the key limit, so a low curve under a high limit
+        // still shows its shape.
         std::array<float, PREVIEW_SAMPLES> values{};
-        float top = hi;
+        float top = lo;
         for (int i = 0; i < PREVIEW_SAMPLES; ++i) {
             values[i] = curve.at(static_cast<float>(i) / static_cast<float>(PREVIEW_SAMPLES - 1));
             top       = std::max(top, values[i]);
         }
+        top = top > lo ? lo + (top - lo) * PLOT_HEADROOM : lo + 1.0f;
         const ImVec2 plot(-1.0f, EditorStyle::px(40.0f));
         ImGui::PlotLines("##plot", values.data(), PREVIEW_SAMPLES, 0, nullptr, lo, top, plot);
         previewTooltip(tooltip);
@@ -159,9 +165,20 @@ bool propGradient(const char* label, Math::Gradient& gradient, const char* toolt
         ImGui::Dummy(ImVec2(width, height));
         previewTooltip(tooltip);
 
+        // A swatch the row wide, its picker a click away: four numbers at this width read "0.c".
         const auto color = [&](Math::GradientKey& key) {
-            const ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaBar;
-            return ImGui::ColorEdit4("##color", &key.color.r, flags);
+            const ImVec4 shown(key.color.r, key.color.g, key.color.b, key.color.a);
+            const ImVec2 size(ImGui::CalcItemWidth(), ImGui::GetFrameHeight());
+            if (ImGui::ColorButton("##color", shown, ImGuiColorEditFlags_AlphaPreviewHalf, size)) {
+                ImGui::OpenPopup("##picker");
+            }
+            bool changed = false;
+            if (ImGui::BeginPopup("##picker")) {
+                const ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaBar;
+                changed = ImGui::ColorPicker4("##pick", &key.color.r, flags);
+                ImGui::EndPopup();
+            }
+            return changed;
         };
         const auto makeKey = [&](float t) { return Math::GradientKey{t, gradient.at(t)}; };
         const bool changed = keyRows(gradient.keys, color, makeKey);
