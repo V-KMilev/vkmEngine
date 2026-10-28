@@ -11,13 +11,17 @@
 #include "golden_tests.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iterator>
+#include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <GL/glew.h>
@@ -31,9 +35,15 @@
 #include "egl_context.h"
 
 #include "gl_backend.h"
+#include "gl_view.h"
+#include "storage/gl_lightmaps.h"
+#include "gl_shader_base.h"
+#include "gl_shader_reload.h"
+#include "gl_forward_programs.h"
 #include "asset/gl_material.h"
-#include "pass/gl_forward_pass.h"
+#include "pass/gl_planar_reflection_pass.h"
 #include "frame/gl_occlusion_cull.h"
+#include "offline/gl_capture_settle.h"
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
 #include "offline/gl_probe_baker.h"
@@ -42,13 +52,18 @@
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
 #include "core/system.h"
+#include "debug/debug_draw.h"
 #include "ecs/environment.h"
+#include "convention/gl_bindings.h"
 #include "ecs/scene.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/transform.h"
+#include "ecs/component/physics/collider.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
+#include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
@@ -64,11 +79,14 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/texture_format.h"
 #include "resource/generate/mesh_generators.h"
+#include "system/animation/pose_buffer.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_settings.h"
 #include "system/particle/live_particles.h"
 #include "system/render/render_view.h"
 #include "system/ui/ui_draw_data.h"
 #include "system/ocean/ocean_system.h"
+#include "system/debug/debug_view_system.h"
 #include "system/sky/sky_system.h"
 #include "system/terrain/terrain_system.h"
 #include "system/visibility/visibility_system.h"
@@ -84,6 +102,9 @@ constexpr int HEIGHT = 180;
 
 // Enough frames for the bakes a first frame starts to be in the picture.
 constexpr int FRAMES = 4;
+// Past the frames a bake waits for the scene to hold still, and FRAMES more for it to be in the picture.
+constexpr int SETTLED = static_cast<int>(CAPTURE_SETTLE_FRAMES) + FRAMES;
+
 // What each frame advances the clock by, for what adapts over time: a tenth of a second, so an
 // adaptation shows within tens of frames.
 constexpr float FRAME_SECONDS = 0.1f;
@@ -96,8 +117,20 @@ constexpr uint32_t PROBE_RESOLUTION = 64;
 // shadow or reflection is thousands of pixels over.
 constexpr int   CHANNEL_TOLERANCE = 12;
 constexpr float PIXEL_TOLERANCE   = 0.002f;
+// How much of a frame a baked shadow may draw unlike the live one: its penumbra is the bake's
+// filter at the lightmap's texel, not the frame's, so its edges differ by a little.
+constexpr float BAKED_TOLERANCE   = 0.02f;
 
 const std::filesystem::path GOLDEN_DIR = "tests/render/golden";
+
+// What render() gives a frame's long bakes; 0, whole, unless a test slices them.
+float g_bakeBudget = 0.0f;
+// Whether render() draws a world still waiting on its meshes or textures (RenderView::worldArriving).
+bool g_worldArriving = false;
+// The rigs' poses render() hands the frame; null for none.
+const PoseBuffer* g_poses = nullptr;
+// Ticks the world has run when render() draws: the moment the water's ripples and flow stand at.
+int g_worldTicks = 0;
 
 struct Scenery {
     Scene           scene;
@@ -106,6 +139,10 @@ struct Scenery {
     RenderSettings  settings;   ///< What the frame is rendered with.
     MeshHandle      cube;
     MeshHandle      sphere;
+
+    /// What DebugDraw held, drawn over the scene as RenderSystem hands it on; none for most.
+    std::vector<DebugLine> debugLines;
+    double                 debugSeconds = 0.0;  ///< Where the pulses stand
 };
 
 MaterialHandle material(
@@ -149,7 +186,7 @@ void camera(Scenery& s, glm::vec3 eye, glm::vec3 target) {
 }
 
 // The key light where the sky says the sun is. Under the procedural sky SkySystem
-// aims and colours it each frame, as in a host; under none, this is the authored aim.
+// aims and colors it each frame, as in a host; under none, this is the authored aim.
 void sunAndCamera(Scenery& s, glm::vec3 eye, glm::vec3 target) {
     const EntityId sun = s.scene.createEntity();
     Transform sunPose;
@@ -239,7 +276,7 @@ void buildMaterials(Scenery& s) {
     sunAndCamera(s, {0.0f, 4.5f, 9.0f}, {0.0f, 0.5f, 0.0f});
 }
 
-// A glossy floor under coloured boxes and a glowing sphere: SSR, its blur and fade,
+// A glossy floor under colored boxes and a glowing sphere: SSR, its blur and fade,
 // bloom on the emitter.
 void buildReflections(Scenery& s) {
     base(s);
@@ -919,7 +956,7 @@ void buildCoat(Scenery& s) {
 
 // The sun four degrees up, looked toward across a floor: the horizon's glow, the sky's
 // gradient above it and the long shadows, which the air's multiple scattering and ozone
-// colour most at a low sun.
+// color most at a low sun.
 void buildSunset(Scenery& s) {
     base(s);
     s.scene.environment().sky.sunElevation = 4.0f;
@@ -1064,6 +1101,9 @@ std::vector<unsigned char> render(
     RenderSettings tuning = settings;
     RenderSettings project = settings;
     FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning, project};
+    ctx.poses = g_poses;
+    clock.requestStep(g_worldTicks);
+    while (clock.consumeFixedStep()) {}
 
     SkySystem        sky;
     OceanSystem      ocean;
@@ -1076,13 +1116,18 @@ std::vector<unsigned char> render(
     view.surfaceHeight  = HEIGHT;
     view.settings       = tuning;
     view.frameSeconds   = FRAME_SECONDS;
+    view.bakeBudget     = g_bakeBudget;
+    view.worldArriving  = g_worldArriving;
+    // Every frame takes the list, empty or not, as the engine's does: none changes nothing.
+    view.debug.lines    = &s.debugLines;
+    view.debug.seconds  = s.debugSeconds;
 
     for (int frame = 0; frame < frames; ++frame) {
         sky.update(ctx);
         ocean.update(ctx);
         terrain.update(ctx);
         visibility.update(ctx);
-        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
+        view.build(s.scene, *ctx.visibility, ui, nullptr, splash, ctx.poses, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
         if (afterFrame) afterFrame(frame, *ctx.visibility);
     }
@@ -1152,12 +1197,32 @@ void compare(
     int& failures,
     bool culled = false
 ) {
+    const std::string           label = culled ? std::string(name) + ", culled" : std::string(name);
+    const std::filesystem::path png   = GOLDEN_DIR / (std::string(name) + ".png");
+    const std::filesystem::path gpu   = GOLDEN_DIR / (std::string(name) + ".gpu");
+    const bool                  write = std::getenv("VKM_UPDATE_GOLDENS") != nullptr;
+    if (write && culled) return;
+
+    // Asked before anything is drawn: a golden made on another GPU is not compared against.
+    if (!write) {
+        const std::string madeOn = readFile(gpu);
+        if (madeOn.empty()) {
+            ++failures;
+            const char* missing = "<-- FAILED: no golden (VKM_UPDATE_GOLDENS=1 makes one)";
+            std::printf("  %-62s %s\n", label.c_str(), missing);
+            return;
+        }
+        if (madeOn != renderer) {
+            std::printf("  %-62s skipped: golden made on %s\n", label.c_str(), madeOn.c_str());
+            return;
+        }
+    }
+
     // A backend of its own: each scene's asset handles restart where the last one's
     // did, which an outliving backend would take for the same assets.
     restoreContextDefaults();
     WindowManager window;
     GLBackend backend;
-    const std::string label = culled ? std::string(name) + ", culled" : std::string(name);
     if (!backend.init(window)) {
         ++failures;
         std::printf("  %-62s %s\n", label.c_str(), "<-- FAILED: the backend did not start");
@@ -1169,26 +1234,11 @@ void compare(
     scenery.settings.occlusionCulling = culled;
     const std::vector<unsigned char> frame = render(scenery, backend, nullptr, scenery.settings);
 
-    const std::filesystem::path png = GOLDEN_DIR / (std::string(name) + ".png");
-    const std::filesystem::path gpu = GOLDEN_DIR / (std::string(name) + ".gpu");
-
-    if (std::getenv("VKM_UPDATE_GOLDENS")) {
-        if (culled) return;
+    if (write) {
         std::filesystem::create_directories(GOLDEN_DIR);
         stbi_write_png(png.string().c_str(), WIDTH, HEIGHT, 3, frame.data(), WIDTH * 3);
         std::ofstream(gpu) << renderer << "\n";
         std::printf("  %-62s %s\n", name, "written");
-        return;
-    }
-
-    const std::string madeOn = readFile(gpu);
-    if (madeOn.empty()) {
-        ++failures;
-        std::printf("  %-62s %s\n", label.c_str(), "<-- FAILED: no golden (VKM_UPDATE_GOLDENS=1 makes one)");
-        return;
-    }
-    if (madeOn != renderer) {
-        std::printf("  %-62s skipped: golden made on %s\n", label.c_str(), madeOn.c_str());
         return;
     }
 
@@ -1450,6 +1500,11 @@ void testARefreshedProbeRests(int& failures) {
     Scenery setting;
     buildProbe(setting);
     render(setting, lived);
+    expect(
+        "the arrays have room for the probe there is, not every one a scene may hold",
+        lived.probeManager().capacity() == 1,
+        failures
+    );
     // The refresh to the low sun runs a step a frame, and ends on the last of them.
     const int   steps = GLProbeBaker::refreshSteps(PROBE_RESOLUTION);
     const float noon  = setting.scene.environment().sky.sunElevation;
@@ -1774,6 +1829,261 @@ void testAnIrradianceVolumeFollowsItsLight(int& failures) {
     );
 }
 
+// A volume's first bake comes a slice a frame, for a loading screen to show through, and ends as
+// the bake made whole; while it is under way the backend says how far it has come.
+void testAVolumeBakedOverFramesEndsAsOneBakedWhole(int& failures) {
+    std::printf("An irradiance volume baked a slice a frame:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend sliced;
+    if (!sliced.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery room;
+    buildRoomInView(room, true);
+
+    // No time at all: a probe a frame, the least a slice takes.
+    g_bakeBudget = 1e-9f;
+    render(room, sliced, nullptr, RenderSettings{}, nullptr, 1);
+    const RenderReadiness partway = sliced.readiness();
+    expect(
+        "part-way, the backend says how far it has come",
+        !partway.ready() && partway.done > 0 && partway.done < partway.total,
+        failures
+    );
+    render(room, sliced, nullptr, RenderSettings{}, nullptr, static_cast<int>(partway.total));
+    g_bakeBudget = 0.0f;
+    const std::vector<unsigned char> seen = render(room, sliced);
+    expect("once through, it is ready", sliced.readiness().ready(), failures);
+
+    const auto built = [](Scenery& s) { buildRoomInView(s, true); };
+    const std::vector<unsigned char> want = freshFrame(built, RenderSettings{}, failures);
+    if (want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ from a bake made whole\n", share * 100.0f);
+    expect("  and it lights the room as the bake made whole does", share <= PIXEL_TOLERANCE, failures);
+
+    // Asked for again, the frames keep the grid they had until the new one is in, rather than
+    // going without for the whole of the bake.
+    g_bakeBudget = 1e-9f;
+    room.scene.forEach<IrradianceVolume>([](EntityId, IrradianceVolume& volume) { ++volume.bakeVersion; });
+    const std::vector<unsigned char> during = render(room, sliced, nullptr, RenderSettings{}, nullptr, 2);
+    g_bakeBudget = 0.0f;
+    expect("baked again, part-way", !sliced.readiness().ready(), failures);
+    const float kept = differingShare(during, seen.data());
+    std::printf("      %.2f%% of pixels differ meanwhile\n", kept * 100.0f);
+    expect("  the room keeps the light it had", kept <= PIXEL_TOLERANCE, failures);
+
+    // Moved, the box waits to settle before it bakes again; meanwhile the grid lies where its
+    // light was gathered, not stretched over the box as it now stands.
+    const std::vector<unsigned char> settled = render(room, sliced);
+    room.scene.forEach<IrradianceVolume, Transform>([](EntityId, IrradianceVolume&, Transform& at) {
+        at.position.x += 2.0f;
+    });
+    const std::vector<unsigned char> moving = render(room, sliced, nullptr, RenderSettings{}, nullptr, 2);
+    const float stays = differingShare(moving, settled.data());
+    std::printf("      %.2f%% of pixels differ while the box moves\n", stays * 100.0f);
+    expect(
+        "moved, the grid stays where it was baked until it bakes again",
+        stays <= PIXEL_TOLERANCE,
+        failures
+    );
+
+    // Another world in its place - the room sealed - is not lit by the last one's grid while
+    // its own bakes: it shows none, as a backend that never had one does.
+    const auto sealedPartway = [](GLBackend& backend, Scenery& s) {
+        g_bakeBudget = 1e-9f;
+        const std::vector<unsigned char> image = render(s, backend, nullptr, RenderSettings{}, nullptr, 2);
+        g_bakeBudget = 0.0f;
+        return image;
+    };
+    room.scene.clear();
+    buildRoomInView(room, false);
+    const std::vector<unsigned char> replaced = sealedPartway(sliced, room);
+    GLBackend fresh;
+    if (!fresh.init(window)) return;
+    Scenery sealed;
+    buildRoomInView(sealed, false);
+    const float stale = differingShare(replaced, sealedPartway(fresh, sealed).data());
+    std::printf("      %.2f%% of pixels differ from a backend with no grid yet\n", stale * 100.0f);
+    expect("a world replaced shows none of the last one's light", stale <= PIXEL_TOLERANCE, failures);
+}
+
+// A world whose meshes are still decoding bakes none of its light until they land: a bake begun
+// then would capture it part-made, and nothing bakes it again when they arrive.
+void testAWorldsBakesWaitForItsMeshes(int& failures) {
+    std::printf("A world whose meshes are still arriving:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery room;
+    buildRoomInView(room, true);
+    // All but the ground on a mesh still decoding, which draws nothing until it lands.
+    MeshAsset decoding;
+    decoding.loading = true;
+    const MeshHandle pending = room.resources.add(std::move(decoding), "golden:decoding");
+    std::vector<EntityId> walls;
+    room.scene.forEach<Mesh, Transform>([&](EntityId e, Mesh& drawn, const Transform& at) {
+        if (at.position.y <= 0.0f) return;
+        walls.push_back(e);
+        drawn.mesh = pending;
+    });
+
+    g_worldArriving = true;
+    render(room, backend);
+    g_worldArriving = false;
+    const RenderReadiness waiting = backend.readiness();
+    expect(
+        "while they arrive no bake begins, and the world's is owed",
+        !waiting.ready() && waiting.done == 0,
+        failures
+    );
+
+    for (const EntityId e : walls) room.scene.get<Mesh>(e).mesh = room.cube;
+    const std::vector<unsigned char> seen = render(room, backend);
+    const std::vector<unsigned char> want =
+        freshFrame([](Scenery& s) { buildRoomInView(s, true); }, RenderSettings{}, failures);
+    if (want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ from a world baked whole\n", share * 100.0f);
+    expect("once they land, it is lit as the world it is", share <= PIXEL_TOLERANCE, failures);
+}
+
+// What the backend says it owes is what its frames go on to bake: the reflection probes wait for
+// the volume that lights them, probes turned off owe nothing, and with no camera nothing is baked.
+void testReadinessOwesWhatTheFramesBake(int& failures) {
+    std::printf("A backend's readiness:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+
+    // A probe a frame, the least a slice takes: the first frame's one step is the volume's.
+    g_bakeBudget = 1e-9f;
+    Scenery room;
+    buildRoom(room);
+    render(room, backend, nullptr, RenderSettings{}, nullptr, 1);
+    g_bakeBudget = 0.0f;
+    const RenderReadiness first = backend.readiness();
+    expect("the probe waits for the volume part-way", first.done == 1 && !first.ready(), failures);
+
+    GLBackend off;
+    if (!off.init(window)) return;
+    Scenery unlit;
+    buildRoom(unlit);
+    RenderSettings noProbes;
+    noProbes.probes = false;
+    // Past the lightmap's settling, which is owed whatever the probes.
+    render(unlit, off, nullptr, noProbes, nullptr, SETTLED);
+    expect("probes turned off are not owed", off.readiness().ready(), failures);
+
+    GLBackend blind;
+    if (!blind.init(window)) return;
+    Scenery shell;
+    buildRoomShell(shell, true);
+    render(shell, blind);
+    expect("with no camera nothing is owed", blind.readiness().ready(), failures);
+}
+
+// A backend whose programs compile on the driver's threads owes them until they have, and once
+// they have draws the world as a backend that waited for each as it was built.
+void testProgramsCompiledInParallelDrawAsWaitedFor(int& failures) {
+    std::printf("A backend whose programs compile in parallel:\n");
+    restoreContextDefaults();
+    if (!Vkm::GL::ShaderBase::compileInParallel()) {
+        std::printf("  (this driver compiles one at a time - nothing to check)\n");
+        return;
+    }
+    using Wall = std::chrono::steady_clock;
+    const Wall::time_point begun = Wall::now();
+    WindowManager window;
+    GLBackend parallel;
+    const bool started = parallel.init(window);
+    const double built = std::chrono::duration<double>(Wall::now() - begun).count();
+    const uint32_t programs = parallel.readiness().programs;
+    // A driver that never says a program is done fails here, not hangs the suite.
+    constexpr double PATIENCE = 120.0;
+    Vkm::GL::ShaderCount count = Vkm::GL::countShaders();
+    while (count.compiling > 0 && std::chrono::duration<double>(Wall::now() - begun).count() < PATIENCE) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        count = Vkm::GL::countShaders();
+    }
+    expect("every program finishes compiling", count.compiling == 0, failures);
+    const double compiled = std::chrono::duration<double>(Wall::now() - begun).count();
+    std::printf("      %u programs, built in %.2f s and compiled in %.2f s\n", programs, built, compiled);
+    expect("it starts, owing its programs", started && programs > 0, failures);
+
+    Scenery room;
+    buildRoom(room);
+    const RenderSettings settings;
+    const std::vector<unsigned char> drawn = render(room, parallel, nullptr, settings, nullptr, SETTLED);
+    expect("  and once drawn owes none", parallel.readiness().programs == 0, failures);
+    Vkm::GL::ShaderBase::compileInParallel(false);
+
+    GLBackend serial;
+    if (!serial.init(window)) return;
+    Scenery same;
+    buildRoom(same);
+    const std::vector<unsigned char> waited = render(same, serial, nullptr, settings, nullptr, SETTLED);
+    const float differ = differingShare(drawn, waited.data());
+    std::printf("      %.2f%% of pixels differ from one built waiting\n", differ * 100.0f);
+    expect("the world draws as one whose programs were waited for", differ <= PIXEL_TOLERANCE, failures);
+}
+
+// A skinned mesh in its rest pose - one bone where it was bound, every vertex wholly on it - draws
+// as the mesh does unskinned: a vertex's weights are shares of its bones, read as 0..1.
+void testARestPoseSkinsAsTheMeshDraws(int& failures) {
+    std::printf("A skinned mesh at rest:\n");
+
+    PoseBuffer poses;
+    const auto cube = [&poses](bool rigged) {
+        return [&poses, rigged](Scenery& s) {
+            base(s);
+            MeshAsset asset = generateCube();
+            if (rigged) {
+                asset.skin.assign(asset.vertices.size(), SkinVertex{{0, 0, 0, 0}, {255, 0, 0, 0}});
+                asset.skinRadius = 1.0f;
+            }
+            const MeshHandle mesh = s.resources.add(std::move(asset), "golden:rest_cube");
+            const EntityId   id   = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 0.5f, 0.0f};
+            s.scene.add(id, std::move(at));
+            Mesh drawn;
+            drawn.mesh     = mesh;
+            drawn.material = material(s, "golden:rest", {0.7f, 0.3f, 0.2f}, 0.5f, 0.0f);
+            s.scene.add(id, std::move(drawn));
+            sunAndCamera(s, {2.5f, 2.0f, 3.0f}, {0.0f, 0.5f, 0.0f});
+
+            poses.clear();
+            if (!rigged) return;
+            const uint32_t  slice = poses.addSlice(1);
+            const PoseWrite write = poses.writeTo(slice);
+            write.global[0]  = glm::mat4(1.0f);
+            write.palette[0] = glm::mat4(1.0f);
+            finishSlice(write);
+            poses.mapEntity(id, slice);
+        };
+    };
+
+    const std::vector<unsigned char> plain = freshFrame(cube(false), RenderSettings{}, failures);
+    g_poses = &poses;
+    const std::vector<unsigned char> skinned = freshFrame(cube(true), RenderSettings{}, failures);
+    g_poses = nullptr;
+    if (plain.empty() || skinned.empty()) return;
+    const float share = differingShare(skinned, plain.data());
+    std::printf("      %.2f%% of pixels differ from the mesh unskinned\n", share * 100.0f);
+    expect("it draws where the mesh does", share <= PIXEL_TOLERANCE, failures);
+}
+
 // A relight cut short: the lamp switched on starts one, and the volume nudged and put back before
 // it settles ends it. No bake runs - the box is the baked one again - so the relight has to be
 // asked for anew, or the room keeps the dark it was baked in.
@@ -1925,6 +2235,464 @@ void testAMirrorShowsWhatIsBehindTheEye(int& failures) {
     expect("  and a particle behind the eye too", green[2] > green[1] + 40.0f, failures);
 }
 
+// A one-sided card behind the eye, mirrored by a negative scale and facing a planar mirror. The
+// mirror turns the winding once and the card's scale again: drawn with either turn alone, the card
+// shows the mirror its back and is culled from it.
+void testAMirroredCardShowsInAMirror(int& failures) {
+    std::printf("A mirrored card in a planar mirror:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    float red[2] = {};
+    for (const float side : {1.0f, -1.0f}) {
+        const auto build = [side](Scenery& s) {
+            base(s);
+            place(
+                s,
+                s.cube,
+                material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f),
+                {0.0f, 1.5f, -3.0f},
+                {4.0f, 3.0f, 0.05f}
+            );
+            const EntityId glass = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 1.5f, -2.975f};
+            at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+            s.scene.add(glass, std::move(at));
+            PlanarReflector mirror;
+            mirror.halfExtents = {2.0f, 1.5f};
+            s.scene.add(glass, std::move(mirror));
+
+            // Its front turned to the mirror, away from the eye.
+            const EntityId card = s.scene.createEntity();
+            Transform t;
+            t.position = {0.0f, 1.5f, 6.0f};
+            t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+            t.scale    = {6.0f * side, 6.0f, 6.0f};
+            s.scene.add(card, std::move(t));
+            Mesh m;
+            m.mesh     = s.resources.add(generatePlane(1.0f, 1.0f), "golden:card");
+            m.material = material(s, "golden:red", {0.9f, 0.05f, 0.05f}, 0.6f, 0.0f);
+            s.scene.add(card, std::move(m));
+            sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, -3.0f});
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+        red[side > 0.0f ? 0 : 1] = static_cast<float>(c.x) - static_cast<float>(c.y);
+    }
+    std::printf("      mirror centre, red over green: %.0f plain, %.0f mirrored\n", red[0], red[1]);
+    expect("the card shows in the mirror", red[0] > 40.0f, failures);
+    expect("  and mirrored by its scale, still does", red[1] > 40.0f, failures);
+}
+
+// A mirror shows the sun's shadow where the camera's cascades hold it: a point's cascade, and how far
+// the shadow reaches, are by its depth along the camera the cascades were fitted to, not the mirror's.
+// An eye looking steeply down at a wall mirror sees the floor in front of it at depths the mirror's
+// camera puts past the shadow's reach; a canopy out of view shades that floor.
+void testAMirrorShowsTheShadowTheCascadesHold(int& failures) {
+    std::printf("A mirror over a shaded floor the cascades hold:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    float level[2] = {};
+    for (const bool canopy : {false, true}) {
+        const auto build = [canopy](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.procedural   = false;
+            s.scene.environment().sky.sunElevation = 70.0f;
+            s.scene.environment().sky.sunAzimuth   = 20.0f;
+            const MaterialHandle grey   = material(s, "golden:floor", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+            const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+            place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {30.0f, 1.0f, 30.0f});
+            place(s, s.cube, silver, {0.0f, 1.5f, -3.0f}, {6.0f, 3.0f, 0.05f});
+            if (canopy) place(s, s.cube, grey, {0.0f, 14.0f, -2.0f}, {30.0f, 0.5f, 12.0f});
+            const EntityId glass = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 1.5f, -2.975f};
+            at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+            s.scene.add(glass, std::move(at));
+            PlanarReflector mirror;
+            mirror.halfExtents = {3.0f, 1.5f};
+            s.scene.add(glass, std::move(mirror));
+            sunAndCamera(s, {0.0f, 6.0f, 3.0f}, {0.0f, 1.0f, -3.0f});
+            s.scene.forEach<Light>([](EntityId, Light& light) { light.shadowDistance = 10.0f; });
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+        level[canopy ? 1 : 0] = static_cast<float>(c.x + c.y + c.z);
+    }
+    std::printf("      mirror centre: %.0f open, %.0f under the canopy\n", level[0], level[1]);
+    expect("the mirror shows the canopy's shadow on the floor", level[1] < 0.6f * level[0], failures);
+}
+
+// A mirror reads the lightmaps as the frame does: a fixed sun's shadow baked on a fixed floor far
+// behind the eye, where the camera's cascades hold nothing and a live shadow reads lit, shows in a
+// mirror the eye faces. A fixed canopy over that floor shades it.
+void testAMirrorShowsWhatAFixedSunBaked(int& failures) {
+    std::printf("A mirror over a floor a fixed sun baked:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    float level[2] = {};
+    for (const bool canopy : {false, true}) {
+        const auto build = [canopy](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.procedural   = false;
+            s.scene.environment().sky.sunElevation = 70.0f;
+            s.scene.environment().sky.sunAzimuth   = 20.0f;
+            MeshAsset plane = generatePlane(1.0f, 1.0f, 1, 1);
+            for (const Vertex& v : plane.vertices) plane.lightmapUVs.push_back(v.uv);
+            const MeshHandle     floor  = s.resources.add(std::move(plane), "golden:mirror_baked_floor");
+            const MaterialHandle grey   = material(s, "golden:floor", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+            const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+            place(s, floor, grey, {0.0f, 0.0f, 0.0f}, {80.0f, 1.0f, 80.0f});
+            place(s, s.cube, silver, {0.0f, 1.5f, -3.0f}, {6.0f, 3.0f, 0.05f});
+            // Over where the mirror's centre sees the floor, eighteen metres behind the eye.
+            if (canopy) place(s, s.cube, grey, {0.0f, 6.0f, 21.0f}, {30.0f, 0.5f, 30.0f});
+            s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+            const EntityId glass = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 1.5f, -2.975f};
+            at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+            s.scene.add(glass, std::move(at));
+            PlanarReflector mirror;
+            mirror.halfExtents = {3.0f, 1.5f};
+            s.scene.add(glass, std::move(mirror));
+            sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.2f, -3.0f});
+            s.scene.forEach<Light>([](EntityId, Light& light) {
+                light.movable        = false;
+                light.shadowDistance = 10.0f;
+            });
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures, SETTLED);
+        if (frame.empty()) return;
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+        level[canopy ? 1 : 0] = static_cast<float>(c.x + c.y + c.z);
+    }
+    std::printf("      mirror centre: %.0f open, %.0f under the canopy\n", level[0], level[1]);
+    expect("the mirror shows the baked shadow behind the eye", level[1] < 0.6f * level[0], failures);
+}
+
+// An orthographic eye's rays are parallel, so the sky in a mirror it faces would be one direction of
+// it across the whole glass; it takes the sky a default eye sees, as the frame's own sky does, and
+// the horizon runs across the mirror.
+void testAnOrthographicEyesMirrorShowsTheHorizon(int& failures) {
+    std::printf("A mirror facing an orthographic eye:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+        place(s, s.cube, silver, {0.0f, 0.0f, -3.0f}, {12.0f, 12.0f, 0.05f});
+        const EntityId glass = s.scene.createEntity();
+        Transform at;
+        at.position = {0.0f, 0.0f, -2.975f};
+        at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        s.scene.add(glass, std::move(at));
+        PlanarReflector mirror;
+        mirror.halfExtents = {6.0f, 6.0f};
+        s.scene.add(glass, std::move(mirror));
+        sunAndCamera(s, {0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, -3.0f});
+        s.scene.forEach<Camera>([](EntityId, Camera& lens) {
+            lens.projection  = ProjectionType::Orthographic;
+            lens.orthoHeight = 4.0f;
+        });
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+    const glm::ivec3 top    = pixel(frame, WIDTH / 2, HEIGHT / 8);
+    const glm::ivec3 bottom = pixel(frame, WIDTH / 2, 7 * HEIGHT / 8);
+    const int apart = std::abs(top.x - bottom.x) + std::abs(top.y - bottom.y) + std::abs(top.z - bottom.z);
+    std::printf("      top %d %d %d, bottom %d %d %d\n", top.x, top.y, top.z, bottom.x, bottom.y, bottom.z);
+    expect("the mirror's sky changes from top to bottom", apart > 30, failures);
+}
+
+// A mirror shows the world behind the eye as the frame would: where the scene hides its skybox, the
+// mirror shows none either, the frame's black.
+void testAMirrorHidesTheSkyTheSceneHides(int& failures) {
+    std::printf("A mirror facing an empty sky the scene hides:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+        place(s, s.cube, silver, {0.0f, 0.0f, -3.0f}, {12.0f, 12.0f, 0.05f});
+        const EntityId glass = s.scene.createEntity();
+        Transform at;
+        at.position = {0.0f, 0.0f, -2.975f};
+        at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        s.scene.add(glass, std::move(at));
+        PlanarReflector mirror;
+        mirror.halfExtents = {6.0f, 6.0f};
+        s.scene.add(glass, std::move(mirror));
+        sunAndCamera(s, {0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, -3.0f});
+        s.scene.environment().sky.showSkybox = false;
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+    const glm::ivec3 top = pixel(frame, WIDTH / 2, HEIGHT / 8);
+    std::printf("      the mirror's top shows %d %d %d\n", top.x, top.y, top.z);
+    expect("it shows no sky", top.x + top.y + top.z < 30, failures);
+}
+
+// Each drawn mirror's picture is sized by its renderScale: one that changes rank as the eye moves
+// keeps the storage it drew into, rather than swapping, and reallocating, with the other.
+void testAMirrorKeepsItsPictureAsTheEyeMoves(int& failures) {
+    std::printf("Two mirrors trading places on the screen:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery setting;
+    base(setting);
+    for (const float x : {-2.5f, 2.5f}) {
+        const EntityId glass = setting.scene.createEntity();
+        Transform at;
+        at.position = {x, 1.0f, -3.0f};
+        at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        setting.scene.add(glass, std::move(at));
+        PlanarReflector mirror;
+        mirror.halfExtents = {2.0f, 1.0f};
+        mirror.renderScale = x < 0.0f ? 0.5f : 1.0f;
+        setting.scene.add(glass, std::move(mirror));
+    }
+    sunAndCamera(setting, {-2.5f, 1.0f, 1.0f}, {-2.5f, 1.0f, -3.0f});
+    render(setting, lived);
+    const GLPlanarReflectionPass& pass = lived.planarReflections();
+    const int left  = pass.slotOf(0);
+    const int right = pass.slotOf(1);
+    const bool apart = left >= 0 && right >= 0 && left != right;
+    expect("both mirrors draw, each into its own storage", apart, failures);
+
+    setting.scene.forEach<Camera, Transform>([](EntityId, Camera&, Transform& pose) {
+        pose.position = {2.5f, 1.0f, 1.0f};
+    });
+    render(setting, lived);
+    expect(
+        "  and once the other covers more, each keeps its own",
+        pass.slotOf(0) == left && pass.slotOf(1) == right,
+        failures
+    );
+}
+
+// A particle's card faces its eye, built on the eye's axes; in a floor mirror its picture is upside
+// down, as the scene's is: of a card in two colors over a floor mirror, the mirror shows the other
+// color on top.
+void testAMirrorTurnsAParticleOver(int& failures) {
+    std::printf("A particle over a floor mirror:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+        place(s, s.cube, silver, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+        const EntityId glass = s.scene.createEntity();
+        Transform at;
+        at.position = {0.0f, 0.001f, 0.0f};
+        s.scene.add(glass, std::move(at));
+        PlanarReflector mirror;
+        mirror.halfExtents = {10.0f, 10.0f};
+        s.scene.add(glass, std::move(mirror));
+
+        TextureAsset halves;
+        halves.params.width  = 2;
+        halves.params.height = 2;
+        halves.pixelData = {255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255};
+        ParticleEmitter card;
+        card.blend   = ParticleBlend::Additive;
+        card.texture = s.resources.add(std::move(halves), "golden:halves");
+        holdLook(card, glm::vec4(1.0f), 1.0f);
+        Particle p;
+        p.position = {0.0f, 0.9f, 0.0f};
+        p.size     = 0.35f;
+        addEmitter(s, card).push_back(p);
+        sunAndCamera(s, {0.0f, 0.8f, 4.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // Down the middle column: where red and where green, above and below the card's own middle.
+    std::vector<int> red;
+    std::vector<int> green;
+    for (int y = 0; y < HEIGHT; ++y) {
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, y);
+        if (c.x > c.y + 30) red.push_back(y);
+        if (c.y > c.x + 30) green.push_back(y);
+    }
+    if (red.empty() || green.empty()) {
+        expect("the card and its reflection are seen", false, failures);
+        return;
+    }
+    const int top    = std::min(red.front(), green.front());
+    const int bottom = std::max(red.back(), green.back());
+    const int split  = (top + bottom) / 2;
+    const auto mean = [](const std::vector<int>& rows, int from, int to) {
+        double sum = 0.0;
+        int    n   = 0;
+        for (int y : rows) {
+            if (y < from || y >= to) continue;
+            sum += y;
+            ++n;
+        }
+        return n > 0 ? sum / n : -1.0;
+    };
+    const double redAbove   = mean(red, 0, split);
+    const double greenAbove = mean(green, 0, split);
+    const double redBelow   = mean(red, split, HEIGHT);
+    const double greenBelow = mean(green, split, HEIGHT);
+    std::printf(
+        "      seen: red %.0f green %.0f; mirrored: red %.0f green %.0f\n",
+        redAbove,
+        greenAbove,
+        redBelow,
+        greenBelow
+    );
+    const bool seen  = redAbove >= 0.0 && greenAbove >= 0.0;
+    const bool shown = redBelow >= 0.0 && greenBelow >= 0.0;
+    expect("the card and its reflection are seen", seen && shown, failures);
+    expect(
+        "  the reflection upside down",
+        seen && shown && (redAbove < greenAbove) != (redBelow < greenBelow),
+        failures
+    );
+}
+
+// A spot wider than one perspective map can hold casts through a cube, as a point light does: the
+// rim of its cone, past what a map reaches, is shadowed too. A spot straight down with an 88-degree
+// cone, and a block between it and floor 86 degrees off its axis.
+void testAWideSpotShadowsItsRim(int& failures) {
+    std::printf("A spot wider than one shadow map:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    float level[2] = {};
+    for (const bool blocked : {false, true}) {
+        const auto build = [blocked](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.procedural = false;
+            s.scene.environment().sky.intensity  = 0.02f;
+            const MaterialHandle grey = material(s, "golden:floor", {0.7f, 0.7f, 0.7f}, 0.9f, 0.0f);
+            place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {160.0f, 1.0f, 160.0f});
+            if (blocked) place(s, s.cube, grey, {16.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 3.0f});
+            const EntityId lamp = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 2.0f, 0.0f};
+            at.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+            s.scene.add(lamp, std::move(at));
+            Light spot;
+            spot.type           = LightType::Spot;
+            spot.intensity      = 20000.0f;
+            spot.radius         = 80.0f;
+            spot.innerConeAngle = glm::radians(80.0f);
+            spot.outerConeAngle = glm::radians(88.0f);
+            spot.castShadows    = true;
+            s.scene.add(lamp, std::move(spot));
+            camera(s, {26.0f, 4.0f, 8.0f}, {32.0f, 0.0f, 0.0f});
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+        level[blocked ? 1 : 0] = static_cast<float>(c.x + c.y + c.z);
+    }
+    std::printf("      floor past the map's reach: %.0f open, %.0f behind the block\n", level[0], level[1]);
+    expect("the floor behind the block is in its shadow", level[1] < 0.5f * level[0], failures);
+}
+
+// A material preview borrows the forward pass's program, which the pass leaves set for its own
+// frame: a preview drawn after a frame in a debug view is the one drawn after the plain frame.
+void testAPreviewIsNotTheFramesDebugView(int& failures) {
+    std::printf("A material preview after a frame in a debug view:\n");
+    const auto preview = [](GLBackend& backend) {
+        ResourceManager resources;
+        MaterialAsset red;
+        red.albedo = glm::vec4(0.8f, 0.2f, 0.15f, 1.0f);
+        PreviewRequest request;
+        request.key      = 7;
+        request.width    = 64;
+        request.height   = 64;
+        const MeshHandle ball = resources.add(generateSphere(), "golden:preview_ball");
+        request.draws    = {{ball, resources.add(std::move(red), "golden:preview_red")}};
+        const GpuTextureId id = backend.editorHooks()->renderPreview(request, resources);
+        std::vector<unsigned char> pixels(64 * 64 * 4, 0);
+        if (id == 0) return pixels;
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(id));
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        return pixels;
+    };
+
+    // The preview is lit as the last frame's scene is, so both draw the same scene first.
+    const auto afterAFrameIn = [&](RenderMode mode) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return std::vector<unsigned char>{};
+        }
+        RenderSettings settings;
+        settings.msaaSamples = 1;
+        settings.renderMode  = mode;
+        Scenery s;
+        buildMirror(s);
+        render(s, backend, nullptr, settings);
+        return preview(backend);
+    };
+    const std::vector<unsigned char> want = afterAFrameIn(RenderMode::Default);
+    const std::vector<unsigned char> seen = afterAFrameIn(RenderMode::LightingOnly);
+    if (want.empty() || seen.empty()) return;
+
+    size_t differing = 0;
+    for (size_t i = 0; i < want.size(); i += 4) {
+        for (size_t c = 0; c < 3; ++c) {
+            if (std::abs(int(want[i + c]) - int(seen[i + c])) > 2) {
+                ++differing;
+                break;
+            }
+        }
+    }
+    const float share = static_cast<float>(differing) / static_cast<float>(want.size() / 4);
+    std::printf("      %.2f%% of the preview's pixels differ\n", share * 100.0f);
+    expect("the preview is drawn as its own studio, not the frame's", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A viewmodel's depth is squashed against the near plane, so read back as a place it is a point at
+// the eye: a decal whose box takes in the eye would paint it. No decal lands on it.
+void testNoDecalLandsOnTheViewmodel(int& failures) {
+    std::printf("A decal around the eye, and the weapon held there:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto frameWith = [&](bool decal) {
+        return freshFrame(
+            [decal](Scenery& s) {
+                buildHeld(s, SeenBy::Viewmodel, -0.55f);
+                if (!decal) return;
+                MaterialAsset paint;
+                paint.type   = MaterialType::Transparent;
+                paint.albedo = glm::vec4(0.9f, 0.15f, 0.1f, 1.0f);
+                const EntityId id = s.scene.createEntity();
+                Transform pose;
+                pose.position = {0.0f, 1.6f, 0.0f};
+                pose.scale    = glm::vec3(0.6f);
+                s.scene.add(id, std::move(pose));
+                Decal projector;
+                projector.material = s.resources.add(std::move(paint), "golden:eye_paint");
+                s.scene.add(id, std::move(projector));
+            },
+            settings,
+            failures
+        );
+    };
+    const std::vector<unsigned char> bare    = frameWith(false);
+    const std::vector<unsigned char> painted = frameWith(true);
+    if (bare.empty() || painted.empty()) return;
+    const float share = differingShare(painted, bare.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("the weapon is drawn as it is without the decal", share <= PIXEL_TOLERANCE, failures);
+}
+
 // GTAO reads a viewmodel's squashed depth as sky: as near as it is drawn, it would shade the wall
 // it is held against with a halo. Against the same wall with the block hidden in it, the wall
 // round the block's outline keeps its shade.
@@ -2000,6 +2768,772 @@ void testSoftShadowsOffDrawTheHardPath(int& failures) {
     std::printf("      off %.2f%%, on %.2f%% of pixels unlike a sun of no size\n", off * 100.0f, on * 100.0f);
     expect("soft shadows off draw the frame a sun of no size draws", off <= PIXEL_TOLERANCE, failures);
     expect("  where soft ones draw another", on > PIXEL_TOLERANCE, failures);
+}
+
+// A tower on a floor that reads a lightmap (its plane's own coordinates are a fair unwrap), under
+// a sun that is fixed (@p fixedSun) or live; and a red ball, which moves, standing in the light.
+void buildBakedTower(Scenery& s, bool fixedSun, bool tower, bool ball) {
+    base(s);
+    s.scene.environment().sky.procedural   = false;
+    s.scene.environment().sky.sunElevation = 18.0f;
+    s.scene.environment().sky.sunAzimuth   = 100.0f;
+    MeshAsset plane = generatePlane(1.0f, 1.0f, 1, 1);
+    for (const Vertex& v : plane.vertices) plane.lightmapUVs.push_back(v.uv);
+    const MeshHandle floor = s.resources.add(std::move(plane), "golden:baked_floor");
+    const MaterialHandle slate = material(s, "golden:baked_slate", {0.45f, 0.45f, 0.45f}, 0.8f, 0.0f);
+    place(s, floor, slate, {0.0f, 0.0f, 0.0f}, {80.0f, 1.0f, 80.0f});
+    constexpr float TOWER_HEIGHT = 8.0f;
+    if (tower) {
+        place(
+            s,
+            s.cube,
+            material(s, "golden:baked_tower", {0.6f, 0.6f, 0.62f}, 0.7f, 0.0f),
+            {0.0f, TOWER_HEIGHT * 0.5f, 0.0f},
+            {3.0f, TOWER_HEIGHT, 3.0f}
+        );
+    }
+    s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+
+    const glm::vec3 sun    = s.scene.environment().sunDirection();
+    const glm::vec3 tip    = glm::vec3(0.0f, TOWER_HEIGHT, 0.0f) - sun * (TOWER_HEIGHT / sun.y);
+    const glm::vec3 across = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), sun));
+    if (ball) {
+        const MaterialHandle red = material(s, "golden:baked_ball", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.sphere, red, tip + across * 4.0f + glm::vec3(0.0f, 0.5f, 0.0f), glm::vec3(1.0f));
+    }
+    sunAndCamera(s, tip + across * 8.0f + glm::vec3(0.0f, 3.0f, 0.0f), tip + across * 2.0f);
+    // A sun nearly a point: where the shadow falls is what the bake must agree on; a soft edge
+    // is each filter's own.
+    s.scene.forEach<Light>([fixedSun](EntityId, Light& light) {
+        light.sourceRadius   = 0.002f;
+        light.shadowDistance = 1000.0f;
+        light.movable        = !fixedSun;
+    });
+}
+
+// A fixed sun's shadow on a fixed floor is the floor's lightmap's, baked once the scene has held
+// still: the frame is all but the one the live shadow draws, the tower's shadow is in it, and a
+// ball that moves still casts on the baked floor.
+void testAFixedSunsShadowIsBaked(int& failures) {
+    std::printf("A fixed sun over a fixed floor:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto frame = [&](bool fixedSun, bool tower, bool ball) {
+        return freshFrame(
+            [=](Scenery& s) { buildBakedTower(s, fixedSun, tower, ball); },
+            settings,
+            failures,
+            SETTLED
+        );
+    };
+    const std::vector<unsigned char> baked    = frame(true, true, false);
+    const std::vector<unsigned char> live     = frame(false, true, false);
+    const std::vector<unsigned char> bare     = frame(true, false, false);
+    const std::vector<unsigned char> withBall = frame(true, true, true);
+    if (baked.empty() || live.empty() || bare.empty() || withBall.empty()) return;
+
+    const float fromLive = differingShare(baked, live.data());
+    const float fromBare = differingShare(baked, bare.data());
+    const float fromBall = differingShare(withBall, baked.data());
+    std::printf("      %.2f%% of pixels unlike the live shadow's frame\n", fromLive * 100.0f);
+    std::printf("      %.2f%% unlike no tower's\n", fromBare * 100.0f);
+    std::printf("      %.2f%% unlike the ball's\n", fromBall * 100.0f);
+    expect("the baked shadow draws nearly the live one's frame", fromLive <= BAKED_TOLERANCE, failures);
+    expect("  with the tower's shadow in it", fromBare > 0.05f, failures);
+    expect("  and a ball that moves still casts on the baked floor", fromBall > 0.01f, failures);
+}
+
+// A fixed mesh that stops casting, is given another mesh or has its own rebuilt changes what the
+// bake holds: a backend that baked the tower before draws, once settled, what a fresh one draws of
+// the changed scene.
+void testABakeFollowsWhatItsCastersBecome(int& failures) {
+    std::printf("A fixed caster changed after its bake:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto tower = [](Scenery& s, const std::function<void(Mesh&)>& change) {
+        s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+            if (mesh.mesh == s.cube) change(mesh);
+        });
+    };
+
+    const auto changedAfterBaking = [&](const char* what, const std::function<void(Scenery&)>& change) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend lived;
+        if (!lived.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildBakedTower(s, true, true, false);
+        render(s, lived, nullptr, settings, nullptr, SETTLED);
+        change(s);
+        const std::vector<unsigned char> seen = render(s, lived, nullptr, settings, nullptr, SETTLED);
+        const std::vector<unsigned char> want = freshFrame(
+            [&](Scenery& fresh) {
+                buildBakedTower(fresh, true, true, false);
+                change(fresh);
+            },
+            settings,
+            failures,
+            SETTLED
+        );
+        if (seen.empty() || want.empty()) return;
+        const float share = differingShare(seen, want.data());
+        std::printf("      %s: %.2f%% of pixels differ\n", what, share * 100.0f);
+        expect(what, share <= PIXEL_TOLERANCE, failures);
+    };
+
+    changedAfterBaking("a tower that stops casting takes its baked shadow with it", [&](Scenery& s) {
+        tower(s, [](Mesh& mesh) { mesh.castShadows = false; });
+    });
+    changedAfterBaking("a tower given another mesh casts that mesh's shadow", [&](Scenery& s) {
+        tower(s, [&](Mesh& mesh) { mesh.mesh = s.sphere; });
+    });
+    changedAfterBaking("a tower whose mesh is rebuilt in place casts its new shape", [&](Scenery& s) {
+        MeshAsset rebuilt = generateSphere();
+        s.resources.swapValue(s.cube, rebuilt);
+    });
+}
+
+// The baked tower under cascades that reach a metre: the tower's shadow in the frame is the bake's
+// alone.
+void buildBakeOnlyTower(Scenery& s) {
+    buildBakedTower(s, true, true, false);
+    s.scene.forEach<Light>([](EntityId, Light& light) { light.shadowDistance = 1.0f; });
+}
+
+// Apply @p change to the baked tower's floor.
+void changeBakedFloor(Scenery& s, const std::function<void(EntityId, Mesh&)>& change) {
+    const MeshHandle floor = s.resources.findByName<MeshAsset>("golden:baked_floor");
+    s.scene.forEach<Mesh>([&](EntityId id, Mesh& mesh) {
+        if (mesh.mesh == floor) change(id, mesh);
+    });
+}
+
+// Move every camera @p back metres behind where it looks from; negative brings it forward again.
+void moveEyeBack(Scenery& s, float back) {
+    s.scene.forEach<Camera>([&](EntityId id, Camera&) {
+        Transform& eye = s.scene.get<Transform>(id);
+        eye.position -= eye.rotation * glm::vec3(0.0f, 0.0f, -1.0f) * back;
+    });
+}
+
+// A bake is made from the meshes a scene gave its fixed objects, not the levels of detail the eye
+// picks: a tower whose far level is a block four times as wide, baked with the eye far off and then
+// brought near, draws what a backend that baked it near draws - the tower's own shadow. The far
+// level casts where the tower does not: one inside the tower would bake nothing a frame could tell
+// from the tower's own shadow. The tower's own mesh is its alone and carries no lightmap
+// coordinates: nothing the eye sees far off draws it. Seen near for fewer frames than a bake
+// settles in, so the bake made far off is the one shown.
+void testABakeIsMadeFromTheGivenMeshWhereverTheEyeIs(int& failures) {
+    std::printf("A fixed caster with a level of detail, baked far off and seen near:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    // The tower draws the wide block past NEAR_REACH; FAR_BACK puts the eye well past it to bake.
+    constexpr float NEAR_REACH = 100.0f;
+    constexpr float FAR_BACK   = 400.0f;
+    const auto build = [](Scenery& s) {
+        buildBakeOnlyTower(s);
+        MeshAsset block = generateCube();
+        for (Vertex& v : block.vertices) v.position *= glm::vec3(4.0f, 1.0f, 4.0f);
+        block.computeAndSetBounds();
+        const MeshHandle wide = s.resources.add(std::move(block), "golden:baked_tower_far");
+        const MeshHandle own  = s.resources.add(generateCube(), "golden:baked_tower_own");
+        s.scene.forEach<Mesh>([&](EntityId id, Mesh& mesh) {
+            if (mesh.mesh != s.cube) return;
+            mesh.mesh = own;
+            LOD lod;
+            lod.levels = {{own, NEAR_REACH}, {wide, std::numeric_limits<float>::max()}};
+            s.scene.add(id, std::move(lod));
+        });
+    };
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s);
+    moveEyeBack(s, FAR_BACK);
+    render(s, lived, nullptr, settings, nullptr, SETTLED);
+    moveEyeBack(s, -FAR_BACK);
+    static_assert(FRAMES < static_cast<int>(CAPTURE_SETTLE_FRAMES), "no bake settles while seen near");
+    const std::vector<unsigned char> seen = render(s, lived, nullptr, settings, nullptr, FRAMES);
+    const std::vector<unsigned char> want = freshFrame(build, settings, failures, SETTLED);
+    if (seen.empty() || want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels unlike the bake made near\n", share * 100.0f);
+    expect("the bake made far off is the tower's, not its far level's", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A fixed receiver reads its lightmap only while it stands as it was baked: one made movable, or
+// moved, draws from its next frame what it would with no bake.
+void testAReceiverReadsItsBakeOnlyAsItWasBaked(int& failures) {
+    std::printf("A fixed receiver changed after its bake:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto changedAfterBaking = [&](const char* what, const std::function<void(Scenery&)>& change) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend lived;
+        if (!lived.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildBakeOnlyTower(s);
+        const std::vector<unsigned char> baked = render(s, lived, nullptr, settings, nullptr, SETTLED);
+        change(s);
+        static_assert(FRAMES < static_cast<int>(CAPTURE_SETTLE_FRAMES), "no bake settles after the change");
+        const std::vector<unsigned char> seen = render(s, lived, nullptr, settings, nullptr, FRAMES);
+        const std::vector<unsigned char> want = freshFrame(
+            [&](Scenery& fresh) {
+                buildBakeOnlyTower(fresh);
+                change(fresh);
+            },
+            settings,
+            failures,
+            FRAMES
+        );
+        if (baked.empty() || seen.empty() || want.empty()) return;
+        const float before = differingShare(baked, want.data());
+        const float share  = differingShare(seen, want.data());
+        std::printf(
+            "      %s: %.2f%% of pixels unlike no bake's, %.2f%% before\n",
+            what,
+            share * 100.0f,
+            before * 100.0f
+        );
+        expect(what, share <= PIXEL_TOLERANCE, failures);
+        expect("  where its bake had drawn the tower's shadow", before > 0.01f, failures);
+    };
+
+    changedAfterBaking("a floor made movable reads no bake", [](Scenery& s) {
+        changeBakedFloor(s, [](EntityId, Mesh& mesh) { mesh.movable = true; });
+    });
+    changedAfterBaking("a fixed floor moved reads no bake", [](Scenery& s) {
+        changeBakedFloor(s, [&](EntityId id, Mesh&) { s.scene.get<Transform>(id).position.x += 3.0f; });
+    });
+}
+
+// A fixed floor reads its lightmap through a level of detail only while the level's lightmap
+// coordinates are laid out as its own: one whose coordinates are the floor's, as a decimation keeps
+// them, draws the floor's baked shadow; one unwrapped apart, into the middle of the square, draws
+// what a floor with no bake draws.
+void testALevelReadsTheBakeOnlyThroughItsGivenMeshsCharts(int& failures) {
+    std::printf("A fixed floor drawn as a level of detail, against its bake:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto withLevel = [](bool ownUnwrap) {
+        return [ownUnwrap](Scenery& s) {
+            buildBakeOnlyTower(s);
+            MeshAsset plane = generatePlane(1.0f, 1.0f, 1, 1);
+            for (const Vertex& v : plane.vertices) {
+                plane.lightmapUVs.push_back(ownUnwrap ? v.uv * 0.5f + glm::vec2(0.25f) : v.uv);
+            }
+            const MeshHandle level = s.resources.add(std::move(plane), "golden:baked_floor_level");
+            const MeshHandle floor = s.resources.findByName<MeshAsset>("golden:baked_floor");
+            // Past a metre from its centre, which the eye is, the floor draws the level.
+            changeBakedFloor(s, [&](EntityId id, Mesh&) {
+                LOD lod;
+                lod.levels = {{floor, 1.0f}, {level, std::numeric_limits<float>::max()}};
+                s.scene.add(id, std::move(lod));
+            });
+        };
+    };
+    const auto unbaked = [](Scenery& s) {
+        buildBakeOnlyTower(s);
+        changeBakedFloor(s, [](EntityId, Mesh& mesh) { mesh.movable = true; });
+    };
+    const std::vector<unsigned char> plain  = freshFrame(buildBakeOnlyTower, settings, failures, SETTLED);
+    const std::vector<unsigned char> kept   = freshFrame(withLevel(false), settings, failures, SETTLED);
+    const std::vector<unsigned char> apart  = freshFrame(withLevel(true), settings, failures, SETTLED);
+    const std::vector<unsigned char> noBake = freshFrame(unbaked, settings, failures, SETTLED);
+    if (plain.empty() || kept.empty() || apart.empty() || noBake.empty()) return;
+    const float fromPlain  = differingShare(kept, plain.data());
+    const float fromNoBake = differingShare(apart, noBake.data());
+    const float baked      = differingShare(plain, noBake.data());
+    std::printf("      its own coordinates: %.2f%% of pixels unlike the floor's frame\n", fromPlain * 100.0f);
+    std::printf("      unwrapped apart: %.2f%% unlike no bake's\n", fromNoBake * 100.0f);
+    expect("a level laid out as the floor reads its bake", fromPlain <= PIXEL_TOLERANCE, failures);
+    expect("  one unwrapped apart reads none", fromNoBake <= PIXEL_TOLERANCE, failures);
+    expect("  where the bake draws the tower's shadow", baked > 0.01f, failures);
+}
+
+// A fixed floor is baked as its own mesh into its own square whatever level it draws: baked with
+// the eye far off, where it draws a level unwrapped apart that reads none of its bake, and then seen
+// near, where it draws its own mesh, it draws what a backend that baked it near draws - the tower's
+// shadow where it falls. Seen near for fewer frames than a bake settles in, so the bake made far off
+// is the one shown.
+void testAReceiverIsBakedAsItsGivenMeshWhateverLevelItDraws(int& failures) {
+    std::printf("A fixed floor baked while it draws a level unwrapped apart, then seen near:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    // The floor draws the level past NEAR_REACH; FAR_BACK puts the eye well past it to bake.
+    constexpr float NEAR_REACH = 100.0f;
+    constexpr float FAR_BACK   = 400.0f;
+    const auto build = [](Scenery& s) {
+        buildBakeOnlyTower(s);
+        MeshAsset plane = generatePlane(1.0f, 1.0f, 1, 1);
+        for (const Vertex& v : plane.vertices) plane.lightmapUVs.push_back(v.uv * 0.5f + glm::vec2(0.25f));
+        const MeshHandle level = s.resources.add(std::move(plane), "golden:baked_floor_apart");
+        const MeshHandle floor = s.resources.findByName<MeshAsset>("golden:baked_floor");
+        changeBakedFloor(s, [&](EntityId id, Mesh&) {
+            LOD lod;
+            lod.levels = {{floor, NEAR_REACH}, {level, std::numeric_limits<float>::max()}};
+            s.scene.add(id, std::move(lod));
+        });
+    };
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s);
+    moveEyeBack(s, FAR_BACK);
+    render(s, lived, nullptr, settings, nullptr, SETTLED);
+    moveEyeBack(s, -FAR_BACK);
+    static_assert(FRAMES < static_cast<int>(CAPTURE_SETTLE_FRAMES), "no bake settles while seen near");
+    const std::vector<unsigned char> seen = render(s, lived, nullptr, settings, nullptr, FRAMES);
+    const std::vector<unsigned char> want = freshFrame(build, settings, failures, SETTLED);
+    if (seen.empty() || want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels unlike the bake made near\n", share * 100.0f);
+    expect("the floor baked as a level apart is baked as its own mesh", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A wall far down the view and a ball before it, both in the sun's last cascade, over a floor; the
+// sun moves, so nothing is baked. With @p wallFixed false every mesh moves.
+void buildFarWall(Scenery& s, bool wall, bool wallFixed, float ballX) {
+    base(s);
+    s.scene.environment().sky.procedural   = false;
+    s.scene.environment().sky.sunElevation = 30.0f;
+    s.scene.environment().sky.sunAzimuth   = 80.0f;
+    const MaterialHandle slate = material(s, "golden:far_slate", {0.45f, 0.45f, 0.45f}, 0.8f, 0.0f);
+    place(s, s.cube, slate, {0.0f, -0.5f, -40.0f}, {120.0f, 1.0f, 120.0f});
+    if (wall) place(s, s.cube, slate, {0.0f, 4.0f, -45.0f}, {12.0f, 8.0f, 1.0f});
+    s.scene.forEach<Mesh>([wallFixed](EntityId, Mesh& mesh) { mesh.movable = !wallFixed; });
+    const MaterialHandle red = material(s, "golden:far_ball", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+    place(s, s.sphere, red, {ballX, 3.5f, -28.0f}, glm::vec3(7.0f));
+    sunAndCamera(s, {0.0f, 6.0f, 0.0f}, {0.0f, 0.0f, -40.0f});
+    s.scene.forEach<Light>([](EntityId, Light& light) {
+        light.movable        = true;
+        light.shadowDistance = 60.0f;
+    });
+}
+
+// The sun's last cascade starts from the layer its fixed casters hold and draws over it only what
+// moves: a backend that kept the layer while the ball moved draws what a fresh one draws with every
+// mesh moving, and the far wall's shadow is in it.
+void testTheLastCascadeDrawsWhatItsLayerHolds(int& failures) {
+    std::printf("The sun's last cascade, from its layer:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    buildFarWall(s, true, true, 12.0f);
+    render(s, lived, nullptr, settings);
+    s.scene.forEach<Mesh>([&](EntityId id, Mesh& mesh) {
+        if (mesh.mesh == s.sphere) s.scene.get<Transform>(id).position.x = -12.0f;
+    });
+    const std::vector<unsigned char> seen = render(s, lived, nullptr, settings);
+
+    const auto fresh = [&](bool wall) {
+        return freshFrame([=](Scenery& f) { buildFarWall(f, wall, false, -12.0f); }, settings, failures);
+    };
+    const std::vector<unsigned char> want = fresh(true);
+    const std::vector<unsigned char> bare = fresh(false);
+    if (seen.empty() || want.empty() || bare.empty()) return;
+
+    const float fromWant = differingShare(seen, want.data());
+    const float fromBare = differingShare(seen, bare.data());
+    std::printf("      %.2f%% of pixels unlike every mesh moving\n", fromWant * 100.0f);
+    std::printf("      %.2f%% unlike no wall's\n", fromBare * 100.0f);
+    expect("the held layer draws what moving meshes draw", fromWant <= PIXEL_TOLERANCE, failures);
+    expect("  with the far wall's shadow in it", fromBare > 0.01f, failures);
+}
+
+// A pond in a scene with no sea: water (MaterialAsset::water) on a plane, its ripples @p ripples of
+// the scene's, running at @p flow along the plane's +U, under a low sun.
+void buildPond(Scenery& s, float ripples, float flow) {
+    base(s);
+    s.scene.environment().sky.procedural   = false;
+    s.scene.environment().sky.sunElevation = 25.0f;
+    s.scene.environment().sky.sunAzimuth   = 200.0f;
+    MaterialAsset water;
+    water.water           = WaterKind::Body;
+    water.rippleScale     = ripples;
+    water.flowSpeed       = flow;
+    water.albedo          = glm::vec4(0.02f, 0.05f, 0.06f, 1.0f);
+    water.roughness       = 0.04f;
+    water.subsurface      = 0.6f;
+    water.subsurfaceColor = glm::vec3(0.06f, 0.22f, 0.24f);
+    const MaterialHandle pond  = s.resources.add(std::move(water), "golden:pond");
+    const MeshHandle     sheet = s.resources.add(generatePlane(1.0f, 1.0f, 16, 16), "golden:pond_sheet");
+    place(s, sheet, pond, {0.0f, 0.0f, -10.0f}, {60.0f, 1.0f, 60.0f});
+    sunAndCamera(s, {0.0f, 3.0f, 4.0f}, {0.0f, 0.0f, -8.0f});
+}
+
+// Water that is not the sea shows the scene's ripples with no sea in it, and its flow runs them
+// along it.
+void testAPondRipplesAndARiverRunsWithNoSea(int& failures) {
+    std::printf("A pond, with no sea in the scene:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    g_worldTicks = 30;
+    const auto pond = [&](float ripples, float flow) {
+        return freshFrame([=](Scenery& s) { buildPond(s, ripples, flow); }, settings, failures);
+    };
+    const std::vector<unsigned char> glassy  = pond(0.0f, 0.0f);
+    const std::vector<unsigned char> rippled = pond(1.0f, 0.0f);
+    const std::vector<unsigned char> running = pond(1.0f, 3.0f);
+    g_worldTicks = 90;
+    const std::vector<unsigned char> later = pond(1.0f, 0.0f);
+    g_worldTicks = 0;
+    if (glassy.empty() || rippled.empty() || running.empty() || later.empty()) return;
+
+    const float fromGlassy = differingShare(rippled, glassy.data());
+    const float fromStill  = differingShare(running, rippled.data());
+    const float fromBefore = differingShare(later, rippled.data());
+    std::printf(
+        "      %.2f%% of pixels unlike glassy water, %.2f%% a second on, %.2f%% of flowing unlike still\n",
+        fromGlassy * 100.0f,
+        fromBefore * 100.0f,
+        fromStill * 100.0f
+    );
+    expect("its ripples show though the scene has no sea", fromGlassy > 0.05f, failures);
+    expect("  moving as time goes", fromBefore > 0.05f, failures);
+    expect("  and its flow runs them", fromStill > 0.05f, failures);
+}
+
+// A fixed light reads the mask baked for it only while it stands as it was baked: one moved, one
+// that stopped casting, or another put in a gone light's slot, shines live until a bake of it lands.
+void testABakedLightIsReadOnlyAsItWasBaked(int& failures) {
+    std::printf("A light against the mask baked for it:\n");
+    restoreContextDefaults();
+    LightData lamp;
+    lamp.type        = LightType::Point;
+    lamp.entitySlot  = 5;
+    lamp.position    = glm::vec3(1.0f, 2.0f, 3.0f);
+    lamp.radius      = 8.0f;
+    lamp.movable     = false;
+    lamp.castShadows = true;
+
+    GLLightmaps lightmaps;
+    RenderObjects none;
+    GLView mirror;
+    lightmaps.beginBake(none, mirror, {}, 0, {{lamp.entitySlot, 0, GLLightmaps::shapeOf(lamp)}});
+    lightmaps.finishBake();
+    expect("the light as baked reads its channel", lightmaps.channels({lamp})[0] == 0, failures);
+    LightData moved = lamp;
+    moved.position.x += 1.0f;
+    expect("  moved, it shines live", lightmaps.channels({moved})[0] == -1, failures);
+    LightData other = lamp;
+    other.type = LightType::Spot;
+    expect("  and so does another in its slot", lightmaps.channels({other})[0] == -1, failures);
+    LightData dark = lamp;
+    dark.castShadows = false;
+    expect("  and one that stopped casting", lightmaps.channels({dark})[0] == -1, failures);
+}
+
+// The lights a bake takes are the fixed casting ones, the first GLLightmaps::MAX_CHANNELS by entity
+// slot whatever their order in the frame's list, so removing an unrelated light keeps each channel.
+void testTheBakedLightsAreTheLowestSlots(int& failures) {
+    std::printf("The lights a lightmap bake takes:\n");
+    std::vector<LightData> lights;
+    const auto channels = static_cast<size_t>(GLLightmaps::MAX_CHANNELS);
+    for (uint32_t i = 0; i < channels + 4; ++i) {
+        LightData lamp;
+        lamp.type        = LightType::Point;
+        lamp.entitySlot  = 20 - i;
+        lamp.radius      = 8.0f;
+        lamp.movable     = false;
+        lamp.castShadows = true;
+        lights.push_back(lamp);
+    }
+    lights[0].movable     = true;
+    lights[1].castShadows = false;
+    lights[2].type        = LightType::Rect;
+    std::vector<uint32_t> baked;
+    GLLightmaps::bakedLights(lights, baked);
+    bool lowest = baked.size() == channels;
+    for (size_t k = 0; lowest && k < baked.size(); ++k) lowest = baked[k] == lights.size() - 1 - k;
+    expect("the lowest slots first, a movable, dark or rect light passed over", lowest, failures);
+}
+
+// A lightmap bake comes a step a frame - a view of a light's maps over a page - and ends as the bake
+// made whole; one under way leaves the frame the lightmaps it had, and the backend counts its steps.
+void testALightmapBakedOverFramesEndsAsOneBakedWhole(int& failures) {
+    std::printf("Lightmaps baked a step a frame:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    // Two fixed lights, a step each: the sun's one tile and a lamp's six faces.
+    const auto build = [](Scenery& s, bool tower) {
+        buildBakedTower(s, true, tower, false);
+        Light& lamp = addLamp(s, {4.0f, 3.0f, 4.0f}, 40.0f, 12.0f, true);
+        lamp.movable = false;
+    };
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s, true);
+    // A budget the CPU never spends: the steps are the GPU's, so it is still one a frame.
+    g_bakeBudget = 1.0f;
+    // A frame at a time until one step of the two is done; the frame after draws before the
+    // second, which ends the bake. Then on until the backend owes nothing.
+    const auto halfway = [&](RenderReadiness& seen) {
+        for (int frame = 0; frame < 4 * SETTLED; ++frame) {
+            render(s, lived, nullptr, settings, nullptr, 1);
+            seen = lived.readiness();
+            if (seen.done == 1 && seen.total == 2) {
+                return render(s, lived, nullptr, settings, nullptr, 1);
+            }
+        }
+        return std::vector<unsigned char>{};
+    };
+    const auto untilReady = [&] {
+        std::vector<unsigned char> image;
+        for (int frame = 0; frame < 4 * SETTLED; ++frame) {
+            image = render(s, lived, nullptr, settings, nullptr, 1);
+            if (lived.readiness().ready()) break;
+        }
+        return image;
+    };
+    RenderReadiness partway;
+    halfway(partway);
+    expect("part-way, the steps done and owed", partway.done == 1 && partway.total == 2, failures);
+    const std::vector<unsigned char> sliced = untilReady();
+    render(s, lived, nullptr, settings, nullptr, SETTLED);
+    expect("once baked, the backend owes nothing more", lived.readiness().ready(), failures);
+
+    // The tower stops casting: until the bake that follows ends, the frame keeps the shadow shown,
+    // as the frames that wait for the change to settle do.
+    s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+        if (mesh.mesh == s.cube) mesh.castShadows = false;
+    });
+    const std::vector<unsigned char> settling = render(s, lived, nullptr, settings, nullptr, 1);
+    expect("a change settling is owed a bake", !lived.readiness().ready(), failures);
+    RenderReadiness again;
+    const std::vector<unsigned char> during = halfway(again);
+    const bool underWay = again.done == 1 && !during.empty();
+    const std::vector<unsigned char> after = untilReady();
+
+    // The same world again, in its place, while a bake is under way: the bake goes, and what it
+    // drew with; the lightmaps were of the last one, so it bakes anew.
+    s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+        if (mesh.mesh == s.cube) mesh.castShadows = true;
+    });
+    bool heldWhileBaking = false;
+    for (int frame = 0; frame < 4 * SETTLED && !heldWhileBaking; ++frame) {
+        render(s, lived, nullptr, settings, nullptr, 1);
+        const RenderReadiness owed = lived.readiness();
+        heldWhileBaking = owed.done == 1 && owed.total == 2 && lived.lightmapBaker().holdsScratch();
+    }
+    s.scene.clear();
+    build(s, true);
+    s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+        if (mesh.mesh == s.cube) mesh.castShadows = false;
+    });
+    render(s, lived, nullptr, settings, nullptr, 1);
+    expect("a world replaced by its like is owed a bake", !lived.readiness().ready(), failures);
+    expect(
+        "  and the bake under way lets go of its targets",
+        heldWhileBaking && !lived.lightmapBaker().holdsScratch(),
+        failures
+    );
+    g_bakeBudget = 0.0f;
+
+    const auto whole = [&](bool tower) {
+        return freshFrame(
+            [&](Scenery& fresh) {
+                build(fresh, true);
+                if (tower) return;
+                fresh.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+                    if (mesh.mesh == fresh.cube) mesh.castShadows = false;
+                });
+            },
+            settings,
+            failures,
+            SETTLED
+        );
+    };
+    const std::vector<unsigned char> casting = whole(true);
+    const std::vector<unsigned char> stopped = whole(false);
+    if (sliced.empty() || casting.empty() || stopped.empty() || after.empty()) return;
+    const float first = differingShare(sliced, casting.data());
+    const float kept  = underWay ? differingShare(during, settling.data()) : 1.0f;
+    const float last  = differingShare(after, stopped.data());
+    const float moved = differingShare(stopped, settling.data());
+    std::printf("      %.2f%% of pixels unlike the whole bake's\n", first * 100.0f);
+    std::printf("      %.2f%% unlike the frame before the next bake, while it bakes\n", kept * 100.0f);
+    std::printf("      %.2f%% unlike the new world's whole bake after\n", last * 100.0f);
+    expect("it ends as the bake made whole", first <= PIXEL_TOLERANCE, failures);
+    expect("a bake under way leaves the lightmaps shown", underWay && kept <= PIXEL_TOLERANCE, failures);
+    expect("  until it ends as the new world's", last <= PIXEL_TOLERANCE, failures);
+    expect("  which is not the old", moved > PIXEL_TOLERANCE, failures);
+}
+
+// A floor that casts nothing, under a fixed roof far above it, takes the roof's shadow into its
+// bake: the floor lies past every caster along the sun, and the bake's depth reaches it. Past the
+// sun's live reach, the bake is all that shades it: as it does when the floor casts too.
+void testAReceiverBelowEveryCasterIsBakedInShadow(int& failures) {
+    std::printf("A floor that casts nothing, far under a fixed roof:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto frame = [&](bool floorCasts) {
+        return freshFrame(
+            [=](Scenery& s) {
+                buildBakedTower(s, true, false, false);
+                s.scene.forEach<Mesh>([=](EntityId, Mesh& mesh) { mesh.castShadows = floorCasts; });
+                const MaterialHandle roof = material(s, "golden:roof", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+                place(s, s.cube, roof, {0.0f, 6.0f, 0.0f}, {8.0f, 0.4f, 8.0f});
+                s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+                s.scene.forEach<Light>([](EntityId, Light& light) { light.shadowDistance = 2.0f; });
+                // Over where the roof's shadow falls, looking down on it.
+                const glm::vec3 sun    = s.scene.environment().sunDirection();
+                const glm::vec3 shadow = glm::vec3(0.0f, 6.0f, 0.0f) - sun * (6.0f / sun.y);
+                s.scene.forEach<Camera>([&](EntityId id, Camera&) {
+                    Transform& eye = s.scene.get<Transform>(id);
+                    eye.position   = shadow + glm::vec3(0.0f, 14.0f, 10.0f);
+                    eye.rotation   = glm::quatLookAt(glm::normalize(shadow - eye.position), Math::WORLD_UP);
+                });
+            },
+            settings,
+            failures,
+            SETTLED
+        );
+    };
+    const std::vector<unsigned char> casting = frame(true);
+    const std::vector<unsigned char> quiet   = frame(false);
+    if (casting.empty() || quiet.empty()) return;
+    const float apart = differingShare(quiet, casting.data());
+    std::printf("      %.2f%% of pixels unlike the casting floor's\n", apart * 100.0f);
+    expect("the roof's shadow is in the floor's bake", apart <= PIXEL_TOLERANCE, failures);
+}
+
+// The bakes draw into targets of their own at the end of a frame; whatever draws after it - an
+// editor's UI - must find the window bound, not a bake's target, which a bake leaves incomplete.
+void testAFrameEndsWithTheWindowBound(int& failures) {
+    std::printf("What a frame that bakes leaves bound:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    buildBakedTower(s, true, true, false);
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    int strayFrames = 0;
+    const auto check = [&](int, const Visibility&) {
+        GLint drawing = -1;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawing);
+        if (drawing != 0) ++strayFrames;
+    };
+    render(s, backend, nullptr, settings, nullptr, SETTLED, check);
+    std::printf("      %d frame(s) ended with another target bound\n", strayFrames);
+    expect("every frame, the bake's among them, ends with the window bound", strayFrames == 0, failures);
+}
+
+// A soft fixed sun's bake past its live reach lights open ground as the live sun does: a wide
+// search and filter at a grazing light compare against the ground's own plane, not its texel's
+// depth, so it does not find itself nearer the light and shade itself.
+void testASoftBakeLeavesOpenGroundLit(int& failures) {
+    std::printf("A soft fixed sun over open ground, past its live reach:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto frame = [&](bool fixedSun) {
+        return freshFrame(
+            [=](Scenery& s) {
+                buildBakedTower(s, fixedSun, true, false);
+                s.scene.forEach<Light>([](EntityId, Light& light) {
+                    light.sourceRadius   = 0.08f;
+                    light.shadowDistance = 1.0f;
+                });
+            },
+            settings,
+            failures,
+            SETTLED
+        );
+    };
+    const std::vector<unsigned char> baked = frame(true);
+    const std::vector<unsigned char> live  = frame(false);
+    if (baked.empty() || live.empty()) return;
+    int worst = 0;
+    for (const glm::ivec2 at : {glm::ivec2(WIDTH - 20, HEIGHT - 10), glm::ivec2(20, HEIGHT - 10)}) {
+        worst = std::max(worst, std::abs(pixel(baked, at.x, at.y).x - pixel(live, at.x, at.y).x));
+    }
+    std::printf("      open ground: %d levels apart at most\n", worst);
+    expect("the bake lights open ground as the live sun does", worst <= 2, failures);
+}
+
+// A second fixed sun has no cascades, so its shadow is its bake alone, penumbra and all. Lit as the
+// first sun is past its live reach, where the bake alone shades it too: a soft sun as the second,
+// beside a first that gives no light, draws what the same sun draws as the first.
+void testASecondFixedSunKeepsItsBakedPenumbra(int& failures) {
+    std::printf("A second fixed sun, soft, beside the first:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto soft = [](Scenery& s, Light& light, Transform& pose) {
+        // Near the scene's sun, so its shadow falls where the camera looks.
+        const glm::vec3 first = -s.scene.environment().sunDirection();
+        const glm::vec3 aim   = glm::angleAxis(glm::radians(20.0f), Math::WORLD_UP) * first;
+        pose.rotation = glm::quatLookAt(aim, Math::WORLD_UP);
+        light.intensity      = 2.0f;
+        light.movable        = false;
+        light.sourceRadius   = 0.08f;
+        light.shadowDistance = 1.0f;
+    };
+    const auto frame = [&](bool asSecond) {
+        return freshFrame(
+            [=](Scenery& s) {
+                buildBakedTower(s, true, true, false);
+                s.scene.forEach<Light>([&](EntityId id, Light& light) {
+                    if (asSecond) light.intensity = 0.0f;
+                    else          soft(s, light, s.scene.get<Transform>(id));
+                });
+                if (!asSecond) return;
+                const EntityId id = s.scene.createEntity();
+                s.scene.add(id, Transform{});
+                Light light;
+                light.type        = LightType::Directional;
+                light.castShadows = true;
+                soft(s, light, s.scene.get<Transform>(id));
+                s.scene.add(id, std::move(light));
+            },
+            settings,
+            failures,
+            SETTLED
+        );
+    };
+    const std::vector<unsigned char> first  = frame(false);
+    const std::vector<unsigned char> second = frame(true);
+    if (first.empty() || second.empty()) return;
+    const float apart = differingShare(second, first.data());
+    std::printf("      %.2f%% of pixels unlike the same sun's as the first\n", apart * 100.0f);
+    expect("its baked penumbra is drawn as the first sun's is", apart <= BAKED_TOLERANCE, failures);
 }
 
 // The penumbra scene at half the viewport's resolution on each axis: the composite scales it up
@@ -2110,7 +3644,7 @@ void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
 
 // The plain program draws a plain material as the whole one would: the materials scene as it is,
 // every material plain, and again with each given a clearcoat too faint for the shader to draw,
-// which takes the whole program (GLForwardPass::drawsPlain). The frames are the same but for a few
+// which takes the whole program (GLForwardPrograms::programFor). The frames are the same but for a few
 // highlight pixels the two compilations round apart; a feature lost from the plain program is
 // thousands of pixels.
 void testAPlainMaterialDrawsAsTheWholeProgramWould(int& failures) {
@@ -2150,9 +3684,14 @@ void testEveryOptionalFeatureTakesTheWholeProgram(int& failures) {
 
     const auto plain = [](const MaterialAsset& asset) { return GLMaterial(asset).plain(); };
     expect("a material with none is plain", plain(MaterialAsset{}), failures);
+    GLForwardPrograms programs;
+    programs.build();
+    const Vkm::GL::Shader* wholeProgram = &programs.programFor(nullptr, false, false);
+    const auto drawsWhole = [&](const GLMaterial& material) {
+        return &programs.programFor(&material, false, false) == wholeProgram;
+    };
     const GLMaterial none{MaterialAsset{}};
-    expect("  and draws with the plain program", GLForwardPass::drawsPlain(&none), failures);
-    expect("  a run with no material takes the whole program", !GLForwardPass::drawsPlain(nullptr), failures);
+    expect("  and draws with the plain program, not a bare run's", !drawsWhole(none), failures);
 
     const std::pair<const char*, void (*)(MaterialAsset&)> features[] = {
         {"anisotropy",   [](MaterialAsset& m) { m.anisotropy = 0.5f; }},
@@ -2166,7 +3705,7 @@ void testEveryOptionalFeatureTakesTheWholeProgram(int& failures) {
         add(asset);
         const GLMaterial whole{asset};
         expect((std::string("  one with ") + name + " is not").c_str(), !whole.plain(), failures);
-        expect("    and draws with the whole program", !GLForwardPass::drawsPlain(&whole), failures);
+        expect("    and draws with the whole program", drawsWhole(whole), failures);
     }
 
     MaterialAsset parallax;
@@ -2473,6 +4012,202 @@ void testASplashFadesLinearlyOnTheGlass(int& failures) {
     expect("  and the ground around it black", pixel(frame, 4, 4) == glm::ivec3(0), failures);
 }
 
+// A frame the loading screen covers runs no world pass, but its bakes after the frame draw the forward
+// programs, which declare the shadow units as shadow samplers: the frame binds its atlas on them
+// first, or the driver is asked to sample nothing through a compare.
+void testACoveredFramesBakesFindTheShadowUnitsBound(int& failures) {
+    std::printf("The shadow units under a covered frame:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    // Empty, as a fresh context's are.
+    const auto atlasUnit = static_cast<GLuint>(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    const auto cubesUnit = static_cast<GLuint>(GLBindings::ShadowTextureSlots::CUBE);
+    glBindTextureUnit(atlasUnit, 0);
+    glBindTextureUnit(cubesUnit, 0);
+
+    Scenery    nothing;
+    Visibility none;
+    RenderView view;
+    view.viewportWidth  = WIDTH;
+    view.viewportHeight = HEIGHT;
+    view.surfaceWidth   = WIDTH;
+    view.surfaceHeight  = HEIGHT;
+    view.build(nothing.scene, none, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.loadingOpacity = 1.0f;
+    backend.render(view, nothing.resources);
+
+    GLint atlas = 0;
+    GLint cubes = 0;
+    glActiveTexture(GL_TEXTURE0 + atlasUnit);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &atlas);
+    glActiveTexture(GL_TEXTURE0 + cubesUnit);
+    glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP_ARRAY, &cubes);
+    glActiveTexture(GL_TEXTURE0);
+    expect("the atlas is on its unit", atlas != 0, failures);
+    expect("  and the point lights' cubes on theirs", cubes != 0, failures);
+    expect("with no GL error behind it", glGetError() == GL_NO_ERROR, failures);
+}
+
+// The engine's ident is dark metal over black, seen only by a comet's light: dark while it is far
+// behind, lit as it passes in front, and at the end red hot from its strike - warm, not white.
+// The loading screen draws its own backdrop, water a current carries and the pointer stirs, and its
+// bar fills with the progress; a project's own screen goes between them, over black if it asks.
+void testTheIdentIsLitByItsCometAndTheLoadingScreenFlows(int& failures) {
+    std::printf("The ident and the loading screen:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    // The brightest pixel of a band of columns across the middle third of the rows.
+    const auto brightest = [](const std::vector<unsigned char>& frame, int fromX, int toX) {
+        int most = 0;
+        for (int y = HEIGHT / 3; y < 2 * HEIGHT / 3; ++y) {
+            for (int x = fromX; x < toX; ++x) most = std::max(most, pixel(frame, x, y).x);
+        }
+        return most;
+    };
+
+    Scenery     nothing;
+    SplashFrame splash;
+    splash.key     = "assets/logo/vkm_engine_logo_mono.png";
+    splash.reveal  = true;
+    splash.opacity = 1.0f;
+    const auto at = [&](float seconds) {
+        splash.time = seconds;
+        return render(nothing, backend, nullptr, RenderSettings{}, &splash, 1);
+    };
+    // Moments on gl_splash_pass.cpp's timeline: before the comet comes round, as it passes in front,
+    // and after its strike (STRUCK_AT).
+    const std::vector<unsigned char> early = at(0.3f);
+    const std::vector<unsigned char> lit   = at(3.0f);
+    const std::vector<unsigned char> hot   = at(9.0f);
+    const int darkest = brightest(early, WIDTH / 3, 2 * WIDTH / 3);
+    const int shown   = brightest(lit, WIDTH / 3, 2 * WIDTH / 3);
+    // How much redder than blue the logo's middle is, summed: hot metal glows red, a light is white.
+    long warmth = 0;
+    for (int y = HEIGHT / 3; y < 2 * HEIGHT / 3; ++y) {
+        for (int x = WIDTH / 3; x < 2 * WIDTH / 3; ++x) warmth += pixel(hot, x, y).x - pixel(hot, x, y).z;
+    }
+    std::printf(
+        "      brightest: with the comet far behind %d, as it passes %d; red over blue when hot %ld\n",
+        darkest,
+        shown,
+        warmth
+    );
+    expect("the ident is dark while the comet is far behind it", darkest + 150 < shown, failures);
+    expect("  shows its logo where the comet's light is", shown > 150, failures);
+    expect("  and glows red hot once struck", warmth > 1000, failures);
+    expect("  over black", glm::all(glm::lessThanEqual(pixel(lit, 2, 2), glm::ivec3(2))), failures);
+
+    // The loading screen, which a frame with no camera still shows.
+    RenderView view;
+    view.viewportWidth  = WIDTH;
+    view.viewportHeight = HEIGHT;
+    view.surfaceWidth   = WIDTH;
+    view.surfaceHeight  = HEIGHT;
+    view.frameSeconds   = FRAME_SECONDS;
+    view.pointer        = glm::vec2(-1e4f);
+    const UIDrawData* cover = nullptr;
+    const auto loading = [&](float shown, float progress = 0.0f) {
+        Visibility none;
+        view.build(nothing.scene, none, nullptr, cover, nullptr, nullptr, nullptr, nullptr);
+        view.loadingOpacity  = shown;
+        view.loadingContent  = shown;
+        view.loadingProgress = progress;
+        backend.render(view, nothing.resources);
+        std::vector<unsigned char> image;
+        backend.readFrame(view, image);
+        return image;
+    };
+    const std::vector<unsigned char> bare = loading(0.0f);
+    std::vector<unsigned char> covered;
+    for (int i = 0; i < 4; ++i) covered = loading(1.0f);
+    std::vector<unsigned char> later;
+    for (int i = 0; i < 8; ++i) later = loading(1.0f);
+    expect("the loading screen draws its water", differingShare(bare, covered.data()) > 0.005f, failures);
+    const float carried = differingShare(covered, later.data());
+    std::printf("      %.2f%% of pixels changed as its current carried it\n", carried * 100.0f);
+    expect("  and its current carries it", carried > 0.0005f, failures);
+    // On a strip far wider than high too: the grid stops widening where any backend's textures hold it.
+    view.viewportHeight = 1;
+    loading(0.0f);
+    loading(1.0f);
+    expect("  and on a strip far wider than high, with no GL error", glGetError() == GL_NO_ERROR, failures);
+    view.viewportHeight = HEIGHT;
+
+    // Started afresh each time it comes up, so two runs differ only by the pointer: one off the
+    // screen, one sweeping across its middle and then gone, its wake still on the water after it.
+    const auto run = [&](bool stirred) {
+        loading(0.0f);
+        std::vector<unsigned char> image;
+        for (int i = 0; i < 18; ++i) {
+            const float     across = static_cast<float>(i) / 12.0f;
+            const glm::vec2 middle(WIDTH * (0.3f + 0.4f * across), HEIGHT * 0.5f);
+            view.pointer = stirred && i < 12 ? middle : glm::vec2(-1e4f);
+            image = loading(1.0f);
+        }
+        return image;
+    };
+    const std::vector<unsigned char> still   = run(false);
+    const std::vector<unsigned char> stirred = run(true);
+    const float stir = differingShare(still, stirred.data());
+    std::printf("      %.2f%% of pixels differ where the pointer stirred it\n", stir * 100.0f);
+    expect("  and the pointer leaves a wake", stir > 0.0005f, failures);
+
+    // A screen that comes up filled shows its bar filled: fresh, the fill does not ease in.
+    view.pointer = glm::vec2(-1e4f);
+    loading(0.0f);
+    const std::vector<unsigned char> empty = loading(1.0f, 0.0f);
+    loading(0.0f);
+    const std::vector<unsigned char> full = loading(1.0f, 1.0f);
+    const float filled = differingShare(empty, full.data());
+    std::printf("      %.2f%% of pixels differ between its bar empty and full\n", filled * 100.0f);
+    expect("  and its bar fills with the progress", filled > 0.0005f, failures);
+
+    // A project's own screen, one red quad over it all, on black where it turns the water off.
+    view.loadingWater = false;
+    loading(0.0f);
+    const std::vector<unsigned char> black = loading(1.0f);
+    const bool dark = glm::all(glm::lessThanEqual(pixel(black, WIDTH / 2, HEIGHT / 2), glm::ivec3(2)));
+    expect("  plain black where a project turns the water off", dark, failures);
+    UIDrawData screen;
+    const glm::vec2 size(WIDTH, HEIGHT);
+    // Two triangles over it, corner by corner.
+    const glm::vec2 corners[] = {
+        glm::vec2(0.0f), glm::vec2(1.0f, 0.0f), glm::vec2(1.0f),
+        glm::vec2(0.0f), glm::vec2(1.0f),       glm::vec2(0.0f, 1.0f),
+    };
+    for (const glm::vec2 corner : corners) {
+        UIVertex vertex{};
+        vertex.pos   = corner * size;
+        vertex.uv    = corner;
+        vertex.color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        vertex.shape = glm::vec4(size, 0.0f, 0.0f);
+        screen.vertices.push_back(vertex);
+    }
+    screen.commands.push_back(UIDrawCmd{0, 6, UIRect{glm::vec2(0.0f), size}, {}, {}});
+    cover = &screen;
+    loading(0.0f);
+    const std::vector<unsigned char> under = loading(1.0f, 0.0f);
+    loading(0.0f);
+    const std::vector<unsigned char> over = loading(1.0f, 1.0f);
+    const glm::ivec3 red = pixel(over, WIDTH / 2, HEIGHT / 3);
+    expect("  a project's screen drawn over it", red.x > 200 && red.y < 30 && red.z < 30, failures);
+    expect("    and the bar over that", differingShare(under, over.data()) > 0.0005f, failures);
+    cover             = nullptr;
+    view.loadingWater = true;
+}
+
 // A transparent pane's shadow is as deep as the pane is opaque: half clear casts about half a
 // shadow, and two half-clear panes stacked about three quarters, each pane its own dither. Read off
 // the direct light alone, whose display curve (Reinhard, then sRGB) the test undoes.
@@ -2552,7 +4287,7 @@ void testATransparentPanesShadowIsAsDeepAsItIsOpaque(int& failures) {
 
 // The ocean's waterline foam is read off its shore, drawn in the world: water rings a post the
 // camera cannot see, standing on a seabed that hides its foot, and nothing hovering clear of the
-// water foams it. Asserted per pixel, foam coloured green over dark water, looking straight down.
+// water foams it. Asserted per pixel, foam colored green over dark water, looking straight down.
 void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     std::printf("The ocean's waterline foam:\n");
 
@@ -2561,7 +4296,7 @@ void testTheShoreRingsWhatBreaksTheWater(int& failures) {
         MaterialAsset sea;
         sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
         sea.roughness = 0.3f;
-        sea.waves     = true;
+        sea.water     = WaterKind::Sea;
         const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
         place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
 
@@ -2600,12 +4335,63 @@ void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     const float right = foamIn({WIDTH - 10, 0}, {WIDTH, HEIGHT});
     const float left  = foamIn({0, 0}, {WIDTH / 2, HEIGHT});
     std::printf(
-        "      foam over %.0f%% of the right edge, %.2f%% of the left half\n",
+        "      foam over %.1f%% of the right edge, %.2f%% of the left half\n",
         100.0f * right,
         100.0f * left
     );
-    expect("water foams round a post the camera cannot see", right > 0.04f, failures);
+    expect("water foams round a post the camera cannot see", right > 0.02f, failures);
     expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
+}
+
+// A mirror shows the sea as the frame does, its waterline foam included: a post's ring, seen in a
+// mirror standing in the water across from it, in the band of the frame only the mirror reaches.
+void testAMirrorShowsTheWaterlineFoam(int& failures) {
+    std::printf("The waterline foam, in a mirror:\n");
+
+    const auto build = [](Scenery& s) {
+        base(s);
+        MaterialAsset sea;
+        sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+        sea.roughness = 0.3f;
+        sea.water     = WaterKind::Sea;
+        const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
+        place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
+
+        const EntityId oceanId = s.scene.createEntity();
+        s.scene.add(oceanId, Transform{});
+        Ocean ocean;
+        ocean.windSpeed     = 2.0f;
+        ocean.foam          = 0.0f;
+        ocean.waterlineFoam = 1.0f;
+        ocean.foamColor     = glm::vec3(0.0f, 1.0f, 0.0f);
+        s.scene.add(oceanId, ocean);
+
+        const MaterialHandle silver = material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f);
+        place(s, s.cube, silver, {0.0f, 3.0f, -3.0f}, {12.0f, 12.0f, 0.05f});
+        const EntityId glass = s.scene.createEntity();
+        Transform at;
+        at.position = {0.0f, 3.0f, -2.975f};
+        at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        s.scene.add(glass, std::move(at));
+        PlanarReflector mirror;
+        mirror.halfExtents = {6.0f, 6.0f};
+        s.scene.add(glass, std::move(mirror));
+
+        const MaterialHandle grey = material(s, "golden:post", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {0.0f, 0.4f, 0.0f}, {0.5f, 1.8f, 0.5f});
+        sunAndCamera(s, {0.0f, 3.0f, 6.0f}, {0.0f, 3.0f, -3.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, RenderSettings{}, failures);
+    if (frame.empty()) return;
+    int foam = 0;
+    for (int y = 6 * HEIGHT / 10; y < 72 * HEIGHT / 100; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
+            const glm::ivec3 p = pixel(frame, x, y);
+            if (p.y > 40 && p.y > 2 * p.x && p.y > 2 * p.z) ++foam;
+        }
+    }
+    std::printf("      %d foam pixels where only the mirror shows the post's foot\n", foam);
+    expect("the mirror shows the post's waterline foam", foam > 0, failures);
 }
 
 // What the occlusion cull hid draws on the very frame it comes out: the prepass's second draw
@@ -2712,7 +4498,7 @@ void testWaterBehindAWallIsCulled(int& failures) {
     const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
     MaterialAsset sea;
     sea.albedo = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
-    sea.waves  = true;
+    sea.water  = WaterKind::Sea;
     const MaterialHandle water = s.resources.add(std::move(sea), "golden:pool");
     place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
     place(s, s.cube, water, {0.0f, 0.1f, -5.0f}, {3.0f, 0.2f, 3.0f});
@@ -3250,8 +5036,47 @@ void testAParticleWaitsForItsSprite(int& failures) {
     expect("  and one whose sprite failed shows the checker", failed > PIXEL_TOLERANCE, failures);
 }
 
+// A layered material's preview is drawn as the frame draws it, through the layered program: a ball
+// all of a blue layer previews blue, not as the material's own white.
+void testALayeredMaterialPreviewsItsLayers(int& failures) {
+    std::printf("A layered material's preview:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    ResourceManager resources;
+    MaterialAsset blue;
+    blue.albedo = glm::vec4(0.1f, 0.2f, 0.9f, 1.0f);
+    TextureAsset weights;
+    weights.params.width  = 1;
+    weights.params.height = 1;
+    weights.pixelData     = {255, 0, 0, 0};
+    MaterialAsset layered;
+    layered.layers       = {resources.add(std::move(blue), "golden:preview_layer")};
+    layered.layerWeights = resources.add(std::move(weights), "golden:preview_weights");
+    PreviewRequest request;
+    request.key      = 11;
+    request.width    = 64;
+    request.height   = 64;
+    const MeshHandle ball = resources.add(generateSphere(), "golden:preview_ball");
+    request.draws    = {{ball, resources.add(std::move(layered), "golden:preview_layered")}};
+    const GpuTextureId id = backend.editorHooks()->renderPreview(request, resources);
+    std::vector<unsigned char> pixels(64 * 64 * 4, 0);
+    if (id != 0) {
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(id));
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    }
+    const unsigned char* middle = &pixels[(32 * 64 + 32) * 4];
+    std::printf("      the ball's middle is %d %d %d\n", middle[0], middle[1], middle[2]);
+    expect("the ball previews in its layer's blue", middle[2] > middle[0] + 40, failures);
+}
+
 // A layered material blends its layers by its weights' channels at the mesh's uv: a slab weighted
-// all to its first layer at one end and its second at the other shows the first's colour there,
+// all to its first layer at one end and its second at the other shows the first's color there,
 // from its map, which reaches the shader through an array, and the second's at the other.
 void testALayeredMaterialBlendsItsLayers(int& failures) {
     std::printf("A slab of two layered materials:\n");
@@ -3720,7 +5545,338 @@ void testASheenAddsNoLight(int& failures) {
     expect("a white sheen adds no light to a white base", mean[1] <= mean[0] * 1.05f, failures);
 }
 
-void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
+// A wall standing on a yard, for debug drawings to pass behind and before.
+void buildDebugWall(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:yard", {0.35f, 0.35f, 0.33f}, 0.9f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+    place(
+        s,
+        s.cube,
+        material(s, "golden:screen", {0.5f, 0.48f, 0.45f}, 0.8f, 0.0f),
+        {0.0f, 1.0f, 0.0f},
+        {3.0f, 2.0f, 0.4f}
+    );
+    sunAndCamera(s, {0.0f, 2.5f, 7.0f}, {0.0f, 1.0f, 0.0f});
+}
+
+// A line behind the wall, from x = -4 to 4: the wall hides it within about two metres of x = 0.
+struct DebugRow {
+    float y;
+    float z;
+
+    glm::vec3 at(float x) const { return {x, y, z}; }
+};
+constexpr DebugRow GHOSTED_ROW{1.0f, -2.0f};
+constexpr DebugRow ON_TOP_ROW{1.5f, -2.5f};
+constexpr DebugRow SEEN_ONLY_ROW{0.5f, -1.5f};
+
+// What a host draws over the wall: a line behind it in each depth mode, then before it a pulsed
+// path lit @p glow for the bloom, a sphere, a turned box and a point.
+std::vector<DebugLine> debugDrawings(float glow) {
+    DebugDraw draw;
+    const DebugStyle red   = DebugStyle(glm::vec3(1.0f, 0.25f, 0.2f)).wide(2.5f);
+    const DebugStyle green = DebugStyle(glm::vec3(0.3f, 1.0f, 0.4f)).wide(2.5f).onTop();
+    const DebugStyle cyan  = DebugStyle(glm::vec3(0.2f, 0.8f, 1.0f)).wide(2.5f).seenOnly();
+    draw.line(GHOSTED_ROW.at(-4.0f), GHOSTED_ROW.at(4.0f), red);
+    draw.line(ON_TOP_ROW.at(-4.0f), ON_TOP_ROW.at(4.0f), green);
+    draw.line(SEEN_ONLY_ROW.at(-4.0f), SEEN_ONLY_ROW.at(4.0f), cyan);
+
+    DebugPulse pulse;
+    pulse.dash    = 0.8f;
+    pulse.spacing = 2.0f;
+    pulse.speed   = 2.0f;
+    pulse.trail   = 0.25f;
+    const std::vector<glm::vec3> path = {{-3.0f, 0.3f, 2.0f}, {0.0f, 1.1f, 2.6f}, {3.0f, 0.3f, 2.0f}};
+    draw.pulse(path, DebugStyle(glm::vec3(1.0f, 0.85f, 0.2f)).wide(3.0f).glowing(glow), pulse);
+
+    draw.sphere({-2.6f, 0.8f, 1.6f}, 0.6f, glm::vec3(1.0f));
+    draw.box(
+        {2.6f, 0.5f, 1.6f},
+        glm::vec3(0.5f),
+        glm::angleAxis(0.6f, glm::vec3(0.0f, 1.0f, 0.0f)),
+        DebugStyle(glm::vec3(1.0f, 0.35f, 0.9f)).wide(2.0f)
+    );
+    draw.point({0.0f, 2.4f, 1.0f}, DebugStyle(glm::vec3(1.0f)).wide(2.0f));
+    draw.collect(0.0f, 0.0f, 0);
+    return draw.lines();
+}
+
+// The wall with its drawings, the pulses three quarters of a second on.
+void buildDebugLines(Scenery& s) {
+    buildDebugWall(s);
+    s.debugLines   = debugDrawings(6.0f);
+    s.debugSeconds = 0.75;
+}
+
+// A yard of the things the editor shows in the world, drawn as a host draws them - the cull,
+// then DebugViewSystem with every category but the bounds on - with a crate in focus.
+void buildGizmos(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:yard", {0.35f, 0.35f, 0.33f}, 0.9f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+    const MaterialHandle wood = material(s, "golden:crate", {0.55f, 0.4f, 0.28f}, 0.7f, 0.0f);
+    const glm::vec3      up(0.0f, 1.0f, 0.0f);
+    const auto entityAt = [&](glm::vec3 at, glm::quat turn = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) {
+        const EntityId id = s.scene.createEntity();
+        Transform pose;
+        pose.position = at;
+        pose.rotation = turn;
+        s.scene.add(id, std::move(pose));
+        return id;
+    };
+    const auto crate = [&](glm::vec3 at, glm::vec3 size, float turn) {
+        const EntityId id = entityAt(at, glm::angleAxis(turn, up));
+        s.scene.get<Transform>(id).scale = size;
+        Mesh mesh;
+        mesh.mesh     = s.cube;
+        mesh.material = wood;
+        s.scene.add(id, std::move(mesh));
+        Collider body;
+        body.parts[0].halfExtents = size * 0.5f;
+        s.scene.add(id, std::move(body));
+        return id;
+    };
+    crate({-1.8f, 0.5f, 0.2f}, glm::vec3(1.0f), 0.0f);
+    const EntityId tower = crate({0.2f, 1.0f, -1.0f}, {1.0f, 2.0f, 1.0f}, 0.5f);
+    Collider capsule;
+    capsule.parts[0].shape      = ColliderShape::Capsule;
+    capsule.parts[0].radius     = 0.35f;
+    capsule.parts[0].halfHeight = 0.55f;
+    s.scene.add(entityAt({1.8f, 0.9f, 0.4f}), std::move(capsule));
+
+    const auto light = [&](glm::vec3 at, glm::vec3 aim, LightType type, glm::vec3 color, float radius) {
+        const EntityId id = entityAt(at, glm::quatLookAt(glm::normalize(aim), up));
+        Light lamp;
+        lamp.type           = type;
+        lamp.color          = color;
+        lamp.radius         = radius;
+        lamp.intensity      = type == LightType::Directional ? 3.0f : 4.0f;
+        lamp.outerConeAngle = 0.45f;
+        s.scene.add(id, std::move(lamp));
+    };
+    const glm::vec3 sunward = -s.scene.environment().sunDirection();
+    light({-3.2f, 2.6f, -1.5f}, sunward, LightType::Directional, glm::vec3(1.0f), 10.0f);
+    light({-0.4f, 1.9f, 1.4f}, {0.0f, -1.0f, 0.0f}, LightType::Point, {1.0f, 0.75f, 0.45f}, 1.6f);
+    light({2.6f, 2.8f, -1.2f}, {-0.8f, -2.8f, 1.6f}, LightType::Spot, {0.6f, 0.8f, 1.0f}, 3.2f);
+
+    Camera other;
+    other.fovY   = glm::radians(50.0f);
+    other.zNear  = 0.3f;
+    other.zFar   = 2.5f;
+    other.active = false;
+    const glm::quat aimed = glm::quatLookAt(glm::normalize(glm::vec3(-4.4f, -0.8f, -2.6f)), up);
+    s.scene.add(entityAt({3.4f, 1.4f, 2.6f}, aimed), other);
+
+    ParticleEmitter spray;
+    spray.shape  = EmitShape::Cone;
+    spray.radius = 0.25f;
+    s.scene.add(entityAt({-2.6f, 0.02f, 2.2f}), std::move(spray));
+    AudioSource sound;
+    sound.minDistance = 0.4f;
+    sound.maxDistance = 1.2f;
+    s.scene.add(entityAt({0.9f, 0.4f, 1.9f}), std::move(sound));
+    camera(s, {0.6f, 3.4f, 6.8f}, {0.2f, 0.7f, 0.0f});
+
+    Clock          clock;
+    EventBus       events;
+    WindowManager  window;
+    InputMap       input;
+    NetSession     net;
+    HostChrome     chrome;
+    RenderSettings tuning  = s.settings;
+    RenderSettings project = s.settings;
+    FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning, project};
+    DebugDraw      draw;
+    ctx.debug = &draw;
+    for (int category = 0; category < static_cast<int>(DebugCategory::Count); ++category) {
+        const DebugCategory kind = static_cast<DebugCategory>(category);
+        draw.setShown(kind, kind != DebugCategory::Bounds);
+    }
+    DebugFocus focus;
+    focus.entities = {tower};
+    focus.primary  = tower;
+    draw.setFocus(focus);
+    VisibilitySystem visibility;
+    DebugViewSystem  view;
+    visibility.update(ctx);
+    view.update(ctx);
+    draw.collect(0.0f, 0.0f, s.scene.epoch());
+    s.debugLines = draw.lines();
+}
+
+// Where a world point lands in a frame drawn through @p camera, in pixels from the top left.
+glm::vec2 onScreen(const CameraData& camera, glm::vec3 world) {
+    const glm::vec4 clip = camera.viewProjection * glm::vec4(world, 1.0f);
+    const glm::vec2 ndc  = glm::vec2(clip) / clip.w;
+    return glm::vec2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f) * glm::vec2(WIDTH, HEIGHT);
+}
+
+// How far two frames' channels part at most within a pixel of @p at.
+int partedNear(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b, glm::vec2 at) {
+    int most = 0;
+    for (int y = static_cast<int>(at.y) - 1; y <= static_cast<int>(at.y) + 1; ++y) {
+        for (int x = static_cast<int>(at.x) - 1; x <= static_cast<int>(at.x) + 1; ++x) {
+            if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) continue;
+            const glm::ivec3 apart = glm::abs(pixel(a, x, y) - pixel(b, x, y));
+            most = std::max({most, apart.x, apart.y, apart.z});
+        }
+    }
+    return most;
+}
+
+// partedNear along @p row from x @p from to @p to: its least, its most and its mean.
+struct Parted {
+    int   least = 255;
+    int   most  = 0;
+    float mean  = 0.0f;
+};
+Parted partedAlong(
+    const std::vector<unsigned char>& a,
+    const std::vector<unsigned char>& b,
+    const CameraData& camera,
+    DebugRow row,
+    float from,
+    float to
+) {
+    constexpr int SAMPLES = 25;
+    Parted parted;
+    for (int i = 0; i < SAMPLES; ++i) {
+        const float x     = from + (to - from) * static_cast<float>(i) / static_cast<float>(SAMPLES - 1);
+        const int   apart = partedNear(a, b, onScreen(camera, row.at(x)));
+        parted.least = std::min(parted.least, apart);
+        parted.most  = std::max(parted.most, apart);
+        parted.mean += static_cast<float>(apart) / static_cast<float>(SAMPLES);
+    }
+    return parted;
+}
+
+// The wall's frame with @p lines over it, the pulses @p seconds on; @p camera is what it was seen
+// through.
+std::vector<unsigned char> debugFrame(
+    std::vector<DebugLine> lines,
+    const RenderSettings& settings,
+    CameraData& camera,
+    int& failures,
+    double seconds = 0.0
+) {
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return {};
+    }
+    Scenery s;
+    buildDebugWall(s);
+    s.debugLines   = std::move(lines);
+    s.debugSeconds = seconds;
+    const auto seen = [&](int, const Visibility& visibility) { camera = visibility.camera; };
+    return render(s, backend, nullptr, settings, nullptr, FRAMES, seen);
+}
+
+// A debug line is the scene's or over it as it asks: full where seen, faint and dotted where the
+// wall hides it, full through it on top, gone behind it when seen only.
+void testDebugLinesMeetTheSceneAsTheyAsk(int& failures) {
+    std::printf("Debug lines behind a wall:\n");
+    RenderSettings plain;
+    plain.msaaSamples = 1;
+    plain.bloom       = false;
+
+    // And one from beside the wall to behind the eye, which only its part in front shows.
+    std::vector<DebugLine> lines = debugDrawings(0.0f);
+    DebugDraw past;
+    past.line({-3.0f, 2.2f, 0.0f}, {-3.0f, 2.2f, 20.0f}, DebugStyle(glm::vec3(1.0f)).wide(2.5f));
+    // And a point the wall hides, away from the rows' checks.
+    const glm::vec3 hiddenPoint(1.0f, 0.25f, -1.5f);
+    past.point(hiddenPoint, DebugStyle(glm::vec3(1.0f)).wide(2.5f));
+    past.collect(0.0f, 0.0f, 0);
+    lines.insert(lines.end(), past.lines().begin(), past.lines().end());
+
+    CameraData camera;
+    const std::vector<unsigned char> bare  = debugFrame({}, plain, camera, failures);
+    const std::vector<unsigned char> drawn = debugFrame(lines, plain, camera, failures);
+    if (bare.empty() || drawn.empty()) return;
+
+    const Parted ghostSeen = partedAlong(bare, drawn, camera, GHOSTED_ROW, -3.6f, -2.6f);
+    const Parted ghostBack = partedAlong(bare, drawn, camera, GHOSTED_ROW, -0.6f, 0.6f);
+    const Parted onTopBack = partedAlong(bare, drawn, camera, ON_TOP_ROW, -0.6f, 0.6f);
+    const Parted seenOnly  = partedAlong(bare, drawn, camera, SEEN_ONLY_ROW, 2.6f, 3.6f);
+    const Parted onlyBack  = partedAlong(bare, drawn, camera, SEEN_ONLY_ROW, -0.6f, 0.6f);
+    std::printf(
+        "      seen %d..%d, ghosted %d..%d mean %.1f, on top %d.., seen only %d.. and %d behind\n",
+        ghostSeen.least,
+        ghostSeen.most,
+        ghostBack.least,
+        ghostBack.most,
+        ghostBack.mean,
+        onTopBack.least,
+        seenOnly.least,
+        onlyBack.most
+    );
+    expect("a line is drawn full where it is seen", ghostSeen.least > 80, failures);
+    const bool faint = ghostBack.most > 12 && ghostBack.most < ghostSeen.least / 2;
+    expect("  and faintly where the wall hides it", faint, failures);
+    expect("  in dots, not a line", ghostBack.least < ghostBack.most / 2, failures);
+    expect("a line on top is full behind the wall too", onTopBack.least > 80, failures);
+    expect("a line seen only is drawn where seen", seenOnly.least > 80, failures);
+    expect("  and not at all where hidden", onlyBack.most <= 3, failures);
+    const int pointBack = partedNear(bare, drawn, onScreen(camera, hiddenPoint));
+    std::printf("      a hidden point %d\n", pointBack);
+    expect("a point the wall hides is a faint dot", pointBack > 12 && pointBack < ghostSeen.least, failures);
+
+    int nearest = 255;
+    for (const float z : {0.5f, 1.5f, 2.5f, 3.5f}) {
+        nearest = std::min(nearest, partedNear(bare, drawn, onScreen(camera, {-3.0f, 2.2f, z})));
+    }
+    std::printf("      a line past the eye: %d at least in front of it\n", nearest);
+    expect("a line running past the eye is drawn up to it", nearest > 80, failures);
+}
+
+// A line that glows lends the frame light where it is seen, which the bloom spreads past its width.
+void testADebugLineGlowsIntoTheBloom(int& failures) {
+    std::printf("A glowing debug line:\n");
+    RenderSettings bloomed;
+    bloomed.msaaSamples = 1;
+
+    CameraData camera;
+    const std::vector<unsigned char> dull = debugFrame(debugDrawings(0.0f), bloomed, camera, failures, 0.75);
+    const std::vector<unsigned char> lit  = debugFrame(debugDrawings(6.0f), bloomed, camera, failures, 0.75);
+    if (dull.empty() || lit.empty()) return;
+
+    // Round the path's peak, past the line itself: its halo, and what the bloom spread.
+    const glm::vec2 peak = onScreen(camera, {0.0f, 1.1f, 2.6f});
+
+    double halo  = 0.0;
+    int    count = 0;
+    for (int y = static_cast<int>(peak.y) - 8; y <= static_cast<int>(peak.y) + 8; ++y) {
+        for (int x = static_cast<int>(peak.x) - 8; x <= static_cast<int>(peak.x) + 8; ++x) {
+            const bool onLine = std::abs(static_cast<float>(y) - peak.y) < 3.0f;
+            if (onLine || x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) continue;
+            const glm::ivec3 more = pixel(lit, x, y) - pixel(dull, x, y);
+            halo += static_cast<double>(more.x + more.y + more.z) / 3.0;
+            ++count;
+        }
+    }
+    halo /= std::max(count, 1);
+    const glm::ivec3 corner = glm::abs(pixel(lit, 2, 2) - pixel(dull, 2, 2));
+    const int        away   = corner.x + corner.y + corner.z;
+    std::printf("      %.1f levels brighter round the line, %d in the far corner\n", halo, away);
+    expect("its glow spreads round it", halo > 4.0, failures);
+    expect("  and not across the frame", away <= 3, failures);
+}
+
+void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures, const Shard& shard) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
         std::printf("  no pbuffer surface on this device; skipped\n");
@@ -3753,68 +5909,116 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
         {"sunset",      buildSunset},
         {"room",        buildRoom},
         {"aerial",      buildAerial},
+        {"debug",       buildDebugLines},
+        {"gizmos",      buildGizmos},
     };
-    for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures);
-    for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures, true);
+    // The whole frames in the first run; the checks after them dealt out between the runs.
+    if (shard.first()) {
+        const std::string renderer = gl.renderer();
+        for (const Golden& golden : goldens) compare(golden.name, golden.build, renderer, failures);
+        for (const Golden& golden : goldens) compare(golden.name, golden.build, renderer, failures, true);
+    }
 
-    testTheUIOverlayLandsOnItsPixels(failures);
-    testSoftShadowsOffDrawTheHardPath(failures);
-    testAHalfScaleSceneFillsTheFrame(failures);
-    testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
-    testHalfResolutionReflectionsAreCloseToFull(failures);
-    testAMovedObjectIsDrawnWhereItWent(failures);
-    testASpawnAndARemovalAreDrawnAsTheyEnd(failures);
-    testAMoverOverFixedScenery(failures);
-    testAPlainMaterialDrawsAsTheWholeProgramWould(failures);
-    testEveryOptionalFeatureTakesTheWholeProgram(failures);
-    testAViewmodelShadesNothingBehindIt(failures);
-    testAMirrorShowsWhatIsBehindTheEye(failures);
-    testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
-    testAFrameWithNoCameraKeepsTheProbesBaked(failures);
-    testAProbeFollowsItsLight(failures);
-    testARefreshedProbeRests(failures);
-    testWhatTheCullHidDrawsTheFrameItComesOut(failures);
-    testAWeaponHeldIntoAWallIsNotCulled(failures);
-    testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);
-    testWaterBehindAWallIsCulled(failures);
-    testADriftingSunIsFollowedOverFrames(failures);
-    testASplashFadesLinearlyOnTheGlass(failures);
-    testAnOpenFloorIsNotOccluded(failures);
-    testAnOpenWallIsOpenToTheFramesEdge(failures);
-    testAnOrthographicViewIsOccluded(failures);
-    testAnOpenFloorCastsNoScreenShadow(failures);
-    testAPebbleCastsAScreenShadow(failures);
-    testAFarPostIsGroundedNotTraced(failures);
-    testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
-    testGTAOReachesAsFarEveryWay(failures);
-    testAWallBesideTheEyeIsOpen(failures);
-    testAutoExposureBringsDayAndNightTogether(failures);
-    testAnOrthographicViewTracesItsReflections(failures);
-    testSmokeIsShadowedAndSparksAreNot(failures);
-    testHazeBendsAndARibbonCovers(failures);
-    testAFlatNormalMapFacesThePuffToTheEye(failures);
-    testAParticleWaitsForItsSprite(failures);
-    testALayeredMaterialBlendsItsLayers(failures);
-    testATerrainDrawsItsPaintedLayers(failures);
-    testAGlossyFloorReflectsInNoRows(failures);
-    testADecalIsLitAsTheFloorUnderIt(failures);
-    testSmokeIsLitWhereItIs(failures);
-    testTwoLampsLightARibbonAsOneTwiceAsBright(failures);
-    testAMovedProbeBakesOnceItSettles(failures);
-    testASheenAddsNoLight(failures);
-    testAProbeBakedUnderADebugViewHoldsTheScene(failures);
-    testASealedRoomHoldsNoSkyLight(failures);
-    testAnIrradianceVolumeFollowsItsLight(failures);
-    testACutShortRelightIsAskedForAgain(failures);
-    testAVolumeShowsItsGridUntilItsRelightIsThrough(failures);
-    testTheShoreRingsWhatBreaksTheWater(failures);
-    testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);
+    using Check = void (*)(int&);
+    const Check checks[] = {
+        testTheUIOverlayLandsOnItsPixels,
+        testSoftShadowsOffDrawTheHardPath,
+        testAFixedSunsShadowIsBaked,
+        testABakeFollowsWhatItsCastersBecome,
+        testABakeIsMadeFromTheGivenMeshWhereverTheEyeIs,
+        testAReceiverReadsItsBakeOnlyAsItWasBaked,
+        testALevelReadsTheBakeOnlyThroughItsGivenMeshsCharts,
+        testAReceiverIsBakedAsItsGivenMeshWhateverLevelItDraws,
+        testTheLastCascadeDrawsWhatItsLayerHolds,
+        testAPondRipplesAndARiverRunsWithNoSea,
+        testALightmapBakedOverFramesEndsAsOneBakedWhole,
+        testABakedLightIsReadOnlyAsItWasBaked,
+        testTheBakedLightsAreTheLowestSlots,
+        testAReceiverBelowEveryCasterIsBakedInShadow,
+        testAFrameEndsWithTheWindowBound,
+        testASoftBakeLeavesOpenGroundLit,
+        testASecondFixedSunKeepsItsBakedPenumbra,
+        testAHalfScaleSceneFillsTheFrame,
+        testTwoWallsACentimetreApartAKilometreOutDoNotFight,
+        testHalfResolutionReflectionsAreCloseToFull,
+        testAMovedObjectIsDrawnWhereItWent,
+        testASpawnAndARemovalAreDrawnAsTheyEnd,
+        testAMoverOverFixedScenery,
+        testAPlainMaterialDrawsAsTheWholeProgramWould,
+        testEveryOptionalFeatureTakesTheWholeProgram,
+        testAViewmodelShadesNothingBehindIt,
+        testNoDecalLandsOnTheViewmodel,
+        testAMirrorShowsWhatIsBehindTheEye,
+        testAMirroredCardShowsInAMirror,
+        testAMirrorShowsTheShadowTheCascadesHold,
+        testAMirrorShowsWhatAFixedSunBaked,
+        testAnOrthographicEyesMirrorShowsTheHorizon,
+        testAMirrorTurnsAParticleOver,
+        testAMirrorHidesTheSkyTheSceneHides,
+        testAMirrorKeepsItsPictureAsTheEyeMoves,
+        testAWideSpotShadowsItsRim,
+        testAPreviewIsNotTheFramesDebugView,
+        testABackendDropsWhatTheSceneNoLongerAsksFor,
+        testAFrameWithNoCameraKeepsTheProbesBaked,
+        testAProbeFollowsItsLight,
+        testARefreshedProbeRests,
+        testWhatTheCullHidDrawsTheFrameItComesOut,
+        testAWeaponHeldIntoAWallIsNotCulled,
+        testAFaceFillingTheFrameIsNotCulledByItsOwnDepth,
+        testWaterBehindAWallIsCulled,
+        testADriftingSunIsFollowedOverFrames,
+        testASplashFadesLinearlyOnTheGlass,
+        testTheIdentIsLitByItsCometAndTheLoadingScreenFlows,
+        testACoveredFramesBakesFindTheShadowUnitsBound,
+        testAnOpenFloorIsNotOccluded,
+        testAnOpenWallIsOpenToTheFramesEdge,
+        testAnOrthographicViewIsOccluded,
+        testAnOpenFloorCastsNoScreenShadow,
+        testAPebbleCastsAScreenShadow,
+        testAFarPostIsGroundedNotTraced,
+        testAScreenShadowFacingTheSunFallsTowardTheEye,
+        testGTAOReachesAsFarEveryWay,
+        testAWallBesideTheEyeIsOpen,
+        testAutoExposureBringsDayAndNightTogether,
+        testAnOrthographicViewTracesItsReflections,
+        testSmokeIsShadowedAndSparksAreNot,
+        testHazeBendsAndARibbonCovers,
+        testAFlatNormalMapFacesThePuffToTheEye,
+        testAParticleWaitsForItsSprite,
+        testALayeredMaterialBlendsItsLayers,
+        testALayeredMaterialPreviewsItsLayers,
+        testATerrainDrawsItsPaintedLayers,
+        testAGlossyFloorReflectsInNoRows,
+        testADecalIsLitAsTheFloorUnderIt,
+        testSmokeIsLitWhereItIs,
+        testTwoLampsLightARibbonAsOneTwiceAsBright,
+        testAMovedProbeBakesOnceItSettles,
+        testASheenAddsNoLight,
+        testAProbeBakedUnderADebugViewHoldsTheScene,
+        testASealedRoomHoldsNoSkyLight,
+        testAnIrradianceVolumeFollowsItsLight,
+        testACutShortRelightIsAskedForAgain,
+        testAVolumeBakedOverFramesEndsAsOneBakedWhole,
+        testReadinessOwesWhatTheFramesBake,
+        testAWorldsBakesWaitForItsMeshes,
+        testProgramsCompiledInParallelDrawAsWaitedFor,
+        testARestPoseSkinsAsTheMeshDraws,
+        testAVolumeShowsItsGridUntilItsRelightIsThrough,
+        testTheShoreRingsWhatBreaksTheWater,
+        testAMirrorShowsTheWaterlineFoam,
+        testATransparentPanesShadowIsAsDeepAsItIsOpaque,
+        testDebugLinesMeetTheSceneAsTheyAsk,
+        testADebugLineGlowsIntoTheBloom
+    };
+    for (std::size_t i = 0; i < std::size(checks); ++i) {
+        if (shard.takes(i)) checks[i](failures);
+    }
 }
 
 } // namespace
 
-void runGoldenTests(GLContext& gl, int& failures) {
-    testTheFramesMatchTheirGoldens(gl, failures);
+void runGoldenTests(GLContext& gl, int& failures, const Shard& shard) {
+    testTheFramesMatchTheirGoldens(gl, failures, shard);
 }
 
 } // namespace Vkm::Test

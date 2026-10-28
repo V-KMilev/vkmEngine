@@ -24,7 +24,8 @@ enum class EditorIcon {
     Empty, Import, Colliders, Material, Texture, Skeleton,
     Character, Ragdoll, Joint, Prefab, Socket,
     FrameAll, Perspective, Orthographic,
-    Terrain, Raise, Lower, Smooth, Flatten, Paint, Plants
+    Terrain, Raise, Lower, Smooth, Flatten, Paint, Plants,
+    Info, Warning, Error, Check, More, Search, Copy, Terminal, ArrowDown, ArrowUp
 };
 
 /**
@@ -45,7 +46,7 @@ bool loadEditorIconFont(const char* path);
  * @param icon Glyph to render.
  * @param c Screen-space centre.
  * @param r Half-extent in pixels.
- * @param col Glyph colour.
+ * @param col Glyph color.
  */
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col);
 
@@ -77,7 +78,7 @@ inline float entityMarkerHitRadius() { return entityMarkerRadius() + EditorStyle
  * @param dl Draw list to append to.
  * @param icon Glyph naming the entity's kind.
  * @param center Projected screen-space position.
- * @param col Glyph colour; the disc is fixed.
+ * @param col Glyph color; the disc is fixed.
  */
 void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col);
 

@@ -9,7 +9,7 @@ namespace Vkm::Engine {
 /**
  * @brief Depth of field: a circle-of-confusion disk blur over the resolved scene.
  *
- * Fullscreen, through the colour chain's ping-pong; a no-op when the camera's DoF amount is zero.
+ * Fullscreen, through the color chain's ping-pong; a no-op when the camera's DoF amount is zero.
  */
 class GLDoFPass : public GLPass {
     public:

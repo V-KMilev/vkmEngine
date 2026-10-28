@@ -3,6 +3,7 @@
 #include "offline/gl_irradiance_baker.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 #include <GL/glew.h>
@@ -10,7 +11,6 @@
 #include "logger.h"
 
 #include "gl_context.h"
-#include "gl_error_handle.h"
 #include "gl_profiler.h"
 #include "gl_render_buffer.h"
 
@@ -34,7 +34,8 @@ constexpr float CAPTURE_FAR = 500.0f;
 /// Widest the atlas grows before it takes another row of tiles.
 constexpr int MAX_ATLAS_WIDTH = static_cast<int>(BACKEND_MIN_TEXTURE_EDGE);
 
-// The probes sit at texel centres, so a (worldPos - boxMin) / boxSize lookup interpolates them.
+// The probes sit at texel centres, so a (worldPos - boxMin) / boxSize lookup interpolates them; the
+// relight places them so too (shaders/irradiance/relight).
 glm::vec3 probePosition(const IrradianceVolumeData& data, uint32_t cell) {
     const glm::uvec3 res(data.resolutionX, data.resolutionY, data.resolutionZ);
     const glm::uvec3 at(cell % res.x, (cell / res.x) % res.y, cell / (res.x * res.y));
@@ -102,10 +103,15 @@ void GLIrradianceBaker::update(
     m_asked.see(want);
     const bool settled = asked || m_asked.settled() || !m_bakedFrom.baked();
     if (settled && m_bakedFrom.changed(want)) {
-        volume.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
-        bake(gl, volume, data, view, glView, globalIBL);
+        beginBake(gl, volume, data);
         m_litBy.changed(lighting);
         m_relightAsked = false;
+    }
+    // A bake under way takes its slice before anything relights; the grid shown stays until it ends.
+    if (m_capturing) {
+        PROFILE_SCOPE("Render/IrradianceBake");
+        PROFILE_GPU_SCOPE("Render/IrradianceBake");
+        captureSlice(gl, volume, view, glView, globalIBL, view.bakeBudget);
         return;
     }
 
@@ -128,6 +134,9 @@ void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
     if (!m_atlas && !volume.isReady()) return;
     // Detached first: a texture a framebuffer still holds outlives its delete.
     m_fbo.attachTexture(GL_COLOR_ATTACHMENT0, 0);
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
+    m_captureDepth.reset();
+    m_capturing = false;
     m_atlas.reset();
     for (GLIrradianceVolume& scratch : m_scratch) scratch.release();
     volume.release();
@@ -136,29 +145,87 @@ void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
     m_relightAsked = false;
 }
 
-void GLIrradianceBaker::bake(
+void GLIrradianceBaker::beginBake(
     Vkm::GL::Context& gl,
     GLIrradianceVolume& volume,
-    const IrradianceVolumeData& data,
-    const RenderView& view,
-    GLView& glView,
-    const GLIBL& globalIBL
+    const IrradianceVolumeData& data
 ) {
-    // Down until this bake succeeds: every early way out leaves the grid not holding this volume.
-    volume.setBaked(false);
     m_nextBounce = 0;
-
-    const uint32_t cells = cellCount(data);
-    if (cells == 0) return;
+    m_capturing  = false;
+    m_baking     = data;
+    m_cells      = cellCount(data);
+    m_captured   = 0;
+    if (m_cells == 0) {
+        volume.setUnbaked();
+        return;
+    }
 
     for (GLIrradianceVolume& scratch : m_scratch) {
         scratch.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
     }
+    ensureAtlas(m_cells);
+
+    m_captureDepth = std::make_unique<Vkm::GL::RenderBuffer>();
+    m_captureDepth->storage(
+        GLDepth::EYE_FORMAT,
+        static_cast<int32_t>(m_atlas->getWidth()),
+        static_cast<int32_t>(m_atlas->getHeight())
+    );
+
+    // Once for every tile: zero is the sky, and each face's depth is its own tile's.
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, m_captureDepth->getID());
+    gl.setDepthWrite(true);
+    const uint32_t sky[4] = {0, 0, 0, 0};
+    m_fbo.clearColor(0, sky);
+    m_fbo.clearDepth(GLDepth::EYE_CLEAR);
+    m_capturing = true;
+}
+
+void GLIrradianceBaker::captureSlice(
+    Vkm::GL::Context& gl,
+    GLIrradianceVolume& volume,
+    const RenderView& view,
+    GLView& glView,
+    const GLIBL& globalIBL,
+    float budget
+) {
+    using Wall = std::chrono::steady_clock;
+    const Wall::time_point until = Wall::now() + std::chrono::duration_cast<Wall::duration>(
+        std::chrono::duration<float>(std::max(budget, 0.0f))
+    );
 
     // The shadowed sun's map covers the volume's box: every probe sits inside it.
+    const IrradianceVolumeData& data = m_baking;
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
     m_capture.begin(gl, view, glView, globalIBL, static_cast<float>(FACE_SIZE), box);
-    captureSurfels(gl, data);
+
+    m_fbo.bind();
+    gl.setDepthWrite(true);
+    do {
+        const uint32_t cell = m_captured++;
+        const auto x = static_cast<int32_t>((cell % m_tilesPerRow) * 6 * FACE_SIZE);
+        const auto y = static_cast<int32_t>((cell / m_tilesPerRow) * FACE_SIZE);
+        const GLSceneCapture::AttachFace tile = [&](int face) {
+            gl.setViewport(x + face * FACE_SIZE, y, FACE_SIZE, FACE_SIZE);
+        };
+        m_capture.captureSurfels(gl, probePosition(data, cell), CAPTURE_FAR, tile);
+    } while (m_captured < m_cells && (budget <= 0.0f || Wall::now() < until));
+    m_fbo.unbind();
+    if (m_captured < m_cells) return;
+
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
+    m_captureDepth.reset();
+    m_capturing = false;
+    finishBake(volume, view, glView, globalIBL);
+}
+
+void GLIrradianceBaker::finishBake(
+    GLIrradianceVolume& volume,
+    const RenderView& view,
+    GLView& glView,
+    const GLIBL& globalIBL
+) {
+    const IrradianceVolumeData& data = m_baking;
     listLights(view, data, glView);
     if (!light(volume, data, globalIBL)) {
         LOG_WARNING(
@@ -167,12 +234,16 @@ void GLIrradianceBaker::bake(
             data.center.x,
             data.center.y,
             data.center.z,
-            cells
+            m_cells
         );
+        volume.setUnbaked();
         return;
     }
-
-    volume.setBaked(true);
+    // The grids the relights gather into trade with the frame's, so hold its size.
+    for (GLIrradianceVolume& scratch : m_scratch) {
+        scratch.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
+    }
+    volume.setBaked(data);
     LOG_INFO(
         "Irradiance volume baked: %ux%ux%u probes at (%.1f, %.1f, %.1f), %d bounces; %u were inside "
         "geometry and are filled from their neighbours",
@@ -206,36 +277,6 @@ void GLIrradianceBaker::relight(
     volume.swapGrid(m_scratch[(BOUNCES - 1) % 2]);
 }
 
-void GLIrradianceBaker::captureSurfels(Vkm::GL::Context& gl, const IrradianceVolumeData& data) {
-    const uint32_t cells = cellCount(data);
-    ensureAtlas(cells);
-
-    // A depth as large as the atlas, for the capture alone: a relight reads the surfels, not it.
-    Vkm::GL::RenderBuffer depth;
-    const auto width  = static_cast<int32_t>(m_atlas->getWidth());
-    const auto height = static_cast<int32_t>(m_atlas->getHeight());
-    depth.storage(GLDepth::EYE_FORMAT, width, height);
-
-    // Once for every tile: zero is the sky, and each face's depth is its own tile's.
-    m_fbo.bind();
-    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, depth.getID());
-    gl.setDepthWrite(true);
-    const GLuint sky[4] = {0, 0, 0, 0};
-    VKM_GL_CHECK(glClearBufferuiv(GL_COLOR, 0, sky));
-    gl.clear(false, true, false, GLDepth::EYE_CLEAR);
-
-    for (uint32_t cell = 0; cell < cells; ++cell) {
-        const auto x = static_cast<int32_t>((cell % m_tilesPerRow) * 6 * FACE_SIZE);
-        const auto y = static_cast<int32_t>((cell / m_tilesPerRow) * FACE_SIZE);
-        const GLSceneCapture::AttachFace tile = [&](int face) {
-            gl.setViewport(x + face * FACE_SIZE, y, FACE_SIZE, FACE_SIZE);
-        };
-        m_capture.captureSurfels(gl, probePosition(data, cell), CAPTURE_FAR, tile);
-    }
-    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
-    m_fbo.unbind();
-}
-
 bool GLIrradianceBaker::light(
     GLIrradianceVolume& volume,
     const IrradianceVolumeData& data,
@@ -261,7 +302,7 @@ void GLIrradianceBaker::repair(GLIrradianceVolume& grid) {
         m_fill.dispatch(GLBindings::ComputeGroups::covering(m_refused, GLBindings::ComputeGroups::FILL));
     }
     // The next gather samples it, and the frame after the trade.
-    VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
 void GLIrradianceBaker::gather(int bounce, const IrradianceVolumeData& data, const GLIBL& globalIBL) {
@@ -303,20 +344,17 @@ void GLIrradianceBaker::gather(int bounce, const IrradianceVolumeData& data, con
         target.bindImage(i, static_cast<uint32_t>(i), GL_WRITE_ONLY);
     }
     m_relight.dispatch(cellCount(data));
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT);
 }
 
 namespace {
 
-// The words listLights() writes, as shaders/irradiance/relight reads them: a count, then where
-// the list begins, for the directional lights, for those reaching out of the box, then per cell.
-constexpr size_t DIRECTIONAL_HEAD = 0;
-constexpr size_t OUTSIDE_HEAD     = 2;
-constexpr size_t CELL_HEADS       = 4;
+constexpr auto DIRECTIONAL_HEAD = static_cast<size_t>(GLIrradianceBaker::RELIGHT_DIRECTIONAL_HEAD);
+constexpr auto OUTSIDE_HEAD     = static_cast<size_t>(GLIrradianceBaker::RELIGHT_OUTSIDE_HEAD);
 
 /// Where @p cell's light count sits; where its list begins is the word after.
 size_t cellHead(uint32_t cell) {
-    return CELL_HEADS + 2 * static_cast<size_t>(cell);
+    return static_cast<size_t>(GLIrradianceBaker::RELIGHT_CELL_HEADS) + 2 * static_cast<size_t>(cell);
 }
 
 } // namespace

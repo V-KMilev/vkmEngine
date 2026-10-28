@@ -9,7 +9,6 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/scene.h"
 #include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
 
@@ -30,12 +29,12 @@ constexpr float LOFT = 0.25f;
 } // namespace
 
 void LabThrower::onStart() {
-    input().define(ACTION_THROW, { InputBinding{InputSource::Key, GLFW_KEY_G, 1.0f} });
+    input().define(ACTION_THROW, { InputBinding::key(GLFW_KEY_G) });
 }
 
 void LabThrower::onFixedUpdate(float dt) {
     // The server builds what every end must see; offline only the player's own seat throws.
-    if (!isAuthority(net().role()) || sitsOutOffline(scene(), net(), entity())) return;
+    if (!isAuthority() || sitsOutOffline(scene(), net(), entity())) return;
     m_wait = glm::max(0.0f, m_wait - dt);
     if (m_wait > 0.0f || !input().pressed(command(), ACTION_THROW)) return;
     const Ragdoll* ragdoll = tryGet<Ragdoll>();
@@ -46,7 +45,7 @@ void LabThrower::onFixedUpdate(float dt) {
     Transform at;
     at.position = from->position + aim * MUZZLE_FORWARD + Math::WORLD_UP * MUZZLE_HEIGHT;
     at.rotation = from->rotation;
-    const EntityId thrown = net().spawn(scene(), resources(), crate, at);
+    const EntityId thrown = instantiateShared(crate, at);
     if (Rigidbody* body = scene().tryGet<Rigidbody>(thrown)) {
         body->linearVelocity = aim * speed + Math::WORLD_UP * (speed * LOFT);
     }

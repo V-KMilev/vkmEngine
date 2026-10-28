@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include "gl_buffer.h"
+
 #include "frame/gl_instance_batcher.h"
 #include "frame/gl_occlusion_cull.h"
 
@@ -23,6 +25,7 @@ class GLTarget;
 class GLShadowAtlas;
 class GLShadowData;
 class GLIBL;
+class GLLightmaps;
 class GLAtmosphere;
 class GLBloom;
 class GLClusterGrid;
@@ -31,6 +34,7 @@ class GLIrradianceVolume;
 class GLSkinPalette;
 class GLObjectBuffer;
 class GLOceanFields;
+class GLOceanShore;
 struct SkyParams;
 struct PlanarReflectorData;
 
@@ -70,7 +74,8 @@ struct GLFrameContext {
     GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume (see GLPass::bindAmbient).
     GLSkinPalette&     skinPalette;      ///< Every skinned item's bone palette, uploaded once per frame.
     const GLObjectBuffer& objects;       ///< Every object's model (and first bone), uploaded once per frame.
-    GLOceanFields&     oceanFields;      ///< The ocean's ripples and shore, for the water's pixels.
+    GLOceanFields&     oceanFields;      ///< The ocean's swell and ripples, for the water's pixels.
+    GLOceanShore&      oceanShore;       ///< The sea's shore, for its waterline foam.
 
     /**
      * @brief The camera's objects by draw bucket, as indices into RenderView::objects.
@@ -90,6 +95,10 @@ struct GLFrameContext {
     const GLInstanceBatcher& opaqueBatch;
 
     // The fields below are filled by the backend before the pass loop runs.
+
+    /// A drawn surface is water that is not the sea (GLMaterial::water): the ripple fields are drawn
+    /// for it whether or not the scene has an ocean.
+    bool waterShown = false;
 
     /**
      * @brief The GPU occlusion cull of opaqueBatch this frame, or null when it is off.
@@ -114,7 +123,7 @@ struct GLFrameContext {
     }
 
     /**
-     * @brief The post-processing colour chain.
+     * @brief The post-processing color chain.
      *
      * colorSrc holds the scene as of the last pass (starting at sceneHDR); colorDst is the free
      * scratch. A post pass samples colorSrc, draws into colorDst, then calls flipColor(). After
@@ -124,7 +133,7 @@ struct GLFrameContext {
     GLTarget* colorDst = nullptr;
 
     /**
-     * @brief The two colour-only scratch targets flipColor() alternates between.
+     * @brief The two color-only scratch targets flipColor() alternates between.
      *
      * Also transient copy space for a pass not yet in the chain.
      */
@@ -167,6 +176,9 @@ struct GLFrameContext {
      * Null under an HDR sky or none, which have no atmosphere.
      */
     const SkyParams* sky = nullptr;
+
+    /// The fixed meshes' lightmaps (GLLightmaps): its pages are bound by the pass that reads them.
+    const GLLightmaps* lightmaps = nullptr;
 
     // The fields below are pass products: set by an earlier pass, read by later ones.
 
@@ -212,6 +224,10 @@ struct GLFrameContext {
      * GLPass::bindFog binds the volume only when set, as it does the fog's.
      */
     bool aerialPerspectiveReady = false;
+
+    /// The frame's debug lines, uploaded by the first of GLDebugDrawPass's stages to draw; the
+    /// other binds the same range.
+    Vkm::GL::BufferSpan debugLines{};
 };
 
 } // namespace Vkm::Engine

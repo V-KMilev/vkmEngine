@@ -34,6 +34,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/street_lamp_01/textures/street_lamp_01_diff_1k.jpg"
@@ -109,19 +110,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.2076958417892456,
+              "maxDistance": 1.2076958,
               "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 7.6751227378845215,
+              "maxDistance": 7.6751227,
               "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 42.332462310791016,
+              "maxDistance": 42.332462,
               "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 84.66492462158203,
+              "maxDistance": 84.664925,
               "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod3"
             }
           ]

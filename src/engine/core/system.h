@@ -19,9 +19,13 @@ struct HostView;
 struct Visibility;
 struct UIDrawData;
 struct SplashFrame;
+struct LoadingFrame;
 struct LiveParticles;
 struct OceanData;
+class WaterData;
 struct TerrainFrame;
+struct RenderReadiness;
+class DebugDraw;
 
 /**
  * @brief Named per-frame execution stages.
@@ -47,7 +51,8 @@ enum class SystemStage : uint8_t {
  *
  * References are engine-owned services, valid for the session. Pointers are
  * per-frame products, null until their producer has run this frame, so a
- * consumer is registered after its producer (in setupEngineApp).
+ * consumer is registered after its producer (in setupEngineApp) - but for
+ * `readiness` and `debug`, services a host may not keep.
  *
  * Simulation state reads getSimDelta() and getFixedStep(); presentation and
  * services run every frame regardless, so a paused game keeps its music and menu.
@@ -74,9 +79,19 @@ struct FrameContext {
     const PoseBuffer*    poses      = nullptr;  ///< From SkeletalAnimationSystem.
     const UIDrawData*    ui         = nullptr;  ///< From UISystem.
     const SplashFrame*   splash     = nullptr;  ///< From SplashSystem.
+    const LoadingFrame*  loading    = nullptr;  ///< From LoadingSystem.
+    const UIDrawData*    cover      = nullptr;  ///< From UISystem: the loading screen's UI, under its bar.
     const LiveParticles* particles  = nullptr;  ///< From ParticleSystem.
     const OceanData*     ocean      = nullptr;  ///< From OceanSystem.
+    const WaterData*     water      = nullptr;  ///< From WaterSystem: the sea, and every other water.
     const TerrainFrame*  terrain    = nullptr;  ///< From TerrainSystem.
+    /// The host's, outliving the frame: RenderSystem writes how far the backend's bakes are once it
+    /// has drawn, so a system of an earlier stage reads the last frame's. Null when the host keeps none.
+    RenderReadiness*     readiness  = nullptr;
+    /// The host's world drawing, outliving the frame: any system, and the threads its parallelFor
+    /// forks, draw into it, and RenderSystem hands the backend what it holds. Null when the host
+    /// shows no frames, and in a shipped game (VKM_SHIPPING).
+    DebugDraw*           debug      = nullptr;
 };
 
 /**

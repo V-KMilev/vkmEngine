@@ -42,6 +42,8 @@ class StartScreen {
             std::string name;            ///< Project::name, or the directory's if unreadable.
             std::string description;     ///< Project::description.
             std::string engineVersion;   ///< Project::engineVersion.
+            bool        missing = false; ///< Its folder holds no project now (seen at m_seenAt).
+            std::string opened;          ///< When it was last opened, as shown (seen at m_seenAt).
         };
 
         /**
@@ -86,6 +88,7 @@ class StartScreen {
     private:
         std::vector<Entry>       m_recent;
         std::vector<std::string> m_recentRoots;   ///< What m_recent was built from.
+        double                   m_seenAt = -1.0; ///< When the recents' folders were last looked at.
 
         std::vector<Entry> m_examples;
         bool               m_examplesScanned = false;

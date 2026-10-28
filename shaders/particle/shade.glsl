@@ -1,5 +1,5 @@
 /*
- * What a particle fragment writes, billboard or strip: its colour emitted (additive) or lit
+ * What a particle fragment writes, billboard or strip: its color emitted (additive) or lit
  * (alpha) and fogged at its own depth, or the scene behind it bent (distortion).
  *
  * Soft (Lorach 2007): it fades over its size where the scene behind comes near, so smoke meets a

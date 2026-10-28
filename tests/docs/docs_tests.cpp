@@ -291,24 +291,54 @@ bool resolvesSomewhere(const fs::path& engineRoot, const std::string& rel) {
     return false;
 }
 
-// Every source file name in the tree. A page grouping files under their folder's
-// heading (as physics.md does) writes bare names; the claim checked is that the file
-// exists, not where, so ambiguity is fine.
-const std::set<std::string>& sourceFileNames(const fs::path& engineRoot) {
-    static std::set<std::string> names;
+// Whether a file in the tree, the repository's own libraries included, ends in @p path. A
+// page grouping files under their folder's heading (as physics.md does) writes bare names,
+// and one under a module's (as ecs.md does) the rest of the path; the claim checked is that
+// the file exists, not where, so ambiguity is fine. A vendored module's file is named from
+// that module's root (`miniaudio.h`): matched anywhere in one, a bare name would pass on any
+// file that shares it.
+bool namedInTree(const fs::path& engineRoot, const std::string& path) {
+    static std::vector<std::string> files;
     static bool built = false;
-    if (built) return names;
-    built = true;
-
-    std::error_code ec;
-    for (const char* const root : {"src", "app", "examples", "tests", "tools", "shaders", "templates"}) {
-        const fs::path dir = engineRoot / root;
-        if (!fs::exists(dir, ec)) continue;
-        for (fs::recursive_directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
-            if (it->is_regular_file()) names.insert(it->path().filename().string());
+    if (!built) {
+        built = true;
+        std::error_code ec;
+        const char* const roots[] = {
+            "src",
+            "app",
+            "examples",
+            "tests",
+            "tools",
+            "shaders",
+            "templates",
+            "modules/vkmGL",
+            "modules/vkmLog"
+        };
+        for (const char* const root : roots) {
+            const fs::path dir = engineRoot / root;
+            if (!fs::exists(dir, ec)) continue;
+            for (fs::recursive_directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+                // A build directory is untracked (.gitignore's `build*/`), so a clean checkout has
+                // none; a library's own modules/ is vendored.
+                const std::string name = it->path().filename().string();
+                if (it->is_directory() && (name.rfind("build", 0) == 0 || name == "modules")) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                if (it->is_regular_file()) files.push_back("/" + it->path().generic_string());
+            }
         }
     }
-    return names;
+    std::error_code ec;
+    fs::directory_iterator module(engineRoot / "modules", ec), end;
+    for (; !ec && module != end; module.increment(ec)) {
+        std::error_code absent;
+        if (fs::is_regular_file(module->path() / path, absent)) return true;
+    }
+    const std::string tail = "/" + path;
+    return std::any_of(files.begin(), files.end(), [&](const std::string& file) {
+        return file.size() >= tail.size() && file.compare(file.size() - tail.size(), tail.size(), tail) == 0;
+    });
 }
 
 // A path with a placeholder - `library/<type>/<uid>.json`, `examples/<project>/src/` -
@@ -446,8 +476,13 @@ void testTheManualNamesRealFiles() {
     }
     const fs::path engineRoot = fs::path(VKM_ENGINE_DIR);
 
-    // Backticked, containing a slash, ending in an extension this repo uses.
-    const std::regex quoted(R"(`([^`]+)`)");
+    // Names of files the manual describes but the tree does not hold: the Windows SDK's
+    // header, and a stage file vkmGL loads if present that no program has.
+    static const std::set<std::string> NAMED_NOT_SHIPPED = {"windef.h", "geometry.shader"};
+
+    // Backticked on one line, so a code fence's three do not pair the rest of the page
+    // wrongly, ending in an extension this repo uses; a bare name must be some file's.
+    const std::regex quoted(R"(`([^`\n]+)`)");
     const std::regex pathish(R"(^[A-Za-z0-9_./<>*-]+\.(h|cpp|md|glsl|shader|py|dox)$)");
 
     std::vector<std::string> missing;
@@ -455,7 +490,6 @@ void testTheManualNamesRealFiles() {
         const std::string text = readAll(file);
         for (std::sregex_iterator it(text.begin(), text.end(), quoted), end; it != end; ++it) {
             const std::string token = (*it)[1].str();
-            if (token.find('/') == std::string::npos) continue;
             if (!std::regex_match(token, pathish)) continue;
             if (isPlaceholder(token)) continue;
 
@@ -469,8 +503,8 @@ void testTheManualNamesRealFiles() {
             }
             if (resolvesSomewhere(engineRoot, path)) continue;
             if (fs::exists(file.parent_path() / path)) continue;
-            if (path.find('/') == std::string::npos
-                && sourceFileNames(engineRoot).count(path) != 0) continue;
+            if (namedInTree(engineRoot, path)) continue;
+            if (NAMED_NOT_SHIPPED.count(path) != 0) continue;
             missing.push_back(file.filename().string() + ": " + token);
         }
     }
@@ -497,13 +531,18 @@ void testTheManualsPassTableIsTheRegistrationOrder() {
         return;
     }
 
+    // init() adds each pass through a lambda, and asserts PASS_COUNT counts them.
     std::vector<std::string> registered;
+    size_t counted = 0;
     {
         const std::string text = readAll(backend);
-        const std::regex row(R"RX(m_passes\.push_back\(\{"([A-Za-z]+)")RX");
+        const std::regex row(R"RX(\badd\(\{"([A-Za-z]+)")RX");
         for (std::sregex_iterator it(text.begin(), text.end(), row), end; it != end; ++it) {
             registered.push_back((*it)[1].str());
         }
+        std::smatch count;
+        const std::regex constant(R"RX(PASS_COUNT\s*=\s*([0-9]+))RX");
+        if (std::regex_search(text, count, constant)) counted = std::stoul(count[1].str());
     }
 
     // Rows are numbered - "| <n> | <Name>", the name optionally bold - and nothing else
@@ -530,6 +569,67 @@ void testTheManualsPassTableIsTheRegistrationOrder() {
     }
     check(
         "the manual's pass table is the registration order",
+        !registered.empty() && registered == documented
+    );
+    check("  and PASS_COUNT counts every pass", counted == registered.size());
+}
+
+// The stage table in architecture.md names every system setupEngineApp registers, stage by
+// stage in registration order; the editor-only rows name systems it does not register.
+void testTheManualsStageTableIsTheRegistrationOrder() {
+    std::printf("What order the manual says the systems run in:\n");
+
+    const fs::path engineRoot(VKM_ENGINE_DIR);
+    const fs::path app  = engineRoot / "app/engine_app.h";
+    const fs::path page = engineRoot / "docs/reference/architecture.md";
+
+    std::error_code ec;
+    if (!fs::exists(app, ec) || !fs::exists(page, ec)) {
+        std::printf("  (no source or no docs/ in this tree - nothing to check)\n");
+        return;
+    }
+
+    std::vector<std::string> registered;
+    {
+        const std::string text = readAll(app);
+        const std::regex  call(R"RX(addSystem<Engine::([A-Za-z]+)>)RX");
+        for (std::sregex_iterator it(text.begin(), text.end(), call), end; it != end; ++it) {
+            registered.push_back((*it)[1].str());
+        }
+    }
+
+    // The table runs from its "| Stage" header to the first blank line; of what its rows name,
+    // only the systems registered are kept, in the order named.
+    std::vector<std::string> documented;
+    {
+        const std::string text  = readAll(page);
+        const size_t      start = std::min(text.find("\n| Stage"), text.size());
+        const size_t      stop  = std::min(text.find("\n\n", start), text.size());
+        const std::string table = text.substr(start, stop - start);
+        const std::regex  name(R"RX(`([A-Za-z]+System)`)RX");
+        for (std::sregex_iterator it(table.begin(), table.end(), name), end; it != end; ++it) {
+            const std::string system = (*it)[1].str();
+            if (std::find(registered.begin(), registered.end(), system) != registered.end()) {
+                documented.push_back(system);
+            }
+        }
+    }
+
+    std::printf("      %zu registered, %zu documented\n", registered.size(), documented.size());
+    for (size_t i = 0; i < registered.size(); ++i) {
+        const char* named = i < documented.size() ? documented[i].c_str() : "nothing";
+        if (i >= documented.size() || registered[i] != documented[i]) {
+            std::printf(
+                "      system %zu: registers %s, documents %s\n",
+                i + 1,
+                registered[i].c_str(),
+                named
+            );
+            break;
+        }
+    }
+    check(
+        "the manual's stage table is the registration order",
         !registered.empty() && registered == documented
     );
 }
@@ -1008,9 +1108,9 @@ void testEveryQualifiedNameInTheManualExists() {
 }
 
 // HierarchyOperations is the sanctioned way to touch the entity graph, and hierarchy.md's
-// tables are how a reader finds what is in it ("where every walk over it belongs"). A
-// function missing from the tables is invisible, and the next reader rewrites the walk
-// by hand, unbounded - the failure the namespace exists to prevent.
+// tables are how a reader finds what is in it. A function missing from the tables is
+// invisible, and the next reader rewrites the walk by hand, unbounded - the failure the
+// namespace exists to prevent.
 void testTheHierarchyApiTablesAreTheHeader() {
     std::printf("What the manual says HierarchyOperations offers:\n");
 
@@ -1813,10 +1913,11 @@ void testEveryTestFunctionIsActuallyRun() {
         return;
     }
 
-    // `void testFoo(...) {` opens one; a line that *starts* with `testFoo(` calls one. A
-    // forward declaration matches neither: no brace, and it starts with `void`.
+    // `void testFoo(...) {` opens one; a line that *starts* with `testFoo(` calls one, and one that is
+    // `testFoo` alone, comma or none, names it in a list a loop calls. A forward declaration matches
+    // neither: no brace, and it starts with `void`.
     const std::regex defines(R"RX(^\s*(?:static\s+)?void\s+(test\w+)\s*\([^;]*\)\s*\{)RX");
-    const std::regex calls(R"RX(^\s*(test\w+)\s*\()RX");
+    const std::regex calls(R"RX(^\s*(test\w+)\s*(?:\(|,?\s*$))RX");
 
     size_t functions = 0;
     std::vector<std::string> unrun;
@@ -2448,6 +2549,50 @@ void testABrokenListBreaksWhole() {
     check("  and only when it does not fit on one line", fitting.empty());
 }
 
+// code-style.md's absolutes: one spelling of color, the one GL and ImGui use, in the source, the
+// shaders, the build and the manual. Its letters are put together here, or this file would be the
+// first found. The texture-usage test feeds its reader the British form on purpose, in quotes; that
+// file alone may.
+void testTheTreeSpellsColor() {
+    std::printf("How the tree spells color:\n");
+
+    const fs::path    engineRoot(VKM_ENGINE_DIR);
+    const std::string british = std::string("col") + "our";
+    const std::string fed     = "\"C" + british.substr(1) + "\"";
+    std::vector<fs::path> files = styledFiles(engineRoot);
+    const std::vector<fs::path> shaders = shaderFiles(engineRoot);
+    const std::vector<fs::path> builds  = buildAndToolFiles(engineRoot);
+    const std::vector<fs::path> pages   = documentFiles();
+    for (const std::vector<fs::path>* more : {&shaders, &builds, &pages}) {
+        files.insert(files.end(), more->begin(), more->end());
+    }
+    std::vector<std::string> offenders;
+    for (const fs::path& file : files) {
+        const std::string where = fs::relative(file, engineRoot).generic_string();
+        const bool        feeds = where == "tests/resource/resource_tests.cpp";
+        std::ifstream in(file);
+        std::string line;
+        int number = 0;
+        while (std::getline(in, line)) {
+            ++number;
+            for (size_t at = line.find(fed); feeds && at != std::string::npos; at = line.find(fed)) {
+                line.erase(at, fed.size());
+            }
+            std::transform(line.begin(), line.end(), line.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            if (line.find(british) != std::string::npos) {
+                offenders.push_back(where + ":" + std::to_string(number));
+            }
+        }
+    }
+
+    for (const std::string& one : offenders) {
+        std::printf("      %s spells it the British way\n", one.c_str());
+    }
+    check("the tree spells color one way", offenders.empty());
+}
+
 // code-style.md section 5: a line fits in 110 columns. Macro-table rows and raw-string
 // regexes keep their shape (5.3): a row is a continued macro line invoking one
 // (`X(Mesh, mesh) \`), and a raw string the line opening one, not any line with `R"`.
@@ -2933,16 +3078,46 @@ void testNoIdentifierIsAWindowsMacro() {
     check("nothing in the tree is named near, far or pascal", offenders.empty());
 }
 
+// OpenGL is vkmGL's (docs/guides/design.md, 2.6): every call the engine and its backend make goes
+// through a vkmGL object or the Context, so none is unchecked and none duplicates what vkmGL owns.
+void testNoRawGLCallOutsideVkmGL() {
+    std::printf("Raw OpenGL calls outside vkmGL:\n");
+
+    const fs::path engineRoot(VKM_ENGINE_DIR);
+    const std::regex call(R"(\bgl[A-Z]\w*\s*\()");
+
+    std::vector<std::string> offenders;
+    const std::vector<fs::path> files = sourceFiles(engineRoot);
+    for (const fs::path& file : files) {
+        const std::string text = codeOnly(readAll(file));
+        std::istringstream lines(text);
+        std::string line;
+        uint32_t number = 0;
+        while (std::getline(lines, line)) {
+            ++number;
+            if (!std::regex_search(line, call)) continue;
+            const std::string where = fs::relative(file, engineRoot).generic_string();
+            offenders.push_back(where + ":" + std::to_string(number) + ": " + line.substr(0, 60));
+        }
+    }
+
+    for (const std::string& offender : offenders) std::printf("      %s\n", offender.c_str());
+    std::printf("      %zu file(s) read\n", files.size());
+    check("no raw gl* call is made outside vkmGL", !files.empty() && offenders.empty());
+}
+
 } // namespace
 
 void runDocsTests() {
     testTheManualCitesNoLineNumbers();
     testTheManualIsAscii();
     testTheSourceIsAscii();
+    testTheTreeSpellsColor();
     testTheManualLinksResolve();
     testTheManualAnchorsResolve();
     testTheManualNamesRealFiles();
     testTheManualsPassTableIsTheRegistrationOrder();
+    testTheManualsStageTableIsTheRegistrationOrder();
     testTheManualDocumentsEveryComponent();
     testTheRenderViewContractTableIsTheStruct();
     testTheHierarchyApiTablesAreTheHeader();
@@ -2974,4 +3149,5 @@ void runDocsTests() {
     testEveryParamNamesAParameter();
     testEveryLoggingFileDeclaresItsCategory();
     testNoIdentifierIsAWindowsMacro();
+    testNoRawGLCallOutsideVkmGL();
 }

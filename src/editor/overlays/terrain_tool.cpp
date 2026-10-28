@@ -12,6 +12,7 @@
 
 #include "command/editor_commands.h"
 #include "core/system.h"
+#include "debug/debug_draw.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/terrain.h"
@@ -19,8 +20,9 @@
 #include "editor_context.h"
 #include "editor_state.h"
 #include "input/editor_keybinds.h"
-#include "overlays/wire_draw.h"
+#include "overlays/viewport_projection.h"
 #include "resource/resource_manager.h"
+#include "system/terrain/terrain_system.h"
 #include "system/visibility/visibility.h"
 #include "ui/editor_style.h"
 
@@ -40,13 +42,6 @@ constexpr float BRUSH_RANGE = 5000.0f;
 /// Metres the rim is drawn above the surface, clear of it.
 constexpr float RIM_LIFT = 0.05f;
 
-/// The terrain's placement in the world: its entity's position and turn, unscaled, as it is drawn.
-glm::mat4 terrainModel(const Scene& scene, EntityId id) {
-    const Transform& local = scene.get<Transform>(id);
-    return glm::translate(glm::mat4(1.0f), resolvedWorldPosition(scene, id, local))
-        * glm::mat4_cast(resolvedWorldRotation(scene, id, local));
-}
-
 /// The undo step a stroke of @p tool makes.
 const char* strokeLabel(TerrainTool tool) {
     switch (tool) {
@@ -64,25 +59,21 @@ const char* strokeLabel(TerrainTool tool) {
 
 /// The brush's rim at @p radius around local @p centre, laid on the surface.
 void drawRim(
-    ImDrawList* dl,
-    const EditorContext& ec,
+    DebugDraw& draw,
     const TerrainAsset& terrain,
     const glm::mat4& model,
     glm::vec2 centre,
     float radius,
-    ImU32 colour
+    const DebugStyle& style
 ) {
-    const glm::mat4& vp = ec.frame.visibility->camera.viewProjection;
-    glm::vec3 last{};
-    for (int k = 0; k <= RIM_SEGMENTS; ++k) {
+    glm::vec3 rim[RIM_SEGMENTS];
+    for (int k = 0; k < RIM_SEGMENTS; ++k) {
         const float     turn = glm::two_pi<float>() * static_cast<float>(k) / RIM_SEGMENTS;
         const glm::vec2 xz   = centre + radius * glm::vec2(std::cos(turn), std::sin(turn));
         const float     y    = terrain.heightAt(xz.x, xz.y) + RIM_LIFT;
-        const glm::vec3 at   = glm::vec3(model * glm::vec4(xz.x, y, xz.y, 1.0f));
-        const float     wide = EditorStyle::px(2.0f);
-        if (k > 0) wireSegment(dl, vp, last, at, ec.viewportPos, ec.viewportSize, colour, wide);
-        last = at;
+        rim[k] = glm::vec3(model * glm::vec4(xz.x, y, xz.y, 1.0f));
     }
+    draw.polyline(rim, RIM_SEGMENTS, style, true);
 }
 
 } // namespace
@@ -131,7 +122,7 @@ bool TerrainToolOverlay::update(EditorContext& ec) {
     drawStrip(ec);
 
     TerrainAsset&   terrain = ctx.resources.edit(handle);
-    const glm::mat4 model   = terrainModel(ctx.scene, target);
+    const glm::mat4 model   = terrainModel(ctx.scene, target, ctx.scene.get<Transform>(target));
     const glm::mat4 toLocal = glm::inverse(model);
     const Math::Ray ray     = viewportRay(
         ctx.visibility->camera.invViewProj,
@@ -150,26 +141,20 @@ bool TerrainToolOverlay::update(EditorContext& ec) {
     const bool           invert = ImGui::GetIO().KeyShift;
     const bool invertible = brush.tool == TerrainTool::Raise || brush.tool == TerrainTool::Lower
         || brush.tool == TerrainTool::Plants;
-    if (ImDrawList* dl = ImGui::GetWindowDrawList()) {
-        const ImVec2 end(ec.viewportPos.x + ec.viewportSize.x, ec.viewportPos.y + ec.viewportSize.y);
-        dl->PushClipRect(ec.viewportPos, end, true);
-        // Shift held turns the rim to the warning colour: the drag does the opposite.
-        const ImU32 rim = invert && invertible
-            ? ImGui::GetColorU32(EditorStyle::WARNING)
-            : EditorStyle::HIGHLIGHT_U32;
-        drawRim(dl, ec, terrain, model, {at.x, at.z}, brush.radius, rim);
+    if (ctx.debug) {
+        // Shift held turns the rim to the warning color: the drag does the opposite.
+        const ImVec4&    warning = EditorStyle::WARNING;
+        const glm::vec4  color   = invert && invertible
+            ? glm::vec4(warning.x, warning.y, warning.z, warning.w)
+            : DebugPalette::HIGHLIGHT.value();
+        const DebugStyle rim = DebugStyle(color).wide(2.0f);
+        drawRim(*ctx.debug, terrain, model, {at.x, at.z}, brush.radius, rim);
         // The hard core, fainter: within it the brush works in full.
         if (brush.hardness > 0.0f && brush.hardness < 1.0f) {
-            const ImU32 faint = (rim & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 128);
-            drawRim(dl, ec, terrain, model, {at.x, at.z}, brush.radius * brush.hardness, faint);
+            const DebugStyle faint = DebugStyle(glm::vec4(glm::vec3(color), 0.5f)).wide(2.0f);
+            drawRim(*ctx.debug, terrain, model, {at.x, at.z}, brush.radius * brush.hardness, faint);
         }
-        ImVec2          centre;
-        const glm::mat4& vp    = ctx.visibility->camera.viewProjection;
-        const glm::vec3  world = glm::vec3(model * glm::vec4(at, 1.0f));
-        if (projectToViewport(vp, world, ec.viewportPos, ec.viewportSize, centre)) {
-            dl->AddCircleFilled(centre, EditorStyle::px(2.5f), rim);
-        }
-        dl->PopClipRect();
+        ctx.debug->point(glm::vec3(model * glm::vec4(at, 1.0f)), DebugStyle(rim).wide(1.25f));
     }
 
     const bool clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ec.input.clickPicks();

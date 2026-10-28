@@ -6,9 +6,8 @@
 
 #include "logger.h"
 
-#include "gl_error_handle.h"
-
 #include "convention/gl_depth.h"
+#include "resource/texture_format.h"
 #include "storage/gl_ibl.h"
 
 namespace Vkm::Engine {
@@ -28,12 +27,13 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     m_capacity   = capacity;
     m_resolution = resolution;
 
-    // RGBA16F is the guaranteed colour-renderable HDR format (RGB16F render
+    // RGBA16F is the guaranteed color-renderable HDR format (RGB16F render
     // support is optional), for the capture cube too. create() releases any
     // prior allocation, so this doubles as a rebuild.
     m_irradiance.create(irradianceSize(), 1, m_capacity + 1, GL_RGBA16F);
     m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity + 1, GL_RGBA16F);
-    m_env.create(m_resolution, fullMipChain(m_resolution), GL_RGBA16F, true);
+    const auto side = uint32_t(m_resolution);
+    m_env.create(m_resolution, int(mipChainLength(side, side)), GL_RGBA16F, true);
 
     // Shared capture depth for the six geometry captures (convolution runs
     // depth-off and ignores it).
@@ -66,31 +66,8 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
 }
 
 void GLProbeArray::copyLayer(int from, int to) const {
-    // A layer is its cube's six faces, from layer * 6.
-    const auto copy = [&](const Vkm::GL::TextureCubeArray& array, int mip) {
-        const int size = array.size() >> mip;
-        VKM_GL_CHECK(
-            glCopyImageSubData(
-                array.getID(),
-                GL_TEXTURE_CUBE_MAP_ARRAY,
-                mip,
-                0,
-                0,
-                from * 6,
-                array.getID(),
-                GL_TEXTURE_CUBE_MAP_ARRAY,
-                mip,
-                0,
-                0,
-                to * 6,
-                size,
-                size,
-                6
-            )
-        );
-    };
-    copy(m_irradiance, 0);
-    for (int mip = 0; mip < PREFILTER_MIPS; ++mip) copy(m_prefilter, mip);
+    m_irradiance.copyCube(from, to);
+    m_prefilter.copyCube(from, to);
 }
 
 } // namespace Vkm::Engine

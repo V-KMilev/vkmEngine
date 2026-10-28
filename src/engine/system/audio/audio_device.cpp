@@ -15,10 +15,62 @@
 #include "miniaudio.h"
 
 #include "resource/asset/audio_clip_asset.h"
+#include "system/audio/acoustics.h"
+#include "system/audio/reverb.h"
 
 namespace Vkm::Engine {
 
 namespace {
+
+/// The occlusion low-pass's order: one pole, falling 6 dB an octave as sound through a wall does.
+constexpr ma_uint32 LOWPASS_ORDER = 1;
+
+/// How far an occlusion's cutoff may drift before the filter is retuned, as a share of it.
+constexpr float CUTOFF_STEP = 0.02f;
+
+/// An open low-pass's cutoff, in multiples of the sample rate: so far above it that the pole keeps
+/// nothing of the last sample, and the sound passes exactly.
+constexpr float OPEN_RATES = 1000.0f;
+
+/**
+ * @brief The room's reverb as a node in the mixer's graph: the voices that ring in the room run
+ *        through it, and it passes them on with the room's tail added.
+ *
+ * Through it, not beside it: a send would split each voice in two, and miniaudio copies a node's
+ * whole processed block to a second output read for fewer frames than the first. The node base
+ * comes first, so the graph's pointer to the node is a pointer to this.
+ */
+struct ReverbNode {
+    ma_node_base base;
+    ReverbTank   tank;
+};
+
+/**
+ * @brief The mixer thread's call into the tank: the voices as they came, plus their tail.
+ *
+ * @param node      The ReverbNode.
+ * @param in        Its one input bus; null while nothing feeds it.
+ * @param inFrames  Unused: input and output run at one rate.
+ * @param out       Its one output bus.
+ * @param outFrames How many frames to make.
+ */
+void processReverb(ma_node* node, const float** in, ma_uint32* inFrames, float** out, ma_uint32* outFrames) {
+    auto* reverb = static_cast<ReverbNode*>(node);
+    const float* dry = in != nullptr ? in[0] : nullptr;
+    reverb->tank.process(dry, out[0], *outFrames);
+    if (dry == nullptr) return;
+    const size_t samples = static_cast<size_t>(*outFrames) * ma_node_get_output_channels(node, 0);
+    for (size_t i = 0; i < samples; ++i) out[0][i] += dry[i];
+}
+
+// Run while nothing feeds it, so a tail rings on after its sound stops.
+const ma_node_vtable REVERB_VTABLE = {
+    processReverb,
+    nullptr,
+    1,
+    1,
+    MA_NODE_FLAG_CONTINUOUS_PROCESSING | MA_NODE_FLAG_ALLOW_NULL_INPUT,
+};
 
 // The supported platforms' backends (engine.md), in miniaudio's priority order. Stated
 // because ma_engine's default list ends in the null backend, which succeeds with no hardware.
@@ -87,8 +139,9 @@ void pullMix(ma_device* device, void* out, const void* in, ma_uint32 frameCount)
 /**
  * @brief The backend half of AudioDevice: the mixer, its context, and its voices.
  *
- * A voice's ma_sound reads a ma_audio_buffer_ref into the clip's samples; neither may
- * move once initialised, so each voice is heap-allocated.
+ * A voice's ma_sound reads a ma_audio_buffer_ref into the clip's samples; neither may move once
+ * initialised, so each voice is heap-allocated. Its sound runs through a low-pass, which occlusion
+ * closes, to the output, or through the room's reverb when it rings in the room.
  */
 struct AudioDevice::Backend {
     struct Voice {
@@ -112,6 +165,10 @@ struct AudioDevice::Backend {
         Hold hold = Hold::None;
         // As last applied: an inverse rolloff's gain is ours, redone as the ear moves.
         VoiceParams params;
+        // Occlusion's low-pass, which runs to the output or through the room's reverb.
+        ma_lpf_node lowpass;
+        bool        ringing = false;  ///< Running through the reverb node, not straight out.
+        float       cutoff  = 0.0f;   ///< The low-pass's, as last tuned.
     };
 
     ma_log    log;
@@ -133,6 +190,10 @@ struct AudioDevice::Backend {
 
     std::unordered_map<VoiceId, std::unique_ptr<Voice>> voices;
 
+    // The room's reverb, which every voice that asks runs through; null when its node could not be
+    // made, which costs only the reverb.
+    std::unique_ptr<ReverbNode> reverb;
+
     // Never reused, so a stale id cannot name a later voice; nothing reaches the wrap.
     VoiceId nextVoice = 1;
 
@@ -143,9 +204,60 @@ struct AudioDevice::Backend {
     }
 
     void release(Voice& voice) const {
-        // The buffer goes second: until the node is detached, the mixer may still read it.
+        // The buffer goes last: until the sound is detached, the mixer may still read it.
         ma_sound_uninit(&voice.sound);
+        ma_lpf_node_uninit(&voice.lowpass, nullptr);
         ma_audio_buffer_ref_uninit(&voice.buffer);
+    }
+
+    /// The low-pass of a sound nothing stands in front of.
+    float openCutoff() const { return OPEN_RATES * static_cast<float>(ma_engine_get_sample_rate(&engine)); }
+
+    /**
+     * @brief Run @p voice's sound through its low-pass to the output.
+     *
+     * The far end first, the sound last, so nothing flows through a half-built chain.
+     *
+     * @param voice A voice whose sound is initialised.
+     * @return Whether the low-pass was made; the voice cannot play without it.
+     */
+    bool route(Voice& voice) {
+        ma_node_graph*  graph    = ma_engine_get_node_graph(&engine);
+        const ma_uint32 channels = ma_engine_get_channels(&engine);
+        const ma_uint32 rate     = ma_engine_get_sample_rate(&engine);
+        voice.cutoff = openCutoff();
+        const ma_lpf_node_config lpf = ma_lpf_node_config_init(channels, rate, voice.cutoff, LOWPASS_ORDER);
+        if (ma_lpf_node_init(graph, &lpf, nullptr, &voice.lowpass) != MA_SUCCESS) return false;
+        ma_node_attach_output_bus(&voice.lowpass, 0, ma_engine_get_endpoint(&engine), 0);
+        ma_node_attach_output_bus(&voice.sound, 0, &voice.lowpass, 0);
+        return true;
+    }
+
+    /**
+     * @brief Make the room's reverb node and run it into the output.
+     *
+     * Failure costs only the reverb: voices that ask for it play on, dry.
+     */
+    void initReverb() {
+        auto      node     = std::make_unique<ReverbNode>();
+        ma_uint32 channels = ma_engine_get_channels(&engine);
+        node->tank.prepare(ma_engine_get_sample_rate(&engine), channels);
+        ma_node_config config  = ma_node_config_init();
+        config.vtable          = &REVERB_VTABLE;
+        config.pInputChannels  = &channels;
+        config.pOutputChannels = &channels;
+        if (ma_node_init(ma_engine_get_node_graph(&engine), &config, nullptr, &node->base) != MA_SUCCESS) {
+            LOG_WARNING("The room's reverb could not be set up - sounds play dry");
+            return;
+        }
+        ma_node_attach_output_bus(&node->base, 0, ma_engine_get_endpoint(&engine), 0);
+        reverb = std::move(node);
+    }
+
+    void uninitReverb() {
+        if (!reverb) return;
+        ma_node_uninit(&reverb->base, nullptr);
+        reverb.reset();
     }
 
     /**
@@ -165,7 +277,7 @@ struct AudioDevice::Backend {
 
     void applyGain(Voice& voice) const {
         const VoiceParams& params = voice.params;
-        float gain = params.heardVolume();
+        float gain = params.heardVolume() * Acoustics::occludedGain(params.heardOcclusion());
         if (rolledOffHere(params)) gain *= inverseRolloffGain(params, earDistance(params.position));
         ma_sound_set_volume(&voice.sound, gain);
     }
@@ -177,7 +289,7 @@ struct AudioDevice::Backend {
      * @return The gain; 0 where it is positioned with no ear, as the mixer plays it.
      */
     float heardGain(const VoiceParams& params) const {
-        float gain = params.heardVolume();
+        float gain = params.heardVolume() * Acoustics::occludedGain(params.heardOcclusion());
         if (!params.spatial) return gain;
         if (ma_engine_listener_is_enabled(&engine, 0) == MA_FALSE) return 0.0f;
         if (!params.hasFar()) return gain;
@@ -230,7 +342,7 @@ struct AudioDevice::Backend {
         return weakest;
     }
 
-    void apply(Voice& voice, const VoiceParams& params) const {
+    void apply(Voice& voice, const VoiceParams& params) {
         voice.params = params;
         applyGain(voice);
 
@@ -238,6 +350,28 @@ struct AudioDevice::Backend {
         // A max, not std::clamp, which would hand the NaN on.
         ma_sound_set_pitch(&voice.sound, std::max(0.01f, params.pitch));
         ma_sound_set_looping(&voice.sound, params.loop ? MA_TRUE : MA_FALSE);
+
+        // Retuned only as it drifts: a retune per frame for a sound that barely moved is waste.
+        const float occlusion = params.heardOcclusion();
+        const float cutoff    = occlusion > 0.0f ? Acoustics::occludedCutoff(occlusion) : openCutoff();
+        if (std::abs(cutoff - voice.cutoff) > voice.cutoff * CUTOFF_STEP) {
+            const ma_lpf_config tuned = ma_lpf_config_init(
+                ma_format_f32,
+                ma_engine_get_channels(&engine),
+                ma_engine_get_sample_rate(&engine),
+                cutoff,
+                LOWPASS_ORDER
+            );
+            if (ma_lpf_node_reinit(&tuned, &voice.lowpass) == MA_SUCCESS) voice.cutoff = cutoff;
+        }
+        // Through the room's reverb or straight out, moved only when that changes.
+        const bool ringing = params.reverb && reverb != nullptr;
+        if (ringing != voice.ringing) {
+            ma_node* to = ringing ? &reverb->base : ma_engine_get_endpoint(&engine);
+            if (ma_node_attach_output_bus(&voice.lowpass, 0, to, 0) == MA_SUCCESS) {
+                voice.ringing = ringing;
+            }
+        }
 
         ma_sound_set_spatialization_enabled(&voice.sound, params.spatial ? MA_TRUE : MA_FALSE);
         if (!params.spatial) return;
@@ -302,7 +436,9 @@ struct AudioDevice::Backend {
     bool initEngine(ma_engine_config& config) {
         // One ear (see findActiveListener); an unused one still costs a spatializer pass.
         config.listenerCount = 1;
-        return ma_engine_init(&config, &engine) == MA_SUCCESS;
+        if (ma_engine_init(&config, &engine) != MA_SUCCESS) return false;
+        initReverb();
+        return true;
     }
 
     /**
@@ -436,7 +572,11 @@ bool AudioDevice::openOffline(uint32_t sampleRate, uint32_t channels) {
 void AudioDevice::close() {
     if (!m_backend) return;
 
-    stopAllVoices();
+    // Cut, not ramped: the graph goes now.
+    for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
+    m_backend->voices.clear();
+    // After the voices that feed it, before the graph it lives in.
+    m_backend->uninitReverb();
     // The engine stops a borrowed device before taking its graph down; the device goes after.
     ma_engine_uninit(&m_backend->engine);
     if (m_backend->device) ma_device_uninit(m_backend->device.get());
@@ -462,6 +602,10 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
     if (!m_backend || clip.sampleCount() == 0 || clip.channels == 0) return 0;
 
     if (m_backend->voices.size() >= MAX_HELD_VOICES) return 0;
+
+    // Nothing mixes while the device is lost: a one-shot would wait to burst out with every other
+    // one when a device opens again, long after its moment. A loop waits, and carries on then.
+    if (!params.loop && m_backend->deviceLost()) return 0;
 
     // Counted only when the map is full: ramping voices are in it a few milliseconds more.
     VoiceId yielding = 0;
@@ -507,6 +651,11 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
         &voice->sound
     );
     if (soundResult != MA_SUCCESS) {
+        ma_audio_buffer_ref_uninit(&voice->buffer);
+        return 0;
+    }
+    if (!m_backend->route(*voice)) {
+        ma_sound_uninit(&voice->sound);
         ma_audio_buffer_ref_uninit(&voice->buffer);
         return 0;
     }
@@ -658,8 +807,8 @@ void AudioDevice::reopenLostDevice() {
 
 void AudioDevice::stopAllVoices() {
     if (!m_backend) return;
-    for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
-    m_backend->voices.clear();
+    for (const auto& entry : m_backend->voices) stopVoice(entry.first);
+    if (m_backend->reverb) m_backend->reverb->tank.silence();
 }
 
 void AudioDevice::pauseAllVoices() {
@@ -704,6 +853,12 @@ void AudioDevice::setMasterVolume(float volume) {
     m_masterVolume = std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f;
     if (!m_backend) return;
     ma_engine_set_volume(&m_backend->engine, m_masterVolume);
+}
+
+void AudioDevice::setRoomReverb(float decaySeconds, float wet) {
+    if (!m_backend || !m_backend->reverb) return;
+    m_backend->reverb->tank.setDecay(decaySeconds);
+    m_backend->reverb->tank.setWet(wet);
 }
 
 } // namespace Vkm::Engine

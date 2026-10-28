@@ -3,7 +3,7 @@
  *
  * One workgroup per probe, over its tile of the surfel atlas (shaders/irradiance/surfel.glsl):
  * six faces of texels, each the surface nearest the probe in its direction, or the sky. A surface
- * is lit as the forward pass lights it but for the view: diffuse, its bounce colour folding in
+ * is lit as the forward pass lights it but for the view: diffuse, its bounce color folding in
  * what the specular reflects. The lights, unshadowed but the shadowed sun, which reads the
  * capture's map over the box (GLCaptureShadow); what it emits; and the environment - inside the
  * box the grid the gather before made, none on the first, so a wall is lit by what reaches it and
@@ -85,13 +85,15 @@ vec3 listIrradiance(uint first, uint count, vec3 p, vec3 n) {
 
 // Irradiance at @p p around @p n from every light that reaches it.
 vec3 directIrradiance(vec3 p, vec3 n) {
-    vec3 E = listIrradiance(u_relightLights.data[1], u_relightLights.data[0], p, n);
+    const uint suns    = uint(RELIGHT_DIRECTIONAL_HEAD);
+    const uint outside = uint(RELIGHT_OUTSIDE_HEAD);
+    vec3 E = listIrradiance(u_relightLights.data[suns + 1u], u_relightLights.data[suns], p, n);
     if (irradianceVolumeWeight(p) <= 0.0) {
-        return E + listIrradiance(u_relightLights.data[3], u_relightLights.data[2], p, n);
+        return E + listIrradiance(u_relightLights.data[outside + 1u], u_relightLights.data[outside], p, n);
     }
     const ivec3 grid = imageSize(u_sh0);
     const ivec3 cell = clamp(ivec3((p - u_ivMin) / u_ivSize * vec3(grid)), ivec3(0), grid - 1);
-    const uint  head = 4u + 2u * uint(cell.x + grid.x * (cell.y + grid.y * cell.z));
+    const uint  head = uint(RELIGHT_CELL_HEADS) + 2u * uint(cell.x + grid.x * (cell.y + grid.y * cell.z));
     return E + listIrradiance(u_relightLights.data[head + 1u], u_relightLights.data[head], p, n);
 }
 
@@ -138,6 +140,7 @@ void main() {
     const int   probe = int(gl_WorkGroupID.x);
     const ivec3 grid  = imageSize(u_sh0);
     const ivec3 cell  = ivec3(probe % grid.x, (probe / grid.x) % grid.y, probe / (grid.x * grid.y));
+    // At its texel's centre, as GLIrradianceBaker places each probe it captures (probePosition).
     const vec3  at    = u_ivMin + u_ivSize * (vec3(cell) + 0.5) / vec3(grid);
 
     const int   size   = u_faceSize;

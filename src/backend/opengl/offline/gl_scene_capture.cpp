@@ -7,8 +7,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "gl_context.h"
-#include "gl_error_handle.h"
 
+#include "gl_forward_programs.h"
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
 #include "offline/gl_cubemap.h"
@@ -29,36 +29,10 @@ namespace {
 
 constexpr float CAPTURE_NEAR = 0.05f;
 
-/// The values in a uniform of GL type @p type; 0 for one GLSceneCapture::resetPbr() leaves.
-uint32_t floatsIn(GLenum type) {
-    switch (type) {
-        case GL_FLOAT:
-        case GL_INT:
-        case GL_BOOL:
-        case GL_UNSIGNED_INT:      return 1;
-        case GL_FLOAT_VEC2:
-        case GL_INT_VEC2:
-        case GL_BOOL_VEC2:
-        case GL_UNSIGNED_INT_VEC2: return 2;
-        case GL_FLOAT_VEC3:
-        case GL_INT_VEC3:
-        case GL_BOOL_VEC3:
-        case GL_UNSIGNED_INT_VEC3: return 3;
-        case GL_FLOAT_VEC4:
-        case GL_INT_VEC4:
-        case GL_BOOL_VEC4:
-        case GL_UNSIGNED_INT_VEC4: return 4;
-        case GL_FLOAT_MAT3:        return 9;
-        case GL_FLOAT_MAT4:        return 16;
-        default:                   return 0;  // a sampler or an image keeps the unit it is bound to
-    }
-}
-
 } // namespace
 
-GLSceneCapture::GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects)
-    : m_pbr("shaders/forward/pbr")
-    , m_layered("shaders/forward/pbr_layered")
+GLSceneCapture::GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects, GLForwardPrograms& programs)
+    : m_programs(programs)
     , m_skybox("shaders/skybox")
     , m_surfels("shaders/irradiance/surfels")
     , m_surfelsLayered("shaders/irradiance/surfels_layered")
@@ -85,75 +59,10 @@ void GLSceneCapture::begin(
 
     m_faceSize = faceSize;
     m_volume   = nullptr;
-    resetPbr();
-    bindOfflinePbrUniforms(m_layered, ibl);
-    bindOfflinePbrUniforms(m_pbr, ibl);
-    m_pbr.setUniform1i("u_hasSceneColor", 0);
-}
-
-void GLSceneCapture::resetPbr() {
-    resetProgram(m_layered, m_layeredPlain);
-    resetProgram(m_pbr, m_pbrPlain);
-}
-
-void GLSceneCapture::resetProgram(Vkm::GL::Shader& shader, PlainUniforms& plain) {
-    shader.bind();
-    GLint program = 0;
-    VKM_GL_CHECK(glGetIntegerv(GL_CURRENT_PROGRAM, &program));
-    if (static_cast<uint32_t>(program) != plain.listed) {
-        // Listed again after a hot reload links another program.
-        plain.listed = static_cast<uint32_t>(program);
-        plain.uniforms.clear();
-        GLint active = 0;
-        VKM_GL_CHECK(glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &active));
-        for (GLint i = 0; i < active; ++i) {
-            char   name[256];
-            GLint  count = 0;
-            GLenum type  = 0;
-            VKM_GL_CHECK(glGetActiveUniform(program, i, sizeof(name), nullptr, &count, &type, name));
-            const GLint location = glGetUniformLocation(program, name);
-            if (location >= 0 && floatsIn(type) > 0) plain.uniforms.push_back({location, count, type});
-        }
-        // Zeros enough for the largest, kept, so a reset allocates nothing.
-        size_t most = 0;
-        for (const PlainUniform& u : plain.uniforms) {
-            most = std::max<size_t>(most, u.count * floatsIn(u.type));
-        }
-        plain.zeros.assign(most, 0.0f);
-        plain.intZeros.assign(most, 0);
-        plain.uintZeros.assign(most, 0u);
-    }
-
-    const GLfloat* zeros = plain.zeros.data();
-    const GLint*   ints  = plain.intZeros.data();
-    const GLuint*  uints = plain.uintZeros.data();
-    for (const PlainUniform& u : plain.uniforms) {
-        const GLsizei n = u.count;
-        switch (u.type) {
-            case GL_FLOAT:             glProgramUniform1fv(program, u.location, n, zeros); break;
-            case GL_FLOAT_VEC2:        glProgramUniform2fv(program, u.location, n, zeros); break;
-            case GL_FLOAT_VEC3:        glProgramUniform3fv(program, u.location, n, zeros); break;
-            case GL_FLOAT_VEC4:        glProgramUniform4fv(program, u.location, n, zeros); break;
-            case GL_FLOAT_MAT3:
-                glProgramUniformMatrix3fv(program, u.location, n, GL_FALSE, zeros);
-                break;
-            case GL_FLOAT_MAT4:
-                glProgramUniformMatrix4fv(program, u.location, n, GL_FALSE, zeros);
-                break;
-            case GL_INT:
-            case GL_BOOL:              glProgramUniform1iv(program, u.location, n, ints); break;
-            case GL_INT_VEC2:
-            case GL_BOOL_VEC2:         glProgramUniform2iv(program, u.location, n, ints); break;
-            case GL_INT_VEC3:
-            case GL_BOOL_VEC3:         glProgramUniform3iv(program, u.location, n, ints); break;
-            case GL_INT_VEC4:
-            case GL_BOOL_VEC4:         glProgramUniform4iv(program, u.location, n, ints); break;
-            case GL_UNSIGNED_INT:      glProgramUniform1uiv(program, u.location, n, uints); break;
-            case GL_UNSIGNED_INT_VEC2: glProgramUniform2uiv(program, u.location, n, uints); break;
-            case GL_UNSIGNED_INT_VEC3: glProgramUniform3uiv(program, u.location, n, uints); break;
-            case GL_UNSIGNED_INT_VEC4: glProgramUniform4uiv(program, u.location, n, uints); break;
-        }
-    }
+    m_programs.zeroUniforms();
+    m_programs.forEach(false, false, [&](Vkm::GL::Shader& program) {
+        GLForwardPrograms::bindOffline(program, ibl);
+    });
 }
 
 void GLSceneCapture::beginLighting(
@@ -175,7 +84,6 @@ void GLSceneCapture::gatherScene(const RenderView& view, const GLView& glView, b
     const size_t casterCount = std::min<size_t>(objects.casterCount, objects.scene.size());
     m_opaque.clear();
     m_casters.clear();
-    m_surfelsBatched = false;
     for (size_t i = 0; i < (castersOnly ? casterCount : objects.scene.size()); ++i) {
         const uint32_t    object   = objects.scene[i];
         const GLMaterial* material = glView.getMaterial(objects.draws[object].material);
@@ -189,7 +97,7 @@ void GLSceneCapture::gatherScene(const RenderView& view, const GLView& glView, b
 
 void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box) {
     m_volume    = volume;
-    m_volumeBox = box;
+    m_volumeBox = volume ? volume->placed(box) : box;
     // A fade would let the sky onto a wall on the box's face.
     m_volumeBox.blendDistance = 0.0f;
 }
@@ -257,39 +165,31 @@ void GLSceneCapture::captureFace(
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
 
     // Uniforms persist on the programs through the skybox draw below.
-    for (Vkm::GL::Shader* program : {&m_layered, &m_pbr}) {
-        program->bind();
+    m_programs.forEach(false, false, [&](Vkm::GL::Shader& program) {
+        program.bind();
         if (m_volume) {
-            m_volume->bindForShading(*program, m_volumeBox);
+            m_volume->bindForShading(program, m_volumeBox);
         } else {
-            program->setUniform1i("u_hasIrradianceVolume", 0);
+            program.setUniform1i("u_hasIrradianceVolume", 0);
         }
-    }
+    });
 
     beginFace(gl, face, position, proj, attach);
 
     // The global sky, so directions that miss geometry carry sky radiance, not black.
     if (m_ibl->isReady()) drawSky(gl, *m_ibl, proj);
 
-    // The skybox draw rebound the program; begin()'s uniforms and IBL binds persist on m_pbr.
+    // The skybox draw rebound the program; begin()'s uniforms and IBL binds persist on each.
     gl.setFaceCulling(true);
     gl.setCullFace(GL_BACK);
-    m_pbr.bind();
     m_objects.bind();
 
-    // What this face's frustum holds: a face drawing the whole scene paid for the five others'.
-    // No palette: the capture draws shaders/forward/pbr only, so a character bakes in bind pose.
-    const Math::Frustum seen = Math::extractFrustum(proj * GLCubemap::faceView(face, position));
-    m_faceOpaque.clear();
-    for (const uint32_t object : m_opaque) {
-        if (Math::frustumIntersectsAABB(seen, m_drawn->bounds[object])) m_faceOpaque.push_back(object);
-    }
-
+    // The capture draws the static programs only, so a character bakes in bind pose.
     const GLMaterial*      boundMaterial = nullptr;
-    const Vkm::GL::Shader* boundProgram  = &m_pbr;
-    for (const InstanceDraw& draw : m_faceBatcher.buildGrouped(m_faceOpaque, *m_drawn, *m_glView, 0)) {
+    const Vkm::GL::Shader* boundProgram  = nullptr;
+    for (const InstanceDraw& draw : faceDraws(proj * GLCubemap::faceView(face, position))) {
         const GLMaterial* material = m_glView->getMaterial(draw.material);
-        Vkm::GL::Shader&  program  = material && material->layered() ? m_layered : m_pbr;
+        Vkm::GL::Shader&  program  = m_programs.programFor(material, false, false);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
@@ -321,23 +221,15 @@ void GLSceneCapture::captureSurfels(
     gl.setFaceCulling(false);
     m_objects.bind();
 
-    // Grouped once a begin(), for every probe's six faces after it; bind pose, as captureFace.
-    if (!m_surfelsBatched) {
-        m_batcher.buildGrouped(m_opaque, *m_drawn, *m_glView, 0);
-        m_surfelsBatched = true;
-    }
-    const std::vector<InstanceDraw>& draws = m_batcher.draws();
     for (int face = 0; face < 6; ++face) {
         attach(face);
-        m_camera.update(
-            CameraData::from(GLCubemap::faceView(face, position), proj, position),
-            glm::vec2(m_faceSize)
-        );
+        const glm::mat4 view = GLCubemap::faceView(face, position);
+        m_camera.update(CameraData::from(view, proj, position), glm::vec2(m_faceSize));
 
         const GLMaterial*      boundMaterial = nullptr;
         const Vkm::GL::Shader* boundProgram  = &m_surfels;
         m_surfels.bind();
-        for (const InstanceDraw& draw : draws) {
+        for (const InstanceDraw& draw : faceDraws(proj * view)) {
             const GLMaterial* material = m_glView->getMaterial(draw.material);
             Vkm::GL::Shader&  program  = material && material->layered() ? m_surfelsLayered : m_surfels;
             if (&program != boundProgram) {
@@ -351,30 +243,19 @@ void GLSceneCapture::captureSurfels(
                 program.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
                 boundMaterial = material;
             }
-            m_batcher.draw(gl, draw);
+            m_faceBatcher.draw(gl, draw);
         }
     }
     gl.setFaceCulling(true);
 }
 
-void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
-    const bool hasIBL = ibl.isReady();
-
-    pbr.bind();
-    pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-    pbr.setUniform1f("u_iblIntensity", 1.0f);
-    if (hasIBL) {
-        ibl.bindIrradiance(GLBindings::IBLTextureSlots::IRRADIANCE);
-        ibl.bindPrefilter(GLBindings::IBLTextureSlots::PREFILTER);
+const std::vector<InstanceDraw>& GLSceneCapture::faceDraws(const glm::mat4& viewProjection) {
+    const Math::Frustum seen = Math::extractFrustum(viewProjection);
+    m_faceOpaque.clear();
+    for (const uint32_t object : m_opaque) {
+        if (Math::frustumIntersectsAABB(seen, m_drawn->bounds[object])) m_faceOpaque.push_back(object);
     }
-    ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
-    pbr.setUniform1i("u_hasAO", 0);
-    pbr.setUniform1i("u_hasScreenShadow", 0);
-    pbr.setUniform1i("u_probeCount", 0);
-    pbr.setUniform1i("u_useClusters", 0);
-    pbr.setUniform1i("u_hardShadows", 1);
-    pbr.setUniform1i("u_hasIrradianceVolume", 0);
-    pbr.setUniform1i("u_hasFog", 0);
+    return m_faceBatcher.buildGrouped(m_faceOpaque, *m_drawn, *m_glView, 0);
 }
 
 } // namespace Vkm::Engine

@@ -64,7 +64,7 @@ void gatherParticleLight(vec3 p, out vec3 ambient, out vec3 sum, out vec3 toward
         } else {
             float atten = punctualAttenuation(light, type, p, L);
             if (atten <= 0.0) continue;
-            radiance = lightCol * atten * pointShadow(type, int(light.spot.w), p) / PI;
+            radiance = lightCol * atten * pointShadow(shadowTypeOf(light, type), int(light.spot.w), p) / PI;
         }
         sum    += radiance;
         toward += L * luma(radiance);

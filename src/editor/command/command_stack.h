@@ -71,6 +71,16 @@ class CommandStack {
         void redo(Scene& scene, CommandHost& host);
 
         /**
+         * @brief Reverse the most recent command and drop it, so no redo brings it back.
+         *
+         * For a step its own gesture finds unwanted. No-op if the undo stack is empty.
+         *
+         * @param scene Scene the command's reverse operation mutates.
+         * @param host  What the command may touch outside the scene (e.g. selection).
+         */
+        void retract(Scene& scene, CommandHost& host);
+
+        /**
          * @brief Drop all undo and redo history, a parked one included.
          *
          * For a scene swap, where entity IDs and component topology are no
@@ -111,25 +121,47 @@ class CommandStack {
          */
         void forget(const std::vector<uint32_t>& slotIndices);
 
+        /**
+         * @brief The step a push would merge into while its gesture is open, else null.
+         *
+         * For an edit costly to record: once its first frame is pushed, the rest of a drag may
+         * change what that step holds, rather than record each frame to be merged.
+         */
+        const Command* mergeTarget() const {
+            return m_mergeOpen && !m_undo.empty() ? m_undo.back().get() : nullptr;
+        }
+
         bool canUndo() const { return !m_undo.empty(); }
         bool canRedo() const { return !m_redo.empty(); }
 
         /**
-         * @brief Label of the command at the top of undo.
+         * @brief Label of a command undo would take back.
          *
-         * @return The label, or nullptr when there is nothing to undo.
+         * @param back Steps behind the newest: 0 is the next undo.
+         * @return The label, or nullptr past the history.
          */
-        const char* undoLabel() const;
+        const char* undoLabel(size_t back = 0) const;
 
         /**
-         * @brief Label of the command at the top of redo.
+         * @brief Label of a command redo would put back.
          *
-         * @return The label, or nullptr when there is nothing to redo.
+         * @param ahead Steps ahead of the next: 0 is the next redo.
+         * @return The label, or nullptr past the history.
          */
-        const char* redoLabel() const;
+        const char* redoLabel(size_t ahead = 0) const;
 
         size_t undoDepth() const { return m_undo.size(); }
         size_t redoDepth() const { return m_redo.size(); }
+
+        /**
+         * @brief Moved by every push, merged or not, every undo and redo, and every change to the
+         *        history itself.
+         *
+         * What a view of the edited world compares to know it is current while no session runs. An
+         * edit an open step takes in without a push - a terrain setting's drag past its first frame
+         * (TerrainEditCommand::apply) - does not move it.
+         */
+        uint64_t revision() const { return m_revision; }
 
     private:
         /**
@@ -152,6 +184,8 @@ class CommandStack {
         std::vector<std::unique_ptr<Command>> m_parkedUndo;  ///< The authored history while a session runs.
         std::vector<std::unique_ptr<Command>> m_parkedRedo;
         bool m_parked = false;
+
+        uint64_t m_revision = 0;  ///< See revision().
 };
 
 } // namespace Vkm::Engine

@@ -40,6 +40,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_rigging_diff_1k.jpg"
@@ -103,15 +104,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 34.488800048828125,
+              "maxDistance": 34.4888,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 1070.4910888671875,
+              "maxDistance": 1070.4911,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 2140.982177734375,
+              "maxDistance": 2140.9822,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod2"
             }
           ]
@@ -155,19 +156,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 13.018190383911133,
+              "maxDistance": 13.01819,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1"
             },
             {
-              "maxDistance": 420.3624267578125,
+              "maxDistance": 420.36243,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod1"
             },
             {
-              "maxDistance": 983.7783203125,
+              "maxDistance": 983.7783,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod2"
             },
             {
-              "maxDistance": 1967.556640625,
+              "maxDistance": 1967.5566,
               "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod3"
             }
           ]

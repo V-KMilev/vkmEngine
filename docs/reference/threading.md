@@ -30,9 +30,9 @@ so a preempted thread's share goes to the others.
 ## ThreadPool
 
 `ThreadPool::get()` is the singleton. It spawns one worker fewer than the
-physical cores (SMT siblings counted once), because the calling thread runs work
-too and the driver, audio and OS need room (a row in
-[engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+physical cores the process may run on (its affinity; SMT siblings counted once),
+because the calling thread runs work too and the driver, audio and OS need room
+(a row in [engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
 - `addTask(task)` - fire and forget, for background work. Nobody waits on it, so
   a throw is caught and logged by the worker; the task reports its own errors.

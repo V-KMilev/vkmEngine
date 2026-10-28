@@ -10,6 +10,7 @@
 
 #include "system/async/async_loader_system.h"
 #include "system/ocean/ocean_system.h"
+#include "system/water/water_system.h"
 #include "system/script/behavior_system.h"
 #include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
@@ -22,9 +23,11 @@
 #include "system/physics/character/character_controller_system.h"
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/terrain/terrain_system.h"
+#include "system/loading/loading_system.h"
 #include "system/splash/splash_system.h"
 #include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
+#include "system/debug/debug_view_system.h"
 #include "system/render/render_system.h"
 
 #include "ecs/component/ui/ui_text.h"
@@ -55,8 +58,7 @@ inline void ensureDefaultUIFont(Engine::ResourceManager& resources, int displayH
 
 // The fade runs over the process's slowest frames, so a short one arrives as a
 // flash. A project's own logos carry their hold in its project.json.
-constexpr float VENDOR_SPLASH_SECONDS = 0.5f;
-constexpr float SPLASH_FADE_SECONDS   = 1.25f;
+constexpr float SPLASH_FADE_SECONDS = 1.0f;
 
 /**
  * @brief Per-binary policy for the shared bootstrap.
@@ -84,6 +86,7 @@ struct AppSystems {
     Engine::BehaviorSystem& behaviors;
     Engine::SplashSystem&   splash;
     Engine::RenderSystem&   render;
+    Engine::LoadingSystem*  loading;  ///< None for a host with no window, which covers nothing.
 };
 
 /**
@@ -123,16 +126,21 @@ inline AppSystems setupEngineApp(
 
     auto& splashSystem = engine.addSystem<Engine::SplashSystem>(Engine::SystemStage::Simulation);
     splashSystem.setFade(SPLASH_FADE_SECONDS);
-    // The mono mark, as the ground is black, over the engine's notice; from the engine root so every
-    // project shows them.
-    splashSystem.add(
-        (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_logo_mono.png").string(),
-        VENDOR_SPLASH_SECONDS,
-        (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_notice.png").string()
+    // The engine's ident over its notice; from the engine root, so every project shows them.
+    const std::filesystem::path logos = Engine::ProjectPaths::engineAssets() / "logo";
+    splashSystem.addIdent(
+        (logos / "vkm_engine_logo_mono.png").string(),
+        (logos / "vkm_engine_notice.png").string()
     );
+    // Before the loads land, so the frame a world arrives in is the first it covers; and before the
+    // behaviors that load behind it. A host that presents nothing covers nothing, and loads at once.
+    Engine::LoadingSystem* loadingSystem = nullptr;
+    if (!headless) loadingSystem = &engine.addSystem<Engine::LoadingSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
     // Ahead of the behaviors that float things on its sea, and of the cull and the renderer.
     engine.addSystem<Engine::OceanSystem>(Engine::SystemStage::Simulation);
+    // After the sea it answers with, ahead of the behaviors that ask it and the bodies it floats.
+    engine.addSystem<Engine::WaterSystem>(Engine::SystemStage::Simulation);
     auto& behaviorSystem = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::SkeletalAnimationSystem>(Engine::SystemStage::Simulation);
@@ -152,17 +160,22 @@ inline AppSystems setupEngineApp(
     // After the world resolve too; see ParticleSystem.
     engine.addSystem<Engine::ParticleSystem>(Engine::SystemStage::Transform);
     engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
+    // Before RenderSystem, which hands the backend what it draws.
+    engine.addSystem<Engine::DebugViewSystem>(Engine::SystemStage::Render);
     auto& renderSystem = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
 
-    // A host that presents nothing needs neither: a lone server need not carry the
+    // A host that presents nothing needs none of these: a lone server need not carry the
     // engine's font file, and the device would mix for an empty room.
-    if (headless) audioSystem.setSilent();
-    else          ensureDefaultUIFont(engine.getResources(), engine.getWindow().displayHeight());
+    if (headless) {
+        audioSystem.setSilent();
+    } else {
+        ensureDefaultUIFont(engine.getResources(), engine.getWindow().displayHeight());
+    }
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
 
-    return AppSystems{audioSystem, behaviorSystem, splashSystem, renderSystem};
+    return AppSystems{audioSystem, behaviorSystem, splashSystem, renderSystem, loadingSystem};
 }
 
 } // namespace Vkm::App

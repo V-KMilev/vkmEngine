@@ -1,4 +1,5 @@
 #include "physics/physics_support.h"
+#include "net/net_support.h"
 
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,8 @@
 #endif
 
 #include "core/event/event_bus.h"
+#include "debug/engine_error_log.h"
+#include "ecs/component/core/world_transform.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/scene_serializer.h"
 #include "platform/library/dynamic_library.h"
@@ -18,6 +21,9 @@
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/asset_ref.h"
+#include "resource/generate/mesh_generators.h"
+#include "system/audio/audio_events.h"
+#include "system/loading/loading_system.h"
 #include "system/physics/physics_system.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_registry.h"
@@ -25,7 +31,6 @@
 #include "system/script/reflected_behavior.h"
 #include "system/script/script_component.h"
 #include "system/script/script_module.h"
-#include "resource/generate/mesh_generators.h"
 
 namespace {
 
@@ -141,6 +146,32 @@ class Builder : public ReflectedBehavior<Builder> {
         EntityId right{};
 };
 
+// Plays a sound every fixed tick: from itself, or at a point.
+class Chimer : public ReflectedBehavior<Chimer> {
+    public:
+        void onFixedUpdate(float) override {
+            if (atPoint) playSoundAt(chime, glm::vec3(1.0f, 2.0f, 3.0f));
+            else         playSound(chime);
+        }
+
+    public:
+        AssetRef<AudioClipAsset> chime;
+        bool                     atPoint = false;
+};
+
+// Lifts its parent a metre each fixed tick and reads where that leaves it.
+class Rider : public ReflectedBehavior<Rider> {
+    public:
+        void onFixedUpdate(float) override {
+            const EntityId parent = get<Hierarchy>().parent;
+            scene().get<Transform>(parent).position.y += 1.0f;
+            seen = worldPosition();
+        }
+
+    public:
+        glm::vec3 seen{0.0f};
+};
+
 // Asks, only while paused, for a scene that does not exist: the request is under
 // test, not the load, and the drain is seen through the session-end onDestroy.
 class Quitter : public ReflectedBehavior<Quitter> {
@@ -164,6 +195,26 @@ class Restarter : public ReflectedBehavior<Restarter> {
 
     public:
         bool asked = false;
+};
+
+// Goes on to scenes/two.json; there, asks for one that is missing, then for the scene to start over.
+class Traveller : public ReflectedBehavior<Traveller> {
+    public:
+        void onUpdate(float) override {
+            if (step == 0) loadScene("scenes/two.json");
+            if (step == 1) loadScene("scenes/missing.json");
+            if (step == 2) restartScene();
+            ++step;
+        }
+
+    public:
+        int step = 0;
+};
+
+// Asks, every update, for a scene of its own.
+class Wanderer : public ReflectedBehavior<Wanderer> {
+    public:
+        void onUpdate(float) override { loadScene("scenes/own.json"); }
 };
 
 // A settings screen: a tier picked each update, built over the project's settings.
@@ -200,6 +251,12 @@ class Thrower : public ReflectedBehavior<Thrower> {
 class Singer : public ReflectedBehavior<Singer> {
     public:
         AssetRef<AudioClipAsset> song;
+};
+
+// Names a prefab it builds, as a behavior that throws or explodes does.
+class Launcher : public ReflectedBehavior<Launcher> {
+    public:
+        PrefabRef shell;
 };
 
 // Names a material by its name alone, as a behavior that spawns decals does.
@@ -314,6 +371,10 @@ VKM_REFLECT_BEGIN(Tuned)
     VKM_F(label)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Traveller)
+    VKM_F(step)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Listener)
 VKM_REFLECT_END()
 
@@ -323,10 +384,19 @@ VKM_REFLECT_END()
 VKM_REFLECT_BEGIN(Builder)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Rider)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Chimer)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Quitter)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Restarter)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Wanderer)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Partner)
@@ -344,6 +414,10 @@ VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Painter)
     VKM_F(paint)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Launcher)
+    VKM_F(shell)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(EventThrower)
@@ -570,8 +644,24 @@ void testBehaviorsAreFoundAndAddedByType() {
         findEntityWithBehavior<Recorder>(scene) == first
     );
     check("  and a null id when nothing does", !findEntityWithBehavior<Seeker>(scene));
-    check("findBehavior over the scene answers the lowest slot's", findBehavior<Recorder>(scene) == &early);
-    check("  and null when nothing carries one", findBehavior<Seeker>(scene) == nullptr);
+    check("findInScene answers the lowest slot's", findInScene<Recorder>(scene) == &early);
+    check("  and null when nothing carries one", findInScene<Seeker>(scene) == nullptr);
+    std::vector<EntityId> walked;
+    forEachBehavior<Recorder>(scene, [&](EntityId id, Recorder&) { walked.push_back(id); });
+    check(
+        "forEachBehavior meets every entity carrying one, once, lowest slot first",
+        walked == std::vector<EntityId>{first, third}
+    );
+    std::vector<EntityId> outer;
+    size_t                pairs = 0;
+    forEachBehavior<Recorder>(scene, [&](EntityId id, Recorder&) {
+        forEachBehavior<Recorder>(scene, [&](EntityId, Recorder&) { ++pairs; });
+        outer.push_back(id);
+    });
+    check("  and a walk inside a walk leaves the outer one whole", pairs == 4 && outer == walked);
+    Name& named = scene.getOrAdd<Name>(second);
+    check("getOrAdd gives an entity the component it lacks", scene.tryGet<Name>(second) == &named);
+    check("  and answers the one it has", &scene.getOrAdd<Name>(second) == &named);
 
     Seeker& seeker = addBehavior<Seeker>(scene, second);
     seeker.target = third;
@@ -627,6 +717,65 @@ void testSpawnUnderAParent() {
     );
 }
 
+// A tick moves things the Transform stage resolves only once a frame, and a frame can run several
+// ticks: where a behavior is reads the Transforms as they stand.
+void testWhereABehaviorIsReadsThisTicksMoves() {
+    std::printf("Where a behavior is, inside a tick:\n");
+
+    Scene scene;
+    const EntityId parent = scene.createEntity();
+    scene.add<Transform>(parent, Transform{});
+    const EntityId entity = scene.createEntity();
+    Transform at;
+    at.position = {1.0f, 0.0f, 0.0f};
+    scene.add<Transform>(entity, std::move(at));
+    scene.add<WorldTransform>(entity, WorldTransform{});  // the last resolve: at the origin
+    HierarchyOperations::setParent(scene, entity, parent);
+    Rider& rider = attach<Rider>(scene, entity);
+
+    ScriptFrame run(scene);
+    run.fixed();
+    check("it is where its parent's move this tick put it", glm::distance(rider.seen, {1, 1, 0}) < 1e-5f);
+    run.fixed();
+    check("  and the next tick's too", glm::distance(rider.seen, {1, 2, 0}) < 1e-5f);
+}
+
+// A replayed tick re-runs what a tick computes, not what it presented: it plays no sound.
+void testAReplayedTickPlaysNoSound() {
+    std::printf("A sound played from a replayed tick:\n");
+
+    Scene scene;
+    const EntityId entity = scene.createEntity();
+    scene.add<Transform>(entity, Transform{});
+    Chimer& chimer = attach<Chimer>(scene, entity);
+    chimer.chime.name = "chime";
+
+    ScriptFrame run(scene);
+    run.frame.resources.add(AudioClipAsset{}, "chime");
+    int      played = 0;
+    EntityId from;
+    run.frame.events.subscribe<PlaySoundEvent>([&](const PlaySoundEvent& sound) {
+        ++played;
+        from = sound.from;
+    });
+
+    run.fixed();
+    run.frame.events.flush();
+    check("a live tick plays it, from its entity", played == 1 && from == entity);
+
+    run.frame.ownedNet.beginReplayTick(InputCommand{});
+    run.fixed();
+    run.frame.ownedNet.endReplay(scene);
+    run.frame.events.flush();
+    check("  and its replay does not again", played == 1);
+
+    // A sound at a point need not be in this entity's body, so that body does not let it through.
+    chimer.atPoint = true;
+    run.fixed();
+    run.frame.events.flush();
+    check("one at a point sounds from no entity", played == 2 && !from);
+}
+
 void testASceneRequestIsDrainedEvenWhilePaused() {
     std::printf("Quitting to a menu with the world frozen:\n");
 
@@ -674,6 +823,35 @@ void testARestartStartsTheSceneBeingPlayedOver() {
     }
     check("the file the host began with is put back", played.entityCount() == 2);
 
+    // A host that names it by its absolute path: the session is told it as the project names it,
+    // for a server's players to be sent.
+    Scene absolute;
+    attach<Restarter>(absolute, absolute.createEntity());
+    {
+        ScriptFrame run(absolute);
+        run.system.setPlayedScene(path);
+        for (int i = 0; i < 4; ++i) run.tick();
+        const bool named = run.frame.ctx.net.worldPath() == "scenes/start.json";
+        check("  named to the session as the project names it", named);
+    }
+
+    // A load that fails leaves the scene being played as it was, and a restart starts that one over.
+    BehaviorRegistry::get().registerBehaviors<Traveller>();
+    Scene two;
+    attach<Traveller>(two, two.createEntity()).step = 1;
+    for (int i = 0; i < 4; ++i) two.createEntity();
+    const std::string twoPath = (project.root() / "scenes" / "two.json").string();
+    check("a second scene to go on to", SceneSerializer::save(two, unused, twoPath));
+    Scene going;
+    attach<Traveller>(going, going.createEntity());
+    {
+        ScriptFrame run(going);
+        run.system.setPlayedScene("scenes/start.json");
+        for (int i = 0; i < 6; ++i) run.tick();
+    }
+    check("after a load that failed, a restart starts over the one before it", going.entityCount() == 5);
+    BehaviorRegistry::get().clear();
+
     Scene held;
     attach<Restarter>(held, held.createEntity());
     int asked = 0;
@@ -684,6 +862,116 @@ void testARestartStartsTheSceneBeingPlayedOver() {
     }
     check("a host holding its scene is asked to put it back itself", asked == 1);
     check("  and the world is left for it to replace", held.entityCount() == 1);
+}
+
+// A load holds its frame. With a loading screen, it waits until a frame of the cover has been
+// shown, so the stall lands on the cover rather than on the world going; the cover then stays
+// for the world it brings.
+void testALoadWaitsBehindTheLoadingScreen() {
+    std::printf("A load with a loading screen:\n");
+
+    const ScratchProject project("vkm_load_behind");
+    std::error_code made;
+    std::filesystem::create_directories(project.root() / "scenes", made);
+    Scene authored;
+    authored.createEntity();
+    authored.createEntity();
+    ResourceManager unused;
+    const std::string path = (project.root() / "scenes" / "start.json").string();
+    check("a scene file to begin from", SceneSerializer::save(authored, unused, path));
+
+    Scene played;
+    attach<Restarter>(played, played.createEntity());
+    for (int i = 0; i < 3; ++i) played.createEntity();
+    ScriptFrame   run(played);
+    LoadingSystem loading;
+    loading.init(run.frame.ctx);
+    run.system.setPlayedScene("scenes/start.json");
+    // A frame as the engine runs one: last frame's events, then the screen, then the behaviors.
+    const auto frame = [&] {
+        run.frame.events.flush();
+        loading.update(run.frame.ctx);
+        run.tick();
+    };
+
+    frame();
+    check("asked for, the world is not loaded at once", played.entityCount() == 4);
+    frame();
+    check(
+        "  but while the cover is drawn",
+        played.entityCount() == 4 && run.frame.ctx.loading->opacity == 1.0f
+    );
+    frame();
+    check("once a covered frame was shown, it loads", played.entityCount() == 2);
+    loading.update(run.frame.ctx);
+    check(
+        "  and the cover stays for the world it brought",
+        loading.loading() && run.frame.ctx.loading->opacity == 1.0f
+    );
+}
+
+// A client the server moves to another scene follows it there, though a behavior asks for one of
+// its own while the load waits behind the loading screen.
+void testTheServersSceneWinsWhileTheLoadWaits() {
+    std::printf("A client the server moves on, behind a loading screen:\n");
+
+    const ScopedEngineSchema wire;
+    const ScratchProject     project("vkm_follow_server");
+    std::error_code made;
+    std::filesystem::create_directories(project.root() / "scenes", made);
+    ResourceManager unused;
+    const auto save = [&](const char* name, int entities) {
+        Scene scene;
+        for (int i = 0; i < entities; ++i) scene.createEntity();
+        return SceneSerializer::save(scene, unused, (project.root() / "scenes" / name).string());
+    };
+    // Told apart by size: whatever the session spawns in either is a few entities more.
+    check("two scene files", save("own.json", 2) && save("next.json", 40));
+
+    ResourceManager serverAssets;
+    Scene           serverWorld;
+    NetSession      server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    check("the server binds a port", server.host(0, 2, TEST_TICK_RATE));
+
+    Scene played;
+    attach<Wanderer>(played, played.createEntity());
+    ScriptFrame   run(played);
+    LoadingSystem loading;
+    loading.init(run.frame.ctx);
+    NetSession& client = run.frame.ownedNet;
+    client.setWorld(0, played);
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+
+    uint32_t tick = 0;
+    const auto net = [&] {
+        server.receive(serverWorld, serverAssets);
+        client.receive(played, run.frame.resources);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        client.send(played, tick);
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+    check("the client joins", pumpUntil(net, [&] { return client.isPlaying(); }));
+
+    // The server moves on as a load does: its world replaced, then named.
+    Scene next;
+    serverWorld.swap(next);
+    server.setWorld(0, serverWorld, "scenes/next.json");
+    for (int i = 0; i < 10; ++i) net();
+    for (int i = 0; i < 8; ++i) {
+        net();
+        run.frame.events.flush();
+        loading.update(run.frame.ctx);
+        run.tick();
+    }
+    check("it loads the server's scene, not the one asked meanwhile", played.entityCount() >= 40);
 }
 
 void testAThrowingBehaviorIsDisabledNotFatal() {
@@ -900,6 +1188,31 @@ void testACollisionNormalPointsIntoItsReceiver() {
     }
 }
 
+// A listener on the bus sees a contact as a hook does: the other side, and the normal into itself,
+// whichever of the pair it is; an ended contact names only the other.
+void testACollisionIsSeenFromEitherSide() {
+    std::printf("A contact event, seen from each side:\n");
+
+    Scene scene;
+    const EntityId a = scene.createEntity();
+    const EntityId b = scene.createEntity();
+    CollisionEvent event;
+    event.a      = a;
+    event.b      = b;
+    event.point  = {1.0f, 2.0f, 3.0f};
+    event.normal = {0.0f, 1.0f, 0.0f};
+    event.speed  = 4.0f;
+
+    const Collision fromA = Collision::seenBy(event, a);
+    const Collision fromB = Collision::seenBy(event, b);
+    check("a sees b, the normal pointing into a", fromA.other == b && fromA.normal.y < -0.9f);
+    check("  b sees a, the normal pointing into b", fromB.other == a && fromB.normal.y > 0.9f);
+    check("  both at the point and speed", fromA.point == event.point && fromB.speed == 4.0f);
+    event.phase = ContactPhase::Ended;
+    const Collision ended = Collision::seenBy(event, a);
+    check("  an ended one names only the other", ended.other == b && ended.speed == 0.0f);
+}
+
 void testCloneCarriesAuthoredFieldsOnly() {
     std::printf("What duplication copies:\n");
 
@@ -959,6 +1272,41 @@ void testVectorFieldsRoundTrip() {
     check("a glm::vec2 comes back", back && back->offset == glm::vec2(3.0f, -4.0f));
     check("  a glm::vec4", back && back->tintColor == glm::vec4(0.25f, 0.5f, 0.75f, 0.5f));
     check("  and a glm::quat", back && std::abs(glm::dot(back->facing, facing)) > 0.9999f);
+
+    registry.clear();
+}
+
+// A prefab field saves as its path, a plain string a scene written by hand can hold, and loads
+// back; it names no asset of the scene's.
+void testAPrefabFieldIsItsPath() {
+    std::printf("A behavior's prefab field:\n");
+
+    BehaviorRegistry& registry = BehaviorRegistry::get();
+    registry.registerBehaviors<Launcher>();
+
+    ScriptComponent saved;
+    auto made = std::make_unique<Launcher>();
+    made->shell.path = "prefabs/shell.json";
+    saved.behaviors.push_back(std::move(made));
+    const nlohmann::json doc = ComponentSerializer::save(saved);
+
+    ScriptComponent loaded;
+    ComponentSerializer::load(doc, loaded);
+    const Behavior* first = loaded.behaviors.empty() ? nullptr : loaded.behaviors[0].get();
+    const Launcher* back  = static_cast<const Launcher*>(first);
+    check("it comes back", back && back->shell.path == "prefabs/shell.json");
+    check(
+        "  saved as the plain path",
+        doc["behaviors"][0]["properties"]["shell"] == nlohmann::json("prefabs/shell.json")
+    );
+
+    Scene scene;
+    ResourceManager resources;
+    const EntityId entity = scene.createEntity();
+    attach<Launcher>(scene, entity).shell.path = "prefabs/shell.json";
+    AssetSerializer::EntityAssetRefs refs;
+    AssetSerializer::collectAssetRefs(scene, entity, resources, refs);
+    check("  and names no asset of the scene's", refs.names.empty());
 
     registry.clear();
 }
@@ -1302,10 +1650,33 @@ void testAModuleLoadsRegistersAndUnloadsCleanly() {
 #endif
 }
 
+// A reload that finds no module loaded tries the load again; its failure is the Console's
+// Errors' too, as the first load's was, so the editor's toast pointing there finds it.
+void testAFailedRetryOfAModuleIsReported() {
+    std::printf("A reload of a module that never loaded:\n");
+
+    const std::filesystem::path missing = std::filesystem::temp_directory_path() / "vkm_no_module"
+        / DynamicLibrary::platformName("absent");
+    ScriptModule module;
+    Scene        scene;
+    ScriptFrame  run(scene);
+
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const bool   loaded    = module.load(missing, nullptr);
+    const size_t afterLoad = errors.entries().size();
+    const bool   reloaded  = module.reload(scene, run.system, run.frame.events);
+    setErrorSink(nullptr);
+
+    check("neither the load nor the retry loads it", !loaded && !reloaded);
+    check("  and each is reported", afterLoad == 1 && errors.entries().size() == 2);
+}
+
 } // namespace
 
 void runScriptTests() {
     testAModuleLoadsRegistersAndUnloadsCleanly();
+    testAFailedRetryOfAModuleIsReported();
     testAReloadedModuleStartsItsStaticsOver();
     testStartHappensOnSimulationTime();
     testEveryBehaviorStartsBeforeAnyHookRuns();
@@ -1314,9 +1685,13 @@ void runScriptTests() {
     testFixedUpdateRunsOnTheFixedStep();
     testSpawnAndDeferredDestroy();
     testSpawnUnderAParent();
+    testWhereABehaviorIsReadsThisTicksMoves();
+    testAReplayedTickPlaysNoSound();
     testBehaviorsAreFoundAndAddedByType();
     testASceneRequestIsDrainedEvenWhilePaused();
     testARestartStartsTheSceneBeingPlayedOver();
+    testALoadWaitsBehindTheLoadingScreen();
+    testTheServersSceneWinsWhileTheLoadWaits();
     testAThrowingBehaviorIsDisabledNotFatal();
     testAThrowingListenerIsReportedNotFatal();
     testEndSessionTearsDownWhatPlayStarted();
@@ -1324,10 +1699,12 @@ void runScriptTests() {
     testAModulesEventBusesGoWithIt();
     testContactPhasesReachTheirHooks();
     testACollisionNormalPointsIntoItsReceiver();
+    testACollisionIsSeenFromEitherSide();
     testCloneCarriesAuthoredFieldsOnly();
     testRegistryKeysOffTheTypeName();
     testAMistypedFieldCostsOneValueNotTheScene();
     testVectorFieldsRoundTrip();
+    testAPrefabFieldIsItsPath();
     testABehaviorsAssetFieldIsAReference();
     testAMaterialABehaviorNamesBringsItsTextures();
 }

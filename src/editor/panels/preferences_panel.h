@@ -44,7 +44,7 @@ class PreferencesPanel {
         void drawKeybindsSection(EditorState& state);
 
     private:
-        /// FPS cap edited before "Apply"; seeded from the preference when the window appears.
+        /// FPS cap being typed, taken on Enter; seeded from the preference when the window appears.
         int m_fpsLimitEdit = 0;
 
         /// The capturing row, by its KEYBINDS label's address (stable across frames).

@@ -13,7 +13,7 @@ namespace Vkm::Engine {
  * @param label   The row's label and id scope.
  * @param curve   Curve whose keys the row edits.
  * @param lo      Lowest a key's value may be.
- * @param hi      Highest a key's value may be; the plot spans lo to hi, or to a loaded key above it.
+ * @param hi      Highest a key's value may be. The plot spans lo to just past the curve's peak.
  * @param tooltip Shown on hover, or null.
  * @return Whether it was edited this frame.
  */

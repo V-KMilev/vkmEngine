@@ -95,6 +95,24 @@ struct Light {
      */
     float flicker = 0.0f;
 
+    /**
+     * @brief Whether a reflection probe or the irradiance volume takes it.
+     *
+     * A capture made under other light is made again, so one near a light that never holds
+     * still - carried, swinging, floating - is never done: such a light is left out of them.
+     */
+    bool inCaptures = true;
+
+    /**
+     * @brief Off: it never moves or changes while the world runs.
+     *
+     * The shadows fixed meshes (Mesh::movable off) cast in its light are then baked into the
+     * lightmaps of the fixed meshes they fall on, soft whatever the penumbra, and read there in
+     * place of its shadow map; what moves is still compared live. The bake takes the first few
+     * such lights a scene holds (docs/reference/lighting.md).
+     */
+    bool movable = true;
+
     bool enabled = true;
 };
 
@@ -146,5 +164,7 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Light)
     VKM_F(shadowPriority)
     VKM_F(sourceRadius)
     VKM_F(flicker)
+    VKM_F(inCaptures)
+    VKM_F(movable)
     VKM_F(enabled)
 VKM_REFLECT_END()

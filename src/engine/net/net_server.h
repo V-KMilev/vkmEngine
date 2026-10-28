@@ -37,14 +37,17 @@ class NetServer {
         /**
          * @brief What a joining player is given, decided by the game.
          *
-         * Returns the entity that player owns; a null entity refuses the connection.
+         * Returns the entity that player owns; a null entity refuses the connection. Called again
+         * for every seated player when the session changes scene, with no DespawnPlayer for the
+         * old world, whose entities went with it; NetSession::isDriven says what is taken.
          */
         using SpawnPlayer = std::function<EntityId(Scene&, ResourceManager&, PlayerId)>;
 
         /**
          * @brief Undo what SpawnPlayer did.
          *
-         * Called when a player leaves, times out, or the session closes.
+         * Called when a player leaves or times out. A session that closes leaves its world as it
+         * is, players' entities included: close() is given no scene.
          */
         using DespawnPlayer = std::function<void(Scene&, ResourceManager&, PlayerId, EntityId)>;
 
@@ -104,6 +107,28 @@ class NetServer {
         /// Drop everything naming an entity; see NetSession::forgetWorld.
         void forgetWorld();
 
+        /**
+         * @brief Move the session to the world just loaded in place of the last.
+         *
+         * Every seated player is spawned again in it (SpawnPlayer), and told which scene to load until
+         * it says it holds it; nothing is described to it meanwhile. A player the game declines in the
+         * new world is let go.
+         *
+         * @param scene     The new world.
+         * @param resources Handed to the game's SpawnPlayer.
+         */
+        void changeWorld(Scene& scene, ResourceManager& resources);
+
+        /**
+         * @brief Remember the world as loaded, which a joiner loads too, so what has gone from it since
+         *        is reported to each joiner.
+         *
+         * Less what each end runs for itself (NetSilence::Local): its going is no one else's.
+         *
+         * @param scene The world as loaded.
+         */
+        void adoptWorld(const Scene& scene);
+
         size_t playerCount() const { return m_peers.size(); }
 
         std::string describe() const;
@@ -155,6 +180,8 @@ class NetServer {
          * @param reader      The Hello, past its message header.
          * @param actions     Filled with the action count it defines, on yes.
          * @param actionNames Filled with the fingerprint of its action slots.
+         * @param current     Filled with whether it loaded the world the server holds; one that did
+         *                    not, after the server moved on, is seated and told which to load.
          * @return True when the Hello can be seated.
          */
         bool vetHello(
@@ -162,7 +189,8 @@ class NetServer {
             uint64_t echoed,
             BitReader& reader,
             uint32_t& actions,
-            uint64_t& actionNames
+            uint64_t& actionNames,
+            bool& current
         );
 
         /**
@@ -200,6 +228,9 @@ class NetServer {
         void refuse(const NetAddress& from, NetRefusal reason, uint64_t token);
         void welcome(Peer& peer, const NetAddress& to);
 
+        /// Tell @p peer the scene the session moved to and the entity it drives there.
+        void sendWorld(Peer& peer);
+
         /**
          * @brief The number the next seated player takes, or NO_PLAYER if none is free.
          *
@@ -216,6 +247,7 @@ class NetServer {
         NetCore& m_core;
 
         std::vector<std::unique_ptr<Peer>> m_peers;
+        std::vector<EntityId>              m_loaded;  ///< The world as loaded; see adoptWorld.
 
         SpawnPlayer   m_spawn;
         DespawnPlayer m_despawn;
@@ -229,7 +261,7 @@ class NetServer {
         NetRewind            m_rewind;  ///< Where each player has been, for judging a shot.
         std::vector<Rewound> m_rewound;
 
-        NetSilenceMap m_silence;  ///< Rebuilt once per send round.
+        NetSilenceMap m_silence;  ///< Rebuilt once per send round, and as a world is adopted.
 
         NetJoinCookie m_cookie;         ///< The token each address is told.
         double        m_seconds = 0.0;  ///< Real time advance() has passed, for the token's window.

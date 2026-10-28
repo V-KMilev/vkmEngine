@@ -17,6 +17,8 @@ struct Light {
     vec4 spot;
     vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
     vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = a point or spot's radius (m)
+    vec4 bake;       // x = the lightmap mask channel of its shadow on fixed meshes, -1 for none;
+                     // y = 1 for a spot that casts through a cube (shadowTypeOf)
 };
 
 layout(std430, binding = SSBO_LIGHTS) readonly buffer LightsBlock {
@@ -60,6 +62,12 @@ float distanceWindow(float dist, float radius) {
 // Windowed inverse-square falloff: physically based with a finite range.
 float distanceAttenuation(float dist, float radius) {
     return distanceWindow(dist, radius) / max(dist * dist, 1e-4);
+}
+
+// The type a light's shadow is read as: its own, but a spot too wide for one map casts through a
+// cube as a point light does (bake.y, GpuLight).
+int shadowTypeOf(Light light, int type) {
+    return type == LIGHT_SPOT && light.bake.y > 0.5 ? LIGHT_POINT : type;
 }
 
 // 1 inside the inner angle, 0 past the outer, squared between. spot.xy are

@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/cardboard_box_01/textures/cardboard_box_01_diff_1k.jpg"
@@ -67,19 +68,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.49963638186454773,
+              "maxDistance": 0.49963638,
               "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 2.9633824825286865,
+              "maxDistance": 2.9633825,
               "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 12.131513595581055,
+              "maxDistance": 12.131514,
               "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 24.26302719116211,
+              "maxDistance": 24.263027,
               "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod3"
             }
           ]
@@ -98,7 +99,7 @@
         "Transform": {
           "position": [
             0.0,
-            0.17664676904678345,
+            0.17664677,
             0.0
           ],
           "rotation": [

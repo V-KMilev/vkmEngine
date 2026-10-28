@@ -1,5 +1,6 @@
 #include "system/render/probe_fill.h"
 
+#include <cstddef>
 #include <map>
 
 namespace Vkm::Engine {

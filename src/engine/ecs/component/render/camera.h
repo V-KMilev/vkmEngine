@@ -1,7 +1,10 @@
 #pragma once
 
+#include <optional>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "core/reflect.h"
 #include "ecs/entity.h"
@@ -103,6 +106,39 @@ struct Camera {
  * @return The active camera entity, or {} when there is none.
  */
 EntityId findActiveCamera(const Scene& scene, EntityId cached = {});
+
+/// What a camera sees: its view and projection, from where it stands.
+struct CameraView {
+    glm::mat4 view       = glm::mat4(1.0f);
+    glm::mat4 projection = glm::mat4(1.0f);
+    glm::vec3 position   = glm::vec3(0.0f);  ///< The eye, world space.
+};
+
+/**
+ * @brief What @p lens sees from @p position, turned by @p rotation.
+ *
+ * @param lens     The camera.
+ * @param position The eye, world space.
+ * @param rotation The eye's turn, world space.
+ * @param aspect   Taken while lens.aspect <= 0.
+ * @return Its view.
+ */
+CameraView viewThrough(
+    const Camera& lens,
+    const glm::vec3& position,
+    const glm::quat& rotation,
+    float aspect
+);
+
+/**
+ * @brief What @p entity's camera sees from its world pose, a rig's included.
+ *
+ * @param scene  Holds the camera.
+ * @param entity The camera's entity.
+ * @param aspect Taken while its Camera::aspect <= 0.
+ * @return Its view; none without a Camera and a Transform.
+ */
+std::optional<CameraView> viewThrough(const Scene& scene, EntityId entity, float aspect);
 
 } // namespace Vkm::Engine
 

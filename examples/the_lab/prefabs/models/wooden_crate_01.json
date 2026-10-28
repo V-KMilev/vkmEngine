@@ -28,6 +28,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wooden_crate_01/textures/wooden_crate_01_diff_1k.jpg"
@@ -108,19 +109,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 3.2798173427581787,
+              "maxDistance": 3.2798173,
               "mesh": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1"
             },
             {
-              "maxDistance": 30.146427154541016,
+              "maxDistance": 30.146427,
               "mesh": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1:lod1"
             },
             {
-              "maxDistance": 38.45524597167969,
+              "maxDistance": 38.455246,
               "mesh": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1:lod2"
             },
             {
-              "maxDistance": 76.91049194335938,
+              "maxDistance": 76.91049,
               "mesh": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1:lod3"
             }
           ]

@@ -48,10 +48,17 @@ class NetNames {
          */
         EntityId find(const Scene& scene, uint32_t slot) const;
 
-        /// Whether a slot of the server's names @p entity here: if not, it is this end's own.
-        bool names(const Scene& scene, EntityId entity) const {
-            return entity && find(scene, entity.slot()) == entity;
-        }
+        /**
+         * @brief Whether a slot of the server's names @p entity here: if not, it is this end's own.
+         *
+         * Asked by the server's slot for it, not its own: what the server made while an entity of
+         * this end's stood in that slot was made at another.
+         *
+         * @param scene  The world it is in.
+         * @param entity An entity of this end's.
+         * @return Whether it stands for one of the server's.
+         */
+        bool names(const Scene& scene, EntityId entity) const;
 
         /**
          * @brief What the server's @p slot names here, made if this end has nothing for it yet.
@@ -93,6 +100,7 @@ class NetNames {
     private:
         std::unordered_map<uint32_t, EntityId> m_world;    ///< The world as loaded, by slot.
         std::unordered_map<uint32_t, EntityId> m_claimed;  ///< What the server made since, by its slot.
+        std::unordered_map<uint32_t, uint32_t> m_server;   ///< The server's slot, by this end's slot.
         std::vector<EntityId>                  m_ended;    ///< What the last session made, to sweep.
         uint64_t                               m_epoch = 0;  ///< The world all of it names entities of.
 };

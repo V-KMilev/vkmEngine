@@ -202,6 +202,21 @@ void testEveryGeneratedMeshCarriesItsRecipe() {
     check("every generator stamps a recipe", unstamped.empty());
     check("  naming the generator that made it", mislabelled.empty());
     check("  which rebuilds that same mesh, parameters and all", unbuildable.empty());
+
+    // A recipe read from a file may say anything; what cannot be made is refused, not attempted.
+    const auto refused = [&](const char* type, nlohmann::json params) {
+        nlohmann::json recipe;
+        recipe[AssetSourceKey::KIND] = AssetSourceKind::GENERATOR;
+        recipe["type"]               = type;
+        recipe["params"]             = std::move(params);
+        return !createGeneratedMesh(recipe, resources);
+    };
+    check("a count below zero is refused", refused("cone", {{"segments", -1}}));
+    check("  as is one too large", refused("plane", {{"widthSegments", 100000}}));
+    check("  a length that is no number", refused("cylinder", {{"radius", "wide"}}));
+    check("  one below zero", refused("ring", {{"outerRadius", -2.0}}));
+    check("  and a size never finite", refused("triangle", {{"size", 1e40}}));
+    check("one within bounds is made", !refused("cone", {{"segments", 12}}));
 }
 
 // Generated textures are read back by the same file; a solid's usage is half of
@@ -225,7 +240,7 @@ void testEveryGeneratedTextureRebuildsFromItsRecipe() {
     compare("normal", generateNormalTexture(made));
     compare("gray",   generateGrayTexture(made));
     compare(
-        "a solid colour",
+        "a solid color",
         createSolidColorTexture(glm::vec4(0.2f, 0.4f, 0.6f, 0.8f), made, TextureUsage::Color)
     );
     compare(
@@ -238,7 +253,7 @@ void testEveryGeneratedTextureRebuildsFromItsRecipe() {
 }
 
 // Usage decides how texels decode, and a recipe can be misspelt: "Colour" read
-// silently as Data is a washed-out colour map with nothing saying why.
+// silently as Data is a washed-out color map with nothing saying why.
 void testAMisspeltUsageIsReported() {
     std::printf("A texture recipe's usage:\n");
 

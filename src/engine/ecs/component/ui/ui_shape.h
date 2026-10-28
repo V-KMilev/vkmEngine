@@ -10,7 +10,7 @@ namespace Vkm::Engine {
  * @brief How a filled quad is drawn beyond its flat tint: corners, an edge, a fade.
  *
  * Defaults draw the flat rectangle. A radius past half the shorter side is clamped
- * there. The gradient runs from the quad's own colour (a button's state colour) down.
+ * there. The gradient runs from the quad's own color (a button's state color) down.
  */
 struct UIShape {
     float     cornerRadius = 0.0f;                       ///< Reference pixels.

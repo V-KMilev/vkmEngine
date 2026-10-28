@@ -193,6 +193,12 @@ void WindowManager::createWindow(const std::string& title, std::unique_ptr<Windo
         }
     });
 
+    glfwSetDropCallback(m_windowHandle, [](GLFWwindow* w, int count, const char** paths) {
+        auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w));
+        if (!manager || !manager->m_keepDropped) return;
+        for (int i = 0; i < count; ++i) manager->m_dropped.emplace_back(paths[i]);
+    });
+
     // Leaving reports no position; the last one reported is still inside the window.
     glfwSetCursorEnterCallback(m_windowHandle, [](GLFWwindow* w, int entered) {
         auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w));
@@ -352,6 +358,10 @@ void WindowManager::updateInput() {
     m_inputHandle.moveTo(m_cursorX, m_cursorY);
 }
 
+void WindowManager::pumpEvents() {
+    if (m_windowHandle) glfwPollEvents();
+}
+
 bool WindowManager::beginFrame() {
     m_frameLimiter.beginFrame();
 
@@ -400,8 +410,9 @@ void WindowManager::setCursorMode(CursorMode mode) {
     }
     glfwSetInputMode(m_windowHandle, GLFW_CURSOR, glfwmode);
 
-    // Entering and leaving Disabled warps the cursor, which GLFW reports no motion for.
+    // Entering and leaving Disabled warps the cursor, which is no movement of the user's.
     glfwGetCursorPos(m_windowHandle, &m_cursorX, &m_cursorY);
+    m_inputHandle.warpTo(m_cursorX, m_cursorY);
 }
 
 size_t WindowManager::getWidth() const {

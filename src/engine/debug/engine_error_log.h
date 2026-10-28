@@ -20,6 +20,7 @@ class EngineErrorLog {
             std::string  source;        ///< e.g. "MyBehavior / onUpdate".
             std::string  message;
             unsigned int repeatCount = 1;
+            unsigned long long number = 0;  ///< Its place among every entry pushed: kept as older ones go.
         };
 
         static constexpr std::size_t CAPACITY = 64;

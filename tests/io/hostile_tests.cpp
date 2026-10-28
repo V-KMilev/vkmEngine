@@ -16,7 +16,9 @@
 #include "ecs/component/core/transform.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/terrain_file.h"
+#include "io/json_file.h"
 #include "io/scene/scene_serializer.h"
+#include "io/whole_file.h"
 #include "net/prediction/command.h"
 #include "net/wire/bit_stream.h"
 #include "net/wire/codecs.h"
@@ -144,7 +146,7 @@ bool holdsWhatItsLevelsRead(const TextureAsset& texture) {
     const TextureParams& params = texture.params;
     if (params.width == 0 || params.height == 0 || texture.pixelData.empty()) return false;
     auto byte = [](auto value) { return static_cast<unsigned>(value); };
-    if (byte(params.internalFormat) > byte(TextureInternalFormat::BC7SRGBA)
+    if (byte(params.internalFormat) >= byte(TextureInternalFormat::Count)
         || byte(params.format) > byte(TexturePixelFormat::RGBA)
         || byte(params.type) > byte(TexturePixelType::HalfFloat)
         || byte(params.wrapS) > byte(TextureWrapMode::ClampToBorder)
@@ -197,6 +199,8 @@ MeshAsset aMesh() {
         SkinVertex{{1, 0, 0, 0}, {255, 0, 0, 0}}
     };
     mesh.skeleton  = "rig:hostile";
+    // Both streams, which no cook writes together, so a damaged count can land in either.
+    mesh.lightmapUVs = {{0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}};
     mesh.boundsMin = {0.0f, 0.0f, 0.0f};
     mesh.boundsMax = {1.0f, 0.0f, 1.0f};
     return mesh;
@@ -215,11 +219,12 @@ void testDamagedCookedFilesAreRefusedOrSound() {
         AssetCook::readMesh,
         [](const MeshAsset& m) {
             for (uint32_t index : m.indices) if (index >= m.vertices.size()) return false;
-            return m.skin.empty() || m.skin.size() == m.vertices.size();
+            return (m.skin.empty() || m.skin.size() == m.vertices.size())
+                && (m.lightmapUVs.empty() || m.lightmapUVs.size() == m.vertices.size());
         },
         accepted
     );
-    check("  no mesh is read with an index past its vertices", meshes == 0);
+    check("  no mesh is read with an index past its vertices, or a stream short of them", meshes == 0);
 
     TextureAsset texture;
     texture.params.width  = 4;
@@ -360,7 +365,7 @@ void testATerrainFileKeepsWhatItNames() {
     terrain.layers                  = {sand, grass};
     terrain.layerTiling             = {2.0f, 6.0f, 4.0f, 4.0f};
     const glm::mat4 lifted = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
-    terrain.foliage[0].parts[0]     = {blade, grass, lifted};
+    terrain.foliage[0].parts[0]     = {blade, grass, lifted, {}, {}};
     terrain.foliage[0].maxDistance  = 40.0f;
     terrain.foliage[0].seed         = 7;
     terrain.foliage[0].castShadows  = true;
@@ -394,8 +399,28 @@ void testATerrainFileKeepsWhatItNames() {
     );
     const ResourceManager empty;
     TerrainFile::resolve(elsewhere, names, empty);
+
+    // A plant layer just added holds no density map until it is first painted.
+    TerrainAsset added = aTerrain();
+    added.foliage.emplace_back().seed = 3;
+    const std::filesystem::path addedPath = scratch("vkm_terrain_added.terrain");
+    std::vector<uint8_t> addedBody;
+    TerrainFile::Names   addedNames;
+    TerrainAsset         reread;
+    const bool unpainted = TerrainFile::write(addedPath, added, resources)
+        && TerrainFile::readBody(addedPath, addedBody, error)
+        && TerrainFile::decode(addedBody.data(), addedBody.size(), reread, addedNames, error);
+    check("a plant layer never painted writes and reads back", unpainted && reread.foliage.size() == 2);
+    const auto bare = [](uint8_t density) { return density == 0; };
+    check(
+        "  painted nowhere, and the layer before it as it was",
+        unpainted && reread.foliage[1].seed == 3 && reread.foliage[0].density == added.foliage[0].density
+            && std::all_of(reread.foliage[1].density.begin(), reread.foliage[1].density.end(), bare)
+    );
     const bool none = !elsewhere.layers[0] && !elsewhere.foliage[0].parts[0].mesh;
     check("against a graph without them, it holds none", none);
+    // A save from there - Play, or Save - writes the file again: what it named must come back.
+    check("  and written again, still names them", TerrainFile::encode(elsewhere, empty) == body);
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }
@@ -515,7 +540,7 @@ void testDamagedDatagramsAreRefusedOrBounded() {
     const auto sound = [](const NetSpawn& got) {
         if (got.prefab.empty()) return true;
         const glm::vec3& s = got.at.scale;
-        return got.prefab.size() <= NET_PREFAB_PATH_MAX && isSayable(got)
+        return got.prefab.size() <= NET_PROJECT_PATH_MAX && isSayable(got)
             && std::abs(s.x) <= NET_MAX_SCALE && std::abs(s.y) <= NET_MAX_SCALE
             && std::abs(s.z) <= NET_MAX_SCALE;
     };
@@ -779,6 +804,67 @@ void testASpawnCannotNameAFileOutsideTheProject() {
     check("  and the largest it carries is believed", believed("prefabs/crate.json", NET_MAX_SCALE));
 }
 
+// A read that fails part-way leaves the caller's document as it was, not half of the file.
+void testAMalformedJsonFileLeavesTheDocumentAlone() {
+    std::printf("A JSON file cut short, read over a document:\n");
+    const std::filesystem::path path = scratch("vkm_cut_short.json");
+    std::ofstream(path) << R"({"kept": [1, 2, 3], "lost": {"half": )";
+    nlohmann::json held = {{"before", true}};
+    const bool read = detail::readJsonFile(path, held, "Test");
+    check("the read fails", !read);
+    check("  leaving the document as it was", held == nlohmann::json{{"before", true}});
+}
+
+// A file is written whole or not at all: a write given up leaves the old file and no temporary,
+// a committed one replaces it, and one with nowhere to go says so.
+void testAFileIsWrittenWholeOrNotAtAll() {
+    std::printf("A file written whole or not at all:\n");
+
+    const ScratchProject project("vkm_whole_file");
+    const std::filesystem::path path = project.root() / "notes.txt";
+    // Whatever lies beside the file under its name: a temporary left behind.
+    const auto temporaries = [&] {
+        size_t count = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(project.root())) {
+            const std::string name = entry.path().filename().string();
+            if (name.rfind("notes.txt.", 0) == 0) ++count;
+        }
+        return count;
+    };
+    const auto text = [&] {
+        std::ifstream in(path);
+        return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    };
+    {
+        WholeFileWrite first(path, std::ios::openmode{}, "Notes");
+        first.stream() << "old";
+        check("a first write commits", first && first.commit());
+    }
+    {
+        WholeFileWrite abandoned(path, std::ios::openmode{}, "Notes");
+        abandoned.stream() << "half";
+    }
+    check("a write given up leaves the file it found", text() == "old");
+    check("  and no temporary beside it", temporaries() == 0);
+    {
+        WholeFileWrite second(path, std::ios::openmode{}, "Notes");
+        second.stream() << "new";
+        check("a committed write replaces it", second.commit() && text() == "new");
+    }
+    {
+        // Two writers of one file at once - a cook beside the editor - each write a temporary of
+        // their own: the last to commit is the file, whole.
+        WholeFileWrite one(path, std::ios::openmode{}, "Notes");
+        WholeFileWrite other(path, std::ios::openmode{}, "Notes");
+        one.stream() << "one";
+        other.stream() << "the other";
+        const bool both = one.commit() && other.commit();
+        check("two writers at once each commit, the last one whole", both && text() == "the other");
+    }
+    WholeFileWrite nowhere(path / "under_a_file.txt", std::ios::openmode{}, "Notes");
+    check("a write with nowhere to go says so", !nowhere && !nowhere.commit());
+}
+
 } // namespace
 
 void runHostileTests() {
@@ -788,4 +874,6 @@ void runHostileTests() {
     testDamagedDatagramsAreRefusedOrBounded();
     testDamagedSnapshotsNeverStopAClient();
     testASpawnCannotNameAFileOutsideTheProject();
+    testAFileIsWrittenWholeOrNotAtAll();
+    testAMalformedJsonFileLeavesTheDocumentAlone();
 }

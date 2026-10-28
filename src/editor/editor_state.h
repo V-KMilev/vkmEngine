@@ -1,7 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <any>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,15 +15,21 @@
 #include "command/command_host.h"
 #include "command/command_stack.h"
 #include "core/reflect.h"
+#include "editor_settings.h"
 #include "io/project.h"
 #include "input/camera_controller_system.h"
 #include "input/editor_keybinds.h"
+#include "input/view_placement.h"
 #include "overlays/terrain_tool.h"
 #include "overlays/transform_gizmo.h"
+#include "panels/console_view.h"
 #include "platform/window/window_manager.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset_type.h"
 
 namespace Vkm::Engine {
+
+struct EntityClipboard;
 
 /**
  * @brief What a viewport drag does: the four tools on the tool strip.
@@ -84,17 +93,28 @@ struct Preferences {
     static constexpr float MIN_UI_SCALE = 0.5f;   ///< Smallest uiScale that is still legible.
     static constexpr float MAX_UI_SCALE = 4.0f;   ///< Largest uiScale that still leaves room to work.
 
+    // The range of snap steps the Preferences window offers, and so all a hand-edited file is held to.
+    static constexpr float MIN_SNAP_TRANSLATE = 0.01f;
+    static constexpr float MAX_SNAP_TRANSLATE = 100.0f;
+    static constexpr float MIN_SNAP_ROTATE    = 1.0f;     ///< Degrees
+    static constexpr float MAX_SNAP_ROTATE    = 180.0f;   ///< Degrees
+    static constexpr float MIN_SNAP_SCALE     = 0.01f;
+    static constexpr float MAX_SNAP_SCALE     = 10.0f;
+
     /**
      * @brief @p prefs held to what the Preferences window could have set.
      *
      * The file is hand-editable; nothing downstream was written for a value no control reaches.
      *
      * @param prefs Preferences as read.
-     * @return The same, with the UI scale and the pitch limits in range.
+     * @return The same, every bounded field within its MIN_ and MAX_.
      */
     static Preferences bounded(Preferences prefs) {
-        prefs.uiScale = std::clamp(prefs.uiScale, MIN_UI_SCALE, MAX_UI_SCALE);
-        prefs.camera  = CameraControllerSystem::Settings::bounded(prefs.camera);
+        prefs.uiScale       = std::clamp(prefs.uiScale, MIN_UI_SCALE, MAX_UI_SCALE);
+        prefs.snapTranslate = std::clamp(prefs.snapTranslate, MIN_SNAP_TRANSLATE, MAX_SNAP_TRANSLATE);
+        prefs.snapRotate    = std::clamp(prefs.snapRotate, MIN_SNAP_ROTATE, MAX_SNAP_ROTATE);
+        prefs.snapScale     = std::clamp(prefs.snapScale, MIN_SNAP_SCALE, MAX_SNAP_SCALE);
+        prefs.camera        = CameraControllerSystem::Settings::bounded(prefs.camera);
         return prefs;
     }
 };
@@ -108,17 +128,38 @@ struct GizmoVisibility {
     bool lights    = true;
     bool cameras   = true;
     bool audio     = true;   ///< Sources and listeners.
+    bool acoustics = false;  ///< The ear's rays off the colliders, and those to each sound.
     bool probes    = true;   ///< Reflection probes, planar reflectors and irradiance volumes.
     bool effects   = true;   ///< Decals and particle emitters.
     bool colliders = false;  ///< Colliders and joints.
+    bool contacts  = false;  ///< Where bodies touch, and how hard the solver pushes each.
     bool bounds    = false;  ///< Each drawn object's world box.
     bool skeletons = false;  ///< Posed rigs as bone segments.
+};
+
+/**
+ * @brief The effects the viewport plays while the world stands still (HostChrome::EffectPreview).
+ */
+struct EffectPreviewState {
+    bool     playing  = false;
+    bool     paused   = false;
+    bool     all      = false;  ///< Every emitter, not only the selection's.
+    uint64_t restarts = 0;
+};
+
+/// An asset asked to be opened in its editor window: which kind, and which one of it.
+struct AssetToEdit {
+    AssetType    type;
+    StorageIndex key;
 };
 
 /**
  * @brief Shared editor state, owned by EditorSystem.
  */
 struct EditorState : CommandHost {
+    /// What the viewport previews of the world's effects outside a play session.
+    EffectPreviewState effects;
+
     /// The ACTIVE entity (last clicked); always in `selection` when set.
     EntityId selectedEntity{};
     std::vector<EntityId> selection;         ///< Every selected entity, active included.
@@ -148,16 +189,15 @@ struct EditorState : CommandHost {
     bool showTerrain     = false;  ///< The Terrain window, docked with the Inspector.
 
     bool showPreferences = false;
-    /// What the Material window edits (else: the selected entity's)
-    MaterialHandle materialEditorTarget{};
-    /**
-     * @brief The selection the pin above was chosen against.
-     *
-     * Here rather than on the panel, which only draws while its window is showing.
-     */
-    EntityId materialPinnedAt{};
-    bool revealMaterial    = false;             ///< Bring the Material window to the front
+
+    /// A preview window was under the pointer last frame: its F frames it, not the scene's view.
+    bool previewHovered = false;
+    /// The Console's list had the keyboard and a selected line last frame: its Ctrl+C copies the line.
+    bool consoleHoldsKeys = false;
+    /// An asset whose editor window was asked for: consumed by EditorSystem into its AssetEditors.
+    std::optional<AssetToEdit> assetToEdit;
     bool revealTerrain     = false;             ///< Bring the Terrain window to the front
+    bool revealConsole     = false;             ///< Bring the bottom row forward on its Console
     bool showRenderSettings = false;
     bool showProjectSettings = false;
     GizmoVisibility gizmos;                     ///< What the viewport draws over the scene
@@ -178,6 +218,11 @@ struct EditorState : CommandHost {
     std::string              requestVkmOpens;
     bool requestOpenProject  = false; ///< Consumed by OpenProjectDialog
     bool requestResetLayout  = false; ///< Consumed by the workspace before its dockspace
+    bool requestHideEditor   = false; ///< Window > Hide Editor; EditorSystem hides its UI, as the key does
+
+    /// The project's render settings while Render Settings shows a quality tier over them; Play puts
+    /// them back before it takes its copy, so a preview never becomes the project's.
+    std::optional<RenderSettings> renderPreviewHeld;
 
     bool sceneDirty = false;    ///< Unsaved edits since last save/load.
 
@@ -209,6 +254,15 @@ struct EditorState : CommandHost {
      */
     std::map<std::string, EditorViewpoint> sceneViews;
 
+    /// Where the editor's view looks, for Create to put a new entity there; restated every frame.
+    ViewAim viewAim;
+
+    /// The component a card header's Copy took, by value; Paste Values offers it to a card of its type.
+    std::any componentClipboard;
+
+    /// What Copy and Cut took (EditorActions::copySelection), for Paste.
+    std::shared_ptr<const EntityClipboard> entityClipboard;
+
     Project project;              ///< The open project.json, as read and as edited.
     bool    projectOpen = false;  ///< Set by ProjectController::open; a failed open leaves it.
 
@@ -217,11 +271,32 @@ struct EditorState : CommandHost {
     // Dropped when another scene replaces the world: entity IDs across scenes aren't comparable.
     CommandStack commands;
 
-    // Toast, ticked down by EditorSystem. ToastKind is the command layer's, so a
-    // command can raise one without knowing what an editor is.
-    std::string toastMessage;
-    float       toastTimeRemaining = 0.0f;
-    ToastKind   toastKind          = ToastKind::Info;
+    /// One transient message. ToastKind is the command layer's, so a command can raise one without
+    /// knowing what an editor is.
+    struct Toast {
+        ToastKind                  kind = ToastKind::Info;
+        std::string                message;
+        float                      remaining = 0.0f;  ///< Seconds it still shows.
+        std::optional<ConsoleView> view;              ///< The Console view its message points at, if any.
+
+        /**
+         * @brief The Console view a click on it opens: the one its message points at, else the Log
+         *        for an error or a warning, whose cause the log holds.
+         *
+         * @return None for an info toast that points at no view: a click only puts it away.
+         */
+        std::optional<ConsoleView> opens() const {
+            if (view) return view;
+            if (kind == ToastKind::Error || kind == ToastKind::Warning) return ConsoleView::Log;
+            return std::nullopt;
+        }
+    };
+
+    /// The most toasts shown at once; the oldest goes for a newer one.
+    static constexpr size_t MAX_TOASTS = 3;
+
+    /// What the editor said lately, oldest first, ticked down by EditorSystem.
+    std::vector<Toast> toasts;
 
     /**
      * @brief Mark the scene as having unsaved changes.
@@ -234,19 +309,43 @@ struct EditorState : CommandHost {
     CommandStack& commandStack() override { return commands; }
 
     /**
-     * @brief Ask for the Material window, showing @p material.
+     * @brief Forget the history and the copied component, which name the world's entities and assets.
      *
-     * A request, not a focus: the caller may draw before the window, which may be hidden.
-     *
-     * @param material The material to edit; the window follows the selection again
-     *        once another entity carrying one is picked.
+     * For a world replaced or an asset removed: kept, an undo or a paste would reach another
+     * scene's entities or a freed handle.
      */
-    void openMaterial(MaterialHandle material) {
-        materialEditorTarget = material;
-        materialPinnedAt     = selectedEntity;
-        showInspector        = true;
-        revealMaterial       = true;
+    void forgetWorldState() {
+        commands.clear();
+        componentClipboard.reset();
     }
+
+    /**
+     * @brief End a quality-tier preview: @p render takes the project's settings back, keeping the
+     *        editor's view fields - the debug view, the grid - as they are now. Nothing without one.
+     *
+     * @param render The settings the frame renders with.
+     */
+    void endRenderPreview(RenderSettings& render) {
+        if (!renderPreviewHeld) return;
+        EditorSettings::copyViewFields(render, *renderPreviewHeld);
+        render = *renderPreviewHeld;
+        renderPreviewHeld.reset();
+    }
+
+    /**
+     * @brief Ask for @p material's own window, as openAssetEditor does.
+     *
+     * @param material The material to edit.
+     */
+    void openMaterial(MaterialHandle material) { openAssetEditor(AssetType::Material, material.key); }
+
+    /**
+     * @brief Ask for the editor window of the asset @p key (AssetEditors).
+     *
+     * @param type Its kind.
+     * @param key  Its handle's slot and generation.
+     */
+    void openAssetEditor(AssetType type, StorageIndex key) { assetToEdit = AssetToEdit{type, key}; }
 
     /**
      * @brief Ask for the Terrain window, editing @p terrain.
@@ -403,20 +502,38 @@ struct EditorState : CommandHost {
     }
 
     /**
-     * @brief Show a transient toast, replacing any shown before it.
+     * @brief Show a transient toast over the oldest past MAX_TOASTS; the newest said again is only
+     *        shown for longer.
      *
      * @param kind How loudly.
      * @param msg What to say.
      * @param seconds How long; 0 or less takes the length from @p kind.
      */
     void pushToast(ToastKind kind, std::string msg, float seconds = 0.0f) override {
+        pushToast(kind, std::move(msg), std::optional<ConsoleView>{}, seconds);
+    }
+
+    /**
+     * @brief Show a toast pointing at a Console view, which a click on it then opens.
+     *
+     * @param kind How loudly.
+     * @param msg What to say; " - see the Console's" and @p view's name are appended to it.
+     * @param view The view a click opens (Toast::opens); none appends nothing and takes it from @p kind.
+     * @param seconds How long; 0 or less takes the length from @p kind.
+     */
+    void pushToast(ToastKind kind, std::string msg, std::optional<ConsoleView> view, float seconds = 0.0f) {
+        if (view) msg += std::string(" - see the Console's ") + consoleViewName(*view);
         if (seconds <= 0.0f) {
             seconds = (kind == ToastKind::Error) ? 6.0f
                     : (kind == ToastKind::Warning) ? 4.0f : 2.5f;
         }
-        toastKind          = kind;
-        toastMessage       = std::move(msg);
-        toastTimeRemaining = seconds;
+        if (!toasts.empty() && toasts.back().kind == kind && toasts.back().message == msg) {
+            toasts.back().remaining = seconds;
+            toasts.back().view      = view;
+            return;
+        }
+        toasts.push_back({kind, std::move(msg), seconds, view});
+        if (toasts.size() > MAX_TOASTS) toasts.erase(toasts.begin());
     }
 };
 

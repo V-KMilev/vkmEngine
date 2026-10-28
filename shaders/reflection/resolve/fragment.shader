@@ -1,5 +1,5 @@
 /**
- * Reflection resolve: the traced colour in place of the environment's. The
+ * Reflection resolve: the traced color in place of the environment's. The
  * forward pass (forward/pbr/fragment.shader) added weight x environment and
  * wrote that product beside it; this adds (weight x traced - product) x trust.
  *
@@ -25,7 +25,7 @@ layout(binding = REFLECT_SLOT_PLANAR_0)   uniform sampler2D u_planar0;
 layout(binding = REFLECT_SLOT_PLANAR_1)   uniform sampler2D u_planar1;
 
 uniform float u_maxRoughness;
-uniform float u_maxLod;  // the colour chain's last level; the trace stored hit levels over it
+uniform float u_maxLod;  // the color chain's last level; the trace stored hit levels over it
 uniform int   u_traceStep;  // pixels a hit stands for on each axis: 1, or 2 at half resolution
 uniform int   u_traced;     // 1 when the trace ran; 0 leaves all but the planar reflectors as they are
 

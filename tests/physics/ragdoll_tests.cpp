@@ -9,6 +9,7 @@
 #include "ecs/hierarchy_operations.h"
 #include "system/animation/pose_buffer.h"
 #include "system/animation/ragdoll_pose.h"
+#include "system/animation/skeletal_animation_system.h"
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/physics/authoring/ragdoll_build.h"
 #include "system/physics/physics_system.h"
@@ -253,6 +254,24 @@ void testARagdollInheritsTheMotionItWasPosedWith() {
     const float travelled = HierarchyOperations::computeWorldMatrix(scene, hips)[3][0] - before;
     check("  and once handed to the solver it carries on forward", travelled > 0.8f * SPEED * 10.0f * dt);
 
+    // Live, it is the solver's: the character it was, moved on by gameplay, does not drag it along.
+    const float fallen = HierarchyOperations::computeWorldMatrix(scene, hips)[3][0];
+    for (int tick = 0; tick < 10; ++tick) {
+        scene.get<Transform>(rig).position.x += 0.5f;
+        ragdolls.fixedUpdate(ctx);
+        physics.fixedUpdate(ctx);
+        hierarchy.update(ctx);
+    }
+    const float dragged = HierarchyOperations::computeWorldMatrix(scene, hips)[3][0] - fallen;
+    check("  and the character moved on does not drag it along", dragged < 1.0f);
+
+    scene.get<Ragdoll>(rig).active = false;
+    ragdolls.fixedUpdate(ctx);
+    check(
+        "standing down, its group node is back under the character as built",
+        scene.get<Transform>(scene.get<Ragdoll>(rig).root).position == glm::vec3(0.0f)
+    );
+
     ragdolls.shutdown();
 }
 
@@ -456,6 +475,93 @@ void testRagdollPose() {
     );
 }
 
+// The ticks pose an active ragdoll from its bodies before physics moves them, so the frame poses it
+// again: its skin is drawn where its bodies are, not where they were a tick before.
+void testAnActiveRagdollIsDrawnWhereItsBodiesAre() {
+    std::printf("An active ragdoll, drawn after its bodies moved:\n");
+
+    Scene scene;
+    TestFrame frame(scene, meshLibrary());
+    const EntityId rig = scene.createEntity();
+    scene.add<Transform>(rig, Transform{});
+    const SkeletonAsset skeleton = makeTestRig();
+    buildRagdoll(scene, rig, skeleton);
+    scene.get<Ragdoll>(rig).active = true;
+    Animator animator;
+    animator.skeleton = meshLibrary().add(SkeletonAsset(skeleton), "test:ragdoll_drawn");
+    scene.add(rig, std::move(animator));
+
+    SkeletalAnimationSystem animation;
+    frame.clock.setPaused(false);
+    animation.fixedUpdate(frame.ctx);
+    for (const RagdollBone& bone : scene.get<Ragdoll>(rig).bones) {
+        scene.get<Transform>(bone.body).position.x += 5.0f;
+    }
+    frame.clock.beginFrame();
+    animation.update(frame.ctx);
+    const PoseSlice* slice = frame.ctx.poses ? frame.ctx.poses->sliceOf(rig) : nullptr;
+    const bool followed = slice && nearly(frame.ctx.poses->global()[slice->first][3][0], 5.0f);
+    check("its skin is posed where its bodies are", followed);
+
+    // Gone limp after the tick posed it from its clip: the frame poses it from its bodies already.
+    scene.get<Ragdoll>(rig).active = false;
+    animation.fixedUpdate(frame.ctx);
+    scene.get<Ragdoll>(rig).active = true;
+    for (const RagdollBone& bone : scene.get<Ragdoll>(rig).bones) {
+        scene.get<Transform>(bone.body).position.x += 5.0f;
+    }
+    frame.clock.beginFrame();
+    animation.update(frame.ctx);
+    const PoseSlice* limp = frame.ctx.poses ? frame.ctx.poses->sliceOf(rig) : nullptr;
+    const bool fell = limp && nearly(frame.ctx.poses->global()[limp->first][3][0], 10.0f);
+    check("  and so is one that went limp since the tick", fell);
+
+    // Stood up since the tick: its clip poses it again, the bind pose at the rig.
+    scene.get<Ragdoll>(rig).active = false;
+    frame.clock.beginFrame();
+    animation.update(frame.ctx);
+    const PoseSlice* stood = frame.ctx.poses ? frame.ctx.poses->sliceOf(rig) : nullptr;
+    const bool up = stood && nearly(frame.ctx.poses->global()[stood->first][3][0], 0.0f);
+    check("  and one that stood up since is its clip's again", up);
+}
+
+// Live, a ragdoll stays where it fell: the character it hangs from moving on after the tick - its
+// controller, a push - does not drag the body it has become, drawn before the next tick.
+void testAnActiveRagdollIsNotDraggedByItsCharacter() {
+    std::printf("An active ragdoll whose character moves on after the tick:\n");
+
+    Scene scene;
+    TestFrame frame(scene, meshLibrary());
+    const EntityId rig = scene.createEntity();
+    scene.add<Transform>(rig, Transform{});
+    const SkeletonAsset skeleton = makeTestRig();
+    buildRagdoll(scene, rig, skeleton);
+    scene.get<Ragdoll>(rig).active = true;
+    Animator animator;
+    animator.skeleton = meshLibrary().add(SkeletonAsset(skeleton), "test:ragdoll_dragged");
+    scene.add(rig, std::move(animator));
+
+    RagdollSystem           ragdolls;
+    SkeletalAnimationSystem animation;
+    ragdolls.init(frame.ctx);
+    frame.clock.setPaused(false);
+    animation.fixedUpdate(frame.ctx);
+    ragdolls.fixedUpdate(frame.ctx);  // pins it where it stands
+    const auto drawnAt = [&]() {
+        frame.clock.beginFrame();
+        animation.update(frame.ctx);
+        const PoseSlice* slice = frame.ctx.poses ? frame.ctx.poses->sliceOf(rig) : nullptr;
+        if (!slice) return glm::vec3(1e9f);
+        const glm::mat4 rigWorld = HierarchyOperations::computeWorldMatrix(scene, rig);
+        return glm::vec3((rigWorld * frame.ctx.poses->global()[slice->first])[3]);
+    };
+    const glm::vec3 before = drawnAt();
+    scene.get<Transform>(rig).position.x += 3.0f;
+    const glm::vec3 after = drawnAt();
+    check("it is drawn where it lay, not carried along", glm::distance(before, after) < 1e-4f);
+    ragdolls.shutdown();
+}
+
 // Ragdoll bones are bodies with colliders, so they double as hit boxes. The whole path:
 // shoot, find the limb, find whose it is.
 void testRagdollAsHitboxes() {
@@ -600,5 +706,7 @@ void runPhysicsRagdollTests() {
     testARagdollInheritsTheMotionItWasPosedWith();
     testAnActiveRagdollFallsAsleep();
     testRagdollPose();
+    testAnActiveRagdollIsDrawnWhereItsBodiesAre();
+    testAnActiveRagdollIsNotDraggedByItsCharacter();
     testRagdollAsHitboxes();
 }

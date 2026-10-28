@@ -4,6 +4,7 @@
 
 #include <glm/gtc/constants.hpp>
 
+#include "core/math/rotation.h"
 #include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
@@ -63,16 +64,6 @@ glm::mat3 effectiveMassMatrix(
     return k;
 }
 
-// The rotation that carries @p from onto @p to, as an axis scaled by its angle, the shorter way round.
-glm::vec3 rotationBetween(const glm::quat& from, const glm::quat& to) {
-    glm::quat delta = to * glm::conjugate(from);
-    if (delta.w < 0.0f) delta = -delta;
-    const glm::vec3 axis(delta.x, delta.y, delta.z);
-    const float sine = glm::length(axis);
-    if (sine <= glm::epsilon<float>()) return axis * 2.0f;
-    return axis * (2.0f * std::atan2(sine, delta.w) / sine);
-}
-
 // Clamped to the hold's limit, so a load past it turns the joint rather than storing up.
 glm::vec3 withinLimit(const glm::vec3& impulse, float limit) {
     const float length = glm::length(impulse);
@@ -100,7 +91,7 @@ void prepareHold(
     // Error is how far B has turned past where the hold keeps it; the bias spins it back.
     const glm::quat target = a.rotation * joint.heldRotation;
     joint.holdMass     = glm::inverse(k);
-    joint.holdBias     = rotationBetween(target, b.rotation) * biasRate;
+    joint.holdBias     = Math::rotationBetween(target, b.rotation) * biasRate;
     joint.holdImpulse  = withinLimit(carried, joint.holdLimit);
     joint.holdSolvable = true;
 }

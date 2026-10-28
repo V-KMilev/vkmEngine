@@ -7,8 +7,9 @@
 
 <h3>Build games, not engines.</h3>
 
-<p>Everything between your idea and a shipped game is already here.<br>
-Write C++ that reloads like a script, runs like native code, and ships with one command.</p>
+<p>A C++ game engine with everything between an idea and a shipped game already in it:<br>
+an editor you press Play in, gameplay that reloads like a script and runs like native code,<br>
+multiplayer from the first line, and one command to ship.</p>
 
 <p>
   <a href="https://vkmengine.com"><b>Website</b></a> &nbsp;&bull;&nbsp;
@@ -18,11 +19,11 @@ Write C++ that reloads like a script, runs like native code, and ships with one 
 </p>
 
 <p>
-  <img src="https://img.shields.io/github/v/tag/V-KMilev/vkmEngine?style=for-the-badge&label=version&color=4a9eff" alt="Version">
-  <img src="https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=cplusplus&logoColor=white" alt="C++">
-  <img src="https://img.shields.io/badge/OpenGL-5586A4?style=for-the-badge&logo=opengl&logoColor=white" alt="OpenGL">
-  <img src="https://img.shields.io/badge/Windows%20%7C%20Linux-2b3137?style=for-the-badge" alt="Windows and Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-vkmEngine-3fb950?style=for-the-badge" alt="vkmEngine License"></a>
+  <img src="https://img.shields.io/github/v/tag/V-KMilev/vkmEngine?style=for-the-badge&label=version&color=ff6b2c" alt="Version">
+  <img src="https://img.shields.io/badge/C%2B%2B17-15191f?style=for-the-badge&logo=cplusplus&logoColor=ffb070" alt="C++17">
+  <img src="https://img.shields.io/badge/OpenGL%204.5-15191f?style=for-the-badge&logo=opengl&logoColor=ffb070" alt="OpenGL 4.5">
+  <img src="https://img.shields.io/badge/Windows%20%7C%20Linux-15191f?style=for-the-badge" alt="Windows and Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/no%20royalty-2a9d8f?style=for-the-badge" alt="No royalty: the vkmEngine License"></a>
 </p>
 
 <img src="assets/docs/the_lab.jpg" alt="The lab example: the plaza at dusk, a campfire, a bronze statue and string lights, a ship beyond the pier" width="100%">
@@ -66,27 +67,67 @@ today, Vulkan on the roadmap.
 </tr>
 </table>
 
+## What a game looks like
+
+A game is a project; its gameplay is behaviors, C++ classes the editor reloads each time you
+build them. A field in the reflect block is saved with the scene and tuned in the inspector:
+
+```cpp
+namespace Game {
+
+class Crate : public ReflectedBehavior<Crate> {
+    public:
+        void onUpdate(float dt) override;
+        void onCollisionEnter(const Collision& hit) override;
+
+    public:
+        float                    pushStrength = 6.0f;
+        AssetRef<AudioClipAsset> thud;
+};
+
+} // namespace Game
+
+VKM_REFLECT_BEGIN(::Game::Crate)
+    VKM_F(pushStrength)
+    VKM_F(thud)
+VKM_REFLECT_END()
+
+void Game::Crate::onUpdate(float dt) {
+    Rigidbody* body = tryGet<Rigidbody>();
+    if (body && input().pressed("Push")) body->linearVelocity += Math::WORLD_FORWARD * pushStrength;
+}
+
+void Game::Crate::onCollisionEnter(const Collision& hit) {
+    playSoundAt(thud, hit.point);
+}
+```
+
+[Scripting](docs/reference/scripting.md) goes on from there: input, sounds, other behaviors, and
+what runs on the server.
+
 ## What's inside
 
 <table>
 <tr>
 <td width="33%" valign="top">
-<img src="assets/docs/rendering.jpg" alt="Ice blocks on a reflective ice sheet" width="100%">
+<img src="assets/docs/rendering.jpg" alt="The lab's plaza at dusk: a bronze statue, a campfire, sparks and string lights" width="100%">
 
 **Rendering**<br>
-<sub>Forward+ clustered lighting, cascaded, spot, cube and screen-space shadows, area lights, IBL and a
-procedural sky, reflection probes, screen-space reflections, GTAO, volumetric fog, decals,
-particles, depth of field and bloom.</sub>
+<sub>Forward+ clustered lighting, cascaded, spot, cube and screen-space shadows, lightmaps for fixed
+lights, area lights, a procedural sky, an irradiance volume and reflection probes, planar and
+screen-space reflections, GTAO, volumetric fog, a spectral sea, lakes and rivers, terrain,
+decals, particles, depth of field and bloom.</sub>
 </td>
 <td width="33%" valign="top">
-<img src="assets/docs/physics.jpg" alt="A Newton's cradle" width="100%">
+<img src="assets/docs/physics.jpg" alt="A crate floating on the cove's waves" width="100%">
 
 **Physics**<br>
-<sub>Fixed-step rigid bodies over box, capsule and triangle-mesh colliders, a
-sequential-impulse solver, joints, collision layers, raycasts and sleeping.</sub>
+<sub>Fixed-step rigid bodies over box, capsule, mesh and terrain colliders, a
+sequential-impulse solver that replays to the bit, joints, buoyancy, collision layers,
+raycasts and sleeping.</sub>
 </td>
 <td width="33%" valign="top">
-<img src="assets/docs/characters.jpg" alt="A character after going ragdoll" width="100%">
+<img src="assets/docs/characters.jpg" alt="Four characters on the lab's start pad" width="100%">
 
 **Characters**<br>
 <sub>Skeletal import, GPU skinning, clip blending, bone sockets, ragdolls and a character
@@ -95,31 +136,31 @@ controller that takes steps and slides along walls.</sub>
 </tr>
 <tr>
 <td valign="top">
-<img src="assets/docs/play_mode.jpg" alt="The editor in Play mode" width="100%">
+<img src="assets/docs/viewport.jpg" alt="The editor's viewport over the lab, its lights, sounds and colliders drawn" width="100%">
 
 **The editor**<br>
-<sub>A transform gizmo and full undo/redo, Play mode, prefabs with per-instance overrides,
-material and render-settings panels, an asset browser and a cooker.</sub>
+<sub>Play mode and full undo/redo, prefabs with per-instance overrides, a terrain
+sculptor, assets in windows of their own, render settings live, and a cooker.</sub>
 </td>
 <td valign="top">
-<img src="assets/docs/course.jpg" alt="The lab's obstacle course" width="100%">
+<img src="assets/docs/course.jpg" alt="The lab's obstacle course from above, the cove's hills behind" width="100%">
 
 **Multiplayer**<br>
 <sub>Client-server over UDP with snapshot interpolation, lag compensation and
 delta-compressed replication. The lab is also the multiplayer sample.</sub>
 </td>
 <td valign="top">
-<img src="assets/docs/dominoes.jpg" alt="A line of dominoes" width="100%">
+<img src="assets/docs/range.jpg" alt="The demolition range on the beach, a lifeguard tower and a sparking torch" width="100%">
 
 **Core**<br>
 <sub>An open ECS over sparse sets, generational handles, a staged system pipeline,
-compile-time reflection, a job system, a typed event bus, spatial audio and an in-game UI
-with SDF text.</sub>
+compile-time reflection, a job system, a typed event bus, spatial audio, an in-game UI
+with SDF text, and a loading screen a game can make its own.</sub>
 </td>
 </tr>
 </table>
 
-<img src="assets/docs/editor.jpg" alt="The editor: a character selected, its components in the inspector" width="100%">
+<img src="assets/docs/editor.jpg" alt="The editor with the lab open: its hierarchy, the viewport and the asset browser" width="100%">
 
 ## Install
 
@@ -185,6 +226,7 @@ The manual lives in [docs/](docs/README.md) and online at
 | [Animation](docs/reference/animation.md) | [Resources](docs/reference/resources.md) |  |
 | [Networking](docs/reference/networking.md) | [Threading](docs/reference/threading.md) |  |
 | [IO & serialization](docs/reference/io.md) | [Building](docs/reference/building.md) |  |
+| [Terrain](docs/reference/terrain.md) |  |  |
 | [Editor](docs/reference/editor.md) |  |  |
 
 ## Source layout
@@ -195,7 +237,7 @@ The manual lives in [docs/](docs/README.md) and online at
 ```
 src/
   engine/          Engine code (single include root: src/engine/)
-  backend/opengl/  OpenGL backend (flat gl_-prefixed includes)
+  backend/opengl/  OpenGL backend (gl_-prefixed files, module-qualified includes)
   editor/          ImGui editor (command, session, chrome, panels, overlays, input, ui)
   tools/           Asset import, the cooker, the image/font loaders and the host prologue
 app/               The four executables, and the bootstrap (setupEngineApp) the three that build an Engine share
@@ -207,6 +249,7 @@ modules/
   miniaudio        Submodule: audio device + wav/mp3/flac decode
   imgui            Submodule: Dear ImGui
   meshoptimizer    Submodule: LOD simplification, GPU vertex order and the import's weld
+  xatlas           Submodule: lightmap UV unwrapping
   freetype / json / tracy
                    Submodules: font rasterization, JSON, profiling
   cgltf / ufbx / mikktspace

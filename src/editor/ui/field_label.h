@@ -43,7 +43,7 @@ inline std::string fieldLabel(std::string_view name) {
 }
 
 /**
- * @brief Whether a vector field named @p name edits as a colour.
+ * @brief Whether a vector field named @p name edits as a color.
  *
  * The name is all a reflected field carries: a glm::vec3 then edits as RGB, a glm::vec4 as
  * RGBA.

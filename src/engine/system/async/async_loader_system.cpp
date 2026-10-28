@@ -12,7 +12,9 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
+#include "ecs/scene.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/texture_asset.h"
@@ -79,9 +81,11 @@ bool hasContent(const TextureAsset& texture) { return !texture.pixelData.empty()
  * @tparam Asset MeshAsset or TextureAsset.
  * @param rm Resource manager holding the target assets.
  * @param completions The batch to land; consumed.
+ * @return How many of its own assets came out empty.
  */
 template <typename Asset>
-void finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completions) {
+size_t finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completions) {
+    size_t failed = 0;
     for (LoadCompletion<Asset>& c : completions) {
         if (!c.handle) continue;
         if (!rm.isAlive(c.handle)) {
@@ -99,18 +103,35 @@ void finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completion
             continue;
         }
 
+        // An error, not a warning: a host's error sink is how a cook learns an asset came out empty.
         if (!hasContent(c.decoded)) {
-            LOG_WARNING("Async decode failed for '%s' - leaving asset empty", live.name().c_str());
+            reportError("Asset", live.name(), "its file could not be read - it is left empty");
             live.loading = false;
+            ++failed;
             continue;
         }
         if (live.hasSource()) c.decoded.sourceJson() = live.sourceJson();
         c.decoded.loading = false;
         rm.swapValue(c.handle, c.decoded);
     }
+    return failed;
 }
 
 } // namespace
+
+size_t assetsLoading(const ResourceManager& resources) {
+    size_t count = meshesLoading(resources);
+    resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& texture) {
+        count += texture.loading;
+    });
+    return count;
+}
+
+size_t meshesLoading(const ResourceManager& resources) {
+    size_t count = 0;
+    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) { count += mesh.loading; });
+    return count;
+}
 
 void finalizeAsyncLoads(ResourceManager& rm) {
     AsyncLoadQueue& queue = AsyncLoadQueue::get();
@@ -122,9 +143,10 @@ bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patie
     AsyncLoadQueue& queue = AsyncLoadQueue::get();
     auto   deadline  = std::chrono::steady_clock::now() + patience;
     size_t waitingOn = SIZE_MAX;
+    size_t failed    = 0;
     for (;;) {
         const std::unordered_set<uint64_t> pending = inFlight(resources);
-        if (pending.empty()) return true;
+        if (pending.empty()) return failed == 0;
         const auto now = std::chrono::steady_clock::now();
         if (pending.size() < waitingOn) {
             waitingOn = pending.size();
@@ -139,11 +161,39 @@ bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patie
             return false;
         }
         // This graph's completions only - the declaration says why.
-        finalize(resources, keepOwn(queue.drainTextures(), pending, &AsyncLoadQueue::pushTexture));
-        finalize(resources, keepOwn(queue.drainMeshes(), pending, &AsyncLoadQueue::pushMesh));
-        if (inFlight(resources).empty()) return true;
+        failed += finalize(resources, keepOwn(queue.drainTextures(), pending, &AsyncLoadQueue::pushTexture));
+        failed += finalize(resources, keepOwn(queue.drainMeshes(), pending, &AsyncLoadQueue::pushMesh));
+        if (inFlight(resources).empty()) return failed == 0;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+}
+
+bool ArrivalHold::holds(const Scene& scene, const ResourceManager& resources) {
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_seen || scene.epoch() != m_epoch) {
+        m_seen    = true;
+        m_epoch   = scene.epoch();
+        m_waiting = true;
+        m_left    = SIZE_MAX;
+    }
+    if (!m_waiting) return false;
+
+    // A landing restarts the patience; a load starting to decode does not.
+    const size_t left = m_loading(resources);
+    if (left < m_left) m_since = now;
+    m_left = left;
+    if (left == 0) {
+        m_waiting = false;
+    } else if (now - m_since >= m_patience) {
+        LOG_ERROR(
+            "The world waited %lld ms on %zu asset(s) with none landing; %s without them",
+            static_cast<long long>(m_patience.count()),
+            left,
+            m_goesOn
+        );
+        m_waiting = false;
+    }
+    return m_waiting;
 }
 
 void AsyncLoaderSystem::update(FrameContext& ctx) {

@@ -9,7 +9,7 @@ namespace Vkm::Engine {
 /**
  * @brief Write an 8-bit RGB image to @p path as a PNG.
  *
- * The cheapest PNG the encoder makes. Its process-wide settings are restored after.
+ * The cheapest PNG the encoder makes, from a copy of it no other writer shares.
  *
  * @param path   Where the PNG goes; the directory must exist.
  * @param width  Image width in texels.

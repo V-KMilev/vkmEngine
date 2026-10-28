@@ -58,7 +58,7 @@ void GLDepthPrepass::drawBatch(GLFrameContext& ctx, GLOcclusionCull::Set set) {
             program.bind();
             boundProgram = &program;
         }
-        // The material too: a `waves` surface moves here exactly as the forward pass moves it.
+        // The material too: a Sea surface moves here exactly as the forward pass moves it.
         const GLMaterial* material = ctx.resources.getMaterial(draw.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);

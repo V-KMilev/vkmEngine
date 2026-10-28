@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/ArmChair_01/textures/Armchair_01_diff_1k.jpg"
@@ -67,19 +68,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 5.31810188293457,
+              "maxDistance": 5.318102,
               "mesh": "assets/models/ArmChair_01/ArmChair_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 29.9921875,
+              "maxDistance": 29.992188,
               "mesh": "assets/models/ArmChair_01/ArmChair_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 49.58719253540039,
+              "maxDistance": 49.587193,
               "mesh": "assets/models/ArmChair_01/ArmChair_01_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 99.17438507080078,
+              "maxDistance": 99.174385,
               "mesh": "assets/models/ArmChair_01/ArmChair_01_1k.gltf:mesh0:lod3"
             }
           ]

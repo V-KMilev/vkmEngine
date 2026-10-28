@@ -15,9 +15,10 @@ namespace Vkm::Engine {
  * @brief Ground-Truth Ambient Occlusion (horizon-slice integral).
  *
  * Integrates cosine-weighted visibility over a few screen-space slices of the prepass's depth
- * and G-buffer, giving the AO factor and the bent normal (octahedral, view space). An edge-aware
- * 5x5 spatial blur takes the raw result into the frame's AO target. Runs after the prepass and
- * before the forward draw.
+ * and G-buffer, giving the AO factor and the bent normal (octahedral, view space). Searched and
+ * blurred, edge-aware over 5x5, at half the scene's size, each pixel standing for the scene texel
+ * at its 2x2's corner, then widened by depth into the frame's AO target. Runs after the prepass
+ * and before the forward draw.
  */
 class GLGTAOPass : public GLPass {
     public:
@@ -49,6 +50,7 @@ class GLGTAOPass : public GLPass {
         Vkm::GL::ComputeShader m_prefilter;  ///< The scene depth, linearised and folded into the chain.
         Vkm::GL::Shader        m_shader;
         Vkm::GL::ComputeShader m_denoise;    ///< The raw result, blurred on its own surface.
+        Vkm::GL::ComputeShader m_upsample;   ///< The blurred result, widened to the scene's size.
 
         /**
          * @brief Linear view depth as a mip chain; nothing outside this pass reads it.
@@ -57,7 +59,8 @@ class GLGTAOPass : public GLPass {
         uint32_t m_depthMipsWidth  = 0;
         uint32_t m_depthMipsHeight = 0;
 
-        GLTarget m_raw{GLTarget::Layout::Color, GL_RGBA8};  ///< The search's result, before the denoise.
+        GLTarget m_raw{GLTarget::Layout::Color, GL_RGBA8};      ///< The search's result, half size.
+        GLTarget m_blurred{GLTarget::Layout::Color, GL_RGBA8};  ///< The denoise's, half size.
 };
 
 } // namespace Vkm::Engine

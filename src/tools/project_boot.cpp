@@ -16,10 +16,12 @@
 #include "io/project.h"
 #include "io/asset/asset_library.h"
 #include "io/project_paths.h"
+#include "io/scene/scene_fingerprint.h"
 #include "io/scene/scene_serializer.h"
 #include "net/net_session.h"
 #include "resource/resource_manager.h"
 #include "platform/library/dynamic_library.h"
+#include "platform/windows_api.h"
 #include "system/script/script_module.h"
 
 #include "resource/generate/default_scene.h"
@@ -27,6 +29,8 @@
 namespace Vkm::Engine {
 
 namespace {
+
+HostLog g_hostLog;
 
 // Whether a log file can be created at @p path. Logger::init cannot say: a stream that fails to
 // open is silent there, and every later line is dropped.
@@ -39,8 +43,28 @@ bool logFileWritable(const std::filesystem::path& path) {
 
 } // namespace
 
+const HostLog& hostLog() {
+    return g_hostLog;
+}
+
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag) {
     std::error_code ec;
+
+#if defined(_WIN32)
+    // A windowed host (WIN32_EXECUTABLE) opens no terminal of its own; started from one, it still
+    // writes what it prints there. A host with a console already is left as it is, and so is a
+    // stream its starter sent to a file or a pipe.
+    const auto given = [](DWORD stream) {
+        const HANDLE handle = GetStdHandle(stream);
+        return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+    };
+    const bool outGiven = given(STD_OUTPUT_HANDLE);
+    const bool errGiven = given(STD_ERROR_HANDLE);
+    if (GetConsoleWindow() == nullptr && !(outGiven && errGiven) && AttachConsole(ATTACH_PARENT_PROCESS)) {
+        if (!outGiven) static_cast<void>(std::freopen("CONOUT$", "w", stdout));
+        if (!errGiven) static_cast<void>(std::freopen("CONOUT$", "w", stderr));
+    }
+#endif
 
     // Resolved before current_path() below moves the CWD. Nothing is logged yet: the log file
     // lives under the root being decided.
@@ -72,8 +96,10 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
             return false;
         }
     }
+    const std::uintmax_t start = std::filesystem::file_size(logPath, ec);
     if (!Vkm::Log::Logger::init(logPath.string(), loggerTag, Vkm::Log::LogLevel::TRACE))
         return false;
+    g_hostLog = HostLog{logPath, ec ? 0 : start};
 
     // Deferred until the logger exists, the first point anything can be said.
     if (argNotAProject) {
@@ -120,7 +146,9 @@ SceneBootResult bootProjectWorld(
     }
 
     // Zero, compared against nothing, unless an authored file stands behind the world.
-    net.setWorld(fingerprintScene(boot.path), scene);
+    const std::string relative =
+        boot.path.empty() ? std::string{} : ProjectPaths::toProjectRelative(boot.path);
+    net.setWorld(fingerprintScene(boot.path), scene, relative);
     return boot;
 }
 

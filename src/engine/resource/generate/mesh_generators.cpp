@@ -13,6 +13,8 @@
 
 #include "l_assert.h"
 
+#include "debug/engine_error_log.h"
+#include "io/asset/asset_factory.h"
 #include "resource/asset_source_kind.h"
 #include "resource/resource_manager.h"
 
@@ -68,49 +70,114 @@ void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& par
     mesh.sourceJson() = meshGeneratorSource(type, params);
 }
 
+/// The most a generated mesh is cut into along one way; a recipe asking for more is refused.
+constexpr int64_t MAX_GENERATED_SEGMENTS = 1024;
+
+/**
+ * @brief A count a generator recipe gives, as a recipe read from a file may say anything.
+ *
+ * @param params   The recipe's parameters.
+ * @param key      The count's name.
+ * @param fallback What a recipe without it means.
+ * @param[out] ok  Cleared when the count is not a whole number within 0..MAX_GENERATED_SEGMENTS.
+ * @return The count; @p fallback when absent or refused.
+ */
+uint32_t countParam(const nlohmann::json& params, const char* key, uint32_t fallback, bool& ok) {
+    if (!params.contains(key)) return fallback;
+    const nlohmann::json& value = params[key];
+    const int64_t count = value.is_number_integer() ? value.get<int64_t>() : -1;
+    if (count < 0 || count > MAX_GENERATED_SEGMENTS) {
+        ok = false;
+        return fallback;
+    }
+    return static_cast<uint32_t>(count);
+}
+
+/**
+ * @brief A length a generator recipe gives, as a recipe read from a file may say anything.
+ *
+ * @param params   The recipe's parameters.
+ * @param key      The length's name.
+ * @param fallback What a recipe without it means.
+ * @param[out] ok  Cleared when the length is not a finite number above zero.
+ * @return The length, metres; @p fallback when absent or refused.
+ */
+float lengthParam(const nlohmann::json& params, const char* key, float fallback, bool& ok) {
+    if (!params.contains(key)) return fallback;
+    const nlohmann::json& value = params[key];
+    const float length = value.is_number() ? value.get<float>() : 0.0f;
+    if (!std::isfinite(length) || length <= 0.0f) {
+        ok = false;
+        return fallback;
+    }
+    return length;
+}
+
 } // namespace
 
 MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh) {
     VKM_ASSERT(mesh.hasSource(), "addGeneratedMesh: the mesh carries no generator descriptor");
     const std::string name = generatorName(mesh.sourceJson());
-    if (auto existing = resources.findByName<MeshAsset>(name)) return existing;
-    return resources.add(std::move(mesh), name);
+    if (const MeshHandle held = resources.findByName<MeshAsset>(name)) return held;
+
+    // Built by the host's import where there is one, as a recipe load builds it, so a cook writes the
+    // same mesh whichever made it first.
+    const RecipeImport<MeshAsset> import = recipeImport<MeshAsset>();
+    if (const MeshHandle built = import ? import(mesh.sourceJson(), resources) : MeshHandle{}) {
+        MeshAsset unwrapped(resources.get(built));
+        resources.remove(built);
+        return resources.findOrAdd<MeshAsset>(name, [&] { return std::move(unwrapped); });
+    }
+    return resources.findOrAdd<MeshAsset>(name, [&] { return std::move(mesh); });
 }
 
 MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string type = source.value("type", std::string{});
     const auto& p = source.contains("params") ? source["params"] : nlohmann::json::object();
 
+    // Read before anything is built: a count a recipe got wrong would build until memory ran out.
+    bool ok = true;
+    const auto count  = [&](const char* key, uint32_t fallback) { return countParam(p, key, fallback, ok); };
+    const auto length = [&](const char* key, float fallback) { return lengthParam(p, key, fallback, ok); };
     MeshAsset mesh;
     if (type == "cube") {
         mesh = generateCube();
     } else if (type == "sphere") {
-        mesh = generateSphere(p.value("resolution", 16u));
-    } else if (type == "cone") {
-        mesh = generateCone(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 16u));
-    } else if (type == "cylinder") {
-        mesh = generateCylinder(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 20u));
+        const uint32_t resolution = count("resolution", 16u);
+        if (ok) mesh = generateSphere(resolution);
+    } else if (type == "cone" || type == "cylinder") {
+        const bool     cone     = type == "cone";
+        const float    radius   = length("radius", 0.5f);
+        const float    height   = length("height", 1.0f);
+        const uint32_t segments = count("segments", cone ? 16u : 20u);
+        if (ok && cone) mesh = generateCone(radius, height, segments);
+        if (ok && !cone) mesh = generateCylinder(radius, height, segments);
     } else if (type == "ring") {
-        mesh = generateRing(
-            p.value("innerRadius", 0.25f),
-            p.value("outerRadius", 0.5f),
-            p.value("segments", 32u)
-        );
+        const float    inner    = length("innerRadius", 0.25f);
+        const float    outer    = length("outerRadius", 0.5f);
+        const uint32_t segments = count("segments", 32u);
+        if (ok) mesh = generateRing(inner, outer, segments);
     } else if (type == "pyramid") {
-        mesh = generatePyramid(p.value("baseSize", 1.0f), p.value("height", 1.0f));
+        const float base   = length("baseSize", 1.0f);
+        const float height = length("height", 1.0f);
+        if (ok) mesh = generatePyramid(base, height);
     } else if (type == "plane") {
-        mesh = generatePlane(
-            p.value("width", 1.0f),
-            p.value("depth", 1.0f),
-            p.value("widthSegments", 1u),
-            p.value("depthSegments", 1u)
-        );
+        const float    width  = length("width", 1.0f);
+        const float    depth  = length("depth", 1.0f);
+        const uint32_t across = count("widthSegments", 1u);
+        const uint32_t along  = count("depthSegments", 1u);
+        if (ok) mesh = generatePlane(width, depth, across, along);
     } else if (type == "triangle") {
-        mesh = generateTriangle(p.value("size", 1.0f));
+        const float size = length("size", 1.0f);
+        if (ok) mesh = generateTriangle(size);
     } else {
         return {};
     }
 
+    if (!ok) {
+        reportError("Asset", "a generated " + type, "its recipe asks for what cannot be made: " + p.dump());
+        return {};
+    }
     if (mesh.vertices.empty()) return {};
     return resources.add(std::move(mesh));
 }

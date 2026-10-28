@@ -1,6 +1,7 @@
 #include "panels/animation_panel.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -24,6 +25,7 @@
 #include "editor_state.h"
 #include "ui/editor_icons.h"
 #include "ui/editor_widgets.h"
+#include "ui/entity_labels.h"
 #include "ui/editor_style.h"
 #include "system/animation/animation_system.h"
 
@@ -36,7 +38,7 @@ constexpr int RULER_TICKS = 10;
 
 // One lane per track, in the order they are drawn and indexed by m_dotTrack.
 struct LaneStyle {
-    ImU32       colour;
+    ImU32       color;
     const char* label;
 };
 
@@ -114,7 +116,7 @@ void AnimationPanel::drawEditor(
 
     ImGui::SetNextItemWidth(EditorStyle::px(140.0f));
     const float previousTime = anim.time;
-    if (ImGui::InputFloat("Time", &anim.time, 0.01f, 0.1f, "%.3f s")) {
+    if (ImGui::DragFloat("Time", &anim.time, 0.005f, 0.0f, std::max(duration, 0.0f), "%.3f s")) {
         anim.time = std::clamp(anim.time, 0.0f, std::max(duration, 0.0f));
         if (anim.time != previousTime) {
             anim.playing = false;
@@ -125,7 +127,7 @@ void AnimationPanel::drawEditor(
     ImGui::TextDisabled("/ %.2f s", duration);
 
     ImGui::Spacing();
-    ImGui::SeparatorText("Tracks");
+    sectionLabel("Tracks");
 
     const auto vec3Cell = [](size_t, const glm::vec3& in, glm::vec3& out) {
         out = in;
@@ -172,24 +174,14 @@ void AnimationPanel::drawEditor(
         pose
     );
 
-    const bool posed = transform.position != beforeTransform.position
-        || transform.rotation != beforeTransform.rotation
-        || transform.scale != beforeTransform.scale;
-    const char* label = changed ? "Edit Animation" : "Scrub Animation";
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    const char*      label     = changed ? "Edit Animation" : "Scrub Animation";
+    const bool       playing   = sceneIO.isPlaying();
     auto step = std::make_unique<CompositeCommand>(label);
-    if (changed) {
-        step->add(editStep<Animation>(ec.frame.scene, ec.frame.resources, entity, before, anim, label));
-    }
-    if (posed && !sceneIO.isPlaying()) {
-        auto poseStep = editStep<Transform>(
-            ec.frame.scene,
-            ec.frame.resources,
-            entity,
-            beforeTransform,
-            transform,
-            label
-        );
-        step->add(std::move(poseStep));
+    if (changed) step->add(editStep<Animation>(scene, resources, entity, before, anim, label));
+    if (auto posed = poseStep(scene, resources, entity, beforeTransform, transform, playing, label)) {
+        step->add(std::move(posed));
     }
     if (!step->empty()) {
         ec.state.pushStep(std::move(step));
@@ -223,7 +215,7 @@ bool AnimationPanel::drawTransport(Animation& anim, Transform& transform, const 
     ImGui::SameLine(0, gap);
     ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
     float length = anim.length;
-    if (ImGui::InputFloat("Length", &length, 0.1f, 1.0f, "%.2f s")) {
+    if (ImGui::DragFloat("Length", &length, 0.02f, 0.0f, FLT_MAX, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) {
         anim.length = std::max(0.0f, length);
         changed = true;
     }
@@ -330,7 +322,7 @@ bool AnimationPanel::drawTimeline(Animation& anim, float duration, const std::fu
         const float y = laneY(lane);
         draw->AddText(
             ImVec2(origin.x + EditorStyle::px(3.0f), y - EditorStyle::px(7.0f)),
-            LANES[lane].colour,
+            LANES[lane].color,
             LANES[lane].label
         );
         draw->AddLine(
@@ -343,7 +335,7 @@ bool AnimationPanel::drawTimeline(Animation& anim, float duration, const std::fu
             draw->AddCircleFilled(
                 ImVec2(timeToX((*times[lane])[k]), y),
                 hot ? EditorStyle::px(5.5f) : EditorStyle::px(3.5f),
-                hot ? EditorStyle::HIGHLIGHT_U32 : LANES[lane].colour
+                hot ? EditorStyle::HIGHLIGHT_U32 : LANES[lane].color
             );
         }
     }
@@ -456,7 +448,7 @@ bool AnimationPanel::drawTrack(
             ImGui::TableNextColumn();
             float at = times[k];
             ImGui::SetNextItemWidth(EditorStyle::px(74.0f));
-            ImGui::InputFloat("##t", &at, 0.0f, 0.0f, "%.3f");
+            ImGui::DragFloat("##t", &at, 0.005f, 0.0f, FLT_MAX, "%.3f", ImGuiSliderFlags_AlwaysClamp);
             if (ImGui::IsItemDeactivatedAfterEdit() && at != times[k]) {
                 retimeIndex = static_cast<int>(k);
                 retimeTo    = at;

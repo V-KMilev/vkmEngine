@@ -11,10 +11,19 @@
 
 #include "ecs/scene.h"
 #include "net/net_session.h"
+#include "net/replication/silence.h"
 #include "net/wire/codecs.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+/// How long a player loading the scene the session moved to may be silent: a load can hold its
+/// frames, and with them every packet it would send.
+constexpr float LOADING_TIMEOUT_SECONDS = 30.0f;
+
+} // namespace
 
 /**
  * @brief One seated player, from the server's side.
@@ -36,6 +45,12 @@ struct NetServer::Peer {
 
     /// Whether a Command has come back, which says the Welcome arrived.
     bool             answered = false;
+
+    /// Whether this player has been told of, once, as driving an entity too large to describe.
+    bool             toldTooLarge = false;
+
+    /// Which of the session's worlds this client last said it holds (NetCore::worldGeneration).
+    uint8_t          worldGeneration = 0;
 
     /**
      * @brief Which server tick this client said it was drawing, when it had just
@@ -113,6 +128,16 @@ void NetServer::forgetWorld() {
 
     // Baselines are keyed by entity id too, so would delta against a gone world.
     for (auto& peer : m_peers) peer->baseline.clear();
+    m_loaded.clear();
+}
+
+void NetServer::adoptWorld(const Scene& scene) {
+    // Classified in one pass: netSilence alone walks every ragdoll's bodies for each entity.
+    m_silence.build(scene);
+    m_loaded.clear();
+    scene.forEachEntity([&](EntityId entity) {
+        if (m_silence.of(entity) != NetSilence::Local) m_loaded.push_back(entity);
+    });
 }
 
 void NetServer::receive(Scene& scene, ResourceManager& resources) {
@@ -190,25 +215,33 @@ void NetServer::receive(Scene& scene, ResourceManager& resources) {
 
     // After the read loop, so a leaving peer does not invalidate the list.
     for (size_t i = m_peers.size(); i-- > 0;) {
+        const bool  loading = m_peers[i]->worldGeneration != m_core.worldGeneration;
+        const float allowed = loading ? LOADING_TIMEOUT_SECONDS : NetConnection::TIMEOUT_SECONDS;
         if (m_peers[i]->leaving) {
             dropPeer(scene, resources, i, m_peers[i]->leaving);
-        } else if (m_peers[i]->connection.timedOut()) {
+        } else if (m_peers[i]->connection.timedOut(allowed)) {
             dropPeer(scene, resources, i, "stopped answering");
         }
     }
 }
 
 void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
-    const uint32_t drawnWhole    = reader.u32();
-    const uint32_t drawnFraction = reader.bits(NET_DRAWN_FRACTION_BITS);
+    const uint8_t  worldGeneration = static_cast<uint8_t>(reader.u8());
+    const uint32_t drawnWhole      = reader.u32();
+    const uint32_t drawnFraction   = reader.bits(NET_DRAWN_FRACTION_BITS);
     if (reader.failed()) return;
+    peer.worldGeneration = worldGeneration;
 
     std::vector<InputCommand>& commands = m_received;
     if (!readCommands(reader, m_core.actionCount, commands)) {
         LOG_ERROR("Player %u sent a command packet that did not decode", peer.id);
         return;
     }
-    for (const InputCommand& command : commands) peer.commands.accept(command);
+    // Made for the world it is leaving, they would drive what the server spawned it in the next.
+    const bool current = worldGeneration == m_core.worldGeneration;
+    if (current) {
+        for (const InputCommand& command : commands) peer.commands.accept(command);
+    }
 
     // After the commands, in the room they left.
     const bool read = peer.inbox.read(reader, [&](const uint8_t* bytes, size_t size) {
@@ -217,8 +250,9 @@ void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
     if (!read) LOG_ERROR("Player %u sent messages that did not decode", peer.id);
 
     // What the client drew belongs to its newest command; with none it says nothing.
-    if (commands.empty()) return;
-    peer.renderTick    = static_cast<double>(drawnWhole) + static_cast<double>(drawnFraction) / 255.0;
+    if (!current || commands.empty()) return;
+    const double fraction = static_cast<double>(drawnFraction) / NET_DRAWN_FRACTION_MAX;
+    peer.renderTick    = static_cast<double>(drawnWhole) + fraction;
     peer.drewAtCommand = commands.back().tick;
 }
 
@@ -227,7 +261,8 @@ bool NetServer::vetHello(
     uint64_t echoed,
     BitReader& reader,
     uint32_t& actions,
-    uint64_t& actionNames
+    uint64_t& actionNames,
+    bool& current
 ) {
     const uint32_t fingerprint = reader.u32();
     actions                    = reader.u8();
@@ -248,8 +283,11 @@ bool NetServer::vetHello(
         return false;
     }
 
-    // A generated world says zero and is compared against nothing.
-    if (m_core.world != 0 && world != 0 && world != m_core.world) {
+    // A generated world says zero and is compared against nothing. A session that moved on to a
+    // scene a client can be told of seats it, and tells it which.
+    current = m_core.world == 0 || world == 0 || world == m_core.world;
+    const bool movedOn = m_core.worldGeneration != 0 && isProjectJsonPath(m_core.worldPath);
+    if (!current && !movedOn) {
         if (m_refusedMismatch == 0) {
             LOG_ERROR(
                 "Refusing a join: a different world. This end loaded %016llx, the other %016llx",
@@ -339,7 +377,8 @@ void NetServer::greet(
 ) {
     uint32_t actions     = 0;
     uint64_t actionNames = 0;
-    if (!vetHello(from, echoed, hello, actions, actionNames)) return;
+    bool     current     = true;
+    if (!vetHello(from, echoed, hello, actions, actionNames, current)) return;
 
     // A source address is forgeable, so it is seated only when it echoes its
     // token - a keyed hash of the address, so nothing is held until then.
@@ -352,6 +391,8 @@ void NetServer::greet(
     // acknowledge; accepted before any send reuses its buffer.
     auto peer = std::make_unique<Peer>();
     peer->connection.open(from);
+    // What it loaded is what the world was: what has gone since goes from it too.
+    for (const EntityId loaded : m_loaded) peer->baseline.seed(loaded);
     m_core.acknowledged.clear();
     peer->connection.accept(
         m_core.datagram.data(),
@@ -373,6 +414,9 @@ void NetServer::greet(
     peer->token  = echoed;
     peer->id     = id;
     peer->entity = entity;
+    // Any other number: it is told which world to load before anything is described to it.
+    peer->worldGeneration =
+        current ? m_core.worldGeneration : static_cast<uint8_t>(m_core.worldGeneration - 1);
     m_core.actionCount = actions;
     if (m_core.actionNames == 0) m_core.actionNames = actionNames;
     welcome(*peer, from);
@@ -413,10 +457,58 @@ void NetServer::welcome(Peer& peer, const NetAddress& to) {
     writeMessageHeader(writer, NetMessage::Welcome, peer.token);
     writer.u16(peer.id);
     writer.u32(peer.entity.slot());
+    writer.u8(m_core.worldGeneration);
+    writer.boolean(peer.worldGeneration == m_core.worldGeneration);
     writer.finish();
 
     peer.connection.frame(m_core.payload.data(), m_core.payload.size(), m_core.datagram);
     m_core.socket.send(to, m_core.datagram.data(), m_core.datagram.size());
+}
+
+void NetServer::sendWorld(Peer& peer) {
+    BitWriter writer(m_core.payload, 64 + NET_PROJECT_PATH_MAX);
+    writeMessageHeader(writer, NetMessage::World, peer.token);
+    writer.u8(m_core.worldGeneration);
+    writer.u64(m_core.world);
+    writer.u32(peer.entity.slot());
+    writeProjectPath(m_core.worldPath, writer);
+    writer.finish();
+
+    peer.connection.frame(m_core.payload.data(), m_core.payload.size(), m_core.datagram);
+    m_core.socket.send(peer.connection.peer(), m_core.datagram.data(), m_core.datagram.size());
+}
+
+void NetServer::changeWorld(Scene& scene, ResourceManager& resources) {
+    if (!isProjectJsonPath(m_core.worldPath)) {
+        LOG_ERROR(
+            "The world was replaced with no scene its players can be told to load ('%s'); they are let go",
+            m_core.worldPath.c_str()
+        );
+    }
+    // Zero is the session's first world, which seats no one whose entry scene differs.
+    if (++m_core.worldGeneration == 0) ++m_core.worldGeneration;
+    // Every entity went with the old world, and what each was still to be told to do. All before
+    // the first spawn: the new world's ids can repeat the old's, and a spawn asks who drives what.
+    for (auto& peer : m_peers) {
+        peer->entity = {};
+        peer->commands.clear();
+    }
+    for (size_t i = m_peers.size(); i-- > 0;) {
+        Peer& peer = *m_peers[i];
+        // It loads the scene file as a joiner does: what goes from it later goes from that peer too.
+        for (const EntityId loaded : m_loaded) peer.baseline.seed(loaded);
+        const EntityId entity = isProjectJsonPath(m_core.worldPath) && m_spawn
+            ? m_spawn(scene, resources, peer.id)
+            : EntityId{};
+        if (!entity) {
+            sendBare(m_core, peer.connection, NetMessage::Goodbye, peer.token);
+            dropPeer(scene, resources, i, "it has no place in the new world");
+            continue;
+        }
+        peer.entity = entity;
+    }
+    const char* path = m_core.worldPath.c_str();
+    LOG_INFO("Moved the session to '%s'; %zu player(s) told to follow", path, m_peers.size());
 }
 
 void NetServer::refuse(const NetAddress& from, NetRefusal reason, uint64_t token) {
@@ -463,6 +555,12 @@ void NetServer::send(Scene& scene, uint32_t tick) {
         // client does not know its own entity and would draw it late.
         if (!peer->answered) continue;
 
+        // Until it holds the world, it is told which one, and nothing in it is described.
+        if (peer->worldGeneration != m_core.worldGeneration) {
+            sendWorld(*peer);
+            continue;
+        }
+
         const NetSnapshotStats one = sendSnapshot(scene, schema, *peer, tick);
 
         // Summed over peers, except entities considered, which is the world.
@@ -484,6 +582,8 @@ NetSnapshotStats NetServer::sendSnapshot(Scene& scene, const NetSchema& schema, 
     std::vector<uint8_t>& payload = m_core.payload;
     BitWriter writer(payload, NetConnection::MAX_PAYLOAD);
     writeMessageHeader(writer, NetMessage::Snapshot, peer.token);
+    // Which world it describes, so one sent before a change is not read into the next.
+    writer.u8(m_core.worldGeneration);
     writer.u32(tick);
     // The newest command run, which the client reconciles against.
     writer.u32(peer.commands.newestRunTick());
@@ -506,6 +606,15 @@ NetSnapshotStats NetServer::sendSnapshot(Scene& scene, const NetSchema& schema, 
     const NetSnapshotStats cost =
         writeSnapshot(scene, schema, m_silence, sequence, budget, peer.baseline, writer);
     writer.finish();
+    if (cost.ownerTooLarge && !peer.toldTooLarge) {
+        peer.toldTooLarge = true;
+        LOG_ERROR(
+            "Player %u's entity %u is larger than a snapshot carries, so its state is never sent; "
+            "the rest of the world still is",
+            peer.id,
+            peer.entity.slot()
+        );
+    }
 
     // The budget above is sized so this cannot happen.
     if (writer.overflowed()) {

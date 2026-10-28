@@ -59,9 +59,11 @@ struct MaterialUBO {
     float alphaCutoff;
     int   type;          ///< MaterialType as int (the shader branches on Unlit / AlphaMask)
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
-    int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
+    int   waves;         ///< 1 for WaterKind::Sea: the scene's ocean moves the surface (shaders/ocean.glsl)
     float boxMapping;    ///< MaterialAsset::boxMapping: metres a repeat, 0 for the mesh's UVs
-    float pad0, pad1, pad2;
+    int   water;         ///< 1 for WaterKind::Body: water that is not the sea
+    float flowSpeed;     ///< MaterialAsset::flowSpeed, m/s along the mesh's +U
+    float rippleScale;   ///< MaterialAsset::rippleScale
 
     // A layered material's layers (MaterialAsset::layers); zero for any other.
     glm::vec4 layerTint[MaterialAsset::MAX_LAYERS];     ///< albedo factor; w the normal scale
@@ -146,6 +148,12 @@ class GLMaterial {
         bool layered() const { return m_layered; }
 
         /**
+         * @brief Whether it is water that is not the sea (WaterKind::Body): drawn, it wants the
+         *        scene's ripple fields whether or not the scene has an ocean.
+         */
+        bool water() const { return m_water; }
+
+        /**
          * @brief Take a layered material's layers: their factors, and their maps as arrays.
          *
          * @param layered The layered material, whose tiling each layer takes.
@@ -182,6 +190,7 @@ class GLMaterial {
         bool                                    m_cutsShadow = false;  ///< See cutsItsShadow().
         bool                                    m_plain = true;        ///< See plain().
         bool                                    m_layered = false;     ///< See layered().
+        bool                                    m_water   = false;     ///< See water().
         uint64_t                                m_uploadId = 0;
 };
 

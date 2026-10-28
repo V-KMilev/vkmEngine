@@ -6,8 +6,8 @@
 
 #include "gl_compute_shader.h"
 #include "gl_texture.h"
-#include "gl_stream_ring.h"
-#include "gl_vertex_buffer.h"
+#include "gl_buffer.h"
+#include "gl_shader_storage_buffer.h"
 
 #include "asset/gl_mesh.h"
 
@@ -133,10 +133,10 @@ class GLOcclusionCull {
         std::vector<DrawCommand> m_commands;  ///< The batch's commands, emptied, once per set.
 
         /// The batch's instances, where it wrote them.
-        Vkm::GL::BufferSpan                    m_source;
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_commandBuffer;   ///< Every set's commands, end to end.
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_instanceBuffer;  ///< Every set's instances, end to end.
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_visibleBuffer;   ///< Per object: the last cull's verdict.
+        Vkm::GL::BufferSpan                           m_source;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_commandBuffer;   ///< Every set's commands.
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_instanceBuffer;  ///< Every set's instances.
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_visibleBuffer;   ///< Per object: the last verdict.
 
         uint32_t m_instanceCount = 0;  ///< The batch's this frame: each set's share of the instances.
         uint32_t m_commandCount  = 0;  ///< Its commands: each set's share of the commands.

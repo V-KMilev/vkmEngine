@@ -84,7 +84,7 @@ struct Curve {
 };
 
 /**
- * @brief One key of a Gradient: its colour at a time between 0 and 1.
+ * @brief One key of a Gradient: its color at a time between 0 and 1.
  */
 struct GradientKey {
     float     time = 0.0f;
@@ -92,19 +92,19 @@ struct GradientKey {
 };
 
 /**
- * @brief A colour over a span from 0 to 1, straight between its keys in linear RGBA.
+ * @brief A color over a span from 0 to 1, straight between its keys in linear RGBA.
  *
- * None reads white; one reads its colour throughout; before the first key and after the last the
- * end colour holds.
+ * None reads white; one reads its color throughout; before the first key and after the last the
+ * end color holds.
  */
 struct Gradient {
     std::vector<GradientKey> keys;
 
     /**
-     * @brief The colour at @p t.
+     * @brief The color at @p t.
      *
      * @param t Where in the span, 0 to 1.
-     * @return The colour there.
+     * @return The color there.
      */
     glm::vec4 at(float t) const {
         return sampleKeys(keys, t, glm::vec4(1.0f), [](const GradientKey& key) { return key.color; });

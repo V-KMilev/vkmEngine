@@ -13,10 +13,27 @@
 
 namespace Vkm::Engine {
 
+bool spotCastsThroughCube(const LightData& light) {
+    return light.type == LightType::Spot && 2.0f * light.outerConeAngle * SPOT_MAP_MARGIN > SPOT_MAP_WIDEST;
+}
+
+bool castsThroughCube(const LightData& light) {
+    return light.type == LightType::Point || spotCastsThroughCube(light);
+}
+
+float spotMapFov(const LightData& light) {
+    return glm::clamp(2.0f * light.outerConeAngle * SPOT_MAP_MARGIN, glm::radians(1.0f), SPOT_MAP_WIDEST);
+}
+
 GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
 
-void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlots, bool steady) {
+void GLLights::update(
+    const std::vector<LightData>& lights,
+    LightSlots shadowSlots,
+    bool steady,
+    LightSlots maskChannels
+) {
     LightsBuffer data{};
 
     const int count = static_cast<int>(std::min<size_t>(lights.size(), Config::MAX_LIGHTS));
@@ -27,7 +44,7 @@ void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlo
 
         gpu.position  = glm::vec4(light.position, static_cast<float>(light.type));
         const float shine = !steady ? light.intensity * light.wave
-            : light.transient       ? 0.0f
+            : !light.inCaptures     ? 0.0f
             : light.intensity;
         gpu.color     = glm::vec4(light.color, shine);
         gpu.direction = glm::vec4(light.direction, light.radius);
@@ -48,6 +65,8 @@ void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlo
         // its penumbra.
         const bool sphere = light.type == LightType::Point || light.type == LightType::Spot;
         gpu.axisV     = glm::vec4(light.axisV, sphere ? light.sourceRadius : 0.0f);
+        const float channel = static_cast<float>(maskChannels[static_cast<uint32_t>(i)]);
+        gpu.bake      = glm::vec4(channel, spotCastsThroughCube(light) ? 1.0f : 0.0f, 0.0f, 0.0f);
     }
 
     // Only the header + the lights actually in use travel to the GPU; the tail

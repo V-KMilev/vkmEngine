@@ -6,7 +6,7 @@
  * faces the view, turned by the particle's angle; one that streaks lies along its trail as the
  * view sees it instead, from its head back to where the trail ends.
  *
- * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so its colour is
+ * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so its color is
  * an albedo, lit as a ball: the light at its centre (shaders/particle/light.glsl) goes to the
  * fragment stage, which turns a sphere's normal to it. Every corner takes the light of its
  * centre: a corner lies off the puff, past a wall or in a lamp's reach the puff is not, and turns
@@ -37,6 +37,8 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
 uniform int u_firstInstance;  // the run's first particle: gl_InstanceID starts at 0 every draw
 uniform int u_blend;          // PARTICLE_*: only an alpha one is lit
 uniform vec4 u_clipPlane;     // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
+uniform mat3 u_mirror;        // a planar reflection's flip, else identity: what turns its eye's axes
+                              // back into the camera's, so the card is mirrored as the scene is
 
 out vec2  vCorner;
 flat out vec2 vAxisX;  // the card's own x, then y, in the view's right and up: turned, or streaked
@@ -49,7 +51,7 @@ out vec4  vColor;
 out float vSoftness;
 out float vSize;       // half the billboard's width, how deep its fade runs
 flat out int vViewmodel;  // drawn as a Viewmodel mesh is: its depth is the squashed band, so no fade
-flat out float vExtra;    // the share of its colour it gives off, or how far it bends the view
+flat out float vExtra;    // the share of its color it gives off, or how far it bends the view
 flat out vec3 vAmbient;   // the light at its centre, for an alpha one
 flat out vec3 vLightColor;
 flat out vec3 vLightDir;
@@ -69,9 +71,9 @@ void main() {
     vSize     = p.positionSize.w;
     vExtra    = p.trail.w;
 
-    vec3 camRight = cameraRight();
-    vec3 camUp    = cameraUp();
-    vec3 camBack  = cameraBack();
+    vec3 camRight = u_mirror * cameraRight();
+    vec3 camUp    = u_mirror * cameraUp();
+    vec3 camBack  = u_mirror * cameraBack();
     float size = p.positionSize.w;
 
     // The trail as the view sees it: what runs toward the eye does not lengthen the streak.

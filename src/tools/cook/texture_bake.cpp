@@ -33,7 +33,7 @@ constexpr float COVERAGE_CUTOFF = 0.5f;
 constexpr float MAX_COVERAGE_SCALE    = 64.0f;
 constexpr int   COVERAGE_SEARCH_STEPS = 20;
 
-// The block format a stored format compresses to, keeping channels and colour space.
+// The block format a stored format compresses to, keeping channels and color space.
 TextureInternalFormat blockFormatOf(TextureInternalFormat format) {
     switch (format) {
         case TextureInternalFormat::R8:       return TextureInternalFormat::BC4R;
@@ -47,7 +47,8 @@ TextureInternalFormat blockFormatOf(TextureInternalFormat format) {
         case TextureInternalFormat::BC4R:
         case TextureInternalFormat::BC5RG:
         case TextureInternalFormat::BC7RGBA:
-        case TextureInternalFormat::BC7SRGBA: break;
+        case TextureInternalFormat::BC7SRGBA:
+        case TextureInternalFormat::Count:    break;
     }
     return TextureInternalFormat::BC7RGBA;
 }
@@ -61,7 +62,7 @@ TexturePixelFormat decodedLayoutOf(TextureInternalFormat blockFormat) {
     }
 }
 
-// sRGB colour is alpha-weighted so transparent colour does not bleed; a linear four-channel
+// sRGB color is alpha-weighted so transparent color does not bleed; a linear four-channel
 // texture is a packed mask, its channels filtered apart.
 stbir_pixel_layout filterLayoutOf(uint32_t channels, bool srgb) {
     switch (channels) {
@@ -92,13 +93,13 @@ using Bc7Params = bc7e_scalar::bc7e_compress_block_params;
 
 Bc7Params bc7Params(bool srgb) {
     Bc7Params params;
-    // Perceptual weights suit colour, not a normal or mask.
+    // Perceptual weights suit color, not a normal or mask.
     bc7e_scalar::bc7e_compress_block_params_init_basic(&params, srgb);
     return params;
 }
 
 // Compress one level, a row of blocks per task. Padding past the edge repeats the last column or
-// row, so it cannot pull the endpoints toward a colour the level does not have.
+// row, so it cannot pull the endpoints toward a color the level does not have.
 void encodeLevel(
     const uint8_t* texels,
     uint32_t width,
@@ -156,9 +157,9 @@ void encodeLevel(
 
 // What a level is filtered as.
 enum class Filtering {
-    Colour,  ///< sRGB colour, decoded to light first; its alpha weights it.
-    Data,    ///< Numbers, a channel at a time.
-    Normal   ///< A direction: x and y unpacked, z rebuilt, renormalised after.
+    Color,  ///< sRGB color, decoded to light first; its alpha weights it.
+    Data,   ///< Numbers, a channel at a time.
+    Normal  ///< A direction: x and y unpacked, z rebuilt, renormalised after.
 };
 
 // The share of texels whose alpha, scaled by @p scale, clears the cutoff.
@@ -226,8 +227,8 @@ std::vector<float> toLinear(const std::vector<uint8_t>& texels, uint32_t channel
     std::vector<float> out(texels.size());
     for (size_t i = 0; i < texels.size(); ++i) {
         // Alpha is a plain number in every format, sRGB ones included.
-        const bool colour = filtering == Filtering::Colour && (channels < 4 || i % 4 != 3);
-        out[i] = colour ? srgbToLinear(texels[i]) : texels[i] / 255.0f;
+        const bool color = filtering == Filtering::Color && (channels < 4 || i % 4 != 3);
+        out[i] = color ? srgbToLinear(texels[i]) : texels[i] / 255.0f;
     }
     return out;
 }
@@ -266,9 +267,9 @@ std::vector<uint8_t> toStored(
     std::vector<uint8_t> out(linear.size());
     for (size_t i = 0; i < linear.size(); ++i) {
         const bool alpha = channels == 4 && i % 4 == 3;
-        if (alpha)                               out[i] = quantise(linear[i] * alphaScale);
-        else if (filtering == Filtering::Colour) out[i] = linearToSrgb(linear[i]);
-        else                                     out[i] = quantise(linear[i]);
+        if (alpha)                              out[i] = quantise(linear[i] * alphaScale);
+        else if (filtering == Filtering::Color) out[i] = linearToSrgb(linear[i]);
+        else                                    out[i] = quantise(linear[i]);
     }
     return out;
 }
@@ -399,12 +400,12 @@ bool bakeTexture(const TextureAsset& source, TextureAsset& out, const TextureAss
     const bool      srgb      = isSrgbFormat(params.internalFormat);
     const Filtering filtering = source.usage() == TextureUsage::Normal && channels == 2
         ? Filtering::Normal
-        : srgb ? Filtering::Colour : Filtering::Data;
+        : srgb ? Filtering::Color : Filtering::Data;
     const uint32_t  levels    = params.generateMipmaps ? mipChainLength(params.width, params.height) : 1;
     // A normal is filtered as x, y and z, and stored as x and y.
     const uint32_t  filtered  = filtering == Filtering::Normal ? 3 : channels;
     // Each level keeps level 0's share of texels above the alpha cutoff.
-    const bool      coverage  = filtering == Filtering::Colour && channels == 4;
+    const bool      coverage  = filtering == Filtering::Color && channels == 4;
 
     // A metallic-roughness map paired with a normal map: its stored levels take the normal
     // detail their texels average away. The levels filtered from keep the plain roughness, so the

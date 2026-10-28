@@ -3,6 +3,7 @@
 #include "gl_backend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
@@ -12,9 +13,9 @@
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
+#include "l_assert.h"
 #include "logger.h"
 
-#include "gl_error_handle.h"
 #include "gl_shader.h"
 #include "gl_shader_preprocess.h"
 #include "gl_shader_reload.h"
@@ -35,6 +36,7 @@
 #include "pass/gl_fog_pass.h"
 #include "pass/gl_planar_reflection_pass.h"
 #include "pass/gl_reflection_pass.h"
+#include "pass/gl_debug_draw_pass.h"
 #include "pass/gl_dof_pass.h"
 #include "pass/gl_decal_pass.h"
 #include "pass/gl_particle_pass.h"
@@ -47,6 +49,8 @@
 #include "pass/gl_bloom_pass.h"
 #include "pass/gl_grid_pass.h"
 #include "pass/gl_composite_pass.h"
+#include "pass/gl_loading_bar_pass.h"
+#include "pass/gl_loading_pass.h"
 #include "pass/gl_splash_pass.h"
 #include "pass/gl_ui_pass.h"
 #include "storage/gl_ocean_fields.h"
@@ -81,11 +85,12 @@ std::string GLBackend::shaderConstants() {
         << "const int   CLUSTER_Z               = " << Config::CLUSTER_Z               << ";\n"
         << "const int   MAX_LIGHTS_PER_CLUSTER  = " << Config::MAX_LIGHTS_PER_CLUSTER  << ";\n"
         << "const int   NUM_CLUSTERS            = " << GLClusterGrid::NUM_CLUSTERS     << ";\n"
-        << "const int   MAX_OCEAN_WAVES         = " << Ocean::MAX_WAVES << ";\n"
         << "const int   MAX_OCEAN_SURGES        = " << Ocean::MAX_SURGES << ";\n"
+        << "const int   SWELL_FIELD             = " << SWELL_FIELD << ";\n"
+        << "const int   MAX_SWELL_CASCADES      = " << MAX_SWELL_CASCADES << ";\n"
         << "const int   OCEAN_RIPPLE_FIELDS     = " << RIPPLE_FIELDS << ";\n"
         << "const int   OCEAN_INVERSE_STEPS     = " << OceanSurface::INVERSE_STEPS << ";\n"
-        << "const float OCEAN_GRAVITY           = " << std::to_string(OceanSurface::GRAVITY) << ";\n"
+        << "const float OCEAN_GRAVITY           = " << std::to_string(OceanSpectrum::GRAVITY) << ";\n"
         << "const float OCEAN_SURGE_WHOLE       = " << std::to_string(OceanSurface::SURGE_WHOLE) << ";\n"
         << "const float JONSWAP_GAMMA           = " << std::to_string(JONSWAP_GAMMA) << ";\n"
         << "const float JONSWAP_SIGMA_BELOW     = " << std::to_string(JONSWAP_SIGMA_BELOW) << ";\n"
@@ -176,6 +181,7 @@ std::string GLBackend::shaderConstants() {
     }
 
     // The light and material types and particle blends the shaders switch on, from the enums.
+    using LightmapKind = GLLightmapBaker::LightKind;
     out << "const int   LIGHT_DIRECTIONAL   = " << static_cast<int>(LightType::Directional)    << ";\n"
         << "const int   LIGHT_POINT         = " << static_cast<int>(LightType::Point)          << ";\n"
         << "const int   LIGHT_SPOT          = " << static_cast<int>(LightType::Spot)           << ";\n"
@@ -195,7 +201,16 @@ std::string GLBackend::shaderConstants() {
         << static_cast<int>(GLLayerMaps::Copy::RoughnessMetallic) << ";\n"
         << "const int   PARTICLE_ADDITIVE   = " << static_cast<int>(ParticleBlend::Additive)   << ";\n"
         << "const int   PARTICLE_ALPHA      = " << static_cast<int>(ParticleBlend::Alpha)      << ";\n"
-        << "const int   PARTICLE_DISTORTION = " << static_cast<int>(ParticleBlend::Distortion) << ";\n";
+        << "const int   PARTICLE_DISTORTION = " << static_cast<int>(ParticleBlend::Distortion) << ";\n"
+        << "const uint  DEBUG_GHOSTED       = " << static_cast<int>(DebugDepth::Ghosted)       << "u;\n"
+        << "const uint  DEBUG_HIDDEN        = " << static_cast<int>(DebugDepth::Hidden)        << "u;\n"
+        << "const uint  DEBUG_ON_TOP        = " << static_cast<int>(DebugDepth::OnTop)         << "u;\n"
+        << "const int   LIGHTMAP_KIND_SUN   = " << static_cast<int>(LightmapKind::Sun)   << ";\n"
+        << "const int   LIGHTMAP_KIND_SPOT  = " << static_cast<int>(LightmapKind::Spot)  << ";\n"
+        << "const int   LIGHTMAP_KIND_POINT = " << static_cast<int>(LightmapKind::Point) << ";\n"
+        << "const int   RELIGHT_DIRECTIONAL_HEAD = " << GLIrradianceBaker::RELIGHT_DIRECTIONAL_HEAD << ";\n"
+        << "const int   RELIGHT_OUTSIDE_HEAD     = " << GLIrradianceBaker::RELIGHT_OUTSIDE_HEAD << ";\n"
+        << "const int   RELIGHT_CELL_HEADS       = " << GLIrradianceBaker::RELIGHT_CELL_HEADS << ";\n";
     static_assert(static_cast<int>(LightType::Count) == 5, "A light type the shaders are not told about");
     static_assert(
         static_cast<int>(MaterialType::Count) == 4,
@@ -206,8 +221,16 @@ std::string GLBackend::shaderConstants() {
         "A particle blend the shaders are not told about"
     );
     static_assert(
+        static_cast<int>(DebugDepth::Count) == 3,
+        "A debug depth mode the shaders are not told about"
+    );
+    static_assert(
         static_cast<int>(GLLayerMaps::Copy::Count) == 5,
         "A layer copy the shaders are not told about"
+    );
+    static_assert(
+        static_cast<int>(LightmapKind::Count) == 3,
+        "A lightmap light kind the shaders are not told about"
     );
 
     return out.str();
@@ -217,9 +240,42 @@ GLBackend::ConstantsInstalled::ConstantsInstalled() {
     Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, shaderConstants());
 }
 
+namespace {
+
+/// The passes init() adds; init() asserts the count.
+[[maybe_unused]] constexpr size_t PASS_COUNT = 27;
+
+/// The least time between two presents while the passes build: each waits on the display.
+constexpr std::chrono::milliseconds STARTUP_PRESENT_INTERVAL{100};
+
+/// A frame's share of checking startup programs (programsReady()), in which many quick checks fit.
+/// One check longer than it says the driver builds as it checks - some do, holding every GL call
+/// while they build - so checking all at once would be one long frozen frame.
+constexpr std::chrono::milliseconds STARTUP_CHECK_SHARE{4};
+
+/**
+ * @brief Present black, then answer the desktop: the window is not hung while the passes build,
+ *        and shows nothing before the splash does.
+ *
+ * @param gl     The context, whose cached state the clear goes through.
+ * @param window The window shown.
+ */
+void presentBlack(Vkm::GL::Context& gl, WindowManager& window) {
+    if (window.getWidth() == 0 || window.getHeight() == 0) return;
+    Vkm::GL::FrameBuffer::bindDefault();
+    gl.setViewport(0, 0, static_cast<int32_t>(window.getWidth()), static_cast<int32_t>(window.getHeight()));
+    gl.setColorMask(true, true, true, true);
+    gl.setClearColor(glm::vec4(0.0f));
+    gl.clear(true, false, false);
+    window.swapBuffers();
+    window.pumpEvents();
+}
+
+} // namespace
+
 GLBackend::GLBackend()
     : m_unitCube(m_view.meshPool(), generateCube())
-    , m_sceneCapture(m_unitCube, m_objects)
+    , m_sceneCapture(m_unitCube, m_objects, m_forwardPrograms)
     , m_cubeConvolver(m_unitCube)
     , m_iblBaker(m_cubeConvolver)
     , m_irradianceBaker(m_sceneCapture)
@@ -228,21 +284,19 @@ GLBackend::GLBackend()
 GLBackend::~GLBackend() = default;
 
 bool GLBackend::init(WindowManager& window) {
-    // GLEW and the context come with the window, already current. Presentation stays in the
-    // engine loop, so this backend never swaps.
+    // GLEW and the context come with the window, already current. Presentation is the engine
+    // loop's, but for the black presented below while the passes build, before its first frame.
     PROFILE_GPU_CONTEXT();
 
     // Every unit gl_bindings.h numbers must exist in each stage that samples
     // one, or a sampler past the last binds to nothing and reads black.
     // A vertex stage samples too (shaders/particle/vertex.shader).
-    GLint fragmentUnits = 0;
-    GLint computeUnits  = 0;
-    GLint vertexUnits   = 0;
-    VKM_GL_CHECK(glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &fragmentUnits));
-    VKM_GL_CHECK(glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS, &computeUnits));
-    VKM_GL_CHECK(glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &vertexUnits));
-    const GLint units = std::min({fragmentUnits, computeUnits, vertexUnits});
-    if (units <= static_cast<GLint>(GLBindings::MAX_TEXTURE_UNIT)) {
+    const int32_t units = std::min({
+        m_context.integer(GL_MAX_TEXTURE_IMAGE_UNITS),
+        m_context.integer(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS),
+        m_context.integer(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS),
+    });
+    if (units <= static_cast<int32_t>(GLBindings::MAX_TEXTURE_UNIT)) {
         LOG_ERROR(
             "This GPU samples %d texture units a stage; the renderer binds up to %u",
             units,
@@ -252,9 +306,8 @@ bool GLBackend::init(WindowManager& window) {
     }
 
     // Likewise every storage-buffer binding point it numbers.
-    GLint storageBindings = 0;
-    VKM_GL_CHECK(glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &storageBindings));
-    if (storageBindings <= static_cast<GLint>(GLBindings::highestSSBOBinding())) {
+    const int32_t storageBindings = m_context.integer(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS);
+    if (storageBindings <= static_cast<int32_t>(GLBindings::highestSSBOBinding())) {
         LOG_ERROR(
             "This GPU has %d storage-buffer binding points; the renderer binds up to %u",
             storageBindings,
@@ -263,9 +316,8 @@ bool GLBackend::init(WindowManager& window) {
         return false;
     }
 
-    GLint textureEdge = 0;
-    VKM_GL_CHECK(glGetIntegerv(GL_MAX_TEXTURE_SIZE, &textureEdge));
-    if (textureEdge < static_cast<GLint>(BACKEND_MIN_TEXTURE_EDGE)) {
+    const int32_t textureEdge = m_context.maxTextureSize();
+    if (textureEdge < static_cast<int32_t>(BACKEND_MIN_TEXTURE_EDGE)) {
         LOG_ERROR(
             "This GPU's textures are at most %d texels across; the engine bakes up to %u",
             textureEdge,
@@ -277,46 +329,81 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setDefaultState();
 
     // Clip z in 0..w: the depth convention/gl_depth.h states, the eye's reversed.
-    VKM_GL_CHECK(glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE));
+    m_context.setClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
-    // Uploads are tightly packed in a file's own channel count, so a row need not be a multiple
+    // Pixels are tightly packed in a file's own channel count, so a row need not be a multiple
     // of four bytes; at GL's default alignment such a texture uploads sheared and overreads.
-    VKM_GL_CHECK(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    m_context.setPixelAlignment(1);
 
     // A linear read near a face edge filters into the next face; without it a cube shows seams.
-    VKM_GL_CHECK(glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS));
+    m_context.setSeamlessCubes(true);
 
-    // Passes compile shaders, so this runs after the context exists. The order is load-bearing:
-    // see docs/reference/rendering.md, "The passes (fixed order)".
-    m_passes.push_back({"Shadow",         std::make_unique<GLShadowPass>()});
-    m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
-    m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
-    m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
-    m_passes.push_back({"ScreenShadows",  std::make_unique<GLScreenShadowPass>()});
-    m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
-    m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
-    m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
+    // Passes build their shaders, so this runs after the context exists. The order is
+    // load-bearing: see docs/reference/rendering.md, "The passes (fixed order)". The driver
+    // compiles the programs on its own threads (ShaderBase::compileInParallel) while the frames
+    // after init() draw the chrome alone (programsReady()); building them is quick.
+    using Wall = std::chrono::steady_clock;
+    Wall::time_point shown = Wall::now();
+    presentBlack(m_context, window);
+    const auto add = [&](PassEntry entry) {
+        m_passes.push_back(std::move(entry));
+        if (Wall::now() - shown < STARTUP_PRESENT_INTERVAL) return;
+        shown = Wall::now();
+        presentBlack(m_context, window);
+    };
+    // What a first frame draws - the splash, the loading screen and its bar - is built before the
+    // other passes, so the driver compiles its programs ahead of theirs, though behind those this
+    // backend's members built as it was made; then the first sync's layered materials, then the
+    // forward programs, the slowest, as the world waits longest on them.
+    auto splash  = std::make_unique<GLSplashPass>();
+    auto loading = std::make_unique<GLLoadingPass>();
+    auto cover   = std::make_unique<GLUIPass>(GLUIPass::List::Cover);
+    auto bar     = std::make_unique<GLLoadingBarPass>();
+    // And what the first frame's sync runs: it builds the layered materials before any pass draws.
+    m_view.buildPrograms();
+    m_forwardPrograms.build();
+    add({"Shadow",         std::make_unique<GLShadowPass>()});
+    add({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
+    add({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
+    add({"GTAO",           std::make_unique<GLGTAOPass>()});
+    add({"ScreenShadows",  std::make_unique<GLScreenShadowPass>()});
+    auto lightCull = std::make_unique<GLClusterPass>();
+    GLClusterPass& clusterCull = *lightCull;
+    add({"ClusterCull",    std::move(lightCull)});
+    add({"FogCompute",     std::make_unique<GLFogPass>()});
+    add({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
+    // Before the mirrors, so the water a mirror shows has this frame's ripples and shore.
+    add({"Ocean",          std::make_unique<GLOceanPass>()});
     auto particles = std::make_unique<GLParticlePass>();
-    auto planar    = std::make_unique<GLPlanarReflectionPass>(m_sceneCapture, m_camera, *particles);
-    m_planar = planar.get();
-    m_passes.push_back({"PlanarReflections", std::move(planar)});
-    m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
-    m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
-    auto forward   = std::make_unique<GLForwardPass>(
-        m_sceneCapture.pbrProgram(),
-        m_sceneCapture.layeredProgram()
+    auto planar    = std::make_unique<GLPlanarReflectionPass>(
+        m_sceneCapture,
+        m_forwardPrograms,
+        m_camera,
+        *particles,
+        clusterCull
     );
-    m_passes.push_back({"Forward",        std::move(forward)});
-    m_passes.push_back({"Particles",      std::move(particles)});
-    m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
-    m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>()});
-    m_passes.push_back({"Decals",         std::make_unique<GLDecalPass>()});
-    m_passes.push_back({"DoF",            std::make_unique<GLDoFPass>()});
-    m_passes.push_back({"Bloom",          std::make_unique<GLBloomPass>()});
-    m_passes.push_back({"Composite",      std::make_unique<GLCompositePass>()});
-    m_passes.push_back({"Grid",           std::make_unique<GLGridPass>()});
-    m_passes.push_back({"UI",             std::make_unique<GLUIPass>()});
-    m_passes.push_back({"Splash",         std::make_unique<GLSplashPass>()});
+    m_planar = planar.get();
+    add({"PlanarReflections", std::move(planar)});
+    add({"Skybox",         std::make_unique<GLSkyboxPass>()});
+    auto forward = std::make_unique<GLForwardPass>(m_forwardPrograms);
+    add({"Forward",        std::move(forward)});
+    add({"Particles",      std::move(particles)});
+    add({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
+    add({"Reflections",    std::make_unique<GLReflectionPass>()});
+    add({"Decals",         std::make_unique<GLDecalPass>()});
+    add({"DoF",            std::make_unique<GLDoFPass>()});
+    add({"DebugGlow",      std::make_unique<GLDebugDrawPass>(GLDebugDrawPass::Stage::Glow)});
+    add({"Bloom",          std::make_unique<GLBloomPass>()});
+    add({"Composite",      std::make_unique<GLCompositePass>()});
+    add({"Grid",           std::make_unique<GLGridPass>()});
+    add({"DebugLines",     std::make_unique<GLDebugDrawPass>(GLDebugDrawPass::Stage::Lines)});
+    add({"UI",             std::make_unique<GLUIPass>()});
+    m_chrome = {splash.get(), loading.get(), cover.get(), bar.get()};
+    add({"Splash",         std::move(splash)});
+    add({"Loading",        std::move(loading)});
+    add({"Cover",          std::move(cover)});
+    add({"LoadingBar",     std::move(bar)});
+    VKM_ASSERT(m_passes.size() == PASS_COUNT, "PASS_COUNT counts the passes init() adds");
 
     // Forward+ cluster light grid: allocate its SSBO now the context is live.
     m_clusterGrid.init();
@@ -372,10 +459,17 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
             static_cast<float>(view.settings.textureAnisotropy)
         );
     }
+    // The splash must not stall.
+    if (!programsReady(view.splash.isShowing())) {
+        drawChrome(view);
+        m_view.stream().endFrame();
+        return;
+    }
     // The reflection inputs exist while the reflection pass may read them: ssr is on, or a planar
-    // reflector may be drawn.
-    const bool reflect = view.settings.ssr || !view.planarReflectors.empty();
-    m_sceneHDR.resize(view.sceneWidth(), view.sceneHeight(), 1, reflect);
+    // reflector may be drawn. A camera-less frame lists no reflectors and draws none: it keeps them.
+    const bool kept    = !view.hasCamera && m_sceneHDR.hasReflectInputs();
+    const bool reflect = view.settings.ssr || !view.planarReflectors.empty() || kept;
+    m_sceneHDR.resize(m_context, view.sceneWidth(), view.sceneHeight(), 1, reflect);
     m_postA.resize(view.sceneWidth(), view.sceneHeight());
     m_postB.resize(view.sceneWidth(), view.sceneHeight());
     m_bloom.resize(view.sceneWidth(), view.sceneHeight());
@@ -384,7 +478,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // allocation. What draws where: docs/reference/rendering.md.
     const uint32_t samples = view.settings.msaaSamples;
     if (samples > 1) {
-        m_sceneMS.resize(view.sceneWidth(), view.sceneHeight(), samples, reflect);
+        m_sceneMS.resize(m_context, view.sceneWidth(), view.sceneHeight(), samples, reflect);
     } else {
         m_sceneMS.release();
     }
@@ -411,6 +505,11 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Render/ShadowAtlasInit");
         m_shadowAtlas.init(m_context, view.settings.shadowResolution);
+        // On its units for what draws before a pass binds them - a bake's capture, which binds only
+        // its own sun: the forward programs declare them as shadow samplers, and the driver
+        // validates a declared sampler at draw time.
+        m_shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
+        m_shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
     }
 
     // Shadows first: the plan gives each light the atlas slot the lights SSBO carries (spot.w).
@@ -426,21 +525,22 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_shadowData.placeTiles(m_shadowAtlas);
     }
 
+    // Bucket the drawables once, for every pass that reads a bucket; and see whether water is drawn,
+    // which the ocean's block says.
+    {
+        PROFILE_SCOPE("Render/Partition");
+        partitionDrawables(view);
+    }
+
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.
     {
         PROFILE_SCOPE("Render/FrameUBOs");
         const float width  = static_cast<float>(view.sceneWidth());
         const float height = static_cast<float>(view.sceneHeight());
         m_camera.update(view.camera, glm::vec2(width, height));
-        m_ocean.update(view.ocean);
-        m_lights.update(view.lights, m_shadowData.lightSlots());
+        m_ocean.update(view.ocean, m_waterShown);
+        m_lights.update(view.lights, m_shadowData.lightSlots(), false, m_lightmaps.channels(view.lights));
         m_shadowData.uploadAndBind();
-    }
-
-    // Bucket the drawables once, for every pass that reads a bucket.
-    {
-        PROFILE_SCOPE("Render/Partition");
-        partitionDrawables(view);
     }
 
     // Before the object upload and the batch, which both ask whether the frame posed anything.
@@ -456,6 +556,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Render/Objects");
         m_objects.upload(*view.objects, m_skinPalette.count() > 0, occlusionCulled, m_view.stream());
+        m_lightmaps.prepare(*view.objects, m_view);
+        m_lightmaps.bindObjects();
     }
 
     // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
@@ -471,43 +573,23 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     }
 
     // Each pass binds and clears its own target.
-    GLFrameContext ctx{
-        view,
-        m_view,
-        m_context,
-        m_screenTri,
-        m_unitCube,
-        m_sceneHDR,
-        sceneRender,
-        m_shadowAtlas,
-        m_shadowData,
-        m_ibl,
-        m_atmosphere,
-        m_bloom,
-        m_ao,
-        m_clusterGrid,
-        m_fog,
-        m_irradiance,
-        m_skinPalette,
-        m_objects,
-        m_oceanFields,
-        m_alphaMask,
-        m_transparent,
-        m_opaqueBatcher
-    };
+    GLFrameContext ctx = frameContext(view, sceneRender);
 
-    ctx.sunDir   = sunDir;
-    ctx.exposure = m_exposure.stops(view.settings, view.frameSeconds);
-    ctx.sky      = sky ? &*sky : nullptr;
+    ctx.sunDir     = sunDir;
+    ctx.waterShown = m_waterShown;
+    ctx.exposure   = m_exposure.stops(view.settings, view.frameSeconds);
+    ctx.sky        = sky ? &*sky : nullptr;
+    ctx.lightmaps  = &m_lightmaps;
     if (occlusionCulled) {
         PROFILE_SCOPE("Render/OcclusionPrepare");
         if (m_occlusion.prepare(m_opaqueBatcher, *view.objects)) {
             ctx.occlusion = &m_occlusion;
         }
     }
-    m_oceanFields.beginFrame();
+    m_oceanFields.beginFrame(view.ocean);
+    m_oceanShore.beginFrame();
 
-    // Post colour chain: the scene starts on the geometry target; the first
+    // Post color chain: the scene starts on the geometry target; the first
     // post pass moves it into a scratch and the chain ping-pongs from there.
     ctx.scratchA = &m_postA;
     ctx.scratchB = &m_postB;
@@ -524,19 +606,22 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_shadowData.finishCull();
     }
 
-    for (const auto& entry : m_passes) {
-        PROFILE_SCOPE_NAMED(entry.name);
-        PROFILE_GPU_SCOPE_NAMED(entry.name);
-
-        // Every pass starts from the same state, so none puts back what the last changed.
-        // Context caches these, so an agreeing pass pays nothing.
-        m_context.setDepthTest(true);
-        m_context.setDepthWrite(true);
-        m_context.setDepthFunc(GLDepth::EYE_TEST_EQUAL);
-        m_context.setBlending(false);
-        m_context.setFaceCulling(false);
-
-        entry.pass->execute(ctx);
+    // Under a loading screen nothing of the world shows: the frame draws the screen alone, and the
+    // bakes after it have the time the world would have taken. A held shadow tile or layer is signed
+    // only when drawn (GLShadowAtlas), so a skipped frame leaves none held that was not.
+    const bool covered = view.loadingOpacity >= 1.0f;
+    if (covered) {
+        drawChrome(view);
+    } else {
+        // Every pass starts from the same state, so none puts back what the last changed; and so
+        // does what runs after them.
+        for (const auto& entry : m_passes) {
+            PROFILE_SCOPE_NAMED(entry.name);
+            PROFILE_GPU_SCOPE_NAMED(entry.name);
+            passState();
+            entry.pass->execute(ctx);
+        }
+        passState();
     }
 
     PROFILE_PLOT("Render/Drawables",   static_cast<int64_t>(view.objects->visible.size()));
@@ -556,19 +641,95 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     // The scene as lit, before the bloom and the tonemap, so what it measures does not depend on
     // the exposure it sets.
-    if (view.settings.autoExposure && view.hasCamera) {
+    if (view.settings.autoExposure && view.hasCamera && !covered) {
         PROFILE_GPU_SCOPE("Render/Exposure");
         m_exposure.measure(*ctx.colorSrc, view.sceneWidth(), view.sceneHeight());
     }
     PROFILE_PLOT("Render/Exposure", static_cast<double>(ctx.exposure));
 
-    // A frame with no camera gathered nothing to bake from.
-    if (view.hasCamera) bakeCaptures(view);
+    // A frame with no camera gathered nothing to bake from; one whose world still arrives waits for
+    // it (RenderView::worldArriving).
+    m_bakes     = view.hasCamera;
+    m_bakesHeld = m_bakes && view.worldArriving;
+    if (m_bakes && !m_bakesHeld) bakeCaptures(view);
+    // The bakes draw into targets of their own and leave one bound; what draws after the frame - an
+    // editor's UI - draws into the window.
+    Vkm::GL::FrameBuffer::bindDefault();
 
     // Every command reading what the frame streamed is issued: fence its region.
     m_view.stream().endFrame();
 
     PROFILE_GPU_COLLECT();
+}
+
+bool GLBackend::programsReady(bool quickOnly) {
+    if (m_programsReady) return true;
+    // A frame's share at most; for an asker that must not stall, only while checks stay quick. A
+    // program that failed throws as it is checked, at startup, not at its first use.
+    const auto begun = std::chrono::steady_clock::now();
+    while (!(quickOnly && m_checksSlow)) {
+        const auto one = std::chrono::steady_clock::now();
+        if (!Vkm::GL::checkNextShader()) break;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - one > STARTUP_CHECK_SHARE) m_checksSlow = true;
+        if (now - begun > STARTUP_CHECK_SHARE) break;
+    }
+    const Vkm::GL::ShaderCount count = Vkm::GL::countShaders();
+    m_programsReady = count.compiling == 0 && count.unchecked == 0;
+    return m_programsReady;
+}
+
+void GLBackend::drawChrome(const RenderView& view) {
+    Vkm::GL::FrameBuffer::bindDefault();
+    passState();
+    const auto width  = static_cast<int32_t>(view.surfaceWidth);
+    const auto height = static_cast<int32_t>(view.surfaceHeight);
+    m_context.setViewport(0, 0, width, height);
+    m_context.setClearColor(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    m_context.clear(true, false, false);
+    m_context.setClearColor(glm::vec4(0.0f));
+
+    GLFrameContext ctx = frameContext(view, m_sceneHDR);
+    for (GLPass* pass : m_chrome) {
+        passState();
+        pass->execute(ctx);
+    }
+    passState();
+}
+
+GLFrameContext GLBackend::frameContext(const RenderView& view, GLTarget& sceneRender) {
+    return GLFrameContext{
+        view,
+        m_view,
+        m_context,
+        m_screenTri,
+        m_unitCube,
+        m_sceneHDR,
+        sceneRender,
+        m_shadowAtlas,
+        m_shadowData,
+        m_ibl,
+        m_atmosphere,
+        m_bloom,
+        m_ao,
+        m_clusterGrid,
+        m_fog,
+        m_irradiance,
+        m_skinPalette,
+        m_objects,
+        m_oceanFields,
+        m_oceanShore,
+        m_alphaMask,
+        m_transparent,
+        m_opaqueBatcher
+    };
+}
+
+void GLBackend::passState() {
+    // Context caches it all, so a pass that agrees pays nothing.
+    m_context.setDefaultState();
+    m_context.setDepthFunc(GLDepth::EYE_TEST_EQUAL);
+    m_context.setFaceCulling(false);
 }
 
 void GLBackend::bakeCaptures(const RenderView& view) {
@@ -580,11 +741,16 @@ void GLBackend::bakeCaptures(const RenderView& view) {
     const CaptureLighting volumeLighting{lights, m_ibl.version(), m_ibl.isReady()};
     m_irradianceBaker.update(m_context, m_irradiance, view, m_view, m_ibl, volumeLighting);
 
+    // The fixed lights' shadows on the fixed meshes, when either has changed and settled.
+    m_lightmapBaker.update(m_context, view, m_view, m_objects, m_lightmaps);
+
     // Re-bake probes that are new, version-bumped, moved or resized and holding still, or lit by
     // an older volume, after the volume, which lights what they capture of it; refresh those
-    // under other light. Probes turned off are neither: nothing reads them, and the ones gone
-    // stale meanwhile refresh in turn once they are back.
-    if (!view.settings.probes) return;
+    // under other light; none while the volume is part-way through its captures. Probes turned
+    // off are neither: nothing reads them, and the ones gone stale meanwhile refresh in turn
+    // once they are back.
+    m_bakesProbes = view.settings.probes;
+    if (!m_bakesProbes || m_irradianceBaker.baking()) return;
     const bool                lit    = view.hasIrradianceVolume && m_irradiance.isReady();
     const GLIrradianceVolume* volume = lit ? &m_irradiance : nullptr;
     // Its lights are each probe's own, those that reach it (GLProbeManager::update).
@@ -665,9 +831,11 @@ void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& r
     }
     if (worldEpoch != m_worldEpoch) {
         m_worldEpoch = worldEpoch;
-        m_probes.invalidate();    // cube captures: same probe pose, different scene
-        m_irradianceBaker.invalidate();  // SH volume: same box and grid, different scene
-        m_exposure.forget();             // adapted to the last world's light
+        m_probes.invalidate();                       // cube captures: same probe pose, different scene
+        m_irradianceBaker.invalidate(m_irradiance);  // SH volume: same box and grid, different scene
+        m_lightmapBaker.invalidate();                // lightmaps: another scene's objects
+        m_lightmaps.clear();
+        m_exposure.forget();                         // adapted to the last world's light
         LOG_INFO("Scene replaced; baked captures of it dropped");
     }
     // Held shadow tiles: pictures of both the world and the meshes it is made of.
@@ -678,12 +846,14 @@ void GLBackend::partitionDrawables(const RenderView& view) {
     m_opaque.clear();
     m_alphaMask.clear();
     m_transparent.clear();
+    m_waterShown = false;
     const RenderObjects& objects = *view.objects;
     m_opaque.reserve(objects.visible.size());
 
     for (const uint32_t object : objects.visible) {
         const GLMaterial* material = m_view.getMaterial(objects.draws[object].material);
         const MaterialType type = material ? material->getType() : MaterialType::Opaque;
+        m_waterShown = m_waterShown || (material && material->water());
         if (type == MaterialType::Transparent)    m_transparent.push_back(object);
         else if (type == MaterialType::AlphaMask) m_alphaMask.push_back(object);
         else                                      m_opaque.push_back(object);
@@ -705,6 +875,9 @@ uint64_t GLBackend::previewLook() const {
 }
 
 GpuTextureId GLBackend::renderPreview(const PreviewRequest& request, const ResourceManager& resources) {
+    // Drawn with the forward programs, which would hold the window until checked: asked again later.
+    // Not the frame's to stall for, so only quick checks.
+    if (!programsReady(true)) return {};
     // The preview binds its own camera and lights; the next frame binds the frame's again.
     return m_preview.render(m_context, m_view, m_ibl, m_previewScene, m_shadowAtlas, request, resources);
 }
@@ -760,6 +933,34 @@ uint32_t GLBackend::maxAnisotropy() const {
     return static_cast<uint32_t>(Vkm::GL::maxSupportedAnisotropy());
 }
 
+RenderReadiness GLBackend::readiness() const {
+    RenderReadiness readiness;
+    if (!m_programsReady) {
+        const Vkm::GL::ShaderCount count = Vkm::GL::countShaders();
+        readiness.programs = count.live;
+        readiness.compiled = count.live - count.unchecked;
+    }
+    // Only what the frames go on to bake is owed: with no camera they bake nothing. Held while its
+    // world arrives, its first captures are owed though none has begun.
+    if (!m_bakes) return readiness;
+    if (m_bakesHeld) {
+        ++readiness.total;
+        return readiness;
+    }
+    if (m_irradianceBaker.baking()) {
+        readiness.done  += m_irradianceBaker.cellsCaptured();
+        readiness.total += m_irradianceBaker.bakingCells();
+    }
+    if (m_bakesProbes) {
+        readiness.done  += m_probes.bakedLayers();
+        readiness.total += m_probes.ownedLayers();
+    }
+    const RenderReadiness lightmaps = m_lightmapBaker.progress();
+    readiness.done  += lightmaps.done;
+    readiness.total += lightmaps.total;
+    return readiness;
+}
+
 bool GLBackend::holdsPixels(const TextureHandle& texture, uint64_t version) const {
     return m_view.holdsPixels(texture, version);
 }
@@ -771,20 +972,20 @@ bool GLBackend::readFrame(const RenderView& view, std::vector<uint8_t>& pixels) 
     if (width <= 0 || height <= 0) return false;
 
     // The default framebuffer's own read buffer, unchanged: a window's back buffer, or a
-    // pbuffer's only one. The read binding and pack alignment are put back.
-    GLint readBinding   = 0;
-    GLint packAlignment = 4;
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readBinding);
-    glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
-
+    // pbuffer's only one. Rows are packed tight (init's pixel alignment).
     const GLint glX = static_cast<GLint>(view.viewportX);
     const GLint glY = static_cast<GLint>(view.surfaceHeight) - static_cast<GLint>(view.viewportY) - height;
     std::vector<uint8_t> rows(static_cast<size_t>(width) * static_cast<size_t>(height) * 3);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(glX, glY, width, height, GL_RGB, GL_UNSIGNED_BYTE, rows.data());
-    glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(readBinding));
+    Vkm::GL::FrameBuffer::readDefault(
+        glX,
+        glY,
+        width,
+        height,
+        GL_RGB,
+        GL_UNSIGNED_BYTE,
+        rows.size(),
+        rows.data()
+    );
 
     // GL reads bottom row first.
     const size_t stride = static_cast<size_t>(width) * 3;

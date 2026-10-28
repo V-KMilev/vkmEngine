@@ -39,6 +39,7 @@
 #include "platform/windows_api.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
+#include "system/render/render_backend.h"
 #include "system/render/render_settings.h"
 
 #if !defined(_WIN32)
@@ -181,18 +182,28 @@ struct TestFrame {
     HostChrome      chrome;
     RenderSettings  render;
     RenderSettings  projectRender;
+    RenderReadiness readiness;  // the host's, as Engine keeps one
     FrameContext    ctx;
 
     explicit TestFrame(Scene& scene)
-        : ctx{scene, resources, clock, events, window, input, ownedNet, chrome, render, projectRender} {}
+        : ctx{scene, resources, clock, events, window, input, ownedNet, chrome, render, projectRender}
+    {
+        ctx.readiness = &readiness;
+    }
 
     // For the networking suites: the context refers to the test's own session.
     TestFrame(Scene& scene, NetSession& session)
-        : ctx{scene, resources, clock, events, window, input, session, chrome, render, projectRender} {}
+        : ctx{scene, resources, clock, events, window, input, session, chrome, render, projectRender}
+    {
+        ctx.readiness = &readiness;
+    }
 
     // For components naming assets the test made before the frame.
     TestFrame(Scene& scene, ResourceManager& assets)
-        : ctx{scene, assets, clock, events, window, input, ownedNet, chrome, render, projectRender} {}
+        : ctx{scene, assets, clock, events, window, input, ownedNet, chrome, render, projectRender}
+    {
+        ctx.readiness = &readiness;
+    }
 };
 
 inline bool sameDirection(const glm::vec3& a, const glm::vec3& b) {

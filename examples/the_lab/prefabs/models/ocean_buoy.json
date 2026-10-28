@@ -22,6 +22,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/ocean_buoy/textures/ocean_buoy_diff_1k.jpg"
@@ -70,19 +71,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 2.906421422958374,
+              "maxDistance": 2.9064214,
               "mesh": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 19.842370986938477,
+              "maxDistance": 19.842371,
               "mesh": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 121.58673095703125,
+              "maxDistance": 121.58673,
               "mesh": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 243.1734619140625,
+              "maxDistance": 243.17346,
               "mesh": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0:lod3"
             }
           ]

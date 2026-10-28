@@ -6,22 +6,12 @@
 #include <glm/gtc/constants.hpp>
 
 #include "core/math/axes.h"
+#include "core/math/easing.h"
 #include "core/math/rotation.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/scene.h"
-#include "net/net_session.h"
 
 namespace Lab {
-
-namespace {
-
-// The share of @p seconds that @p now is into its current round, 0 to 1.
-float shareOf(double now, float seconds) {
-    if (seconds == 0.0f) return 0.0f;
-    return static_cast<float>(glm::fract(now / static_cast<double>(seconds)));
-}
-
-} // namespace
 
 void LabOrbit::onStart() {
     if (const Transform* at = tryGet<Transform>()) {
@@ -33,10 +23,10 @@ void LabOrbit::onStart() {
 void LabOrbit::onUpdate(float) {
     Transform* at = tryGet<Transform>();
     if (!at) return;
-    const double now   = net().worldTime(clock());
+    const double now   = worldTime();
     const float  tau   = glm::two_pi<float>();
-    const float  angle = tau * (shareOf(now, period) + phase);
-    const float  rise  = bob * std::sin(tau * shareOf(now, bobSeconds));
+    const float  angle = tau * (cycle(now, period) + phase);
+    const float  rise  = bob * std::sin(tau * cycle(now, bobSeconds));
 
     const glm::vec3 out = {std::cos(angle), 0.0f, std::sin(angle)};
     at->position = m_centre + out * radius + Math::WORLD_UP * rise;

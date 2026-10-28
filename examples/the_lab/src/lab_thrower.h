@@ -21,7 +21,7 @@ class LabThrower : public ReflectedBehavior<LabThrower> {
         void onFixedUpdate(float dt) override;
 
     public:
-        std::string crate = "prefabs/crate.json";  ///< The prefab thrown, project-relative.
+        PrefabRef crate{"prefabs/crate.json"};  ///< The prefab thrown.
 
         float speed    = 14.0f;  ///< Launch speed along the character's facing, m/s.
         float cooldown = 0.4f;   ///< Seconds between two throws.

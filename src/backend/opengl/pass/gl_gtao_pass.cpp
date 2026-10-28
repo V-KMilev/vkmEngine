@@ -3,7 +3,6 @@
 #include <GL/glew.h>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
 #include "gl_shader.h"
 #include "gl_context.h"
 #include "gl_screen_triangle.h"
@@ -30,7 +29,8 @@ constexpr int MAX_DEPTH_MIPS = 6;
 GLGTAOPass::GLGTAOPass()
     : m_prefilter("shaders/gtao/prefilter")
     , m_shader("shaders/gtao")
-    , m_denoise("shaders/gtao/denoise") {}
+    , m_denoise("shaders/gtao/denoise")
+    , m_upsample("shaders/gtao/upsample") {}
 
 GLGTAOPass::~GLGTAOPass() = default;
 
@@ -81,16 +81,19 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
                 Groups::covering(static_cast<uint32_t>(m_depthMips.mipWidth(mip)),  Groups::IMAGE),
                 Groups::covering(static_cast<uint32_t>(m_depthMips.mipHeight(mip)), Groups::IMAGE)
             );
-            VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+            Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
         }
     }
 
     ctx.gl.setDepthTest(false);
     ctx.screenTri.bind();
 
-    // Into the raw target while sampling the chain + G-buffer; the denoise
-    // below writes the frame's.
-    m_raw.resize(view.sceneWidth(), view.sceneHeight());
+    // At half size, into the raw target while sampling the chain and G-buffer; the upsample below
+    // writes the frame's.
+    const uint32_t halfWidth  = (view.sceneWidth() + 1) / 2;
+    const uint32_t halfHeight = (view.sceneHeight() + 1) / 2;
+    m_raw.resize(halfWidth, halfHeight);
+    m_blurred.resize(halfWidth, halfHeight);
     m_raw.bind(ctx.gl);
 
     m_shader.bind();
@@ -105,21 +108,32 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
         ctx.screenTri.emit();
     }
 
-    // The raw result averaged on its own surface and shaped into the frame's AO target. The
-    // depth chain is still bound; its level 0 is the full-size depth.
+    // The raw result averaged on its own surface and shaped, then widened into the frame's AO
+    // target. The depth chain is still bound; its level 0 is the scene's depth.
+    namespace Groups = GLBindings::ComputeGroups;
     {
         PROFILE_GPU_SCOPE_NAMED("GTAO/Denoise");
         m_denoise.bind();
         m_denoise.setUniform1f("u_intensity", view.settings.gtaoIntensity);
         m_denoise.setUniform1f("u_power",     view.settings.gtaoPower);
         m_raw.bindTexture(GLTarget::Attachment::Color, Slots::AO);
-        ctx.ao.bindImage(GLTarget::Attachment::Color, 0, GL_WRITE_ONLY);
-        namespace Groups = GLBindings::ComputeGroups;
+        m_blurred.bindImage(GLTarget::Attachment::Color, 0, GL_WRITE_ONLY);
         m_denoise.dispatch(
+            Groups::covering(halfWidth,  Groups::IMAGE),
+            Groups::covering(halfHeight, Groups::IMAGE)
+        );
+        Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+    }
+    {
+        PROFILE_GPU_SCOPE_NAMED("GTAO/Upsample");
+        m_upsample.bind();
+        m_blurred.bindTexture(GLTarget::Attachment::Color, Slots::AO);
+        ctx.ao.bindImage(GLTarget::Attachment::Color, 0, GL_WRITE_ONLY);
+        m_upsample.dispatch(
             Groups::covering(view.sceneWidth(),  Groups::IMAGE),
             Groups::covering(view.sceneHeight(), Groups::IMAGE)
         );
-        VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+        Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     }
 
     ctx.aoReady = true;

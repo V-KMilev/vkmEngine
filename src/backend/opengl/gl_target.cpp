@@ -10,7 +10,6 @@
 #include "logger.h"
 
 #include "gl_context.h"
-#include "gl_error_handle.h"
 
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
@@ -29,8 +28,8 @@ struct AttachmentSpec {
 
 namespace Out = GLBindings::FragmentOutputs;
 
-// Indexed by GLTarget::Attachment. HDR colour filters linearly; depth and the data images are
-// read texel for texel. The colour format here is only the default GLTarget's constructor takes.
+// Indexed by GLTarget::Attachment. HDR color filters linearly; depth and the data images are
+// read texel for texel. The color format here is only the default GLTarget's constructor takes.
 constexpr AttachmentSpec SPECS[] = {
     {GL_COLOR_ATTACHMENT0 + Out::COLOR,          GL_RGBA16F,           true,  "target_color"},
     {GL_DEPTH_ATTACHMENT,                        GLDepth::EYE_FORMAT,  false, "target_depth"},
@@ -54,73 +53,6 @@ GLenum pointOf(GLTarget::Attachment attachment) {
 
 } // namespace
 
-/**
- * @brief One attachment's immutable storage.
- *
- * GL_TEXTURE_2D_MULTISAMPLE when multisampled: sampleable, so the resolve reads each sample
- * rather than a blit averaging them.
- */
-class GLTarget::Texture {
-    public:
-        Texture(const AttachmentSpec& spec, uint32_t width, uint32_t height, uint32_t samples)
-            : m_target(samples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D)
-            , m_format(spec.format) {
-            VKM_GL_CHECK(glCreateTextures(m_target, 1, &m_id));
-            const GLsizei w = static_cast<GLsizei>(width);
-            const GLsizei h = static_cast<GLsizei>(height);
-            if (samples > 1) {
-                // Fixed sample locations: every attachment of one framebuffer
-                // must agree on them, and the resolve reads sample i of each as
-                // the same point of the pixel.
-                VKM_GL_CHECK(
-                    glTextureStorage2DMultisample(
-                        m_id,
-                        static_cast<GLsizei>(samples),
-                        spec.format,
-                        w,
-                        h,
-                        GL_TRUE
-                    )
-                );
-            } else {
-                VKM_GL_CHECK(glTextureStorage2D(m_id, 1, spec.format, w, h));
-                const GLint filter = spec.linear ? GL_LINEAR : GL_NEAREST;
-                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_MIN_FILTER, filter));
-                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_MAG_FILTER, filter));
-                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-            }
-            VKM_GL_CHECK(glObjectLabel(GL_TEXTURE, m_id, -1, spec.name));
-        }
-
-        ~Texture() {
-            if (m_id != 0) VKM_GL_CHECK(glDeleteTextures(1, &m_id));
-        }
-
-        Texture(const Texture& other) = delete;
-        Texture& operator=(const Texture& other) = delete;
-
-        Texture(Texture && other) = delete;
-        Texture& operator=(Texture && other) = delete;
-
-    public:
-        void bind(uint32_t slot) const {
-            VKM_GL_CHECK(glBindTextureUnit(slot, m_id));
-        }
-
-        void bindImage(uint32_t unit, GLenum access) const {
-            VKM_GL_CHECK(glBindImageTexture(unit, m_id, 0, GL_FALSE, 0, access, m_format));
-        }
-
-        GLenum target() const { return m_target; }
-        GLuint id() const     { return m_id; }
-
-    private:
-        GLenum m_target;
-        GLenum m_format;
-        GLuint m_id = 0;
-};
-
 GLTarget::GLTarget(Layout layout, GLenum colorFormat) : m_layout(layout), m_colorFormat(colorFormat) {}
 GLTarget::~GLTarget() = default;
 
@@ -135,7 +67,7 @@ bool GLTarget::carries(Attachment attachment) const {
     return false;
 }
 
-const GLTarget::Texture* GLTarget::texture(Attachment attachment) const {
+const Vkm::GL::Texture2D* GLTarget::texture(Attachment attachment) const {
     return m_textures[static_cast<size_t>(attachment)].get();
 }
 
@@ -143,7 +75,7 @@ void GLTarget::release() {
     // Deleting a texture detaches it only from the bound framebuffer; attached to another, its
     // storage lives on. So attachments are let go explicitly, keeping the FBO for the next
     // resize. A target holding nothing returns at once, so this is cheap every frame.
-    const auto held = [](const std::unique_ptr<Texture>& texture) { return texture != nullptr; };
+    const auto held = [](const std::unique_ptr<Vkm::GL::Texture2D>& texture) { return texture != nullptr; };
     if (std::none_of(m_textures.begin(), m_textures.end(), held)) return;
 
     for (size_t i = 0; i < ATTACHMENT_COUNT; ++i) detach(static_cast<Attachment>(i));
@@ -152,26 +84,28 @@ void GLTarget::release() {
 }
 
 void GLTarget::detach(Attachment attachment) {
-    std::unique_ptr<Texture>& slot = m_textures[static_cast<size_t>(attachment)];
+    std::unique_ptr<Vkm::GL::Texture2D>& slot = m_textures[static_cast<size_t>(attachment)];
     if (!slot) return;
     m_fbo.attachTexture(pointOf(attachment), 0);
     slot.reset();
 }
 
-void GLTarget::resize(uint32_t width, uint32_t height, uint32_t samples, bool reflectInputs) {
-    if (reflectInputs != m_reflectInputs) {
-        m_reflectInputs = reflectInputs;
-        m_width         = 0;  // rebuild, gaining or dropping the two images
-    }
+void GLTarget::resize(
+    const Vkm::GL::Context& gl,
+    uint32_t width,
+    uint32_t height,
+    uint32_t samples,
+    bool reflectInputs
+) {
+    const bool inputsChange = reflectInputs != m_reflectInputs;
+    m_reflectInputs = reflectInputs;
     if (samples != m_requestedSamples) {
         m_requestedSamples = samples;
 
         // A multisample texture has its own caps, per kind of format, below
         // GL_MAX_SAMPLES on some drivers. Asked only when the request changes.
-        GLint colorCap = 1;
-        GLint depthCap = 1;
-        VKM_GL_CHECK(glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &colorCap));
-        VKM_GL_CHECK(glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &depthCap));
+        const int32_t colorCap = gl.integer(GL_MAX_COLOR_TEXTURE_SAMPLES);
+        const int32_t depthCap = gl.integer(GL_MAX_DEPTH_TEXTURE_SAMPLES);
         const uint32_t cap = static_cast<uint32_t>(std::max(std::min(colorCap, depthCap), 1));
 
         const uint32_t clamped = std::clamp(samples, 1u, cap);
@@ -180,7 +114,18 @@ void GLTarget::resize(uint32_t width, uint32_t height, uint32_t samples, bool re
             m_width   = 0;  // force a rebuild below, even at unchanged dimensions
         }
     }
+    const bool rebuild = width != m_width || height != m_height;
     resize(width, height);
+    if (!inputsChange || rebuild || m_width == 0) return;
+
+    // The two images alone gained or dropped: the rest are as they were.
+    for (const Attachment input : {Attachment::ReflectWeight, Attachment::ReflectEnv}) {
+        detach(input);
+        if (carries(input)) allocate(input);
+    }
+    if (!m_fbo.isComplete()) {
+        LOG_ERROR("GLTarget framebuffer incomplete (%ux%u, %u samples)", width, height, m_samples);
+    }
 }
 
 void GLTarget::resize(uint32_t width, uint32_t height) {
@@ -192,19 +137,30 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
     for (size_t i = 0; i < ATTACHMENT_COUNT; ++i) {
         const Attachment attachment = static_cast<Attachment>(i);
         detach(attachment);
-        if (!carries(attachment)) continue;
-
-        AttachmentSpec spec = specOf(attachment);
-        if (attachment == Attachment::Color) spec.format = m_colorFormat;
-
-        std::unique_ptr<Texture>& slot = m_textures[i];
-        slot = std::make_unique<Texture>(spec, width, height, m_samples);
-        m_fbo.attachTexture(pointOf(attachment), slot->id());
+        if (carries(attachment)) allocate(attachment);
     }
 
     if (!m_fbo.isComplete()) {
         LOG_ERROR("GLTarget framebuffer incomplete (%ux%u, %u samples)", width, height, m_samples);
     }
+}
+
+void GLTarget::allocate(Attachment attachment) {
+    AttachmentSpec spec = specOf(attachment);
+    if (attachment == Attachment::Color) spec.format = m_colorFormat;
+
+    // Multisampled, it is read a sample at a time, so the resolve weighs each rather than a
+    // blit averaging them; fixed sample locations, as every attachment of one framebuffer
+    // must agree on them.
+    using MinFilter = Vkm::GL::TextureMinFilter;
+    using MagFilter = Vkm::GL::TextureMagFilter;
+    const MinFilter min = spec.linear ? MinFilter::Linear : MinFilter::Nearest;
+    const MagFilter mag = spec.linear ? MagFilter::Linear : MagFilter::Nearest;
+    auto params = Vkm::GL::renderTargetParams(m_width, m_height, spec.format, GL_RGBA, min, mag);
+    params.samples = m_samples;
+    std::unique_ptr<Vkm::GL::Texture2D>& slot = m_textures[static_cast<size_t>(attachment)];
+    slot = std::make_unique<Vkm::GL::Texture2D>(spec.name, params);
+    m_fbo.attachTexture(pointOf(attachment), slot->getID());
 }
 
 void GLTarget::bind(const Vkm::GL::Context& gl) {
@@ -217,8 +173,8 @@ void GLTarget::bindGBufferPass(const Vkm::GL::Context& gl) {
     bindDrawing(gl, buffers, 2);
 }
 
-void GLTarget::bindForwardPass(const Vkm::GL::Context& gl) {
-    if (hasReflectInputs()) {
+void GLTarget::bindForwardPass(const Vkm::GL::Context& gl, bool reflecting) {
+    if (reflecting && hasReflectInputs()) {
         // Indexed by fragment output location, the G-buffer's left untouched.
         const GLenum buffers[4] = {
             pointOf(Attachment::Color),
@@ -259,25 +215,20 @@ void GLTarget::bindDrawing(const Vkm::GL::Context& gl, const GLenum* buffers, in
 
 void GLTarget::bindDrawBuffers(const GLenum* buffers, int count) {
     m_fbo.bind();
-    const bool same = count == m_drawBufferCount
-        && std::equal(buffers, buffers + count, m_drawBuffers.begin());
-    if (same) return;
     m_fbo.setDrawBuffers(buffers, count);
-    std::copy(buffers, buffers + count, m_drawBuffers.begin());
-    m_drawBufferCount = count;
 }
 
 void GLTarget::bindTexture(Attachment attachment, uint32_t slot) const {
-    if (const Texture* tex = texture(attachment)) tex->bind(slot);
+    if (const Vkm::GL::Texture2D* tex = texture(attachment)) tex->bindSlot(slot);
 }
 
 void GLTarget::bindImage(Attachment attachment, uint32_t unit, GLenum access) const {
-    const Texture* tex = texture(attachment);
-    if (tex && m_samples <= 1) tex->bindImage(unit, access);
+    const Vkm::GL::Texture2D* tex = texture(attachment);
+    if (tex && !tex->multisampled()) tex->bindImage(unit, access);
 }
 
 void GLTarget::blitColorFrom(const GLTarget& src) {
-    // Colour 0 alone, so the blit never lands in the G-buffer.
+    // Color 0 alone, so the blit never lands in the G-buffer.
     const GLenum buffers[1] = { pointOf(Attachment::Color) };
     bindDrawBuffers(buffers, 1);
     Vkm::GL::FrameBuffer::blit(

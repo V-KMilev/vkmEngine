@@ -37,24 +37,23 @@ bool isUnitScale(const glm::vec3& scale) {
     return glm::all(glm::epsilonEqual(scale, glm::vec3(1.0f), glm::epsilon<float>()));
 }
 
-/// Bits for a prefab path's length. Enough for NET_PREFAB_PATH_MAX.
+/// Bits for a project path's length. Enough for NET_PROJECT_PATH_MAX.
 constexpr uint32_t PATH_BITS = 8;
 
-static_assert(NET_PREFAB_PATH_MAX < (1u << PATH_BITS), "a path has to be able to say how long it is");
+static_assert(NET_PROJECT_PATH_MAX < (1u << PATH_BITS), "a path has to be able to say how long it is");
 static_assert(PATH_BITS <= 8, "NET_SPAWN_MAX_BYTES counts the length as one byte");
 
-/// Bits for how many slots a spawn names, and for one slot.
-constexpr uint32_t SLOT_COUNT_BITS = 6;
-constexpr uint32_t SLOT_BITS       = 23;
-
-static_assert(NET_SPAWN_MAX_SLOTS < (1u << SLOT_COUNT_BITS), "a spawn has to be able to say how many slots");
 static_assert(
-    SlotAllocator::MAX_CLAIMED_INDEX < (1u << SLOT_BITS),
+    NET_SPAWN_MAX_SLOTS < (1u << NET_SPAWN_SLOT_COUNT_BITS),
+    "a spawn has to be able to say how many slots"
+);
+static_assert(
+    SlotAllocator::MAX_CLAIMED_INDEX < (1u << NET_SPAWN_SLOT_BITS),
     "a slot has to fit what an allocator claims"
 );
 
-/// What a prefab file is named with.
-constexpr std::string_view PREFAB_EXTENSION = ".json";
+/// What a prefab or scene file is named with.
+constexpr std::string_view JSON_EXTENSION = ".json";
 
 /**
  * @brief Whether a path component names a Windows device rather than a file.
@@ -76,19 +75,12 @@ bool isDeviceName(std::string_view component) {
         && lower[3] >= '0' && lower[3] <= '9';
 }
 
-/**
- * @brief Whether @p path can only name a prefab file inside the project.
- *
- * Judged on characters, not std::filesystem, so platforms agree: Linux would
- * read \\host\share as relative.
- *
- * @param path The path a NetSpawn names.
- * @return True when it is relative, ends in .json and can name nothing outside.
- */
-bool isProjectPrefabPath(std::string_view path) {
-    if (path.empty() || path.size() > NET_PREFAB_PATH_MAX) return false;
-    if (path.size() <= PREFAB_EXTENSION.size()
-        || path.substr(path.size() - PREFAB_EXTENSION.size()) != PREFAB_EXTENSION) {
+} // namespace
+
+bool isProjectJsonPath(std::string_view path) {
+    if (path.empty() || path.size() > NET_PROJECT_PATH_MAX) return false;
+    if (path.size() <= JSON_EXTENSION.size()
+        || path.substr(path.size() - JSON_EXTENSION.size()) != JSON_EXTENSION) {
         return false;
     }
     // A root, a drive, a share or a stream; and a character no file name holds.
@@ -107,7 +99,18 @@ bool isProjectPrefabPath(std::string_view path) {
     return true;
 }
 
-} // namespace
+void writeProjectPath(std::string_view path, BitWriter& out) {
+    const std::string_view said = isProjectJsonPath(path) ? path : std::string_view{};
+    out.bits(static_cast<uint32_t>(said.size()), PATH_BITS);
+    for (const char c : said) out.bits(static_cast<uint8_t>(c), 8);
+}
+
+std::string readProjectPath(BitReader& in) {
+    // The width bounds the cost of reading whatever a sender claims.
+    std::string path(in.bits(PATH_BITS), '\0');
+    for (char& c : path) c = static_cast<char>(in.bits(8));
+    return path;
+}
 
 glm::vec3 netScale(const glm::vec3& scale) {
     if (!std::isfinite(scale.x) || !std::isfinite(scale.y) || !std::isfinite(scale.z)) {
@@ -192,11 +195,13 @@ void netDecode(Rigidbody& value, BitReader& in) {
 
 void netEncode(const CharacterController& value, BitWriter& out) {
     out.boolean(value.grounded);
+    out.boolean(value.jumping);
     out.boolean(value.crouched);
 }
 
 void netDecode(CharacterController& value, BitReader& in) {
     value.grounded = in.boolean();
+    value.jumping  = in.boolean();
     value.crouched = in.boolean();
 }
 
@@ -209,7 +214,7 @@ void netDecode(Ragdoll& value, BitReader& in) {
 }
 
 bool isSayable(const NetSpawn& spawn) {
-    if (!isProjectPrefabPath(spawn.prefab)) return false;
+    if (!isProjectJsonPath(spawn.prefab)) return false;
 
     const Transform& at = spawn.at;
     const float values[10] = {
@@ -242,12 +247,9 @@ bool isSayable(const NetSpawn& spawn) {
 }
 
 void netEncode(const NetSpawn& value, BitWriter& out) {
-    // Unsayable goes with no path: a wrapped length would misalign every entry after.
+    // Unsayable goes with no path, and no slots.
     const bool sayable = isSayable(value);
-    out.bits(sayable ? static_cast<uint32_t>(value.prefab.size()) : 0u, PATH_BITS);
-    if (sayable) {
-        for (const char c : value.prefab) out.bits(static_cast<uint8_t>(c), 8);
-    }
+    writeProjectPath(sayable ? std::string_view(value.prefab) : std::string_view{}, out);
 
     out.f32(value.at.position.x);
     out.f32(value.at.position.y);
@@ -260,29 +262,27 @@ void netEncode(const NetSpawn& value, BitWriter& out) {
     out.f32(value.at.scale.y);
     out.f32(value.at.scale.z);
 
-    out.bits(sayable ? static_cast<uint32_t>(value.slots.size()) : 0u, SLOT_COUNT_BITS);
+    out.bits(sayable ? static_cast<uint32_t>(value.slots.size()) : 0u, NET_SPAWN_SLOT_COUNT_BITS);
     if (!sayable) return;
     for (const auto& [uid, slot] : value.slots) {
         out.bits(uid, 32);
-        out.bits(slot, SLOT_BITS);
+        out.bits(slot, NET_SPAWN_SLOT_BITS);
     }
 }
 
 void netDecode(NetSpawn& value, BitReader& in) {
-    // Every byte is read, refused or not, to stay in step; the width bounds the cost.
-    const uint32_t length = in.bits(PATH_BITS);
-    std::string prefab(length, '\0');
-    for (char& c : prefab) c = static_cast<char>(in.bits(8));
+    // Every field is read, refused or not, to stay in step.
+    std::string prefab = readProjectPath(in);
 
     // One read per statement: operand evaluation order is unspecified.
     float values[10];
     for (float& read : values) read = in.f32();
 
     std::map<uint32_t, uint32_t> slots;
-    const uint32_t count = in.bits(SLOT_COUNT_BITS);
+    const uint32_t count = in.bits(NET_SPAWN_SLOT_COUNT_BITS);
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t uid = in.bits(32);
-        slots[uid] = in.bits(SLOT_BITS);
+        slots[uid] = in.bits(NET_SPAWN_SLOT_BITS);
     }
 
     NetSpawn said;

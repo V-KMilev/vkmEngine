@@ -37,7 +37,8 @@ struct CaptureLighting {
  * too, since the lowest-slot caster is the shadowed sun; no other light casts in a capture, and a
  * directional has no position, so a sun parented to a mover lights nothing anew. shadowDistance and
  * shadowPriority are left out, as a capture fits and keeps its own map; a flicker's wave, as a
- * capture takes a wavering light steady; and a transient light whole, as a capture takes none.
+ * capture takes a wavering light steady; and a light not in captures (LightData::inCaptures)
+ * whole, as a capture gives it no light.
  *
  * @param lights The frame's lights.
  * @param region When given, only the directionals and the lights whose radius reaches it: a lamp

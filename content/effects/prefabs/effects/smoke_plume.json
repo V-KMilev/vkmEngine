@@ -5,6 +5,7 @@
     "meshes": [],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/effects/smoke.png"
@@ -23,40 +24,40 @@
         "NetLocal": {},
         "ParticleEmitter": {
           "acceleration": [
-            0.3499999940395355,
-            0.550000011920929,
-            0.10000000149011612
+            0.35,
+            0.55,
+            0.1
           ],
-          "angle": 0.4363323152065277,
+          "angle": 0.43633232,
           "blend": "Alpha",
-          "bounce": 0.30000001192092896,
+          "bounce": 0.3,
           "burst": 0,
           "collide": false,
           "color": {
             "keys": [
               {
                 "color": [
-                  0.07000000029802322,
-                  0.06719999760389328,
-                  0.06440000236034393,
-                  0.550000011920929
+                  0.07,
+                  0.0672,
+                  0.0644,
+                  0.55
                 ],
                 "time": 0.0
               },
               {
                 "color": [
-                  0.08399999886751175,
-                  0.08399999886751175,
-                  0.08399999886751175,
-                  0.33000001311302185
+                  0.084,
+                  0.084,
+                  0.084,
+                  0.33
                 ],
-                "time": 0.44999998807907104
+                "time": 0.45
               },
               {
                 "color": [
-                  0.09799999743700027,
-                  0.09799999743700027,
-                  0.09799999743700027,
+                  0.098,
+                  0.098,
+                  0.098,
                   0.0
                 ],
                 "time": 1.0
@@ -64,8 +65,8 @@
             ]
           },
           "destroyWhenSpent": false,
-          "distortion": 0.029999999329447746,
-          "drag": 0.30000001192092896,
+          "distortion": 0.03,
+          "drag": 0.3,
           "emission": 0.0,
           "emitting": true,
           "fromSurface": false,
@@ -83,20 +84,20 @@
           },
           "lightColor": [
             1.0,
-            0.6000000238418579,
-            0.30000001192092896
+            0.6,
+            0.3
           ],
           "lightIntensity": 0.0,
           "lightRadius": 8.0,
           "maxParticles": 40,
           "normalMap": "assets/effects/smoke_normal.png",
-          "radius": 0.17499999701976776,
+          "radius": 0.175,
           "randomFrame": false,
           "rate": 1.75,
           "ratePerMetre": 0.0,
           "render": "Billboard",
           "rotation": {
-            "max": 6.283199787139893,
+            "max": 6.2832,
             "min": 0.0
           },
           "seenBy": "All",
@@ -106,7 +107,7 @@
           "sheetFps": 0.0,
           "sheetRows": 8,
           "size": {
-            "max": 0.8500000238418579,
+            "max": 0.85,
             "min": 0.5
           },
           "sizeOverLife": {
@@ -117,22 +118,22 @@
               },
               {
                 "time": 1.0,
-                "value": 3.4000000953674316
+                "value": 3.4
               }
             ]
           },
           "softness": 1.0,
           "speed": {
-            "max": 0.8999999761581421,
+            "max": 0.9,
             "min": 0.5
           },
           "spin": {
-            "max": 0.30000001192092896,
-            "min": -0.30000001192092896
+            "max": 0.3,
+            "min": -0.3
           },
-          "stretch": 0.05000000074505806,
+          "stretch": 0.05,
           "texture": "assets/effects/smoke.png",
-          "trailLength": 0.30000001192092896,
+          "trailLength": 0.3,
           "turbulence": 0.25,
           "turbulenceScale": 2.5
         },

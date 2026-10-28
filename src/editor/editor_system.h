@@ -21,13 +21,14 @@
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
 #include "overlays/terrain_tool.h"
+#include "panels/console_panel.h"
 #include "panels/terrain_editor_panel.h"
 #include "panels/hierarchy_panel.h"
 #include "panels/inspector_panel.h"
 #include "panels/animation_panel.h"
 #include "panels/asset_browser_panel.h"
 #include "panels/preferences_panel.h"
-#include "panels/material_editor_panel.h"
+#include "asset_editors/asset_editors.h"
 #include "panels/project_settings_panel.h"
 #include "panels/start_screen.h"
 #include "panels/render_settings_panel.h"
@@ -38,6 +39,7 @@ namespace Vkm::Engine {
 
 struct EditorContext;
 class AudioSystem;
+class LoadingSystem;
 class BehaviorSystem;
 class CameraControllerSystem;
 class EditorRenderHooks;
@@ -63,6 +65,7 @@ class EditorSystem : public System {
             RenderSystem& renderSystem,
             RenderSettings& render,
             AudioSystem& audioSystem,
+            LoadingSystem& loadingSystem,
             BehaviorSystem& behaviorSystem,
             ScriptModule& scriptModule
         );
@@ -262,6 +265,7 @@ class EditorSystem : public System {
         EditorRenderHooks&      m_hooks;
         RenderSettings&         m_render;
         AudioSystem&            m_audioSystem;
+        LoadingSystem&          m_loadingSystem;
         BehaviorSystem&         m_behaviorSystem;
         ScriptModule&           m_scriptModule;
 
@@ -312,6 +316,7 @@ class EditorSystem : public System {
         HierarchyPanel       m_hierarchy;
         InspectorPanel       m_inspector;
         AssetBrowserPanel    m_assetBrowser;
+        ConsolePanel         m_console;
         AnimationPanel       m_animation;
         ViewportOverlay      m_viewportOverlay;
         GizmoOverlay         m_gizmoOverlay;
@@ -319,8 +324,8 @@ class EditorSystem : public System {
         ViewportToolbar      m_viewportToolbar;
         PlaybackBar          m_playbar;
         PreferencesPanel     m_preferences;
-        MaterialEditorPanel  m_materialEditor;
         TerrainEditorPanel   m_terrainEditor;
+        AssetEditors         m_assetEditors;  ///< A window for each asset open in its editor.
         RenderSettingsPanel  m_renderSettings;
         ProjectSettingsPanel m_projectSettings;
         StartScreen          m_startScreen;   ///< Drawn instead of the workspace when there is no project.

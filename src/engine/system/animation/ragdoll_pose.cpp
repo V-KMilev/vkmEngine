@@ -18,11 +18,18 @@ thread_local std::vector<const RagdollBodyPose*> t_pose;
 } // namespace
 
 void gatherRagdollBodies(const Scene& scene, const Ragdoll& ragdoll, std::vector<RagdollBodyPose>& out) {
+    // Live, the bodies are read as they lay when the tick pinned the root (Ragdoll::pinnedWorld): a
+    // move of the character since does not carry them.
+    glm::mat4 unmoved(1.0f);
+    if (ragdoll.active && ragdoll.pinned && scene.has<Transform>(ragdoll.root)) {
+        const glm::mat4 rootNow = HierarchyOperations::computeWorldMatrix(scene, ragdoll.root);
+        unmoved = ragdoll.pinnedWorld * glm::inverse(rootNow);
+    }
     for (const RagdollBone& bone : ragdoll.bones) {
         RagdollBodyPose& pose = out.emplace_back();
         // has() is total: it answers no for a destroyed body too.
         if (!scene.has<Transform>(bone.body)) continue;
-        pose.world     = HierarchyOperations::computeWorldMatrix(scene, bone.body);
+        pose.world     = unmoved * HierarchyOperations::computeWorldMatrix(scene, bone.body);
         pose.simulated = true;
     }
 }

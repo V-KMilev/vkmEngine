@@ -4,13 +4,16 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <GL/glew.h>
@@ -28,11 +31,16 @@
 #include "gl_vertex_buffer_layout.h"
 #include "gl_index_buffer.h"
 #include "gl_shader_storage_buffer.h"
+#include "gl_readback_buffer.h"
+#include "gl_frame_buffer.h"
 #include "gl_texture.h"
+#include "gl_texture_2d_array.h"
 #include "gl_texture_3d.h"
+#include "gl_texture_cube_array.h"
 #include "gl_shader.h"
 #include "gl_compute_shader.h"
 #include "gl_shader_preprocess.h"
+#include "gl_shader_reload.h"
 
 #include "gl_context.h"
 #include "gl_view.h"
@@ -59,11 +67,13 @@
 #include "asset/gl_material.h"
 #include "storage/gl_cluster_grid.h"
 #include "storage/gl_probe_manager.h"
+#include "convention/gl_format_conversion.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/asset/font_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/resource_manager.h"
+#include "system/render/data/debug_line_data.h"
 #include "system/render/data/particle_data.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/exposure.h"
@@ -108,6 +118,217 @@ void testTheContextItself(const Vkm::Test::GLContext& gl) {
     glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &mask);
     check("and it is a core profile context", (mask & GL_CONTEXT_CORE_PROFILE_BIT) != 0);
     check("  with no GL error behind either query", noGlError());
+}
+
+// One draw buffer's mask set apart leaves the context's whole-mask cache unable to trust itself:
+// the next whole mask is applied though it matches what was last set.
+void testAColorMaskSetPerBufferIsPutBackWhole() {
+    std::printf("A color mask set for one draw buffer:\n");
+
+    Vkm::GL::Context gl;
+    gl.setColorMask(true, true, true, true);
+    gl.setColorMask(0, true, true, true, false);
+    GLboolean apart[4] = {};
+    glGetBooleani_v(GL_COLOR_WRITEMASK, 0, apart);
+    check("masks that buffer's channel", apart[3] == GL_FALSE);
+
+    gl.setColorMask(true, true, true, true);
+    GLboolean whole[4] = {};
+    glGetBooleani_v(GL_COLOR_WRITEMASK, 0, whole);
+    check("  and the whole mask set after puts it back", whole[3] == GL_TRUE);
+    check("with no GL error behind it", noGlError());
+}
+
+// The default state turns off all the context tracks, the rarer switches too.
+void testTheDefaultStateTurnsEverySwitchOff() {
+    std::printf("The context's default state:\n");
+
+    Vkm::GL::Context gl;
+    gl.setAlphaToCoverage(true);
+    gl.setPolygonOffset(GL_LINE, true, 1.0f, 1.0f);
+    gl.setDepthClamp(true);
+    gl.setClipDistance(2, true);
+    check(
+        "each switch turns on",
+        glIsEnabled(GL_SAMPLE_ALPHA_TO_COVERAGE) && glIsEnabled(GL_POLYGON_OFFSET_LINE)
+            && glIsEnabled(GL_DEPTH_CLAMP) && glIsEnabled(GL_CLIP_DISTANCE2)
+    );
+    gl.setDefaultState();
+    check(
+        "  and the default state turns each off",
+        !glIsEnabled(GL_SAMPLE_ALPHA_TO_COVERAGE) && !glIsEnabled(GL_POLYGON_OFFSET_LINE)
+            && !glIsEnabled(GL_DEPTH_CLAMP) && !glIsEnabled(GL_CLIP_DISTANCE2)
+    );
+    check("with no GL error behind it", noGlError());
+}
+
+// A framebuffer clears its own attachments, whatever is bound.
+void testAFramebufferClearsWithoutBeingBound() {
+    std::printf("A framebuffer cleared by name:\n");
+
+    Vkm::GL::Texture2D color("test:clear_color", Vkm::GL::renderTargetParams(2, 2, GL_RGBA32F, GL_RGBA));
+    Vkm::GL::Texture2D depth(
+        "test:clear_depth",
+        Vkm::GL::renderTargetParams(2, 2, GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT)
+    );
+    Vkm::GL::FrameBuffer target;
+    target.attachTexture(GL_COLOR_ATTACHMENT0, color.getID());
+    target.attachTexture(GL_DEPTH_ATTACHMENT, depth.getID());
+    target.setDrawBuffer(GL_COLOR_ATTACHMENT0);
+    Vkm::GL::FrameBuffer::bindDefault();
+
+    Vkm::GL::Context gl;
+    gl.setDepthWrite(true);
+    const float rgba[4] = {0.25f, 0.5f, 0.75f, 1.0f};
+    target.clearColor(0, rgba);
+    target.clearDepth(0.375f);
+
+    float seen[16] = {};
+    glGetTextureImage(color.getID(), 0, GL_RGBA, GL_FLOAT, sizeof(seen), seen);
+    float cleared[4] = {};
+    glGetTextureImage(depth.getID(), 0, GL_DEPTH_COMPONENT, GL_FLOAT, sizeof(cleared), cleared);
+    check("its color takes the value", seen[0] == 0.25f && seen[14] == 0.75f);
+    check("  and its depth", cleared[0] == 0.375f && cleared[3] == 0.375f);
+    check("with no GL error behind it", noGlError());
+}
+
+// A framebuffer's draw buffers are the set last asked for, whatever came before it.
+void testAFramebufferKeepsTheDrawBuffersAsked() {
+    std::printf("A framebuffer's draw buffers:\n");
+
+    Vkm::GL::FrameBuffer target;
+    const auto drawn = [&](int index) {
+        GLint buffer = 0;
+        target.bind();
+        glGetIntegerv(GL_DRAW_BUFFER0 + index, &buffer);
+        Vkm::GL::FrameBuffer::bindDefault();
+        return static_cast<GLenum>(buffer);
+    };
+    const GLenum two[2]   = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    const GLenum other[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT2};
+    target.setDrawBuffers(two, 2);
+    target.setDrawBuffers(other, 2);
+    check("a set as long as the last but different is issued", drawn(1) == GL_COLOR_ATTACHMENT2);
+    target.setDrawBuffers(two, 1);
+    check("  and a shorter one leaves the rest drawing nothing", drawn(1) == GL_NONE);
+    target.setDrawBuffer(GL_COLOR_ATTACHMENT1);
+    check("  and a single one replaces the set", drawn(0) == GL_COLOR_ATTACHMENT1);
+    target.setDrawBuffers(two, 1);
+    check("  and the set it replaced comes back", drawn(0) == GL_COLOR_ATTACHMENT0);
+    check("with no GL error behind it", noGlError());
+}
+
+// An array texture is labelled, cleared a level at a time, builds its levels from the first and
+// is sampled through the view it was asked for.
+void testAnArrayTextureClearsViewsAndBuildsItsLevels() {
+    std::printf("A 2D array texture:\n");
+
+    Vkm::GL::Texture2DArrayParams params;
+    params.width          = 4;
+    params.height         = 4;
+    params.layers         = 3;
+    params.levels         = 2;
+    params.internalFormat = GL_RGBA8;
+    params.minFilter      = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
+    params.viewFormat     = GL_SRGB8_ALPHA8;
+    const Vkm::GL::Texture2DArray array("test:array", params);
+
+    char label[32] = {};
+    glGetObjectLabel(GL_TEXTURE, array.getID(), sizeof(label), nullptr, label);
+    check("it carries its name to GL", std::string(label) == "test:array");
+
+    const uint8_t grey[4] = {128, 128, 128, 255};
+    array.clear(0, GL_RGBA, GL_UNSIGNED_BYTE, grey);
+    array.generateMipmaps();
+    std::vector<uint8_t> level1(2 * 2 * 3 * 4, 0);
+    const auto bytes = static_cast<GLsizei>(level1.size());
+    glGetTextureImage(array.getID(), 1, GL_RGBA, GL_UNSIGNED_BYTE, bytes, level1.data());
+    check(
+        "a level cleared on every layer builds the next",
+        level1[0] == 128 && level1[level1.size() - 4] == 128
+    );
+
+    constexpr uint32_t UNIT = 5;
+    array.bindSlot(UNIT);
+    GLint bound = 0;
+    glGetIntegeri_v(GL_TEXTURE_BINDING_2D_ARRAY, UNIT, &bound);
+    GLint sampled = 0;
+    glGetTextureLevelParameteriv(static_cast<GLuint>(bound), 0, GL_TEXTURE_INTERNAL_FORMAT, &sampled);
+    check("  sampled through its view, in the view's format", bound != 0 && sampled == GL_SRGB8_ALPHA8);
+    check("with no GL error behind it", noGlError());
+}
+
+// A 2D texture asked for samples is multisampled, with no levels to give.
+void testATextureAskedForSamplesIsMultisampled() {
+    std::printf("A 2D texture asked for samples:\n");
+
+    Vkm::GL::Texture2DParams params = Vkm::GL::renderTargetParams(8, 8, GL_RGBA16F, GL_RGBA);
+    params.samples = 4;
+    const Vkm::GL::Texture2D texture("test:multisampled", params);
+    GLint samples = 0;
+    glGetTextureLevelParameteriv(texture.getID(), 0, GL_TEXTURE_SAMPLES, &samples);
+    check("holds the samples asked", samples == 4 && texture.multisampled());
+    check("  in one level", texture.levels() == 1);
+    check("with no GL error behind it", noGlError());
+}
+
+// A cube copied over another in the array arrives at every level, the smallest included.
+void testACubeCopiesEveryLevel() {
+    std::printf("A cube copied within its array:\n");
+
+    Vkm::GL::TextureCubeArray cubes;
+    cubes.create(4, 3, 2, GL_RGBA16F);
+    const float lit[4] = {1.0f, 0.5f, 0.25f, 1.0f};
+    for (int mip = 0; mip < 3; ++mip) {
+        const GLsizei edge = std::max(4 >> mip, 1);
+        glClearTexSubImage(cubes.getID(), mip, 0, 0, 0, edge, edge, 6, GL_RGBA, GL_FLOAT, lit);
+    }
+    cubes.copyCube(0, 1);
+
+    float last[4] = {};
+    glGetTextureSubImage(cubes.getID(), 2, 0, 0, 11, 1, 1, 1, GL_RGBA, GL_FLOAT, sizeof(last), last);
+    check("the last face of the smallest level arrives", last[0] == 1.0f && last[2] == 0.25f);
+    check("with no GL error behind it", noGlError());
+}
+
+// A buffer copies from another, clears to a repeated value and reads back, all by name.
+void testABufferCopiesClearsAndReadsBack() {
+    std::printf("A buffer copied, cleared and read:\n");
+
+    const uint32_t first[4] = {1, 2, 3, 4};
+    const Vkm::GL::ShaderStorageBuffer source(first, sizeof(first));
+    Vkm::GL::ShaderStorageBuffer target(nullptr, sizeof(first));
+    const uint32_t seven = 7;
+    target.clear(GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &seven);
+    target.copyFrom(source, sizeof(uint32_t), 2 * sizeof(uint32_t), 2 * sizeof(uint32_t));
+    uint32_t seen[4] = {};
+    target.read(0, sizeof(seen), seen);
+    check("cleared, then two words copied in at an offset", seen[0] == 7 && seen[1] == 7);
+    check("  arriving where they were sent", seen[2] == 2 && seen[3] == 3);
+    check("with no GL error behind it", noGlError());
+}
+
+// A readback lands without the CPU waiting on it, and is said to have arrived once.
+void testAReadbackArrivesOnce() {
+    std::printf("A readback of a buffer:\n");
+
+    const uint32_t values[2] = {11, 22};
+    const Vkm::GL::ShaderStorageBuffer source(values, sizeof(values));
+    Vkm::GL::ReadbackBuffer readback(sizeof(values));
+    check("nothing is in flight before a capture", !readback.pending() && !readback.arrived());
+
+    readback.capture(source);
+    check("a capture is in flight", readback.pending());
+    Vkm::GL::finish();
+    check("  arrives once the GPU is done", readback.arrived());
+    const auto* landed = static_cast<const uint32_t*>(readback.data());
+    check("  holding what was copied", landed[0] == 11 && landed[1] == 22);
+    check("  and is not said to arrive again", !readback.arrived() && !readback.pending());
+
+    readback.capture(source);
+    readback.drop();
+    check("a capture dropped is no longer in flight", !readback.pending());
+    check("with no GL error behind it", noGlError());
 }
 
 void testAVertexBufferRoundTrips() {
@@ -178,6 +399,43 @@ void testAVertexArrayRefedWithANewBufferRewiresTheSameLocations() {
     );
     check("and so does location 1", boundAt1 == static_cast<GLint>(second.getID()));
     check("nothing was wired past the layout the caller described", enabledAt2 == GL_FALSE);
+    check("with no GL error behind it", noGlError());
+}
+
+// A layout's elements reach the shader as their type says: a float as a float, an unnormalized
+// integer kept an integer, a normalized byte as a fraction.
+void testAVertexArrayReadsEachLayoutElementAsItsKind() {
+    std::printf("A vertex array fed a layout of mixed types:\n");
+
+    const std::vector<uint8_t> data(64, 0);
+    Vkm::GL::VertexBufferLayout layout;
+    layout.push<float>(2);
+    layout.push<uint32_t>(1);
+    layout.push<uint8_t>(4);
+
+    Vkm::GL::VertexArray vao;
+    Vkm::GL::VertexBuffer buffer(data.data(), static_cast<uint32_t>(data.size()));
+    vao.addBuffer(buffer, layout);
+
+    vao.bind();
+    const auto attribute = [](GLuint index, GLenum property) {
+        GLint value = 0;
+        glGetVertexAttribiv(index, property, &value);
+        return value;
+    };
+    check(
+        "the float is neither integer nor normalized",
+        attribute(0, GL_VERTEX_ATTRIB_ARRAY_INTEGER) == GL_FALSE
+            && attribute(0, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED) == GL_FALSE
+    );
+    check("the uint stays an integer", attribute(1, GL_VERTEX_ATTRIB_ARRAY_INTEGER) == GL_TRUE);
+    check(
+        "the byte is normalized, not an integer",
+        attribute(2, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED) == GL_TRUE
+            && attribute(2, GL_VERTEX_ATTRIB_ARRAY_INTEGER) == GL_FALSE
+    );
+    check("  at the offset past the uint", attribute(2, GL_VERTEX_ATTRIB_RELATIVE_OFFSET) == 12);
+    vao.unbind();
     check("with no GL error behind it", noGlError());
 }
 
@@ -256,7 +514,7 @@ void testATextureThatArrivesLateTakesItsRealFormat() {
     glGetTextureLevelParameteriv(id, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
     glGetTextureParameteriv(id, GL_TEXTURE_WRAP_S, &wrap);
     check("it updates without error", noGlError());
-    check("with the colour space its pixels came in", format == GL_SRGB8_ALPHA8);
+    check("with the color space its pixels came in", format == GL_SRGB8_ALPHA8);
     check("and the wrap the texture asked for", wrap == GL_REPEAT);
 }
 
@@ -340,7 +598,7 @@ void testAOneChannelMapReadsAsGrey() {
     texels.params.format         = Vkm::Engine::TexturePixelFormat::R;
     texels.pixelData.assign(4 * 4, 200);
     Vkm::Engine::GLTexture r8(texels);
-    check("an R8 map reads its red in every colour channel, opaque", swizzleOf(r8) == grey);
+    check("an R8 map reads its red in every color channel, opaque", swizzleOf(r8) == grey);
 
     Vkm::Engine::TextureAsset blocks;
     blocks.params.width          = 4;
@@ -351,11 +609,11 @@ void testAOneChannelMapReadsAsGrey() {
     Vkm::Engine::GLTexture bc4(blocks);
     check("  and so does a BC4 one", swizzleOf(bc4) == grey);
 
-    Vkm::Engine::TextureAsset colour;
-    colour.params.width  = 2;
-    colour.params.height = 2;
-    colour.pixelData.assign(2 * 2 * 4, 90);
-    Vkm::Engine::GLTexture rgba(colour);
+    Vkm::Engine::TextureAsset color;
+    color.params.width  = 2;
+    color.params.height = 2;
+    color.pixelData.assign(2 * 2 * 4, 90);
+    Vkm::Engine::GLTexture rgba(color);
     check("  while a four-channel one reads its own", swizzleOf(rgba) == identity);
     check("  with no GL error", noGlError());
 }
@@ -411,7 +669,20 @@ void testASwizzleOutlivesNewStorage() {
     glGetTextureParameteriv(texture.getID(), GL_TEXTURE_SWIZZLE_RGBA, swizzle);
     const bool kept = std::equal(swizzle, swizzle + 4, grey);
     check("it grows without error", noGlError());
-    check("  and still reads its red in every colour channel", kept);
+    check("  and still reads its red in every color channel", kept);
+}
+
+// Whether a GL format holds sRGB is the engine's own rule, read through the conversion, for every
+// format the enum lists.
+void testEveryFormatsSrgbIsTheEnginesRule() {
+    std::printf("Which GL formats hold sRGB:\n");
+    bool agree = true;
+    for (int f = 0; f < static_cast<int>(Vkm::Engine::TextureInternalFormat::Count); ++f) {
+        const auto format = static_cast<Vkm::Engine::TextureInternalFormat>(f);
+        const bool gl = Vkm::Engine::isSrgbGLFormat(Vkm::Engine::toGLenum(format));
+        agree = agree && gl == Vkm::Engine::isSrgbFormat(format);
+    }
+    check("every format answers as the engine's rule does", agree);
 }
 
 // Text is drawn far smaller than its atlas, minified through only as many levels as the
@@ -582,6 +853,7 @@ void testAnAtlasLaysOutTilesOfEverySize() {
     const float leastUV = static_cast<float>(least) / (2.0f * static_cast<float>(full));
     check("  each its own size", atlas.tileUV(5).z == leastUV);
     check("more than the atlas holds is refused", !atlas.layout({full, full, full, full, full / 2}));
+    check("  and a size that is not a power of two", !atlas.layout({full, half + least}));
 
     constexpr uint64_t PICTURE = 9;
     atlas.layout(sizes);
@@ -593,6 +865,10 @@ void testAnAtlasLaysOutTilesOfEverySize() {
     moved[5] = half;
     atlas.layout(moved);
     check("  a tile that changes size forgets it", !atlas.tileHolds(5, PICTURE));
+
+    Vkm::Engine::GLShadowAtlas rounded;
+    rounded.init(gl, full - 24);
+    check("a resolution between powers of two takes the one below", rounded.tileResolution() == half);
     check("with no GL error behind any of it", noGlError());
 }
 
@@ -691,6 +967,14 @@ void testACaptureComparesTheLightsThatReachIt() {
     lights[1].position.x = 60.0f;
     lights[0].intensity = 4.0f;
     check("  nor does the sun, wherever it is", lightingDigest(lights, &here) != before);
+
+    // A lantern floating beside the capture, left out of captures, moves without dating it.
+    lights[0].intensity = 3.0f;
+    lights[1].position.x = 1.0f;
+    lights[1].inCaptures = false;
+    const uint64_t lanternOut = lightingDigest(lights, &here);
+    lights[1].position.x = 2.0f;
+    check("a light out of captures moving beside it leaves it", lightingDigest(lights, &here) == lanternOut);
 }
 
 // When more spots cast than the atlas holds, the nearest keep their shadows, and a raised
@@ -1063,9 +1347,11 @@ void testAPreviewDrawsItsMesh() {
     white.albedo = glm::vec4(1.0f);
     PreviewRequest request;
     request.key      = 1;
-    request.size     = 64;
-    request.mesh     = resources.add(generateCube(), "test:cube");
-    request.material = resources.add(std::move(white), "test:white");
+    request.width    = 64;
+    request.height   = 64;
+    const MeshHandle     cube  = resources.add(generateCube(), "test:cube");
+    const MaterialHandle plain = resources.add(std::move(white), "test:white");
+    request.draws    = {{cube, plain}};
 
     const GpuTextureId id = backend.editorHooks()->renderPreview(request, resources);
     check("it hands back a texture", id != 0);
@@ -1080,6 +1366,68 @@ void testAPreviewDrawsItsMesh() {
     };
     std::printf("      centre %d, corner %d\n", luma(32, 32), luma(1, 1));
     check("  with the lit mesh in front of the backdrop", luma(32, 32) > luma(1, 1) + 60);
+
+    // An asset editor's viewport: wider than tall, two meshes side by side, each in its own color.
+    MaterialAsset redAsset;
+    redAsset.albedo = glm::vec4(0.9f, 0.05f, 0.05f, 1.0f);
+    MaterialAsset blueAsset;
+    blueAsset.albedo = glm::vec4(0.05f, 0.05f, 0.9f, 1.0f);
+    const MaterialHandle red  = resources.add(std::move(redAsset), "test:red");
+    const MaterialHandle blue = resources.add(std::move(blueAsset), "test:blue");
+    PreviewRequest pair;
+    pair.key      = 2;
+    pair.width    = 128;
+    pair.height   = 48;
+    pair.yawDeg   = 0.0f;
+    pair.pitchDeg = 0.0f;
+    pair.draws    = {
+        {cube, red, glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f))},
+        {cube, blue, glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 0.0f, 0.0f))},
+    };
+    const GpuTextureId wide = backend.editorHooks()->renderPreview(pair, resources);
+    check("a viewport's preview hands back a texture", wide != 0);
+    std::vector<uint8_t> seen(128 * 48 * 4, 0);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(wide));
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, seen.data());
+    int width = 0;
+    int height = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+    check("  at its own size", width == 128 && height == 48);
+    const auto at = [&](int x, int y) { return &seen[static_cast<size_t>((y * 128 + x) * 4)]; };
+    // Framed on both from three radii back, a 40 degree field as tall as the picture: each cube's
+    // centre lands about 15 pixels either side of the middle.
+    const uint8_t* left  = at(64 - 15, 24);
+    const uint8_t* right = at(64 + 15, 24);
+    std::printf("      left %d %d %d, ", left[0], left[1], left[2]);
+    std::printf("right %d %d %d\n", right[0], right[1], right[2]);
+    check("  the first mesh on the left, in its color", left[0] > left[2] + 30);
+    check("  the second on the right, in its own", right[2] > right[0] + 30);
+
+    // A clip's viewport: a rigged mesh posed by its palette, not drawn in its bind pose.
+    MeshAsset rigged = generateCube();
+    rigged.skin.assign(rigged.vertices.size(), SkinVertex{{0, 0, 0, 0}, {255, 0, 0, 0}});
+    rigged.skinRadius = 1.0f;
+    const MeshHandle bone = resources.add(std::move(rigged), "test:rigged");
+    const auto posedAt = [&](uint64_t key, const glm::mat4& pose) {
+        PreviewRequest posed;
+        posed.key    = key;
+        posed.width  = 64;
+        posed.height = 64;
+        posed.draws  = {{bone, plain, glm::mat4(1.0f), {pose}}};
+        std::vector<uint8_t> image(64 * 64 * 4, 0);
+        const GpuTextureId drawn = backend.editorHooks()->renderPreview(posed, resources);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(drawn));
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+        return image;
+    };
+    const std::vector<uint8_t> rest  = posedAt(3, glm::mat4(1.0f));
+    const glm::mat4            aside = glm::translate(glm::mat4(1.0f), glm::vec3(0.6f, 0.0f, 0.0f));
+    const std::vector<uint8_t> moved = posedAt(4, aside);
+    size_t differing = 0;
+    for (size_t i = 0; i < rest.size(); i += 4) differing += rest[i] != moved[i] ? 1 : 0;
+    std::printf("      %zu of 4096 pixels moved with the bone\n", differing);
+    check("  and a rigged mesh is drawn as its bones pose it", differing > 200);
     check("with no GL error behind it", noGlError());
 }
 
@@ -1112,6 +1460,160 @@ void testTheGgxLobeKeepsItsPeak() {
         if (!(std::abs(got - want) <= want * 0.02f)) exact = false;
     }
     check("at every roughness it is 1 / (PI alpha^2)", exact);
+    check("with no GL error behind it", noGlError());
+}
+
+// A program that does not compile says so where it is built while the driver compiles one at a
+// time, and at its first use while the driver's threads compile it.
+void testABrokenProgramFailsWhereItIsChecked() {
+    std::printf("A program that does not compile:\n");
+    Vkm::GL::ShaderBase::compileInParallel(false);
+    bool thrownBuilt = false;
+    try {
+        const Vkm::GL::ComputeShader broken("tests/render/shaders/broken");
+    } catch (const std::exception&) {
+        thrownBuilt = true;
+    }
+    check("built one at a time, it throws as built", thrownBuilt);
+
+    if (!Vkm::GL::ShaderBase::compileInParallel()) {
+        std::printf("  (this driver compiles one at a time - the rest is not checked)\n");
+        return;
+    }
+    bool thrownLater = false;
+    bool thrownUsed  = false;
+    try {
+        const Vkm::GL::ComputeShader broken("tests/render/shaders/broken");
+        try {
+            broken.bind();
+        } catch (const std::exception&) {
+            thrownUsed = true;
+        }
+    } catch (const std::exception&) {
+        thrownLater = true;
+    }
+    Vkm::GL::ShaderBase::compileInParallel(false);
+    check("built in parallel, it is built", !thrownLater);
+    check("  and throws at its first use", thrownUsed);
+    check("with no GL error behind it", noGlError());
+}
+
+// With the driver's threads compiling, a broken program is found by checkShaders() before
+// anything binds it, and only once.
+void testABrokenProgramIsFoundBeforeItIsUsed() {
+    std::printf("A broken program, checked before its first use:\n");
+    if (!Vkm::GL::ShaderBase::compileInParallel()) {
+        std::printf("  (this driver compiles one at a time - not checked)\n");
+        return;
+    }
+    bool thrownBuilt   = false;
+    bool thrownChecked = false;
+    bool thrownAgain   = false;
+    try {
+        const Vkm::GL::ComputeShader broken("tests/render/shaders/broken");
+        try {
+            Vkm::GL::checkShaders();
+        } catch (const std::exception&) {
+            thrownChecked = true;
+        }
+        try {
+            Vkm::GL::checkShaders();
+        } catch (const std::exception&) {
+            thrownAgain = true;
+        }
+    } catch (const std::exception&) {
+        thrownBuilt = true;
+    }
+    Vkm::GL::ShaderBase::compileInParallel(false);
+    check("built in parallel, it is built", !thrownBuilt);
+    check("  and the check throws before any bind", thrownChecked);
+    check("  and a second check finds it already checked", !thrownAgain);
+    check("with no GL error behind it", noGlError());
+}
+
+// A host checks the programs one at a time (checkNextShader), each once the driver is done with
+// it: a broken one throws as it is checked, and once all are, none is left unchecked.
+void testProgramsAreCheckedOneAtATime() {
+    std::printf("Programs checked one at a time:\n");
+    if (!Vkm::GL::ShaderBase::compileInParallel()) {
+        std::printf("  (this driver compiles one at a time - not checked)\n");
+        return;
+    }
+    bool waited = false;
+    bool thrown = false;
+    uint32_t left = 1;
+    try {
+        const Vkm::GL::ComputeShader good("tests/render/shaders/ggx_peak");
+        const Vkm::GL::ComputeShader broken("tests/render/shaders/broken");
+        waited = Vkm::GL::countShaders().unchecked >= 2;
+        for (int i = 0; i < 5000 && Vkm::GL::countShaders().unchecked > 0; ++i) {
+            try {
+                if (!Vkm::GL::checkNextShader()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } catch (const std::exception&) {
+                thrown = true;
+            }
+        }
+        left = Vkm::GL::countShaders().unchecked;
+    } catch (const std::exception&) {
+    }
+    Vkm::GL::ShaderBase::compileInParallel(false);
+    check("built, they wait unchecked", waited);
+    check("  a broken one throws as it is checked", thrown);
+    check("  and none is left unchecked", left == 0);
+    check("with no GL error behind it", noGlError());
+}
+
+// Hot reload and the startup count find shaders by their registry: a shader moved into place is
+// counted, and the one it was moved from, left with no source, is not.
+void testAMovedShaderIsTheOneCounted() {
+    std::printf("A shader moved into place:\n");
+    const uint32_t before = Vkm::GL::countShaders().live;
+    Vkm::GL::ComputeShader from("tests/render/shaders/ggx_peak");
+    const Vkm::GL::ComputeShader to(std::move(from));
+    check("is counted once, as the one it was moved from is not", Vkm::GL::countShaders().live == before + 1);
+    {
+        Vkm::GL::ComputeShader kept("tests/render/shaders/ggx_peak");
+        Vkm::GL::ComputeShader given("tests/render/shaders/ggx_peak");
+        kept = std::move(given);
+        check("  and one assigned over another is counted once", Vkm::GL::countShaders().live == before + 2);
+    }
+    check("with no GL error behind it", noGlError());
+}
+
+// A program two passes share starts from zero rather than from what the other left: every plain
+// uniform of every kind is zeroed, and a sampler keeps the unit it reads.
+void testAProgramsPlainUniformsZero() {
+    std::printf("A program's plain uniforms, zeroed:\n");
+
+    // Not zero beforehand, so a probe that never wrote does not pass.
+    float seen[9];
+    std::fill(std::begin(seen), std::end(seen), -1.0f);
+    Vkm::GL::ShaderStorageBuffer values(seen, sizeof(seen));
+    const Vkm::GL::ComputeShader probe("tests/render/shaders/plain_uniforms");
+    check("the probe compiles", probe.isValid());
+
+    probe.setUniform1f("u_scalar", 2.0f);
+    probe.setUniform2i("u_pair", 3, 4);
+    probe.setUniform1ui("u_counts[0]", 5u);
+    probe.setUniform1ui("u_counts[2]", 6u);
+    probe.setUniformMatrix4fv("u_matrix", glm::mat4(7.0f));
+    probe.setUniform1i("u_flag", 1);
+    probe.setUniform1i("u_map", 9);
+    probe.zeroUniforms();
+
+    values.bindBase(0);
+    probe.bind();
+    probe.dispatch(1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    values.bind();
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(seen), seen);
+    bool zero = true;
+    for (int i = 0; i < 8; ++i) zero = zero && seen[i] == 0.0f;
+    check("every plain uniform, arrays and matrices too, reads zero", zero);
+
+    GLint unit = 0;
+    glGetUniformiv(probe.getID(), glGetUniformLocation(probe.getID(), "u_map"), &unit);
+    check("  and a sampler keeps its unit", unit == 9);
     check("with no GL error behind it", noGlError());
 }
 
@@ -1204,6 +1706,60 @@ void testTheDisplayEncodeInvertsTheSrgbDecode() {
     check("with no GL error behind it", noGlError());
 }
 
+// A lightmap page's texels spread past its charts (shaders/lightmap/dilate): a texel between two
+// charts takes one neighbour's place and facing whole. A mean of the two can lie inside the mesh,
+// where the bake reads it dark.
+void testALightmapGapTakesOneChartsPlace() {
+    using namespace Vkm::Engine;
+    std::printf("A lightmap texel between two charts, spread:\n");
+
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, GLBackend::shaderConstants());
+    // Three texels: one chart's, the gap, and another chart's, each chart facing its own way.
+    const float positions[12] = {1.0f, 2.0f, 3.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 5.0f, 6.0f, 7.0f, 1.0f};
+    const float normals[12]   = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f};
+    Vkm::GL::Texture2DParams params = Vkm::GL::renderTargetParams(3, 1, GL_RGBA32F, GL_RGBA);
+    params.data = positions;
+    const Vkm::GL::Texture2D positionIn("test:dilate_position", params);
+    params.internalFormat = GL_RGBA16F;
+    params.data           = normals;
+    const Vkm::GL::Texture2D normalIn("test:dilate_normal", params);
+    const Vkm::GL::Texture2DParams placeOut  = Vkm::GL::renderTargetParams(3, 1, GL_RGBA32F, GL_RGBA);
+    const Vkm::GL::Texture2DParams facingOut = Vkm::GL::renderTargetParams(3, 1, GL_RGBA16F, GL_RGBA);
+    const Vkm::GL::Texture2D positionOut("test:dilate_position_out", placeOut);
+    const Vkm::GL::Texture2D normalOut("test:dilate_normal_out", facingOut);
+
+    const Vkm::GL::ComputeShader dilate("shaders/lightmap/dilate");
+    check("the spread compiles", dilate.isValid());
+    positionIn.bindSlot(GLBindings::LightmapBakeSlots::POSITION);
+    normalIn.bindSlot(GLBindings::LightmapBakeSlots::NORMAL);
+    positionOut.bindImage(0, GL_WRITE_ONLY);
+    normalOut.bindImage(1, GL_WRITE_ONLY);
+    dilate.bind();
+    dilate.dispatch(1, 1);
+    glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+
+    float place[12]  = {};
+    float facing[12] = {};
+    glGetTextureImage(positionOut.getID(), 0, GL_RGBA, GL_FLOAT, sizeof(place), place);
+    glGetTextureImage(normalOut.getID(), 0, GL_RGBA, GL_FLOAT, sizeof(facing), facing);
+    const glm::vec4 gap(place[4], place[5], place[6], place[7]);
+    const glm::vec3 gapFacing(facing[4], facing[5], facing[6]);
+    std::printf(
+        "      the gap took (%.2f, %.2f, %.2f), facing (%.2f, %.2f, %.2f)\n",
+        gap.x,
+        gap.y,
+        gap.z,
+        gapFacing.x,
+        gapFacing.y,
+        gapFacing.z
+    );
+    const bool first  = gap == glm::vec4(1.0f, 2.0f, 3.0f, 1.0f) && gapFacing == glm::vec3(1.0f, 0.0f, 0.0f);
+    const bool second = gap == glm::vec4(5.0f, 6.0f, 7.0f, 1.0f) && gapFacing == glm::vec3(0.0f, 0.0f, 1.0f);
+    check("the gap takes one chart's place and facing whole", first || second);
+    check("  and a chart's texel keeps its own", place[0] == 1.0f && place[8] == 5.0f);
+    check("with no GL error behind it", noGlError());
+}
+
 // The histogram's bins are counted on the GPU and read on the CPU (system/render/exposure.h): a bin
 // the two disagree on moves the frame's exposure by BIN_STEP stops. Each bin's centre, and what lies
 // past either end or is no number at all, land in the same bin both ways.
@@ -1262,7 +1818,6 @@ void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
     Ocean storm;
     storm.windSpeed     = 14.0f;
     storm.choppiness    = 1.0f;
-    storm.waveCount     = Ocean::MAX_WAVES;
     storm.calmRadius    = 30.0f;
     storm.stillRadius   = 90.0f;
     // Two surges over the probed square, one whole and one with its end in it.
@@ -1278,12 +1833,14 @@ void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
     const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_surface");
     check("the probe compiles", probe.isValid());
 
-    // Where the GPU moves each point's water from @p sea's block - xyz, and w = 1 where the block
-    // says there is an ocean - and, after them, its normals.
-    GLOcean block;
+    // Where the GPU moves each point's water from @p sea's block and swell - xyz, and w = 1 where
+    // the block says there is an ocean - and, after them, its normals.
+    GLOcean       block;
+    GLOceanFields fields;
     const auto drawn = [&](OceanData sea, bool present) {
         sea.present = present;
         block.update(sea);
+        fields.drawSwell(sea);
         Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
         std::vector<glm::vec4> read(2 * POINTS);
         Vkm::GL::ShaderStorageBuffer normals(read.data(), bytes);
@@ -1334,7 +1891,7 @@ void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
     lake.windSpeed = 0.0f;
     OceanData still;
     still.surface = OceanSurface::at(lake, glm::vec3(5.0f, 0.0f, -5.0f), 1234.5);
-    check("  and on a windless one, its surges", still.surface.count == 0 && offBy(still) < 0.01f);
+    check("  and on a windless one, its surges", !still.surface.swell && offBy(still) < 0.01f);
     check("  with no ocean, the block says there is none", drawn(OceanData{}, false)[0].w == 0.0f);
     check("with no GL error behind it", noGlError());
 }
@@ -1390,7 +1947,7 @@ void testTheRippleFieldsHoldTheSpectrumsSlope() {
             squeeze += double(texel.z) * texel.z / double(texels);
             slopes  += glm::dvec2(texel.x * texel.x, texel.y * texel.y) / double(texels);
         }
-        const double expected = on.slopeVariance(from, to);
+        const double expected = on.spectrum.slopeVariance(from, to);
         std::printf(
             "      field %d: slope variance %.5f against the spectrum's %.5f, squeeze %.5f\n",
             f,
@@ -1411,7 +1968,7 @@ void testTheRippleFieldsHoldTheSpectrumsSlope() {
     check("with no GL error behind it", noGlError());
 }
 
-// OceanRipples::density is stated again on the GPU (ocean_ripples.glsl, rippleDensity), and the
+// OceanSpectrum::density is stated again on the GPU (ocean_ripples.glsl, rippleDensity), and the
 // fields are drawn from that statement: the two must be one density, wavenumber for wavenumber,
 // in deep water and shallow, with the wind and against it.
 void testTheRipplesDensityIsTheCPUs() {
@@ -1453,7 +2010,7 @@ void testTheRipplesDensityIsTheCPUs() {
 
         float worst = 0.0f;
         for (int i = 0; i < POINTS; ++i) {
-            const float cpu = data.ripples.density(glm::vec2(points[i]));
+            const float cpu = data.ripples.spectrum.density(glm::vec2(points[i]));
             const float gpu = read[i].x;
             if (cpu > 1e-12f) worst = std::max(worst, std::abs(gpu - cpu) / cpu);
             else if (gpu > 1e-12f) worst = 1.0f;
@@ -1466,8 +2023,80 @@ void testTheRipplesDensityIsTheCPUs() {
     check("with no GL error behind it", noGlError());
 }
 
-// The ripple fields are transformed a line at a time in shared memory (ocean_ripples.glsl,
-// rippleTransform): a single frequency must come out its plane wave, e^(2 pi i m n / N), turning
+// A crest's foam lingers once it has passed, then fades: the swell's grids keep, a texel at a time,
+// the most its water was squeezed, less what that has shed since (ocean/swell_columns) - over the
+// sea's own seconds, so a sea held at one moment, as a paused one is, keeps it.
+void testACrestsFoamLingersThenFades() {
+    using namespace Vkm::Engine;
+    std::printf("The foam a crest leaves:\n");
+
+    Ocean storm;
+    storm.windSpeed  = 14.0f;
+    storm.choppiness = 1.0f;
+    const auto    swell = OceanSwell::of(OceanShape::of(storm));
+    GLOcean       block;
+    GLOceanFields fields;
+    constexpr int TEXELS = SWELL_FIELD * SWELL_FIELD;
+
+    // The foam of the first cascade, and the squeeze its water is under at @p time, both in squeezes
+    // the crests rarely pass.
+    using Texels = std::vector<float>;
+    const auto moment = [&](double time, Texels& foam, Texels& pressed) {
+        OceanData sea;
+        sea.present = true;
+        sea.surface = OceanSurface::at(swell, storm, glm::vec3(0.0f), time);
+        block.update(sea);
+        fields.drawSwell(sea);
+        GLint id = 0;
+        glGetIntegeri_v(GL_SHADER_STORAGE_BUFFER_BINDING, GLBindings::SSBOBindingPoints::OCEAN_SWELL, &id);
+        const GLintptr after = GLintptr(MAX_SWELL_CASCADES) * TEXELS * GLintptr(sizeof(SwellTexel));
+        foam.resize(TEXELS);
+        glGetNamedBufferSubData(GLuint(id), after, TEXELS * GLsizeiptr(sizeof(float)), foam.data());
+        const float       rare = OceanSwell::RARE_SPREADS * swell->squeezeSpread();
+        const SwellTexel* grid = sea.surface.swell->grid(0);
+        pressed.resize(TEXELS);
+        for (int i = 0; i < TEXELS; ++i) pressed[i] = -(grid[i].slopes.z + grid[i].slopes.w) / rare;
+    };
+
+    std::vector<float> foam;
+    std::vector<float> pressed;
+    moment(100.0, foam, pressed);
+    float worst    = 0.0f;
+    float lingered = 0.0f;
+    for (int i = 0; i < TEXELS; ++i) worst = std::max(worst, std::abs(foam[i] - std::max(pressed[i], 0.0f)));
+    check("a new swell's foam is its squeeze where the water is squeezed", worst < 1e-3f);
+
+    moment(101.5, foam, pressed);
+    worst = 0.0f;
+    for (int i = 0; i < TEXELS; ++i) {
+        worst    = std::max(worst, pressed[i] - foam[i]);
+        lingered = std::max(lingered, foam[i] - pressed[i]);
+    }
+    std::printf("      foam over a crest that has passed by up to %.2f\n", lingered);
+    check("  a moment on, the foam is never below the squeeze", worst < 1e-3f);
+    check("  and lingers where a crest has passed", lingered > 0.1f);
+
+    // Drawn again at the same moment, as every frame of a paused world is: nothing has shed.
+    const std::vector<float> held = foam;
+    moment(101.5, foam, pressed);
+    worst = 0.0f;
+    for (int i = 0; i < TEXELS; ++i) worst = std::max(worst, std::abs(foam[i] - held[i]));
+    check("  a sea held at one moment keeps its foam", worst < 1e-6f);
+
+    moment(100.5, foam, pressed);
+    worst = 0.0f;
+    for (int i = 0; i < TEXELS; ++i) worst = std::max(worst, held[i] - foam[i]);
+    check("  and one turned back sheds none", worst < 1e-6f);
+
+    moment(160.0, foam, pressed);
+    worst = 0.0f;
+    for (int i = 0; i < TEXELS; ++i) worst = std::max(worst, std::abs(foam[i] - std::max(pressed[i], 0.0f)));
+    check("  until long after, when it has shed all of it", worst < 1e-3f);
+    check("with no GL error behind it", noGlError());
+}
+
+// The ripple fields are transformed a line at a time in shared memory (ocean_fft.glsl,
+// fftTransform): a single frequency must come out its plane wave, e^(2 pi i m n / N), turning
 // the right way, from either half of the line.
 void testTheRipplesTransformMakesPlaneWaves() {
     using namespace Vkm::Engine;
@@ -1616,6 +2245,30 @@ void testASceneUploadsWhatTheCameraHasNotSeen() {
     check("the material in view is uploaded", glView.getMaterial(seen) != nullptr);
     check("  and so is the one behind the eye", glView.getMaterial(unseen) != nullptr);
     check("  its map with it", glView.getTexture(paint) != nullptr);
+    check("with no GL error behind it", noGlError());
+}
+
+// The loading cover draws text as the UI does, so its font's atlas is uploaded with the UI's, even on
+// a frame whose UI names no font of its own.
+void testACoversFontIsUploaded() {
+    using namespace Vkm::Engine;
+    std::printf("What a sync uploads for the cover:\n");
+
+    ResourceManager resources;
+    FontAsset font;
+    font.atlasSize = 64;
+    font.atlasPixels.assign(64 * 64, 200);
+    const FontHandle typeface = resources.add(std::move(font), "test:cover_font");
+
+    UIDrawData cover;
+    UIDrawCmd  line;
+    line.font = typeface;
+    cover.commands.push_back(line);
+    RenderView view;
+    view.cover = &cover;
+    GLView glView;
+    glView.sync(view, resources);
+    check("the cover's font atlas is uploaded", glView.getFontAtlas(typeface) != nullptr);
     check("with no GL error behind it", noGlError());
 }
 
@@ -1800,6 +2453,82 @@ void testACutoutElsewhereLeavesAHeldTileHeld() {
     check("  and signed the same", frame.plan.batch2D(0).signature == before);
 }
 
+// A caster that only moves keeps the keys it was given; one given another mesh is keyed again.
+void testACasterGivenAnotherMeshIsKeyedAgain() {
+    using namespace Vkm::Engine;
+    std::printf("A spot's casters, one moved and one given another mesh:\n");
+
+    ShadowPlan::Frame frame;
+    const MaterialHandle stone  = frame.resources.add(MaterialAsset{}, "test:stone");
+    const MeshHandle     cube   = frame.resources.add(generateCube(), "test:cube");
+    const MeshHandle     sphere = frame.resources.add(generateSphere(), "test:sphere");
+    frame.cast(cube, stone, {-1.0f, 0.5f, 0.0f});
+    frame.cast(cube, stone, {1.0f, 0.5f, 0.0f});
+    frame.spot();
+    frame.plan2D();
+
+    // The next frames as the cull writes them: against the last, these objects changed.
+    const auto changed = [&](uint32_t object) {
+        frame.objects.allChanged = false;
+        frame.objects.changed    = {object};
+        ++frame.objects.serial;
+        frame.plan2D();
+    };
+    frame.objects.models[0] = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.5f, 0.0f));
+    changed(0);
+    check("two casters of one mesh are one run, one moved", frame.plan.batch2D(0).runs.size() == 1);
+    frame.objects.draws[1].mesh = sphere;
+    changed(1);
+    check("  and two once the other is given another mesh", frame.plan.batch2D(0).runs.size() == 2);
+}
+
+// A tile culled against the same matrix keeps its fixed casters and tests only what moves - until a
+// fixed one changes: one moved into the spot's cone is in its batch the next frame.
+void testAFixedCasterMovedIntoATileIsCulledAgain() {
+    using namespace Vkm::Engine;
+    std::printf("A spot's tile, when a moving caster and then a fixed one move:\n");
+
+    ShadowPlan::Frame frame;
+    const MaterialHandle stone = frame.resources.add(MaterialAsset{}, "test:stone");
+    const MeshHandle     cube  = frame.resources.add(generateCube(), "test:cube");
+    frame.cast(cube, stone, {0.0f, 0.5f, 0.0f});
+    frame.cast(cube, stone, {80.0f, 0.5f, 0.0f});
+    frame.cast(cube, stone, {-0.5f, 0.5f, 0.0f});
+    frame.objects.draws[0].fixed = true;
+    frame.objects.draws[1].fixed = true;
+    frame.spot();
+    frame.plan2D();
+
+    // The next frames as the cull writes them.
+    const auto next = [&](std::vector<uint32_t> changed, bool fixedMoved) {
+        frame.objects.allChanged = false;
+        frame.objects.changed    = std::move(changed);
+        ++frame.objects.serial;
+        if (fixedMoved) ++frame.objects.fixedSerial;
+        frame.plan2D();
+    };
+    const auto place = [&](uint32_t object, const glm::vec3& at) {
+        frame.objects.models[object] = glm::translate(glm::mat4(1.0f), at);
+        frame.objects.bounds[object] = {at - glm::vec3(0.5f), at + glm::vec3(0.5f)};
+    };
+    next({}, false);
+    check("the spot's tile holds the two casters under it", frame.plan.batch2D(0).order.size() == 2);
+    // Only the moving one moves, frame after frame: the fixed one is kept, not tested again.
+    bool kept = true;
+    for (int step = 1; step <= 3; ++step) {
+        place(2, {-0.5f + 0.1f * float(step), 0.5f, 0.0f});
+        next({2}, false);
+        kept = kept && frame.plan.batch2D(0).order.size() == 2;
+    }
+    check("  and both as the moving one moves", kept);
+    place(1, {0.5f, 0.5f, 0.0f});
+    next({1}, true);
+    check(
+        "  and all three once the far fixed one is moved under it",
+        frame.plan.batch2D(0).order.size() == 3
+    );
+}
+
 // Cascades draw with depth clamped, so a caster nearer the sun than a cascade's near
 // plane still shadows - only if the cull keeps it rather than rejecting it there.
 void testACasterAboveTheCascadesIsKept() {
@@ -1826,11 +2555,68 @@ void testACasterAboveTheCascadesIsKept() {
     check("a cascade keeps it", kept);
 }
 
-// A skin stream is uploaded per vertex; one shorter than the vertices would be read
-// past its end, so the mesh is refused.
-void testAMeshWhoseSkinIsShortIsRefused() {
+// The sun's last cascade keeps its place while the view moves within its margin, so the layer of
+// its fixed casters holds; the nearest follows the view, and a long walk moves the last one too.
+void testTheLastCascadeHoldsWhileTheViewMovesALittle() {
     using namespace Vkm::Engine;
-    std::printf("A skinned mesh whose skin does not cover its vertices:\n");
+    std::printf("The sun's cascades, as the view moves:\n");
+
+    ShadowPlan::Frame frame;
+    const MaterialHandle stone = frame.resources.add(MaterialAsset{}, "test:stone");
+    const MeshHandle     cube  = frame.resources.add(generateCube(), "test:cube");
+    frame.cast(cube, stone, {0.0f, 0.5f, -5.0f});
+
+    LightData sun{};
+    sun.type           = LightType::Directional;
+    sun.direction      = glm::normalize(glm::vec3(0.3f, -1.0f, 0.2f));
+    sun.castShadows    = true;
+    sun.shadowDistance = 50.0f;
+    frame.view.lights.push_back(sun);
+
+    const auto lookFrom = [&](const glm::vec3& eye) {
+        frame.view.camera = CameraData::from(
+            glm::lookAt(eye, eye + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 100.0f),
+            eye
+        );
+        frame.plan2D();
+    };
+    const auto lastCascade = [&]() -> const Shadow2DJob& {
+        const Shadow2DJob* last = &frame.plan.jobs2D()[0];
+        for (const Shadow2DJob& job : frame.plan.jobs2D()) {
+            if (job.cascade) last = &job;
+        }
+        return *last;
+    };
+
+    // A fresh fit draws its tile whole; held the next frame, it keeps its fixed casters in a layer.
+    lookFrom({0.0f, 2.0f, 0.0f});
+    const bool fresh = !lastCascade().layered;
+    lookFrom({0.0f, 2.0f, 0.0f});
+    check("the last cascade, its fit held, has a layer", fresh && lastCascade().layered);
+    check("  the nearest none", !frame.plan.jobs2D()[0].layered);
+    const glm::mat4 lastAt  = lastCascade().lightVP;
+    const glm::mat4 firstAt = frame.plan.jobs2D()[0].lightVP;
+
+    lookFrom({0.3f, 2.0f, 0.0f});
+    check(
+        "  and keeps its place and layer as the view steps aside",
+        lastCascade().lightVP == lastAt && lastCascade().layered
+    );
+    check("  where the nearest follows it", frame.plan.jobs2D()[0].lightVP != firstAt);
+
+    lookFrom({40.0f, 2.0f, 0.0f});
+    check(
+        "  until the view walks out of its margin, refitted and drawn whole",
+        lastCascade().lightVP != lastAt && !lastCascade().layered
+    );
+}
+
+// A skin or lightmap stream is uploaded per vertex; one shorter than the vertices would be read
+// past its end, so the mesh is refused.
+void testAMeshWhoseStreamIsShortIsRefused() {
+    using namespace Vkm::Engine;
+    std::printf("A mesh whose skin or lightmap stream does not cover its vertices:\n");
 
     GLMeshPool pool;
     MeshAsset whole = generateCube();
@@ -1843,6 +2629,18 @@ void testAMeshWhoseSkinIsShortIsRefused() {
     check("one with a skin entry per vertex is taken", taken.indexCount > 0);
     check("  and one with fewer is refused", refused.indexCount == 0);
     pool.remove(taken);
+
+    MeshAsset lit = generateCube();
+    lit.lightmapUVs.resize(lit.vertices.size());
+    MeshAsset shortUVs = lit;
+    shortUVs.lightmapUVs.pop_back();
+    const MeshRange litTaken   = pool.add(lit);
+    const MeshRange litRefused = pool.add(shortUVs);
+    check(
+        "  as is one whose lightmap stream falls short",
+        litTaken.indexCount > 0 && litRefused.indexCount == 0
+    );
+    pool.remove(litTaken);
     check("with no GL error behind any of it", noGlError());
 }
 
@@ -2033,8 +2831,8 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
     );
     check(
         "  and its last member is where GpuLight has it",
-        programResource(forward, GL_BUFFER_VARIABLE, "LightsBlock.lights[0].axisV", GL_OFFSET)
-            == static_cast<GLint>(offsetof(LightsBuffer, lights) + offsetof(GpuLight, axisV))
+        programResource(forward, GL_BUFFER_VARIABLE, "LightsBlock.lights[0].bake", GL_OFFSET)
+            == static_cast<GLint>(offsetof(LightsBuffer, lights) + offsetof(GpuLight, bake))
     );
 
     check(
@@ -2057,7 +2855,7 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             == static_cast<GLint>(sizeof(MaterialUBO))
     );
     check(
-        "  its colours and its scalar tail where the struct has them",
+        "  its colors and its scalar tail where the struct has them",
         uniformAt("MaterialBlock.attenuationColor", offsetof(MaterialUBO, attenuationColor))
             && uniformAt("MaterialBlock.metallic", offsetof(MaterialUBO, metallic))
             && uniformAt("MaterialBlock.alphaCutoff", offsetof(MaterialUBO, alphaCutoff))
@@ -2071,9 +2869,10 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             == static_cast<GLint>(sizeof(OceanUBO))
     );
     check(
-        "  its waves where the struct has them",
+        "  its swell and surges where the struct has them",
         uniformAt("OceanBlock.squeeze", offsetof(OceanUBO, squeeze))
-            && uniformAt("OceanBlock.waves", offsetof(OceanUBO, waves))
+            && uniformAt("OceanBlock.swell", offsetof(OceanUBO, swell))
+            && uniformAt("OceanBlock.surges[0]", offsetof(OceanUBO, surges))
     );
 
     check(
@@ -2120,6 +2919,22 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
         bufferMemberAt(strips, "StripBlock.points[0].color", offsetof(StripPoint, color))
             && bufferMemberAt(strips, "StripBlock.points[0].params", offsetof(StripPoint, params))
             && bufferMemberAt(strips, "StripBlock.points[0].look", offsetof(StripPoint, look))
+    );
+
+    const Vkm::GL::Shader debug("shaders/debug");
+    const GLuint lines = linkedProgram(debug);
+    check(
+        "a debug line is a DebugLine wide",
+        strideOf(lines, "DebugLineBlock.lines[0].a") == static_cast<GLint>(sizeof(DebugLine))
+    );
+    check(
+        "  with each member where DebugLine has it",
+        bufferMemberAt(lines, "DebugLineBlock.lines[0].b", offsetof(DebugLine, b))
+            && bufferMemberAt(lines, "DebugLineBlock.lines[0].pulse", offsetof(DebugLine, pulse))
+            && bufferMemberAt(lines, "DebugLineBlock.lines[0].color", offsetof(DebugLine, color))
+            && bufferMemberAt(lines, "DebugLineBlock.lines[0].width", offsetof(DebugLine, width))
+            && bufferMemberAt(lines, "DebugLineBlock.lines[0].glow", offsetof(DebugLine, glow))
+            && bufferMemberAt(lines, "DebugLineBlock.lines[0].flags", offsetof(DebugLine, flags))
     );
     check("with no GL error behind any of it", noGlError());
 }
@@ -2182,7 +2997,7 @@ void testTheSkysConvolutionsAreTheIntegralsTheyStandFor() {
         GLuint env = 0;
         glGenTextures(1, &env);
         glBindTexture(GL_TEXTURE_CUBE_MAP, env);
-        glTexStorage2D(GL_TEXTURE_CUBE_MAP, fullMipChain(ENV), GL_RGBA16F, ENV, ENV);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, GLsizei(mipChainLength(ENV, ENV)), GL_RGBA16F, ENV, ENV);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         std::vector<float> face(static_cast<size_t>(ENV) * ENV * 4);
@@ -2215,17 +3030,48 @@ void testTheSkysConvolutionsAreTheIntegralsTheyStandFor() {
         gl.setDepthTest(false);
         gl.setBlending(false);
         gl.setFaceCulling(false);
-        glActiveTexture(GL_TEXTURE0 + GLBindings::BakeTextureSlots::SOURCE);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, env);
-        glActiveTexture(GL_TEXTURE0);
-        gl.setViewport(0, 0, OUT, OUT);
-        convolver.irradiance([&](int f) {
-            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[0], 0, f);
-        });
-        convolver.prefilter(MIPS, [&](int f, int mip) {
-            gl.setViewport(0, 0, OUT >> mip, OUT >> mip);
-            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[1], mip, f);
-        });
+        // The two cubes as the targets, the environment as the source.
+        class Cubes final : public GLCubeConvolver::Target {
+            public:
+                Cubes(Vkm::GL::Context& gl, GLuint env, const GLuint* targets)
+                    : m_gl(gl)
+                    , m_env(env)
+                    , m_targets(targets)
+                {}
+                ~Cubes() override = default;
+
+                Cubes(const Cubes& other) = delete;
+                Cubes& operator=(const Cubes& other) = delete;
+
+                Cubes(Cubes && other) = delete;
+                Cubes& operator=(Cubes && other) = delete;
+
+            public:
+                void makeSourceMips() override {
+                    glBindTexture(GL_TEXTURE_CUBE_MAP, m_env);
+                    glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+                }
+                void bindSource() override {
+                    glActiveTexture(GL_TEXTURE0 + GLBindings::BakeTextureSlots::SOURCE);
+                    glBindTexture(GL_TEXTURE_CUBE_MAP, m_env);
+                    glActiveTexture(GL_TEXTURE0);
+                }
+                void attachIrradiance(int face) override {
+                    m_gl.setViewport(0, 0, OUT, OUT);
+                    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, m_targets[0], 0, face);
+                }
+                void attachPrefilter(int face, int mip) override {
+                    m_gl.setViewport(0, 0, OUT >> mip, OUT >> mip);
+                    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, m_targets[1], mip, face);
+                }
+
+            private:
+                Vkm::GL::Context& m_gl;
+                GLuint            m_env;
+                const GLuint*     m_targets;
+        };
+        Cubes cubes(gl, env, targets);
+        convolver.convolve(gl, OUT, MIPS, cubes);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         // Every face of @p level of @p cube, one after another, as floats.
@@ -2417,36 +3263,30 @@ void testASkyBakedAStepAFrameTakesTheStepsItCounts() {
     );
 }
 
-int runTests() {
-    Vkm::Log::Logger::init("/tmp/vkm_render_tests.log", "VKM-RENDER-TESTS", Vkm::Log::LogLevel::ERROR);
-
-    // Pinned here, not in a test: the shader loader resolves paths against the working
-    // directory, and a test setting it would make later tests depend on order.
-    std::error_code rootEc;
-    std::filesystem::current_path(VKM_ENGINE_ROOT, rootEc);
-    if (rootEc) {
-        std::printf("Cannot reach the engine root '%s': %s\n", VKM_ENGINE_ROOT, rootEc.message().c_str());
-        return 1;
-    }
-
-    Vkm::Test::GLContext gl;
-    if (!gl.available()) {
-        // Not a failure: this binary is expected to run without a GPU.
-        std::printf("No GL context: %s\nSkipping the GPU suite.\n", gl.reason().c_str());
-        return 0;
-    }
-
+// What the context and the backend's parts do on their own, before any surface is attached.
+void runContextTests(Vkm::Test::GLContext& gl) {
     testTheContextItself(gl);
+    testAColorMaskSetPerBufferIsPutBackWhole();
+    testTheDefaultStateTurnsEverySwitchOff();
+    testAFramebufferClearsWithoutBeingBound();
+    testAnArrayTextureClearsViewsAndBuildsItsLevels();
+    testATextureAskedForSamplesIsMultisampled();
+    testACubeCopiesEveryLevel();
+    testABufferCopiesClearsAndReadsBack();
+    testAReadbackArrivesOnce();
+    testAFramebufferKeepsTheDrawBuffersAsked();
     testAVertexBufferRoundTrips();
     testAnIndexBufferKnowsItsCount();
     testAShaderStorageBufferBindsToItsPoint();
     testAVertexArrayRefedWithANewBufferRewiresTheSameLocations();
+    testAVertexArrayReadsEachLayoutElementAsItsKind();
     testAVolumeTextureRoundTrips();
     testATextureThatArrivesLateTakesItsRealFormat();
     testACookedTextureUploadsTheLevelsItCarries();
     testAOneChannelMapReadsAsGrey();
     testABackendHoldsOnlyThePixelsItUploaded();
     testAFontAtlasKeepsTheLevelsItsGutterAllows();
+    testEveryFormatsSrgbIsTheEnginesRule();
     testASwizzleOutlivesNewStorage();
     testAReuploadedMeshIsANewPicture();
     testAnAtlasThatForgetsDrawsEveryTileAgain();
@@ -2462,21 +3302,32 @@ int runTests() {
     testABackendFiltersCubesAcrossTheirSeams();
     testAPreviewDrawsItsMesh();
     testTheGgxLobeKeepsItsPeak();
+    testAProgramsPlainUniformsZero();
+    testABrokenProgramFailsWhereItIsChecked();
+    testABrokenProgramIsFoundBeforeItIsUsed();
+    testProgramsAreCheckedOneAtATime();
+    testAMovedShaderIsTheOneCounted();
     testTheDisplayEncodeInvertsTheSrgbDecode();
+    testALightmapGapTakesOneChartsPlace();
     testAnAreaLightsFormFactorHoldsStraightDownTheNormal();
     testACutoutsMapIsPartOfItsShadow();
     testATransparentCastersShadowIsCutByItsAlpha();
     testASceneUploadsWhatTheCameraHasNotSeen();
+    testACoversFontIsUploaded();
     testATilesRunsKeepEachLayoutTogether();
     testACutoutElsewhereLeavesAHeldTileHeld();
     testACasterAboveTheCascadesIsKept();
-    testAMeshWhoseSkinIsShortIsRefused();
+    testACasterGivenAnotherMeshIsKeyedAgain();
+    testAFixedCasterMovedIntoATileIsCulledAgain();
+    testTheLastCascadeHoldsWhileTheViewMovesALittle();
+    testAMeshWhoseStreamIsShortIsRefused();
     testATextureUploadedLaterTakesTheFiltering();
     testAStubKeepsTheFilteringOfTheUploadItReplaces();
     testAStaleHandleFindsNothing();
     testTheSharedBlocksAgreeWithTheirStructs();
     testTheHistogramBinsAsTheCpuReadsThem();
     testTheDrawnSeaIsTheOneGameplayFloatsOn();
+    testACrestsFoamLingersThenFades();
     testTheRippleFieldsHoldTheSpectrumsSlope();
     testTheRipplesDensityIsTheCPUs();
     testTheRipplesTransformMakesPlaneWaves();
@@ -2486,8 +3337,33 @@ int runTests() {
     testTheSkysTransmittanceIsTheSunlights();
     testTheSkysConvolutionsAreTheIntegralsTheyStandFor();
     testASkyBakedAStepAFrameTakesTheStepsItCounts();
+}
+
+int runTests(const Vkm::Test::Shard& shard) {
+    Vkm::Log::Logger::init("/tmp/vkm_render_tests.log", "VKM-RENDER-TESTS", Vkm::Log::LogLevel::ERROR);
+
+    // Pinned here, not in a test: the shader loader resolves paths against the working
+    // directory, and a test setting it would make later tests depend on order.
+    std::error_code rootEc;
+    std::filesystem::current_path(VKM_ENGINE_ROOT, rootEc);
+    if (rootEc) {
+        std::printf("Cannot reach the engine root '%s': %s\n", VKM_ENGINE_ROOT, rootEc.message().c_str());
+        return 1;
+    }
+
+    Vkm::Test::GLContext gl;
+    if (!gl.available()) {
+        // Not a failure where a GPU may be missing; VKM_GPU_REQUIRED=1, a runner that has one,
+        // fails rather than pass on nothing run.
+        std::printf("No GL context: %s\nSkipping the GPU suite.\n", gl.reason().c_str());
+        const char* required = std::getenv("VKM_GPU_REQUIRED");
+        return required && std::string(required) == "1" ? 1 : 0;
+    }
+
+    // Not split: a split suite's first run takes them (Vkm::Test::Shard).
+    if (shard.first()) runContextTests(gl);
     // Last: it gives the context a surface, which the tests above do not want.
-    Vkm::Test::runGoldenTests(gl, g_failures);
+    Vkm::Test::runGoldenTests(gl, g_failures, shard);
 
     std::printf(g_failures ? "\n%d FAILURE(S)\n" : "\nALL OK\n", g_failures);
     return g_failures ? 1 : 0;
@@ -2495,8 +3371,18 @@ int runTests() {
 
 } // namespace
 
-int main() {
-    const int status = runTests();
+int main(int argc, char** argv) {
+    // `--shard i/n` takes the i-th of n runs the suite is split across, from 1.
+    Vkm::Test::Shard shard;
+    if (argc == 3 && std::string(argv[1]) == "--shard"
+        && std::sscanf(argv[2], "%d/%d", &shard.index, &shard.count) == 2 && shard.count > 0
+        && shard.index >= 1 && shard.index <= shard.count) {
+        --shard.index;
+    } else if (argc != 1) {
+        std::printf("Usage: vkm_render_tests [--shard i/n]\n");
+        return 2;
+    }
+    const int status = runTests(shard);
     // See ThreadPool::shutdown.
     Vkm::Engine::ThreadPool::get().shutdown();
     return status;

@@ -19,6 +19,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/gothic_statue/textures/gothic_statue_diff_1k.jpg"
@@ -64,15 +65,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 8.100913047790527,
+              "maxDistance": 8.100913,
               "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 81.2894058227539,
+              "maxDistance": 81.289406,
               "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 162.5788116455078,
+              "maxDistance": 162.57881,
               "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod2"
             }
           ]
@@ -90,9 +91,9 @@
         },
         "Transform": {
           "position": [
-            -0.028923194855451584,
-            1.1918599605560303,
-            0.2721009850502014
+            -0.028923195,
+            1.19186,
+            0.27210099
           ],
           "rotation": [
             1.0,

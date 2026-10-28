@@ -7,7 +7,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
-#include "overlays/wire_draw.h"
+#include "core/math/rotation.h"
+#include "overlays/viewport_projection.h"
 
 namespace Vkm::Engine {
 
@@ -514,9 +515,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
         ImVec2 qA, qB, qC;
         if (!planeQuadCorners(i, screenAxes, axisOk, qA, qB, qC)) continue;
 
-        const ImU32 fillColor = (GIZMO_PLANES[i] == hl)
-            ? IM_COL32(255, 210, 50, 60)   // highlight, semi-transparent
-            : PLANE_FILLS[i];
+        const ImU32 fillColor = GIZMO_PLANES[i] == hl ? COLOR_PLANE_HIGHLIGHTED : PLANE_FILLS[i];
 
         dl->AddQuadFilled(m_originScreen, qA, qC, qB, fillColor);
     }
@@ -565,7 +564,7 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
 
         const glm::vec3 normal = axes[i];
         glm::vec3 tangent, bitangent;
-        orthoBasis(normal, tangent, bitangent);
+        Math::orthoBasis(normal, tangent, bitangent);
 
         ImVec2 prevPt{};
         bool   prevOk = false;

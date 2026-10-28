@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
+#include <utility>
 
 #include <glm/gtc/constants.hpp>
 
@@ -19,6 +21,9 @@
 #include "ecs/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
+#include "system/loading/loading_frame.h"
+#include "system/render/render_settings.h"
+#include "core/clock.h"
 #include "core/host_chrome.h"
 #include "core/event/event_bus.h"
 #include "system/ui/text_layout.h"
@@ -30,6 +35,18 @@
 namespace Vkm::Engine {
 
 namespace {
+
+// The status line above the loading bar: reference pixels high, its gap to the bar, and its alpha.
+constexpr float COVER_TEXT_SIZE  = 22.0f;
+constexpr float COVER_TEXT_GAP   = 14.0f;
+constexpr float COVER_TEXT_ALPHA = 0.7f;
+// A project's tip under the bar: reference pixels high, its gap to the bar, the share of the
+// screen's width it wraps at, and its alpha and its shadow's.
+constexpr float COVER_TIP_SIZE   = 24.0f;
+constexpr float COVER_TIP_GAP    = 26.0f;
+constexpr float COVER_TIP_WIDTH  = 0.5f;
+constexpr float COVER_TIP_ALPHA  = 0.85f;
+constexpr float COVER_TIP_SHADOW = 0.6f;
 
 // Float equality is right: a clip is copied down the walk, not recomputed, so runs
 // under one panel hold bit-identical rects.
@@ -52,7 +69,7 @@ const glm::vec4& fadeEnd(const glm::vec4& color, const UIShape& shape) {
     return shape.gradient ? shape.bottomColor : color;
 }
 
-// A button's tint: a toggle that is on rests in its own colour.
+// A button's tint: a toggle that is on rests in its own color.
 const glm::vec4& tintOf(const Scene& scene, EntityId entity, const UIButton& button) {
     const UIToggle* toggle = scene.tryGet<UIToggle>(entity);
     const bool      resting = button.state == UIButton::State::Normal;
@@ -117,20 +134,27 @@ bool dragSlider(UISlider& slider, const UIButton& button) {
 
 } // namespace
 
+UISystem::UISystem() {
+    // The default font, white, shadowed: read over any frame.
+    m_frameRate.pixelSize = FRAME_RATE_SIZE;
+    m_frameRate.shadow    = glm::vec4(0.0f, 0.0f, 0.0f, 0.85f);
+    m_frameRate.align     = UIText::Align::Right;
+}
+
 void UISystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("UISystem");
 
     m_drawData.clear();
-    m_buttonHits.clear();
-    m_pointerBlockers.clear();
-    m_scrollTargets.clear();
+    clearHits();
     ctx.ui = &m_drawData;
-    ctx.input.setPointerOverUI(false);
+    ctx.input.setPointerBlockers(m_blockingAreas);
 
     // Rects are in framebuffer pixels, the cursor in window pixels; they differ on a
     // scaled display.
     const float pointerScale = ctx.window.framebufferScale();
     const HostChrome::ViewportRect vp = ctx.chrome.viewport(ctx.window);
+    m_pointerScale   = pointerScale > 0.0f ? pointerScale : 1.0f;
+    m_viewportOrigin = {static_cast<float>(vp.x), static_cast<float>(vp.y)};
     m_pointer = ctx.input.pointer() * pointerScale
         - glm::vec2(static_cast<float>(vp.x), static_cast<float>(vp.y));
 
@@ -138,27 +162,146 @@ void UISystem::update(FrameContext& ctx) {
     // so a HUD it crosses must not take the click.
     m_cursorFree = ctx.window.cursorMode() != CursorMode::Disabled;
 
+    // The loading screen over everything takes the pointer: nothing under it is hovered,
+    // pressed or scrolled.
+    const bool covered = ctx.loading && ctx.loading->isShowing();
+
     // Resolved whoever owns the pointer, so a host can still ask pointerTarget. The
     // map already hides buttons and wheel under the chrome, so only hover asks it.
-    m_pointerIsOurs = m_cursorFree && !ctx.chrome.capturesPointer();
+    m_pointerIsOurs = m_cursorFree && !ctx.chrome.capturesPointer() && !covered;
     m_mouseDown     = ctx.input.held(InputActions::UI_CLICK);
-    m_mouseDownEdge = ctx.input.pressed(InputActions::UI_CLICK);
+    m_mouseDownEdge = !covered && ctx.input.pressed(InputActions::UI_CLICK);
     m_mouseUpEdge   = ctx.input.released(InputActions::UI_CLICK);
 
-    // The chrome taking the pointer disarms the press: kept armed, a press let go over
-    // a panel could become a click on a later release.
+    // The chrome or the cover taking the pointer disarms the press: kept armed, a press
+    // let go over a panel could become a click on a later release.
     if (!m_pointerIsOurs) m_pressedButton = {};
 
     // Every notch: gameplay's wheel() reads zero over a blocker, so they come here.
-    m_wheel = ctx.input.uiWheel();
+    m_wheel = covered ? 0.0f : ctx.input.uiWheel();
 
     const float vpW = static_cast<float>(vp.width);
     const float vpH = static_cast<float>(vp.height);
     if (vpW <= 0.0f || vpH <= 0.0f) return;
 
+    const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
+
+    m_coverData.clear();
+    if (covered) {
+        layOutCover(ctx, viewport);
+        ctx.cover = &m_coverData;
+    }
+
+    const bool readsFrameRate = showsFrameRate(ctx);
+    if (readsFrameRate) refreshFrameRate(ctx);
+    layOutCanvases(ctx, ctx.scene, viewport);
+    if (readsFrameRate) appendFrameRate(ctx, viewport);
+
+    // A toggle flipped, a slider dragged or a choice stepped has moved its own parts, which the
+    // walk placed by the value before: laid out again, so they show the change the frame it happens.
+    if (resolveInteraction(ctx)) {
+        const EntityId target = m_drawData.pointerTarget;
+        m_drawData.clear();
+        clearHits();
+        layOutCanvases(ctx, ctx.scene, viewport);
+        if (readsFrameRate) appendFrameRate(ctx, viewport);
+        m_drawData.pointerTarget = target;
+    }
+    if (covered) {
+        m_blockingAreas.emplace_back(m_viewportOrigin / m_pointerScale, viewport.size / m_pointerScale);
+    }
+    ctx.input.setPointerBlockers(m_blockingAreas);
+}
+
+void UISystem::layOutCover(FrameContext& ctx, const UIRect& viewport) {
+    // The emit helpers write m_drawData: the cover is laid out in it, swapped in for the while.
+    std::swap(m_drawData, m_coverData);
+    const LoadingFrame& loading = *ctx.loading;
+    const float         shown   = loading.opacity * loading.content;
+    const float         scale   = viewport.size.y / LOADING_REFERENCE_HEIGHT;
+
+    // The project's own screen first, under the line and the tip; a picture, which nothing presses.
+    if (loading.screen && loading.screenAssets == ctx.resources.epoch()) {
+        layOutCanvases(ctx, *loading.screen, viewport, shown);
+        clearHits();
+    }
+
+    // The bar is the backend's, drawn over this list (the LoadingBar pass); the line sits above it.
+    const LoadingBarRect placed = loadingBar(viewport.size.x, viewport.size.y);
+    const glm::vec2      bar(placed.width, placed.height);
+    const glm::vec2      at(std::round(viewport.pos.x) + placed.x, std::round(viewport.pos.y) + placed.y);
+
+    UIText line;
+    line.text      = loading.status;
+    line.pixelSize = COVER_TEXT_SIZE;
+    line.color     = glm::vec4(1.0f, 1.0f, 1.0f, COVER_TEXT_ALPHA);
+    line.shadow    = glm::vec4(0.0f);
+    line.align     = UIText::Align::Center;
+    line.valign    = UIText::VAlign::Bottom;
+    const float gap = COVER_TEXT_GAP * scale;
+    m_opacity = shown;
+    const UIRect above{glm::vec2(at.x, viewport.pos.y), glm::vec2(bar.x, at.y - gap - viewport.pos.y)};
+    emitTextIn(ctx, line, above, viewport, scale);
+
+    // The tip under the bar, wrapped to a column.
+    if (!loading.tip.empty()) {
+        UIText tip;
+        tip.text      = loading.tip;
+        tip.pixelSize = COVER_TIP_SIZE;
+        tip.color     = glm::vec4(1.0f, 1.0f, 1.0f, COVER_TIP_ALPHA);
+        tip.shadow    = glm::vec4(0.0f, 0.0f, 0.0f, COVER_TIP_SHADOW);
+        tip.align     = UIText::Align::Center;
+        tip.wrap      = true;
+        const float     wide  = std::round(viewport.size.x * COVER_TIP_WIDTH);
+        const float     top   = at.y + bar.y + COVER_TIP_GAP * scale;
+        const glm::vec2 from(std::round(viewport.pos.x + (viewport.size.x - wide) * 0.5f), top);
+        const UIRect    below{from, glm::vec2(wide, viewport.pos.y + viewport.size.y - top)};
+        m_opacity = shown * loading.tipShown;
+        emitTextIn(ctx, tip, below, viewport, scale);
+    }
+
+    std::swap(m_drawData, m_coverData);
+}
+
+void UISystem::clearHits() {
+    m_buttonHits.clear();
+    m_pointerBlockers.clear();
+    m_blockingAreas.clear();
+    m_scrollTargets.clear();
+}
+
+bool UISystem::showsFrameRate(const FrameContext& ctx) {
+    // A host authoring the world shows its own.
+    return ctx.render.showFrameRate && !ctx.chrome.authoring();
+}
+
+void UISystem::refreshFrameRate(const FrameContext& ctx) {
+    // Read off the smoothed clock a few times a second, so the digits hold still long enough to read.
+    m_frameRateAge += ctx.clock.getDeltaTime();
+    if (!m_frameRate.text.empty() && m_frameRateAge < FRAME_RATE_REFRESH) return;
+    m_frameRateAge = 0.0f;
+    char line[48];
+    const double fps = ctx.clock.getFrameRate();
+    const double ms  = ctx.clock.getFrameTime();
+    std::snprintf(line, sizeof(line), "%.0f FPS  %.1f ms", fps, ms);
+    m_frameRate.text = line;
+}
+
+void UISystem::appendFrameRate(FrameContext& ctx, const UIRect& viewport) {
+    // Sized as a canvas at the reference height would size it, inset from the top-right corner.
+    const float     scale = viewport.size.y / UICanvas::REFERENCE_HEIGHT;
+    const glm::vec2 inset = glm::vec2(FRAME_RATE_INSET * scale);
+    const UIRect    rect{inset, viewport.size - 2.0f * inset};
+    m_opacity = 1.0f;
+    emitTextIn(ctx, m_frameRate, rect, viewport, scale);
+}
+
+void UISystem::layOutCanvases(FrameContext& ctx, Scene& scene, const UIRect& viewport, float opacity) {
+    m_scene = &scene;
+
     // SparseSet order is arbitrary; the entity index breaks ties for stability.
     m_canvases.clear();
-    ctx.scene.forEach<UICanvas>([&](EntityId entity, const UICanvas& canvas) {
+    scene.forEach<UICanvas>([&](EntityId entity, const UICanvas& canvas) {
         if (canvas.visible) m_canvases.push_back(CanvasRef{canvas.sortOrder, entity});
     });
     std::sort(
@@ -170,29 +313,13 @@ void UISystem::update(FrameContext& ctx) {
         }
     );
 
-    const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
-    layOutCanvases(ctx, viewport);
-
-    // A toggle flipped, a slider dragged or a choice stepped has moved its own parts, which the
-    // walk placed by the value before: laid out again, so they show the change the frame it happens.
-    if (resolveInteraction(ctx)) {
-        const EntityId target = m_drawData.pointerTarget;
-        m_drawData.clear();
-        m_buttonHits.clear();
-        m_pointerBlockers.clear();
-        m_scrollTargets.clear();
-        layOutCanvases(ctx, viewport);
-        m_drawData.pointerTarget = target;
-    }
-}
-
-void UISystem::layOutCanvases(FrameContext& ctx, const UIRect& viewport) {
     for (const CanvasRef& ref : m_canvases) {
-        const UICanvas& canvas = ctx.scene.get<UICanvas>(ref.entity);
+        m_opacity = opacity;
+        const UICanvas& canvas = m_scene->get<UICanvas>(ref.entity);
         const float     scale  = UICanvas::scaleIn(canvas, viewport.size.y);
 
         // The viewport is both the top-level parent rect and the starting clip.
-        HierarchyOperations::forEachChild(ctx.scene, ref.entity, [&](EntityId child) {
+        HierarchyOperations::forEachChild(*m_scene, ref.entity, [&](EntityId child) {
             resolveElement(ctx, child, viewport, viewport, scale, 0);
         });
     }
@@ -210,8 +337,9 @@ glm::vec2 UISystem::resolveElement(
         HierarchyOperations::warnWalkBound("UI layout", HierarchyOperations::MAX_DEPTH);
         return nothingDrawn();
     }
-    UIElement* held = ctx.scene.tryGet<UIElement>(entity);
-    if (!held) return nothingDrawn();
+    // A canvas inside another's tree is laid out as its own, once, not as an element too.
+    UIElement* held = m_scene->tryGet<UIElement>(entity);
+    if (!held || m_scene->has<UICanvas>(entity)) return nothingDrawn();
 
     UIElement& element = *held;
     if (!element.visible) return nothingDrawn();
@@ -231,7 +359,7 @@ glm::vec2 UISystem::resolveElement(
     const bool pointerHere = m_cursorFree && clip.intersected(element.screenRect).contains(m_pointer);
 
     // Before anything draws, so a choice that is its own text shows the option it holds now.
-    placeParts(ctx.scene, entity);
+    placeParts(*m_scene, entity);
 
     const bool drewImage    = emitImage(ctx, entity, element, clip, scale);
     const bool drewButton   = emitButton(ctx, entity, element, clip, scale);
@@ -240,8 +368,16 @@ glm::vec2 UISystem::resolveElement(
     // Only what draws can block; text over a button is a caption on it.
     const bool draws = drewImage || drewButton;
     if (draws && element.blocksPointer && pointerHere) m_pointerBlockers.push_back(entity);
+    // Wherever the pointer is: the next frame's input asks it of the pointer then.
+    if (draws && element.blocksPointer && m_cursorFree) {
+        const UIRect seen = clip.intersected(element.screenRect);
+        if (seen.size.x > 0.0f && seen.size.y > 0.0f) {
+            const glm::vec2 at = (seen.pos + m_viewportOrigin) / m_pointerScale;
+            m_blockingAreas.emplace_back(at, seen.size / m_pointerScale);
+        }
+    }
 
-    UIScroll*    scroll    = ctx.scene.tryGet<UIScroll>(entity);
+    UIScroll*    scroll    = m_scene->tryGet<UIScroll>(entity);
     const bool   clips     = scroll != nullptr || element.clipChildren;
     const UIRect childClip = clips ? clip.intersected(element.screenRect) : clip;
     UIRect       childRect = element.screenRect;
@@ -257,7 +393,7 @@ glm::vec2 UISystem::resolveElement(
     }
 
     glm::vec2 contentMax = nothingDrawn();
-    HierarchyOperations::forEachChild(ctx.scene, entity, [&](EntityId child) {
+    HierarchyOperations::forEachChild(*m_scene, entity, [&](EntityId child) {
         contentMax = glm::max(contentMax, resolveElement(ctx, child, childRect, childClip, scale, depth + 1));
     });
 
@@ -302,7 +438,7 @@ bool UISystem::emitImage(
     const UIRect& clip,
     float canvasScale
 ) {
-    const UIImage* image = ctx.scene.tryGet<UIImage>(entity);
+    const UIImage* image = m_scene->tryGet<UIImage>(entity);
     if (!image) return false;
 
     const uint32_t first    = static_cast<uint32_t>(m_drawData.vertices.size());
@@ -322,7 +458,7 @@ bool UISystem::emitButton(
     const UIRect& clip,
     float canvasScale
 ) {
-    UIButton* button = ctx.scene.tryGet<UIButton>(entity);
+    UIButton* button = m_scene->tryGet<UIButton>(entity);
     if (!button) return false;
 
     // In the element's authored space, free of canvas scale and viewport offset.
@@ -333,7 +469,7 @@ bool UISystem::emitButton(
     UIShape        shape = button->shape;
     shape.bottomColor.a *= m_opacity;
     shape.borderColor.a *= m_opacity;
-    const glm::vec4 tint = faded(tintOf(ctx.scene, entity, *button), m_opacity);
+    const glm::vec4 tint = faded(tintOf(*m_scene, entity, *button), m_opacity);
     appendShaped(element.screenRect, tint, shape, canvasScale, false);
     appendCommand(first, 6, {}, {}, clip);
 
@@ -346,13 +482,17 @@ bool UISystem::resolveInteraction(FrameContext& ctx) {
     bool           moved   = false;
 
     m_drawData.pointerTarget = topmost;
-    ctx.input.setPointerOverUI(static_cast<bool>(topmost));
 
+    // Both edges in one frame are a tap - pressed then let go - or, held at its end, a release and
+    // a press again (a quick second click): the release is the press before's, then the new one arms.
+    const bool restruck = m_mouseDownEdge && m_mouseUpEdge && m_mouseDown;
+    EntityId   released = m_mouseUpEdge && restruck ? m_pressedButton : EntityId{};
     if (m_mouseDownEdge) {
         // has() answers false for the null `topmost`, so no separate check.
         const bool onAButton = ctx.scene.has<UIButton>(topmost);
         m_pressedButton = onAButton ? topmost : EntityId{};
     }
+    if (m_mouseUpEdge && !restruck) released = m_pressedButton;
 
     for (const ButtonHit& hit : m_buttonHits) {
         UIButton& button = ctx.scene.get<UIButton>(hit.entity);
@@ -362,7 +502,7 @@ bool UISystem::resolveInteraction(FrameContext& ctx) {
         button.held          = button.interactable && m_mouseDown && m_pressedButton == hit.entity;
         const bool held      = isTopmost && button.held;
 
-        if (m_mouseUpEdge && isTopmost && m_pressedButton == hit.entity) {
+        if (m_mouseUpEdge && isTopmost && released == hit.entity) {
             if (UIToggle* toggle = ctx.scene.tryGet<UIToggle>(hit.entity)) {
                 toggle->on   = !toggle->on;
                 moved        = true;
@@ -386,10 +526,10 @@ bool UISystem::resolveInteraction(FrameContext& ctx) {
 
         const glm::vec4& tint = tintOf(ctx.scene, hit.entity, button);
         const glm::vec4  end  = fadeEnd(tint, button.shape);
-        recolourQuad(hit.firstVertex, faded(tint, hit.opacity), faded(end, hit.opacity));
+        recolorQuad(hit.firstVertex, faded(tint, hit.opacity), faded(end, hit.opacity));
     }
 
-    if (m_mouseUpEdge) m_pressedButton = {};
+    if (m_mouseUpEdge && !restruck) m_pressedButton = {};
 
     // The innermost window entered after the topmost blocker lies in or over it, so
     // takes the wheel. Failing one, the wheel goes to the nearest scroll view holding
@@ -482,12 +622,19 @@ glm::vec2 UISystem::emitText(
     const UIRect& clip,
     float canvasScale
 ) {
+    const UIText* held = m_scene->tryGet<UIText>(entity);
+    if (!held) return nothingDrawn();
+    return emitTextIn(ctx, *held, element.screenRect, clip, canvasScale);
+}
+
+glm::vec2 UISystem::emitTextIn(
+    FrameContext& ctx,
+    const UIText& text,
+    const UIRect& rect,
+    const UIRect& clip,
+    float canvasScale
+) {
     const glm::vec2 nothing = nothingDrawn();
-
-    const UIText* held = ctx.scene.tryGet<UIText>(entity);
-    if (!held) return nothing;
-
-    const UIText& text = *held;
     if (text.text.empty() || text.font.empty()) return nothing;
 
     // By name, the serializable identity, so the component stays plain data.
@@ -498,7 +645,7 @@ glm::vec2 UISystem::emitText(
 
     const float renderScale = text.pixelSize * canvasScale / font.pixelHeight;
 
-    breakLines(text.text, font, renderScale, element.screenRect.size.x, text.wrap);
+    breakLines(text.text, font, renderScale, rect.size.x, text.wrap);
     if (m_lines.empty()) return nothing;
 
     // The block spans ascent above the first baseline to descent (negative) below the
@@ -507,11 +654,11 @@ glm::vec2 UISystem::emitText(
     const float blockHeight = (font.ascent - font.descent) * renderScale
         + static_cast<float>(m_lines.size() - 1) * lineStep;
 
-    float firstBaseline = element.screenRect.pos.y + font.ascent * renderScale;
+    float firstBaseline = rect.pos.y + font.ascent * renderScale;
     if (text.valign == UIText::VAlign::Middle) {
-        firstBaseline += (element.screenRect.size.y - blockHeight) * 0.5f;
+        firstBaseline += (rect.size.y - blockHeight) * 0.5f;
     } else if (text.valign == UIText::VAlign::Bottom) {
-        firstBaseline += element.screenRect.size.y - blockHeight;
+        firstBaseline += rect.size.y - blockHeight;
     }
 
     // Each line's baseline and start snap to whole pixels for sharp small labels; glyph
@@ -530,9 +677,9 @@ glm::vec2 UISystem::emitText(
             renderScale,
             [](size_t, const FontGlyph&, float) { return true; }
         );
-        float lineX = element.screenRect.pos.x;
-        if (text.align == UIText::Align::Center)     lineX += (element.screenRect.size.x - lineWidth) * 0.5f;
-        else if (text.align == UIText::Align::Right)  lineX += element.screenRect.size.x - lineWidth;
+        float lineX = rect.pos.x;
+        if (text.align == UIText::Align::Center)     lineX += (rect.size.x - lineWidth) * 0.5f;
+        else if (text.align == UIText::Align::Right)  lineX += rect.size.x - lineWidth;
         lineX = std::round(lineX);
 
         // The line's shadow first, all of it, so no letter's shadow falls on its neighbour.
@@ -613,7 +760,7 @@ void UISystem::appendQuad(
     };
 
     // Two triangles covering the rect, top-left origin, in the corner order
-    // recolourQuad reads: TL TR BR, TL BR BL.
+    // recolorQuad reads: TL TR BR, TL BR BL.
     push(p0.x, p0.y, uv0.x, uv0.y);
     push(p1.x, p0.y, uv1.x, uv0.y);
     push(p1.x, p1.y, uv1.x, uv1.y);
@@ -622,10 +769,10 @@ void UISystem::appendQuad(
     push(p1.x, p1.y, uv1.x, uv1.y);
     push(p0.x, p1.y, uv0.x, uv1.y);
 
-    recolourQuad(first, color, bottom);
+    recolorQuad(first, color, bottom);
 }
 
-void UISystem::recolourQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom) {
+void UISystem::recolorQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom) {
     UIVertex* quad = &m_drawData.vertices[first];
     quad[0].color = quad[1].color = quad[3].color = top;
     quad[2].color = quad[4].color = quad[5].color = bottom;

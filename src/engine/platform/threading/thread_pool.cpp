@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,10 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__)
+    #include <sched.h>
+#endif
 
 #include "logger.h"
 #include "platform/windows_api.h"
@@ -22,24 +27,35 @@ namespace {
 thread_local bool t_isWorker = false;
 
 /**
- * @brief The physical cores, a core's SMT siblings counted once (docs/reference/threading.md).
+ * @brief The physical cores the process may run on, a core's SMT siblings counted once
+ *        (docs/reference/threading.md): a container or `taskset` that grants fewer gets fewer workers.
  *
  * @return The count, or 0 when the platform does not say.
  */
 size_t physicalCores() {
     size_t cores = 0;
 #if defined(_WIN32)
-    // One record per core, each as long as its Size says.
+    // One record per core, each as long as its Size says; a core counts while the process's mask,
+    // over its first group, holds one of its logical processors.
     using Record = SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX;
+    DWORD_PTR allowed = 0;
+    DWORD_PTR system  = 0;
+    if (!GetProcessAffinityMask(GetCurrentProcess(), &allowed, &system)) allowed = ~DWORD_PTR(0);
     DWORD bytes = 0;
     GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bytes);
     std::vector<char> records(bytes);
     auto* first = reinterpret_cast<Record*>(records.data());
     if (bytes == 0 || !GetLogicalProcessorInformationEx(RelationProcessorCore, first, &bytes)) return 0;
-    for (DWORD at = 0; at < bytes; at += reinterpret_cast<const Record*>(&records[at])->Size) ++cores;
+    for (DWORD at = 0; at < bytes; at += reinterpret_cast<const Record*>(&records[at])->Size) {
+        const GROUP_AFFINITY& group = reinterpret_cast<const Record*>(&records[at])->Processor.GroupMask[0];
+        if (group.Group != 0 || (group.Mask & allowed) != 0) ++cores;
+    }
 #elif defined(__linux__)
-    // A core is the set of logical CPUs sharing it, which each online one lists. Not core_id: an
-    // AMD module's two cores have ids of their own and share one front end.
+    // A core is the set of logical CPUs sharing it, which each lists. Not core_id: an AMD module's
+    // two cores have ids of their own and share one front end.
+    cpu_set_t allowed;
+    CPU_ZERO(&allowed);
+    const bool masked = sched_getaffinity(0, sizeof(allowed), &allowed) == 0;
     std::set<std::string> siblingSets;
     std::error_code       error;
     for (const auto& cpu : std::filesystem::directory_iterator("/sys/devices/system/cpu", error)) {
@@ -47,6 +63,8 @@ size_t physicalCores() {
         const std::string name     = cpu.path().filename().string();
         const bool        numbered = name.size() > 3 && std::isdigit(static_cast<unsigned char>(name[3]));
         if (name.compare(0, 3, "cpu") != 0 || !numbered) continue;
+        const int index = std::atoi(name.c_str() + 3);
+        if (masked && (index >= CPU_SETSIZE || !CPU_ISSET(index, &allowed))) continue;
         std::ifstream file(cpu.path() / "topology" / "thread_siblings_list");
         std::string   siblings;
         if (std::getline(file, siblings)) siblingSets.insert(siblings);
@@ -56,12 +74,22 @@ size_t physicalCores() {
     return cores;
 }
 
-// One fewer than the cores, as the parallelFor caller runs a chunk too, and at least one.
-size_t workerCount() {
-    const size_t cores = physicalCores();
-    return std::max<size_t>(cores > 0 ? cores : std::thread::hardware_concurrency(), 2) - 1;
+/// The logical CPUs the process may run on, for a platform that names no cores.
+size_t logicalCpus() {
+#if defined(__linux__)
+    cpu_set_t allowed;
+    CPU_ZERO(&allowed);
+    if (sched_getaffinity(0, sizeof(allowed), &allowed) == 0) return static_cast<size_t>(CPU_COUNT(&allowed));
+#endif
+    return std::thread::hardware_concurrency();
 }
 } // namespace
+
+size_t ThreadPool::defaultThreadCount() {
+    // One fewer than the cores, as the parallelFor caller runs a chunk too.
+    const size_t cores = physicalCores();
+    return std::max<size_t>(cores > 0 ? cores : logicalCpus(), 2) - 1;
+}
 
 bool ThreadPool::isWorkerThread() {
     return t_isWorker;
@@ -79,7 +107,7 @@ ThreadPool::~ThreadPool() {
 }
 
 ThreadPool& ThreadPool::get() {
-    static ThreadPool s_instance(workerCount());
+    static ThreadPool s_instance(defaultThreadCount());
     return s_instance;
 }
 

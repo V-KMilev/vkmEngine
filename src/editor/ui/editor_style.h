@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include "core/math/axes.h"
+#include "debug/debug_palette.h"
 
 /**
  * @brief Shared editor visual constants.
@@ -16,7 +17,7 @@ namespace Vkm::Engine::EditorStyle {
  *
  * @param axis  0, 1 or 2 for X, Y or Z.
  * @param alpha The packed alpha.
- * @return The packed colour.
+ * @return The packed color.
  */
 constexpr ImU32 axisU32(int axis, int alpha = 255) {
     const Math::AxisColor c = Math::AXIS_COLORS[axis];
@@ -24,11 +25,11 @@ constexpr ImU32 axisU32(int axis, int alpha = 255) {
 }
 
 /**
- * @brief Math::AXIS_COLORS[@p axis] as a widget colour, raised by @p lift on every channel.
+ * @brief Math::AXIS_COLORS[@p axis] as a widget color, raised by @p lift on every channel.
  *
  * @param axis 0, 1 or 2 for X, Y or Z.
  * @param lift Added to each 8-bit channel; a hover state lifts it.
- * @return The widget colour.
+ * @return The widget color.
  */
 constexpr ImVec4 axisVec4(int axis, int lift = 0) {
     const Math::AxisColor c = Math::AXIS_COLORS[axis];
@@ -36,14 +37,20 @@ constexpr ImVec4 axisVec4(int axis, int lift = 0) {
     return ImVec4(channel(c.r), channel(c.g), channel(c.b), 1.0f);
 }
 
+/// A DebugPalette color, packed for a draw list: a marker in its gizmo's color.
+constexpr ImU32 paletteU32(DebugPalette::Color c) {
+    return IM_COL32(c.r, c.g, c.b, c.a);
+}
+
 // Axis colors - ImDrawList packed form.
-inline constexpr ImU32 AXIS_X_U32      = axisU32(0);
-inline constexpr ImU32 AXIS_Y_U32      = axisU32(1);
-inline constexpr ImU32 AXIS_Z_U32      = axisU32(2);
-inline constexpr ImU32 HIGHLIGHT_U32   = IM_COL32(255, 210,  50, 255);
-inline constexpr ImU32 AXIS_X_FILL_U32 = axisU32(0, 50);
-inline constexpr ImU32 AXIS_Y_FILL_U32 = axisU32(1, 50);
-inline constexpr ImU32 AXIS_Z_FILL_U32 = axisU32(2, 50);
+inline constexpr ImU32 AXIS_X_U32         = axisU32(0);
+inline constexpr ImU32 AXIS_Y_U32         = axisU32(1);
+inline constexpr ImU32 AXIS_Z_U32         = axisU32(2);
+inline constexpr ImU32 HIGHLIGHT_U32      = paletteU32(DebugPalette::HIGHLIGHT);
+inline constexpr ImU32 AXIS_X_FILL_U32    = axisU32(0, 50);
+inline constexpr ImU32 AXIS_Y_FILL_U32    = axisU32(1, 50);
+inline constexpr ImU32 AXIS_Z_FILL_U32    = axisU32(2, 50);
+inline constexpr ImU32 HIGHLIGHT_FILL_U32 = paletteU32(DebugPalette::HIGHLIGHT.faded(60.0f / 255.0f));
 
 // Axis colors - ImGui widget (ImVec4) form, with hover variants.
 inline constexpr ImVec4 AXIS_X     = axisVec4(0);
@@ -82,6 +89,7 @@ inline constexpr ImU32 TIMELINE_GHOST_U32 = IM_COL32( 25,  25,  28, 200);
 
 // Destructive actions (delete / remove).
 inline const ImVec4 DANGER      = ImVec4(0.86f, 0.34f, 0.34f, 1.00f);
+inline const ImVec4 DANGER_HOV  = ImVec4(0.93f, 0.45f, 0.45f, 1.00f);
 
 // Cautions.
 inline const ImVec4 WARNING     = ImVec4(0.95f, 0.68f, 0.25f, 1.00f);
@@ -150,7 +158,7 @@ inline float px(float units) {
 }
 
 /// Width reserved for aligned property labels.
-inline float labelWidth() { return px(100.0f); }
+inline float labelWidth() { return px(130.0f); }
 
 /// Side of an icon button on a viewport overlay strip.
 inline float overlayButton()   { return px(26.0f); }

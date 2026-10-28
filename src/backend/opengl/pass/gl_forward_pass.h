@@ -7,11 +7,10 @@
 #include "gl_shader.h"
 
 #include "gl_pass.h"
+#include "gl_forward_programs.h"
 #include "frame/gl_instance_batcher.h"
 
 namespace Vkm::Engine {
-
-class GLMaterial;
 
 /**
  * @brief The lit forward draw of the scene's geometry.
@@ -21,25 +20,23 @@ class GLMaterial;
  * are culled, except for a MaterialAsset::doubleSided material: an opaque one draws unculled, a
  * transparent one twice, back faces first. Each surface fogs at its own depth (see GLPass::bindFog).
  *
- * Five programs: static and skinned, each whole and plain - compiled without the optional
+ * Its programs: static and skinned, each whole and plain - compiled without the optional
  * features a GLMaterial::plain material never reads (shaders/forward/pbr_plain) - and static for a
- * GLMaterial::layered one (shaders/forward/pbr_layered). Skinned runs sort after static ones;
- * within each the program follows the material. One place sets every
- * program's uniforms (forEachProgram): one set on only some would silently go missing on whatever
- * draws with the rest.
+ * GLMaterial::layered one (shaders/forward/pbr_layered). The opaque bucket's static runs take each
+ * static program's baked twin (shaders/forward/pbr_baked), which alone reads the lightmaps: the
+ * other buckets hold nothing baked, and leave the code out. Skinned runs sort after static ones;
+ * within each the program follows the material. One place sets every program's uniforms
+ * (forEachProgram): one set on only some would silently go missing on whatever draws with the rest.
  */
 class GLForwardPass : public GLPass {
     public:
         /**
-         * @brief Draws the static runs of whole and of layered materials with @p pbr and
-         *        @p layered, which it borrows.
+         * @brief Draws with @p programs, which it borrows.
          *
-         * @param pbr     The scene capture's program (GLSceneCapture::pbrProgram), whose uniforms are
-         *                the last caller's: the pass sets every one it reads each frame.
-         * @param layered The scene capture's layered program (GLSceneCapture::layeredProgram), the
-         *                same.
+         * @param programs The backend's forward programs, whose uniforms are the last caller's: the
+         *                 pass sets every one it reads each frame.
          */
-        GLForwardPass(Vkm::GL::Shader& pbr, Vkm::GL::Shader& layered);
+        explicit GLForwardPass(GLForwardPrograms& programs);
         ~GLForwardPass() override;
 
         GLForwardPass(const GLForwardPass& other) = delete;
@@ -50,15 +47,6 @@ class GLForwardPass : public GLPass {
 
     public:
         void execute(GLFrameContext& ctx) override;
-
-        /**
-         * @brief Whether a run of @p material draws with the plain program.
-         *
-         * @param material The run's material; null takes the whole program, which reads every
-         *                 feature's default.
-         * @return True for a GLMaterial::plain material.
-         */
-        static bool drawsPlain(const GLMaterial* material);
 
     private:
         /// Which of the three buckets a set of frame uniforms is for.
@@ -125,21 +113,12 @@ class GLForwardPass : public GLPass {
          */
         template<typename Fn>
         void forEachProgram(bool posed, Fn&& fn) {
-            fn(m_shader);
-            fn(m_plainShader);
-            fn(m_layeredShader);
-            if (!posed) return;
-            fn(m_skinnedShader);
-            fn(m_plainSkinnedShader);
+            m_programs.forEach(posed, true, fn);
         }
 
     private:
-        Vkm::GL::Shader&  m_shader;              ///< Static geometry; borrowed, see the constructor.
-        Vkm::GL::Shader&  m_layeredShader;       ///< Static, for a layered material; borrowed too.
-        Vkm::GL::Shader   m_skinnedShader;       ///< Skinned, posed by the frame's palette.
-        Vkm::GL::Shader   m_plainShader;         ///< Static, for a plain material.
-        Vkm::GL::Shader   m_plainSkinnedShader;  ///< Skinned, for a plain material.
-        GLInstanceBatcher m_batcher;
+        GLForwardPrograms& m_programs;  ///< Borrowed; see the constructor.
+        GLInstanceBatcher  m_batcher;
 
         // Back-to-front, refilled each frame with capacity kept. The opaque bucket is the context's.
         std::vector<std::pair<float, uint32_t>> m_transparent;

@@ -15,9 +15,7 @@
 #include "resource/resource_manager.h"
 #include "system/render/render_backend.h"
 
-#define STB_RECT_PACK_IMPLEMENTATION
 #include "stb_rect_pack.h"
-#define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
 namespace Vkm::Engine {
@@ -250,7 +248,7 @@ Handle<FontAsset> bakeFontSDF(
 }
 
 float uiFontPixels(int displayHeight) {
-    const float share  = static_cast<float>(displayHeight) / static_cast<float>(UI_FONT_REFERENCE_HEIGHT);
+    const float share  = static_cast<float>(displayHeight) / UI_FONT_REFERENCE_HEIGHT;
     const float wanted = displayHeight > 0 ? UI_FONT_BASE_PIXELS * share : UI_FONT_BASE_PIXELS;
     return std::clamp(wanted, UI_FONT_BASE_PIXELS, UI_FONT_MAX_PIXELS);
 }

@@ -1,5 +1,5 @@
 /**
- * The ocean's shore, captured (GLOceanFields::captureShore): the scene looking straight down, in
+ * The ocean's shore, captured (GLOceanShore::capture): the scene looking straight down, in
  * two draws. Under: only what lies under the water, the topmost of it a texel - a face turned up
  * is something under the surface, and the texel holds how far under; a face turned away is the
  * inside of something breaking it, and holds 0. Above: only what lies over the water, the lowest

@@ -162,14 +162,14 @@ class GLAtmosphere {
         void unbindFbo() const;
 
         /**
-         * @brief Attach the transmittance table as colour 0 of the FBO, sized to its viewport.
+         * @brief Attach the transmittance table as color 0 of the FBO, sized to its viewport.
          *
          * @param gl Live GL context whose viewport is set to the table's size.
          */
         void attachTransmittance(const Vkm::GL::Context& gl) const;
 
         /**
-         * @brief Attach the multiple-scattering table as colour 0 of the FBO, sized to its viewport.
+         * @brief Attach the multiple-scattering table as color 0 of the FBO, sized to its viewport.
          *
          * @param gl Live GL context whose viewport is set to the table's size.
          */

@@ -13,12 +13,14 @@
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/hierarchy_operations.h"
 #include "system/animation/pose_buffer.h"
+#include "system/physics/mass_model.h"
 
 namespace Vkm::Engine {
 
@@ -27,16 +29,6 @@ namespace {
 // How far the rig's scale ratio to its build scale may stray from one: a unit change is a factor of a
 // hundred, matrix-chain noise far below this.
 constexpr float STALE_SCALE_TOLERANCE = 0.01f;
-
-// The world-space spin that turns `from` into `to` over dt, the short way round.
-glm::vec3 spinBetween(const glm::quat& from, const glm::quat& to, float dt) {
-    glm::quat delta = to * glm::conjugate(from);
-    if (delta.w < 0.0f) delta = -delta;
-    const glm::vec3 axis(delta.x, delta.y, delta.z);
-    const float sine = glm::length(axis);
-    if (sine <= glm::epsilon<float>()) return axis * (2.0f / dt);
-    return axis * (2.0f * std::atan2(sine, delta.w) / (sine * dt));
-}
 
 } // namespace
 
@@ -103,6 +95,26 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
         const EntityId self = scene.entityAt(storage->keyAt(i));
         Ragdoll& ragdoll = storage->dataAt(i);
         if (ragdoll.bones.empty()) continue;
+
+        Transform*       rootAt = ragdoll.root ? scene.tryGet<Transform>(ragdoll.root) : nullptr;
+        const Hierarchy* rootIn = ragdoll.root ? scene.tryGet<Hierarchy>(ragdoll.root) : nullptr;
+        if (ragdoll.active && rootAt) {
+            // Live, the group node stays where it stood in the world, and the bones with it: what moves
+            // the character does not drag the body it has become.
+            const glm::mat4 parentWorld = rootIn && rootIn->parent
+                ? HierarchyOperations::computeWorldMatrix(scene, rootIn->parent)
+                : glm::mat4(1.0f);
+            if (!ragdoll.pinned) {
+                ragdoll.pinnedWorld = HierarchyOperations::computeWorldMatrix(scene, ragdoll.root);
+                ragdoll.rootRest    = *rootAt;
+                ragdoll.pinned      = true;
+            } else {
+                *rootAt = Transform::fromModelMatrix(glm::inverse(parentWorld) * ragdoll.pinnedWorld);
+            }
+        } else if (ragdoll.pinned) {
+            if (rootAt) *rootAt = ragdoll.rootRest;
+            ragdoll.pinned = false;
+        }
 
         if (ragdoll.active) {
             // Handed over: the bodies are ordinary dynamics, and the pose follows them.
@@ -171,11 +183,14 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
             transform->rotation = Math::worldRotationOf(bodyLocal);
 
             // The pose's speed is what activation hands the solver: felled mid-stride, it falls forward.
-            const glm::vec3 position = glm::vec3(bodyWorld[3]);
+            // Of the point the bone is solved about once it falls.
+            const Collider* collider = scene.tryGet<Collider>(bone.body);
+            const glm::vec3 centre   = solverCentre(body, RigidbodyMotion::Dynamic, collider);
+            const glm::vec3 position = glm::vec3(bodyWorld * glm::vec4(centre, 1.0f));
             const glm::quat rotation = Math::worldRotationOf(bodyWorld);
             if (wasPosed && dt > 0.0f) {
                 body.linearVelocity  = (position - bone.lastPosition) / dt;
-                body.angularVelocity = spinBetween(bone.lastRotation, rotation, dt);
+                body.angularVelocity = Math::rotationBetween(bone.lastRotation, rotation) / dt;
             }
             bone.lastPosition = position;
             bone.lastRotation = rotation;

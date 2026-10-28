@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/name.h"
+#include "ecs/component/physics/buoyancy.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
@@ -63,7 +65,7 @@ class ResourceManager;
 /**
  * @brief Undoable edit of a value the Scene holds outside any entity.
  *
- * Environment (sky, fog) and PhysicsSettings, which ComponentEditCommand cannot
+ * Environment (sky, fog, acoustics) and PhysicsSettings, which ComponentEditCommand cannot
  * reach. Coalesces consecutive edits of the same value, taking the newer label.
  *
  * @tparam T Environment or PhysicsSettings; instantiated at the bottom of this header.
@@ -326,6 +328,7 @@ class ScriptEditCommand : public Command {
     X(Rigidbody,           rigidbody)           \
     X(Collider,            collider)            \
     X(CharacterController, characterController) \
+    X(Buoyancy,            buoyancy)            \
     X(Joint,               joint)               \
     X(Ragdoll,             ragdoll)             \
     X(ReflectionProbe,     reflectionProbe)     \
@@ -398,11 +401,13 @@ struct EntitySnapshot {
  * @brief Where the entities a restored snapshot lands in come from.
  *
  * Restoring what was destroyed reuses its slots, so a later step addressing it by
- * slot still finds it; a copy beside the original needs fresh ones.
+ * slot still finds it; a copy beside the original needs fresh ones, and so does a copy
+ * pasted into another world, where nothing outside the subtree is the entity it named.
  */
 enum class SnapshotSlots {
-    Reuse,  ///< The captured slots; they must be free.
-    Fresh   ///< Newly allocated slots.
+    Reuse,   ///< The captured slots; they must be free.
+    Fresh,   ///< Newly allocated slots.
+    Foreign  ///< Newly allocated, in another world: the root's parent and outside references are dropped.
 };
 
 /**
@@ -423,6 +428,10 @@ struct SubtreeSnapshot {
      * @brief Slot of the root's original parent, or 0 when it is top-level.
      */
     uint32_t rootParentSlot = 0;
+    /**
+     * @brief Slot of the sibling the root stood before, or 0 when it was the last.
+     */
+    uint32_t rootNextSlot = 0;
 
     static SubtreeSnapshot capture(const Scene& scene, EntityId root);
 
@@ -434,6 +443,18 @@ struct SubtreeSnapshot {
      * @return The subtree's root, or a null id when nothing came back.
      */
     EntityId apply(Scene& scene, SnapshotSlots slots = SnapshotSlots::Reuse) const;
+
+    /**
+     * @brief Rebuild several subtrees as one, in fresh slots (SnapshotSlots::Foreign): a reference
+     *        from one to another names its copy.
+     *
+     * Each root comes back at the top level. The trees must not share an entity.
+     *
+     * @param scene Scene the entities are created in.
+     * @param trees The subtrees.
+     * @return Each tree's root, in order; null for one that did not come back.
+     */
+    static std::vector<EntityId> applyTogether(Scene& scene, const std::vector<SubtreeSnapshot>& trees);
 
     /**
      * @brief Whether @p slotIndex is one of the entities this snapshot holds.
@@ -581,15 +602,16 @@ class SubtreeReplaceCommand : public Command {
         SubtreeReplaceCommand& operator=(SubtreeReplaceCommand && other) = delete;
 
     public:
-        void redo(Scene& scene, CommandHost& host) override { swapTo(scene, host, m_after); }
-        void undo(Scene& scene, CommandHost& host) override { swapTo(scene, host, m_before); }
+        void redo(Scene& scene, CommandHost& host) override { swap(scene, host, m_before, m_after); }
+        void undo(Scene& scene, CommandHost& host) override { swap(scene, host, m_after, m_before); }
         const char* label() const override { return m_label; }
         bool addresses(uint32_t slotIndex) const override {
             return m_before.holds(slotIndex) || m_after.holds(slotIndex);
         }
 
     private:
-        void swapTo(Scene& scene, CommandHost& host, const SubtreeSnapshot& to);
+        /// Replace the subtree @p from describes - the one in the scene - with @p to.
+        void swap(Scene& scene, CommandHost& host, const SubtreeSnapshot& from, const SubtreeSnapshot& to);
 
     private:
         SubtreeSnapshot m_before;
@@ -744,14 +766,18 @@ class ReparentCommand : public Command {
         ReparentCommand(
             EntityId child,
             EntityId oldParent,
+            EntityId oldNext,
             EntityId newParent,
+            EntityId newNext,
             const Transform& before,
             const Transform& after,
             const char* label
         )
             : m_child(child)
             , m_oldParent(oldParent)
+            , m_oldNext(oldNext)
             , m_newParent(newParent)
+            , m_newNext(newNext)
             , m_before(before)
             , m_after(after)
             , m_label(label)
@@ -779,7 +805,9 @@ class ReparentCommand : public Command {
     private:
         EntityId    m_child;
         EntityId    m_oldParent;
+        EntityId    m_oldNext;  ///< The sibling it stood before, to stand before again on undo.
         EntityId    m_newParent;
+        EntityId    m_newNext;  ///< The sibling it was put before, or null for last; see m_oldNext.
         Transform   m_before;   ///< Restored on undo.
         Transform   m_after;    ///< World-preserving; restored on redo.
         const char* m_label;
@@ -864,8 +892,9 @@ class MaterialEditCommand : public Command {
 /**
  * @brief Undoable edit of a terrain's settings: its layers, their tiling, its plants and its grid.
  *
- * As MaterialEditCommand, over the whole asset; a brush stroke is a TerrainStrokeCommand, which
- * holds only what it touched.
+ * Over the whole asset, so it holds the terrain before the edit and takes the after when undone:
+ * every step pushed after it is undone first, so the asset is then as the edit left it. Made by
+ * apply(). A brush stroke is a TerrainStrokeCommand, which holds only what it touched.
  */
 class TerrainEditCommand : public Command {
     public:
@@ -875,20 +904,17 @@ class TerrainEditCommand : public Command {
          * @param resources Manager owning the asset.
          * @param handle    Terrain edited.
          * @param before    It before the edit.
-         * @param after     It now.
          * @param label     History entry text.
          */
         TerrainEditCommand(
             ResourceManager& resources,
             TerrainHandle handle,
             TerrainAsset before,
-            TerrainAsset after,
             const char* label
         )
             : m_resources(&resources)
             , m_handle(handle)
             , m_before(std::move(before))
-            , m_after(std::move(after))
             , m_label(label)
         {}
         ~TerrainEditCommand() override = default;
@@ -905,7 +931,30 @@ class TerrainEditCommand : public Command {
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
 
+        /**
+         * @brief Edit @p handle by @p edit, as a step of @p host's history.
+         *
+         * A drag's first frame records the terrain before it; the rest edit the asset under that
+         * step, rather than each copy the whole terrain to be merged into it.
+         *
+         * @param resources Manager owning the asset.
+         * @param host      Whose history takes the step.
+         * @param handle    Terrain edited; alive.
+         * @param edit      The change, made on the live asset.
+         * @param label     History entry text.
+         */
+        static void apply(
+            ResourceManager& resources,
+            CommandHost& host,
+            TerrainHandle handle,
+            const std::function<void(TerrainAsset&)>& edit,
+            const char* label
+        );
+
     private:
+        /// Whether an edit of @p handle under @p label goes on this step rather than one of its own.
+        bool continues(TerrainHandle handle, const char* label) const;
+
         /// Put @p value back on the live asset and commit.
         void step(const TerrainAsset& value);
 
@@ -913,7 +962,7 @@ class TerrainEditCommand : public Command {
         ResourceManager* m_resources;
         TerrainHandle    m_handle;
         TerrainAsset     m_before;
-        TerrainAsset     m_after;
+        TerrainAsset     m_after;  ///< Taken when undone.
         const char*      m_label;
 };
 

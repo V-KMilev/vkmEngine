@@ -25,7 +25,7 @@ namespace AssetSourceKind {
     inline constexpr const char* MODEL     = "model";      ///< One index into a glTF, FBX or OBJ file.
     /// A texture embedded in, or referenced beside, a model file.
     inline constexpr const char* MODEL_IMAGE = "model-image";
-    inline constexpr const char* SOLID     = "solid";      ///< A single-colour texture.
+    inline constexpr const char* SOLID     = "solid";      ///< A single-color texture.
 
 } // namespace AssetSourceKind
 

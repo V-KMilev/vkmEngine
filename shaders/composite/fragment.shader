@@ -40,7 +40,7 @@ vec3 debugColor(vec2 uv) {
         float t   = log2(lin / u_camera.zNear) / log2(u_camera.zFar / u_camera.zNear);
         return vec3(clamp(1.0 - t, 0.0, 1.0));
     }
-    // The material views, which the forward pass wrote in place of the colour; the sky
+    // The material views, which the forward pass wrote in place of the color; the sky
     // is no surface.
     if (isFarDepth(texture(u_sceneDepth, uv).r)) return vec3(0.0);
     return texture(u_hdr, uv).rgb;

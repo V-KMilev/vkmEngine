@@ -36,6 +36,16 @@ struct AssetRecord {
      * `tools/vkmcli/package.py`).
      */
     std::vector<std::string> sources;
+    /**
+     * @brief The recipe document's own hash when it was cooked, which a load checks the file against.
+     *
+     * recipeHash folds in the art's bytes, too costly to reread on every load; an edited recipe is
+     * caught by this alone.
+     */
+    uint64_t    documentHash = 0;
+
+    /// The documentHash of @p recipe: what a cook records and a load compares.
+    static uint64_t documentHashOf(const nlohmann::json& recipe);
 };
 
 /**
@@ -101,6 +111,15 @@ class AssetLibrary {
         std::vector<std::string> namesOf(AssetType type) const;
 
         /**
+         * @brief Moved by every change to the records: a load, an upsert, a removal.
+         *
+         * So a view built from namesOf() can tell it still holds.
+         *
+         * @return The count of changes so far.
+         */
+        uint64_t revision() const { return m_revision; }
+
+        /**
          * @brief Absolute path to the recipe file of (@p type, @p name).
          *
          * Derived from the identity, so writer and readers cannot disagree about where it is.
@@ -143,7 +162,8 @@ class AssetLibrary {
          * @brief Write @p source as the recipe file for (@p type, @p name).
          *
          * Written to a temporary and renamed over the file: a cook cannot regenerate a recipe, and one
-         * truncated in place would be recorded current and refused by every later load.
+         * truncated in place would be recorded current and refused by every later load. A file that
+         * already says @p source is left as it is.
          *
          * @param type Asset type half of the identity.
          * @param name Asset name half of the identity.
@@ -222,6 +242,7 @@ class AssetLibrary {
 
     private:
         std::unordered_map<std::string, AssetRecord> m_records;  ///< Keyed by key(type, name).
+        uint64_t                                     m_revision = 0;
 };
 
 } // namespace Vkm::Engine

@@ -47,9 +47,6 @@ class Crate : public ReflectedBehavior<Crate> {
         float                    pushStrength = 6.0f;
         glm::vec4                glowColor    = {1.0f, 0.6f, 0.2f, 1.0f};
         AssetRef<AudioClipAsset> thud;
-
-    private:
-        AudioClipHandle m_thud;
 };
 
 } // namespace Game
@@ -64,7 +61,7 @@ VKM_REFLECT_END()
 A field the block does not list is runtime state: not saved, not shown, not
 copied. A behavior with nothing to tune still writes the block, empty. The
 inspector labels `pushStrength` "Push Strength", and edits a `glm::vec3` or
-`glm::vec4` whose name ends in `color` with a colour picker.
+`glm::vec4` whose name ends in `color` with a color picker.
 
 **Registering it.** The module names its behaviors once, in `src/module.cpp`:
 
@@ -102,8 +99,7 @@ instead):
 #include "crate.h"
 
 void Game::Crate::onStart() {
-    input().define("Push", { {InputSource::Key, GLFW_KEY_E, 1.0f} });
-    m_thud = resources().find(thud);
+    input().define("Push", { InputBinding::key(GLFW_KEY_E) });
     LOG_INFO("Crate %u ready", entity().slot());
 }
 
@@ -123,12 +119,13 @@ and the speed they struck at. On exit the point, normal and speed are zero. A
 trigger collider calls `onTriggerEnter` / `Stay` / `Exit` with the entity that
 entered instead.
 
-**A sound.** A one-shot that needs no entity of its own is an event; the handle
-is the one `onStart` resolved from the authored `thud`:
+**A sound.** A one-shot that needs no entity of its own is `playSoundAt`, or
+`playSound` from this entity: a `PlaySoundEvent` for the clip the authored
+`thud` names. A replayed tick plays none: it re-runs a moment already presented.
 
 ```cpp
 void Game::Crate::onCollisionEnter(const Collision& hit) {
-    events().emit(PlaySoundEvent::at(m_thud, hit.point));
+    playSoundAt(thud, hit.point);
 }
 ```
 
@@ -188,6 +185,10 @@ class Behavior {
         template<typename T> T&    get();           // its T, which it must have
         template<typename T> bool  has() const;     // does it carry one
         template<typename T> auto& add(T && component); // give it one
+        template<typename T> T&    getOrAdd();      // its T, given a default one first if it has none
+        glm::vec3 worldPosition();                  // where it is in the world; worldRotation() too
+        EntityId  findPart(std::string_view name);  // its subtree's entity so named, itself included
+        template<typename T> EntityId findPartWith(); // ... carrying a T
 
         Scene&           scene();       // the world
         ResourceManager& resources();   // the assets
@@ -201,15 +202,23 @@ class Behavior {
         ScreenView       screen();      // the 3D view: a ray through a point, a point on a canvas
         std::optional<Math::Ray> pointerRay(); // the ray under the cursor, if it is on the view
         const OceanData* ocean();       // the scene's sea, this tick's or frame's, or null
+        const WaterData& water();       // all its water, the sea's too: what lies at a point
+        DebugDraw&       debugDraw();   // lines and shapes in the world (rendering.md)
 
         bool                isSimulated();  // does this end decide this entity
         bool                isMine();       // is this the player sitting here
         bool                isReplaying();  // is this tick being run again
+        bool                isAuthority();  // is this end offline or the server
         const InputCommand& command();      // the input driving this entity, this tick
+        double              worldTime();    // the authority's seconds, alike at every end
 
         EntityId spawn();                               // an empty entity
         EntityId spawn(const char* name);               // ... carrying a Name
         EntityId spawn(const char* name, EntityId parent);  // ... under a parent
+        EntityId instantiate(const std::string& prefab, const Transform& at);  // a prefab, here alone
+        EntityId instantiateShared(const std::string& prefab, const Transform& at); // ... at every end
+        void     playSound(const AssetRef<AudioClipAsset>&, float volume = 1);  // from this entity
+        void     playSoundAt(const AssetRef<AudioClipAsset>&, const glm::vec3& at, float volume = 1);
         void     destroy();             // this entity and its subtree, after the hook pass
         void     destroy(EntityId);     // that one and its subtree, same deferral
         void     loadScene(const std::string& scenePath);  // deferred to the end of the frame's hooks
@@ -217,6 +226,7 @@ class Behavior {
         template<typename T> T* findBehavior();          // its behavior of type T, or null
         template<typename T> T* findBehavior(EntityId);  // another entity's
         template<typename T> T* findInScene();           // the scene's one T
+        template<typename T, typename Fn> void forEachBehavior(Fn&&);  // every T, as (EntityId, T&)
         template<typename E = void, typename Fn> void subscribe(Fn&&);  // E read off Fn; auto-unsubscribes
 };
 ```
@@ -227,14 +237,15 @@ class Behavior {
   call them on `scene()`. `Scene::tryGet` takes a null id, and every `find` in
   the engine answers null when there is nothing to find, so
   `scene().tryGet<Transform>(findActiveCamera(scene()))` is safe.
-- **The accessors** from `scene()` to `ocean()` read one context that outlives
-  every frame: safe from a `subscribe()` callback as well as a hook, and not
-  worth caching in a member.
-- **Networking.** `isSimulated()`, `isMine()`, `isReplaying()` and `command()`
-  read the session through `net()`. Offline they answer the single-player way
-  (`isSimulated()` and `isMine()` yes, `isReplaying()` no, `command()` the local
-  player's), so a project is written the same with or without a session; see
-  [networking.md](networking.md#what-a-project-writes).
+- **The accessors** from `scene()` to `debugDraw()` read one context that
+  outlives every frame: safe from a `subscribe()` callback as well as a hook,
+  and not worth caching in a member.
+- **Debug drawing.** `debugDraw()` draws lines and shapes into the world; drawn
+  in `onFixedUpdate`, one stands until the next tick's
+  ([rendering.md](rendering.md#debug-drawing)).
+- **Networking.** What a behavior asks the session through `net()`, and how
+  each question answers offline so a project is written the same with or
+  without a session, is [networking.md](networking.md#the-five-questions).
 - **The screen.** `window()` is null on a dedicated server. To aim the cursor
   into the world or pin a label over something, ask `screen()`, not the window:
   in the editor's viewport the scene is not drawn over the whole window
@@ -242,18 +253,19 @@ class Behavior {
 - **`destroy()`** takes the entity's whole subtree and is deferred to after the
   current hook pass, so a behavior may destroy its own entity. **`loadScene()`**
   is deferred to the end of the frame's hooks, so a behavior may ask for the
-  scene that destroys it; the path is project-relative. **`restartScene()`**
-  starts the scene being played over: the file `loadScene` last loaded, else
-  what the host began play with - a runtime's or server's entry scene
-  (`BehaviorSystem::setPlayedScene`), or under the editor the scene as Play
-  found it, which the editor puts back by Stop and Play
+  scene that destroys it; the path is project-relative. Under a host's loading
+  screen it waits for the cover ([ui.md](ui.md#the-loading-screen)).
+  **`restartScene()`** starts the scene being played over: the file `loadScene`
+  last loaded, else what the host began play with - a runtime's or server's
+  entry scene (`BehaviorSystem::setPlayedScene`), or under the editor the scene
+  as Play found it, which the editor puts back by Stop and Play
   (`BehaviorSystem::setRestartHandler`).
 - **Spawning.** `spawn(name, parent)` parents through
   `HierarchyOperations::setParent`, UI elements included. A spawn is local to
-  this end; what every end should see is `NetSession::spawn`, on the server
-  ([networking.md](networking.md#spawning)). A prefab is
-  `Prefab::instantiate(scene(), resources(), "prefabs/enemy.json")`
-  (`io/scene/prefab.h`), which returns the subtree's root.
+  this end; so is a prefab, `instantiate("prefabs/enemy.json", at)`, which
+  returns the subtree's root. What every end should see is
+  `instantiateShared`, on the authority
+  ([networking.md](networking.md#spawning)).
 - **`subscribe()`** is the only way a behavior listens; see
   [Events](events.md#subscribing-and-publishing).
 
@@ -282,8 +294,9 @@ with a function-scope `using namespace Vkm::Engine;`
 `BehaviorFieldVisitor` lets the inspector and serializer read and write a
 behavior's fields through a `Behavior*`. It supports `float`, `int`, `bool`,
 `std::string`, `glm::vec2`, `glm::vec3`, `glm::vec4` and `glm::quat`, plus any
-`VKM_ENUM_NAMES` enum, any `AssetRef<Asset>`, and any `VKM_REFLECT`-ed struct
-(descended into). Reflecting anything else is a compile error.
+`VKM_ENUM_NAMES` enum, any `AssetRef<Asset>`, a `PrefabRef`, and any
+`VKM_REFLECT`-ed struct (descended into). Reflecting anything else is a compile
+error.
 
 A field's name is the key it is saved under. A `glm::quat` edits as Euler angles
 in degrees and saves as the quaternion. A missing key keeps the field's current
@@ -298,11 +311,17 @@ through `BehaviorFieldVisitor::assetField`, and the loader recreates only what
 that block lists: the asset a `std::string` field names would be missing on load.
 
 It holds a *name*; `ResourceManager::find` takes it and answers this session's
-handle - nothing resolves it for you. An empty name means "none". The inspector
-shows a combo over the project library's assets of that kind, plus `(none)`,
-and flags a stored name the library does not have. Only kinds with an
-`ASSET_TYPE` (`resource/asset_type.h`) can be referenced: `AssetRef<FontAsset>`
-is a compile error.
+handle - nothing resolves it for you but `playSoundAt` and `playSound`, which
+find it as they play. An empty name means "none". The inspector shows a combo over the project
+library's assets of that kind, plus `(none)`, and flags a stored name the
+library does not have. Only kinds with an `ASSET_TYPE` (`resource/asset_type.h`)
+can be referenced: `AssetRef<FontAsset>` is a compile error.
+
+A field that names a prefab is a `PrefabRef` (`io/scene/prefab_ref.h`), its
+project-relative path, which `instantiate` and `instantiateShared` take. The
+inspector lists the project's `prefabs/` and flags a path that names no file; a
+scene saves it as the plain string. A prefab's own file names its assets, so it
+puts nothing in the scene's block.
 
 ## ScriptComponent
 
@@ -466,7 +485,7 @@ restarts the session**: Stop (restoring the authored scene), swap, Play.
   `cmake/gameplay_module.cmake`), without which GCC's unique symbols would bind
   the fresh copy to the old one's. State that must survive belongs in reflected
   fields, a component or an asset - never a `static`.
-- **A failed reload goes through `reportError`**, so the Errors panel names it.
+- **A failed reload goes through `reportError`**, so the Console's Errors names it.
   A project whose module never loaded has its behaviors held as text: nothing is
   lost, including on save, and the reload that loads a working build turns them
   back into behaviors.
@@ -489,9 +508,9 @@ empties both queues, because an entity id re-aims at whatever takes its slot
 after a scene swap.
 
 Hooks and `subscribe()` listeners run under a catch net that sends a throw to
-`reportError()`; a hook that throws also disables its behavior. The accessors read a
-`BehaviorContext` the system owns and binds before `onStart()`; growing the
-surface is a field there and an accessor beside the others.
+`reportError()`; a hook that throws also disables its behavior. The accessors
+read a `BehaviorContext` the system owns and binds before `onStart()`; growing
+the surface is a field there and an accessor beside the others.
 
 ### Unloading a module
 

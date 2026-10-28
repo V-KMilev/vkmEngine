@@ -17,23 +17,17 @@ Once, in `onStart`. An action is a name and the controls that feed it:
 void Player::onStart() {
     InputMap& map = input();
 
-    map.define("Jump", {
-        {InputSource::Key, GLFW_KEY_SPACE, 1.0f},
-        {InputSource::Key, GLFW_KEY_W,     1.0f},
-    });
+    map.define("Jump", { InputBinding::key(GLFW_KEY_SPACE), InputBinding::key(GLFW_KEY_W) });
 
     // An axis: opposing scales, so holding both reads zero.
-    map.define("Move/Right", {
-        {InputSource::Key, GLFW_KEY_D,  1.0f},
-        {InputSource::Key, GLFW_KEY_A, -1.0f},
-    });
+    map.define("Move/Right", { InputBinding::key(GLFW_KEY_D), InputBinding::key(GLFW_KEY_A, -1.0f) });
 }
 ```
 
 `axis()` sums every held binding's `scale`, clamped to -1..1; the action is
 held, pressed or released when that reaches 0.5 either way. A mouse button binds
-with `InputSource::MouseButton`; keyboard and mouse are the only sources. **An
-undefined action reads as inactive**, not as an error.
+with `InputBinding::mouse(GLFW_MOUSE_BUTTON_LEFT)`; keyboard and mouse are the
+only sources. **An undefined action reads as inactive**, not as an error.
 
 ### Rebinding
 
@@ -69,7 +63,9 @@ In `onUpdate` or `onRealtimeUpdate`:
 Text fields built from the last two: [ui.md](ui.md#text-input).
 
 The map is sampled once a frame before any system runs, so every reader agrees;
-a tap shorter than a frame reads as pressed one frame, released the next.
+a tap shorter than a frame reads as pressed one frame, released the next, and a
+held key let go and pressed again inside one frame reads as both that frame,
+unless another binding of its action held the action down throughout.
 
 **A device someone else holds reads as untouched.** In the editor: keys (and
 `text()`, `typed()`) while a panel's text field has the keyboard; mouse buttons,
@@ -103,7 +99,7 @@ the axes as they stand plus every edge since the previous tick, and it is what
 gets replayed for client-side prediction ([networking.md](networking.md)).
 
 Whose command `command()` is on each end:
-[networking.md](networking.md#the-four-questions).
+[networking.md](networking.md#the-five-questions).
 
 While the world stands still (`Clock::isSimulationStill`), a frame that runs no
 tick drops its latched edges, so the next tick does not see a press made
@@ -143,7 +139,7 @@ on the frame clock but are absent from every command, with a warning.
 | Action | Who reads it |
 |---|---|
 | `UI/Click` | `UISystem`, for pressing buttons. In the map from construction and after every `reset()`; your `define` of it replaces it. |
-| `Camera/Forward`, `Camera/Right`, `Camera/Up`, `Camera/Boost`, `Camera/Look` | the editor's fly camera, in its own `InputMap` - never the game's. |
+| `Camera/*`, the actions `CameraActions` names | the editor's view, in its own `InputMap` - never the game's. |
 
 The constants: `InputActions::UI_CLICK` in `platform/input/input_map.h`, the
 camera's `CameraActions` in `src/editor/input/camera_controller_system.h`.

@@ -22,28 +22,11 @@ GLCubeConvolver::GLCubeConvolver(const GLMesh& cube)
 
 GLCubeConvolver::~GLCubeConvolver() = default;
 
-void GLCubeConvolver::irradiance(const AttachFace& attach) {
-    for (int face = 0; face < 6; ++face) irradianceFace(face, attach);
-}
-
-void GLCubeConvolver::prefilter(int mips, const AttachMipFace& attach) {
-    m_prefilter.bind();
-    m_prefilter.setUniformMatrix4fv("u_projection", m_projection);
-    for (int mip = 0; mip < mips; ++mip) {
-        m_prefilter.setUniform1f("u_roughness", roughnessOf(mip, mips));
-        for (int face = 0; face < 6; ++face) {
-            m_prefilter.setUniformMatrix4fv("u_view", m_faceViews[face]);
-            attach(face, mip);
-            m_cube.draw();
-        }
-    }
-}
-
-void GLCubeConvolver::irradianceFace(int face, const AttachFace& attach) {
+void GLCubeConvolver::irradianceFace(int face, Target& target) {
     m_irradiance.bind();
     m_irradiance.setUniformMatrix4fv("u_projection", m_projection);
     m_irradiance.setUniformMatrix4fv("u_view", m_faceViews[face]);
-    attach(face);
+    target.attachIrradiance(face);
     m_cube.draw();
 }
 
@@ -55,13 +38,13 @@ void GLCubeConvolver::prefilterBand(
     int size,
     int band,
     int bands,
-    const AttachMipFace& attach
+    Target& target
 ) {
     m_prefilter.bind();
     m_prefilter.setUniformMatrix4fv("u_projection", m_projection);
     m_prefilter.setUniformMatrix4fv("u_view", m_faceViews[face]);
     m_prefilter.setUniform1f("u_roughness", roughnessOf(mip, mips));
-    attach(face, mip);
+    target.attachPrefilter(face, mip);
 
     const int first = size * band / bands;
     gl.enableScissor(true);
@@ -88,25 +71,26 @@ std::vector<GLCubeConvolver::Step> GLCubeConvolver::slices(int prefilterSize, in
 }
 
 void GLCubeConvolver::run(Vkm::GL::Context& gl, const Step& step, Target& target) {
-    // One reference each, so neither allocates.
-    const AttachFace    irradiance = [&target](int face) { target.attachIrradiance(face); };
-    const AttachMipFace prefilter  = [&target](int face, int mip) { target.attachPrefilter(face, mip); };
     if (step.kind == Step::Kind::Mirror) target.makeSourceMips();
     target.bindSource();
     switch (step.kind) {
         case Step::Kind::Mirror:
             // Every face of it, whole: a mirror is one read a texel.
             for (int face = 0; face < 6; ++face) {
-                prefilterBand(gl, face, 0, step.mips, step.size, 0, 1, prefilter);
+                prefilterBand(gl, face, 0, step.mips, step.size, 0, 1, target);
             }
             break;
         case Step::Kind::Irradiance:
-            irradianceFace(step.face, irradiance);
+            irradianceFace(step.face, target);
             break;
         case Step::Kind::Prefilter:
-            prefilterBand(gl, step.face, step.mip, step.mips, step.size, step.part, step.parts, prefilter);
+            prefilterBand(gl, step.face, step.mip, step.mips, step.size, step.part, step.parts, target);
             break;
     }
+}
+
+void GLCubeConvolver::convolve(Vkm::GL::Context& gl, int prefilterSize, int mips, Target& target) {
+    for (const Step& step : slices(prefilterSize, mips)) run(gl, step, target);
 }
 
 float GLCubeConvolver::roughnessOf(int mip, int mips) {

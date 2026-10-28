@@ -49,6 +49,15 @@ struct VoiceParams {
     AudioRolloff rolloff     = AudioRolloff::Linear;
     /// Rank when the mixer is full; see AudioDevice::play.
     int          priority    = 0;
+    /**
+     * @brief How much of the sound the world stops on its way to the ear, 0 to 1: quieter and
+     *        duller as it rises (Acoustics::occludedGain, occludedCutoff).
+     *
+     * AudioSystem sets it.
+     */
+    float        occlusion   = 0.0f;
+    /// Whether the voice rings in the room's reverb (AudioDevice::setRoomReverb). AudioSystem sets it.
+    bool         reverb      = false;
 
     /**
      * @brief The gain as the mixer takes it.
@@ -65,6 +74,15 @@ struct VoiceParams {
      * @return minDistance, or 0 where it is negative or not finite.
      */
     float heardMinDistance() const { return std::isfinite(minDistance) ? std::max(0.0f, minDistance) : 0.0f; }
+
+    /**
+     * @brief The occlusion as the mixer takes it.
+     *
+     * @return occlusion within 0..1, or 0 where it is not finite.
+     */
+    float heardOcclusion() const {
+        return std::isfinite(occlusion) ? std::clamp(occlusion, 0.0f, 1.0f) : 0.0f;
+    }
 
     /**
      * @brief The far distance as the mixer takes it.
@@ -172,8 +190,9 @@ class AudioDevice {
          *
          * @param clip Decoded clip to play; an empty one yields no voice.
          * @param params Initial gain, pitch, looping, position and priority.
-         * @return The new voice, or 0 if the device is closed, the sound could not be
-         *         created, or no voice at the cap gives way to it.
+         * @return The new voice, or 0 if the device is closed, a one-shot is asked for while
+         *         the device is lost, the sound could not be created, or no voice at the cap
+         *         gives way to it.
          */
         VoiceId play(const AudioClipAsset& clip, const VoiceParams& params);
 
@@ -266,10 +285,11 @@ class AudioDevice {
         void reapFinishedVoices();
 
         /**
-         * @brief Cut and release every voice at once, leaving the device open.
+         * @brief Stop every voice, each ramped to silence as stopVoice() ramps one, and the room's
+         *        tail with them.
          *
-         * For when the voices' clips are about to be freed, so not ramped: a ramping voice still
-         * reads its clip.
+         * A voice holds its own samples, so the clips may be freed at once; the reap frees the
+         * voices once their ramps end.
          */
         void stopAllVoices();
 
@@ -320,6 +340,17 @@ class AudioDevice {
          * @param volume Linear master gain; 0 and below, or non-finite, silence the mix.
          */
         void setMasterVolume(float volume);
+
+        /**
+         * @brief The reverberation of the space the ear is in, heard on voices that ask for it.
+         *
+         * One tank for every such voice: the ear is in one room at a time. Takes effect on the
+         * mixer's next block.
+         *
+         * @param decaySeconds How long its tail takes to fall by 60 dB.
+         * @param wet          Its level beside the dry sound; 0 turns it off.
+         */
+        void setRoomReverb(float decaySeconds, float wet);
 
     public:
         bool isOpen() const noexcept { return m_backend != nullptr; }

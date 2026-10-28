@@ -2,9 +2,12 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "core/memory/types.h"
 #include "ecs/entity.h"
+#include "resource/asset_type.h"
 #include "resource/asset/material_asset.h"
 #include "resource/resource_manager.h"
 
@@ -15,6 +18,20 @@
 namespace Vkm::Engine {
 
 class Scene;
+
+/**
+ * @brief What Copy and Cut took, for Paste.
+ *
+ * The copied subtrees as a scene document (SceneSerializer::saveToString), each root at its world
+ * pose: assets named rather than held by handle, so it pastes into another scene, or the scene
+ * back from Play, as into this one.
+ */
+struct EntityClipboard {
+    std::string scene;  ///< The copies: the plain subtrees in selection order, then the instances.
+    /// Each root's parent when taken, by its slot in `scene`; null for a root.
+    std::vector<std::pair<uint32_t, EntityId>> parents;
+    uint64_t world = 0;  ///< Scene::epoch() when taken: where those parents mean anything.
+};
 
 /**
  * @brief Entity operations the editor's UI invokes, on the Scene and EditorState.
@@ -50,34 +67,116 @@ enum class EntityKind {
     UIScrollView,
     UIText,
     UIButton,
+    UISlider,
+    UIToggle,
+    UIChoice,
     Character,
     StaticBody,
     Terrain,
+    Water,
+    Sea,
 };
 
 /**
  * @brief Create an entity of the given kind as an undoable step.
  *
+ * A root goes where the view is looking (ViewPlacement::placeInView), a mesh standing
+ * on what it meets; a camera takes the view's pose; a terrain and a sea stay at the origin.
+ * A child goes at its parent's origin; one asked for inside a prefab instance is refused
+ * with a toast, since the instance is rebuilt from its prefab.
+ *
  * @param scene Receives the entity.
  * @param resources Where the kind's meshes and materials are registered.
- * @param state Takes the step and the dirty flag.
+ * @param state Takes the step, the dirty flag and any refusal's toast.
  * @param kind Which built-in factory to run.
- * @return The new entity.
+ * @param parent Puts it under this entity, or {} for the view or the selected canvas.
+ * @return The new entity, or null when refused.
  */
-EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind);
+EntityId createEntity(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityKind kind,
+    EntityId parent = {}
+);
+
+/**
+ * @brief Move the active entity to where the editor's view stands, facing as it faces.
+ *
+ * One undo step; its scale is kept. A camera then sees what the author sees.
+ *
+ * @param scene Holds the entity.
+ * @param resources Resolves asset handles for the step.
+ * @param state Supplies the selection and the view, and takes the step.
+ */
+void alignWithView(Scene& scene, ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Let each selected entity, with everything under it, fall onto what is below it.
+ *
+ * One undo step for the selection (ViewPlacement::dropBelow measures each); an entity
+ * whose ancestor is also selected moves with it. Says so when nothing is below one.
+ *
+ * @param scene Holds the selection.
+ * @param resources Resolves the assets measured.
+ * @param state Supplies the selection and takes the step.
+ */
+void dropToGround(Scene& scene, ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Whether createFromAsset makes an entity of an asset of @p type.
+ *
+ * @param type The dragged asset's kind.
+ * @return True for a mesh, a sound and a terrain.
+ */
+bool makesEntity(AssetType type);
+
+/**
+ * @brief Make an entity of a dragged asset, standing at @p at: a mesh drawn with the
+ *        default material, a sound's Audio Source, or a terrain's ground, which stands at the
+ *        origin instead.
+ *
+ * One undo step, selected.
+ *
+ * @param scene Receives the entity.
+ * @param resources Holds the asset.
+ * @param state Takes the step and the selection.
+ * @param type One makesEntity accepts; anything else makes nothing.
+ * @param key The asset.
+ * @param at World position of its origin.
+ * @return The new entity, or null.
+ */
+EntityId createFromAsset(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    AssetType type,
+    StorageIndex key,
+    const glm::vec3& at
+);
+
 /**
  * @brief Duplicate an entity and everything under it.
  *
  * The copy keeps the source's parent and script behaviors and is nudged off it on
  * X; its cameras come back inactive, animations paused and ragdolls at rest. A
- * prefab instance is instanced from its file again, with the same overrides.
+ * prefab instance is instanced from its file again, with the same overrides. A copy
+ * of a part of an instance stands at the root, where the source stands (copyParent).
  *
  * @param scene Holds the source and receives the copy.
  * @param resources Resolves the prefab's asset names when the source is an instance.
  * @param state Takes the step, the dirty flag and the new selection.
  * @param source Entity to copy.
+ * @param inPlace Where the source stands, not nudged off it: a copy dragged away at once.
  */
-void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityId source);
+void duplicateEntity(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId source,
+    bool inPlace = false
+);
+
 /**
  * @brief Delete an entity and its subtree as one undoable step.
  *
@@ -89,6 +188,18 @@ void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& stat
  */
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 
+/// A prefab file's extension.
+inline constexpr const char* PREFAB_EXTENSION = ".json";
+
+/**
+ * @brief The project's prefabs, sorted, each by its project-relative path: what an instance stores.
+ *
+ * Walked under ProjectPaths::prefabs(); a folder that cannot be read ends the walk, not the editor.
+ *
+ * @return The paths; empty for none.
+ */
+std::vector<std::string> listPrefabs();
+
 /**
  * @brief Write @p entity and its subtree to the project's prefabs/ as a prefab.
  *
@@ -96,19 +207,32 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
  * reference, and a second save writes over the same file. An entity not yet an
  * instance takes a free file name.
  *
+ * The assets it names are cooked and recorded first, as a scene's save does, or the
+ * names would resolve to nothing once the session that imported them ends.
+ *
  * @param scene     Scene holding the subtree.
- * @param resources Resolves asset handles to names.
+ * @param resources Resolves asset handles to names, and is cooked.
  * @param state     For the toast and the dirty flag.
  * @param entity    Root of the subtree to save.
  * @return True when the prefab was written.
  */
-bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state, EntityId entity);
+bool saveAsPrefab(Scene& scene, ResourceManager& resources, EditorState& state, EntityId entity);
+
+/**
+ * @brief Make the instance @p root an ordinary subtree, as it is now, overrides and all: the scene
+ *        then stores its entities, not a reference to the prefab. An undo step.
+ *
+ * @param scene The scene holding it.
+ * @param state Receives the step.
+ * @param root  An instance root.
+ */
+void unpackPrefab(Scene& scene, EditorState& state, EntityId root);
 
 /**
  * @brief Build an instance of the prefab at @p path into the scene.
  *
- * The instance lands at the origin, not the prefab's authored pose, and becomes
- * the selection.
+ * The instance lands where the view looks (ViewPlacement::placeInView), not at the prefab's
+ * authored pose, and becomes the selection.
  *
  * @param scene     Scene the instance is built in.
  * @param resources Resolves the prefab's asset names to handles.
@@ -140,19 +264,19 @@ std::vector<std::string> shippedEffects();
 EntityId placeEffect(Scene& scene, ResourceManager& resources, EditorState& state, const std::string& file);
 
 /**
- * @brief Whether any ancestor of @p id is itself in @p selection.
+ * @brief Whether any ancestor of @p id is itself selected.
  *
- * Reduces a selection to its roots: a selected ancestor already carries @p id.
- * The selection is passed so a caller that cleared it can test a copy. The walk
- * is bounded by HierarchyOperations::MAX_DEPTH, so a Hierarchy ring written
+ * Reduces a selection to its roots: a selected ancestor already carries @p id. Asked of the
+ * selection's slot index, so a whole scene selected is reduced in a walk of each entity's
+ * ancestors. The walk is bounded by HierarchyOperations::MAX_DEPTH, so a Hierarchy ring written
  * around setParent cannot hang the editor.
  *
  * @param scene Scene the entities live in.
- * @param selection Entities to look for.
+ * @param state Its selection is looked in.
  * @param id Entity to test.
  * @return Whether a selected ancestor was found within MAX_DEPTH.
  */
-bool hasSelectedAncestor(const Scene& scene, const std::vector<EntityId>& selection, EntityId id);
+bool hasSelectedAncestor(const Scene& scene, const EditorState& state, EntityId id);
 
 /**
  * @brief Delete every selected entity as one undo step.
@@ -173,9 +297,64 @@ void deleteSelection(Scene& scene, EditorState& state);
  *
  * @param scene Holds the sources and receives the copies.
  * @param resources Resolves the prefab's asset names when a source is an instance.
- * @param state Its selection is copied and replaced by the copies.
+ * @param state Its selection is copied and replaced by the copies; the active one's copy is active.
+ * @param inPlace See duplicateEntity.
  */
-void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state);
+void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state, bool inPlace = false);
+
+/**
+ * @brief Select every entity in the scene, keeping the active one active.
+ *
+ * @param scene The scene whose entities are selected.
+ * @param state Its selection is replaced.
+ */
+void selectAll(const Scene& scene, EditorState& state);
+
+/**
+ * @brief Take every selected entity, and everything under each, for Paste.
+ *
+ * An entity whose ancestor is also selected is skipped: the ancestor's copy holds it.
+ *
+ * @param scene     Holds the selection.
+ * @param resources Names the copies' assets.
+ * @param state     Its selection is taken; its clipboard replaced.
+ */
+void copySelection(const Scene& scene, const ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Copy the selection, then delete it as one undo step.
+ *
+ * @param scene     Holds the selection, and loses it.
+ * @param resources See copySelection.
+ * @param state     See copySelection; takes the step.
+ */
+void cutSelection(Scene& scene, const ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Carry what was copied into @p scene, the world @p from came back in every entity's slot.
+ *
+ * Stop restores the world in place under a new epoch; without this, a copy taken before it would
+ * paste as if into another world, its parents forgotten. A clipboard of any other world is left.
+ *
+ * @param state Holds the clipboard.
+ * @param from  The epoch the world had before it came back.
+ * @param scene The world as it came back.
+ */
+void carryClipboard(EditorState& state, uint64_t from, const Scene& scene);
+
+/**
+ * @brief Place what was copied as one undo step, selecting it.
+ *
+ * Copies are made as duplicateEntity says, but for their references outside what was copied,
+ * which are dropped, and for where they land, with no nudge: in the world it was taken from, each
+ * exactly where it stood when copied, under the same parent while copyParent keeps it; in
+ * another, there in the world, at the root.
+ *
+ * @param scene     Receives the copies.
+ * @param resources Resolves the copies' asset names, and takes the assets they carry that it lacks.
+ * @param state     Takes the step, the selection, the dirty flag and the toasts.
+ */
+void paste(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
  * @brief Undo the latest step and mark the scene unsaved; nothing when there is none.
@@ -211,26 +390,39 @@ void redo(Scene& scene, EditorState& state);
  * @param child     Entity being moved.
  * @param newParent New parent, or a null EntityId to unparent to the root.
  * @param label     History entry text.
+ * @param before    A child of @p newParent to stand in front of; null puts it last.
+ *                  Roots stand in slot order, so it is ignored there.
  */
 void reparentKeepingWorld(
     Scene& scene,
     EditorState& state,
     EntityId child,
     EntityId newParent,
-    const char* label
+    const char* label,
+    EntityId before = {}
 );
 
 /**
- * @brief Fork a material asset for per-entity edits.
+ * @brief Fork @p material for @p entity, so edits to it stop reaching whatever else draws it, and
+ *        open the copy in a window of its own.
  *
- * Registers a clone under a " copy" name and assigns it to nothing; a caller
- * putting it on an entity pushes its own ComponentEditCommand.
+ * The copy, under a " copy" name, goes on @p entity's Mesh alone, one step that records a prefab
+ * instance's override, while that Mesh draws @p material; else it goes on nothing.
  *
+ * @param scene     Scene holding the entity.
  * @param resources Where the copy is registered.
- * @param source Material to clone.
- * @return The new handle, or a null handle on registration failure.
+ * @param state     Takes the step and opens the copy's window.
+ * @param entity    The entity the copy is for.
+ * @param material  The material forked.
+ * @return The copy, or a null handle on registration failure.
  */
-MaterialHandle duplicateMaterial(ResourceManager& resources, MaterialHandle source);
+MaterialHandle forkMaterial(
+    Scene& scene,
+    ResourceManager& resources,
+    EditorState& state,
+    EntityId entity,
+    MaterialHandle material
+);
 
 /**
  * @brief Create a fresh standalone PBR material.
@@ -326,16 +518,31 @@ T& addComponent(
 }
 
 /**
+ * @brief Add an empty ScriptComponent to @p id as one undoable step, as addComponent adds the rest.
+ *
+ * Its own: a ScriptComponent is move-only, so its step holds it serialized (ScriptEditCommand).
+ *
+ * @param scene Holds the entity; it must not already carry one.
+ * @param state Takes the step and the warning.
+ * @param id    Entity to add to.
+ * @param title The component's name as the author sees it, for the warning.
+ * @param label History entry text; the command keeps the pointer.
+ */
+void addScript(Scene& scene, EditorState& state, EntityId id, const char* title, const char* label);
+
+/**
  * @brief Draw the "Create" submenu and create and select the chosen kind.
  *
  * "Import Model" only sets EditorState::requestModelImport: its modal must be
  * drawn outside the menu, which closes on click (see ModelImportDialog::draw).
+ * Under a parent it is "Create Child", offering only what createEntity makes.
  *
  * @param scene Where new entities are created.
  * @param resources Passed through to createEntity.
  * @param state Takes the new selection or the import request.
+ * @param parent Puts what is made under this entity, or {} for none.
  */
-void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
+void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state, EntityId parent = {});
 
 } // namespace EditorActions
 

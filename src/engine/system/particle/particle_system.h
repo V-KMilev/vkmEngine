@@ -163,6 +163,9 @@ class ParticleSystem : public System {
         uint64_t      m_epoch = 0;     ///< The Scene::epoch() the pools belong to.
         float         m_time  = 0.0f;  ///< Seconds simulated in this world, which drift the swirl.
 
+        bool     m_previewing      = false;  ///< Last update played a host's preview.
+        uint64_t m_previewRestarts = 0;      ///< The preview's restart count it played to.
+
         std::vector<EntityId> m_spent;  ///< Emitters done with, to destroy after the walk.
 
         /// Each sub-emitter with an emitter parent, by that parent's slot, gathered each step.

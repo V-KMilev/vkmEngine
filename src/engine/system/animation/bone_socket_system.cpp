@@ -33,16 +33,18 @@ const char* nameOf(const Scene& scene, EntityId entity) {
  *
  * Failure is memoised too, so a missing name is not rescanned every frame.
  *
- * @param socket Socket whose boneIndex is brought up to date.
- * @param rig Skeleton the index is resolved against.
- * @param skeleton The asset @p rig names.
+ * @param socket   Socket whose boneIndex is brought up to date.
+ * @param skeleton The rig's skeleton, the index resolved against.
  */
-void resolveBone(BoneSocket& socket, SkeletonHandle rig, const SkeletonAsset& skeleton) {
-    if (socket.resolvedRig == rig && socket.resolvedName == socket.bone) return;
+void resolveBone(BoneSocket& socket, const SkeletonAsset& skeleton) {
+    const bool same = socket.resolvedUid == skeleton.uid() && socket.resolvedVersion == skeleton.version()
+        && socket.resolvedName == socket.bone;
+    if (same) return;
 
-    socket.resolvedRig  = rig;
-    socket.resolvedName = socket.bone;
-    socket.boneIndex    = socket.bone.empty() ? -1 : skeleton.indexOf(socket.bone);
+    socket.resolvedUid     = skeleton.uid();
+    socket.resolvedVersion = skeleton.version();
+    socket.resolvedName    = socket.bone;
+    socket.boneIndex       = socket.bone.empty() ? -1 : skeleton.indexOf(socket.bone);
 }
 
 } // namespace
@@ -141,7 +143,7 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx) {
         const PoseSlice* slice = ctx.poses->sliceOf(rig);
         if (!slice) continue;
 
-        resolveBone(socket, animator->skeleton, skeleton);
+        resolveBone(socket, skeleton);
 
         if (socket.boneIndex < 0 || static_cast<uint32_t>(socket.boneIndex) >= slice->count) {
             if (!m_noBone.report()) continue;

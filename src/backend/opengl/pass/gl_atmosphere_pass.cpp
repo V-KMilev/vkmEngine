@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
+#include "gl_context.h"
 
 #include "gl_frame_context.h"
 #include "convention/gl_bindings.h"
@@ -63,7 +63,7 @@ void GLAtmospherePass::execute(GLFrameContext& ctx) {
     }
 
     // Order the writes before the passes that sample them.
-    VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
 } // namespace Vkm::Engine

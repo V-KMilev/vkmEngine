@@ -72,7 +72,7 @@ enum class TextureFiltering : uint8_t {
  * reach white. Reinhard (`c / (c + 1)`) never reaches white and flattens the mid-tones.
  * Khronos PBR Neutral holds authored albedo as it brightens. AgX (Sobotka) runs to
  * white through a wider gamut, so a bright saturated light whitens instead of turning
- * another colour, at the price of a flatter base look.
+ * another color, at the price of a flatter base look.
  */
 enum class Tonemap : uint8_t {
 #define VKM_TONEMAP_ENUMERATOR(name, label, glsl) name,
@@ -101,6 +101,9 @@ enum class RenderMode : uint8_t {
 struct RenderSettings {
     // Debug
     RenderMode renderMode = RenderMode::Default;
+    /// The frame rate read out at the viewport's top right, over the game's UI (UISystem); a
+    /// host authoring the world shows its own instead.
+    bool showFrameRate = false;
 
     // Pass toggles
     bool gtao          = true;
@@ -279,6 +282,7 @@ struct RenderSettings {
  */
 template <typename Settings, typename Fn>
 void visitShippedRenderFields(Settings& r, Fn&& f) {
+    f("showFrameRate",     r.showFrameRate);
     f("gtao",              r.gtao);
     f("bloom",             r.bloom);
     f("probes",            r.probes);

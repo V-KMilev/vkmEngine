@@ -292,6 +292,30 @@ void testAGrazingCastFindsTheGround() {
     check("  on its top face", hit.normal.y > 0.99f);
 }
 
+// A part is met within the limit asked, whatever its shape: a fast body's sweep asks with the
+// nearest it has met, so a farther part must not take its place.
+void testAPartPastTheLimitIsNotMet() {
+    std::printf("A part past the limit of a sweep:\n");
+
+    for (const ColliderShape shape : {ColliderShape::Box, ColliderShape::Capsule}) {
+        Scene scene;
+        const glm::vec3 at(5.0f, 0.0f, 0.0f);
+        const Collider& collider = scene.get<Collider>(addBody(scene, at, shape));
+        const ColliderPart& part = collider.parts[0];
+        const auto sweep = [&](float limit) {
+            float     t = 0.0f;
+            glm::vec3 normal(0.0f);
+            const glm::vec3 centre = at + part.center;
+            const glm::vec3 along(1.0f, 0.0f, 0.0f);
+            const glm::mat3 still(1.0f);
+            return sweepPart(collider, part, centre, still, glm::vec3(0.0f), along, 0.25f, limit, t, normal);
+        };
+        const bool box = shape == ColliderShape::Box;
+        check(box ? "a box within the limit is met" : "a capsule within the limit is met", sweep(10.0f));
+        check("  and one past it is not", !sweep(2.0f));
+    }
+}
+
 // Gathered once, the parts answer every ray as raycast does: the same body, distance and
 // normal over boxes, turned boxes, capsules and a mesh; a part off the gathered region is not
 // there.
@@ -356,4 +380,5 @@ void runPhysicsQueryTests() {
     testQueryAgainstMeshes();
     testAGrazingCastFindsTheGround();
     testGatheredPartsAnswerAsRaycastDoes();
+    testAPartPastTheLimitIsNotMet();
 }

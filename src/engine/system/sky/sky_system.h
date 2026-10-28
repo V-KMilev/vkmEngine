@@ -7,7 +7,7 @@ namespace Vkm::Engine {
 /**
  * @brief Points the scene's key light (findKeyLight) at the Environment's sun, or moon at night.
  *
- * With `sky.procedural` on, the key light's rotation, colour and intensity are
+ * With `sky.procedural` on, the key light's rotation, color and intensity are
  * overwritten every frame from `sky.lightColor` / `sky.lightIntensity`
  * (through `Atmosphere::sunlight`) by day and `night.moonlight*` after dark;
  * author those, not the Light. Shadow settings stay the light's.

@@ -8,11 +8,10 @@
 #include <glm/glm.hpp>
 
 #include "gl_frame_buffer.h"
-#include "gl_shader.h"
 
 #include "core/math/bounds.h"
-#include "frame/gl_instance_batcher.h"
 #include "frame/gl_shadow_data.h"
+#include "offline/gl_caster_depth.h"
 
 namespace Vkm::GL {
     class Context;
@@ -137,15 +136,13 @@ class GLCaptureShadow {
         void use(int slot, const RenderView& view, GLLights& lights);
 
     private:
-        Vkm::GL::Shader m_depth;   ///< The sun's depth; the shadow pass's program.
-        Vkm::GL::Shader m_masked;  ///< The same, cut by an alpha-masked caster's material.
+        GLCasterDepth m_casters;  ///< Draws the sun's depth.
 
         Vkm::GL::FrameBuffer              m_fbo;
         ShadowSlot                        m_slots[SHADOW_SLOTS];
         std::unique_ptr<Vkm::GL::Sampler> m_sampler;    ///< Compares, as the atlas's does.
         uint64_t                          m_clock = 0;  ///< Counts binds, for ShadowSlot::used.
 
-        GLInstanceBatcher     m_batcher;     ///< The casters over the region, grouped.
         std::vector<uint32_t> m_overRegion;  ///< The casters over the map's region, which it draws.
         std::vector<int>      m_lightSlots;  ///< Per light: 0 for the sun while it casts, else -1.
 };

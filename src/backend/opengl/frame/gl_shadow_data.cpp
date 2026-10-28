@@ -9,6 +9,7 @@
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/round.hpp>
 
 #include "l_assert.h"
 #include "logger.h"
@@ -59,22 +60,15 @@ static_assert(
 // camera's near plane (docs/reference/lighting.md).
 constexpr float CASCADE_NEAR = 1.0f;
 
-// The sun's nearest cascades take the largest tile; those past them take half, as each of their
-// texels already spans more of the world. Four at full size would fill the atlas.
-constexpr uint32_t FULL_CASCADES = 3;
-static_assert(FULL_CASCADES < Config::NUM_CASCADES, "Every cascade at full size leaves the spots no room");
+// How much wider than its slice a layered cascade is fitted, of the slice's radius: the view moves
+// about that far before it is fitted afresh, its fixed casters drawn again. Its texels widen as much.
+constexpr float HOLD_MARGIN = 1.0f / 16.0f;
 
 // Shadow texels per screen pixel of a spot's cone (Unreal's r.Shadow.TexelsPerPixelSpotlight).
 constexpr float SPOT_TEXELS_PER_PIXEL = 1.27324f;
 
 // A spot's tile halves only once its cone needs under this share of it: past half, by a margin.
 constexpr float SPOT_SHRINK_BELOW = 0.4f;
-
-uint32_t ceilPowerOfTwo(float v) {
-    uint32_t p = 1;
-    while (static_cast<float>(p) < v && p < (1u << 30)) p *= 2;
-    return p;
-}
 
 } // namespace
 
@@ -125,6 +119,9 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     cam.farDepth  = glm::dot(farCenter  - camPos, camFwd);
     if (cam.nearDepth < 0.01f) cam.nearDepth = 0.01f;
     if (cam.farDepth  <= cam.nearDepth) cam.farDepth = cam.nearDepth + 1.0f;
+    // The view's own depth row, as the camera.glsl viewDepthOf measures it.
+    const glm::mat4& eyeView = view.camera.view;
+    m_data.cascadeDepth = -glm::vec4(eyeView[0][2], eyeView[1][2], eyeView[2][2], eyeView[3][2]);
 
     uint32_t next2D   = 0;
     uint32_t nextCube = 0;
@@ -162,8 +159,9 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     for (const uint32_t i : m_shadowOrder) {
         const LightType type = view.lights[i].type;
         sun    = sun || type == LightType::Directional;
-        spots  += type == LightType::Spot ? 1u : 0u;
-        points += type == LightType::Point ? 1u : 0u;
+        const bool cube = castsThroughCube(view.lights[i]);
+        spots  += type == LightType::Spot && !cube ? 1u : 0u;
+        points += cube ? 1u : 0u;
     }
     const uint32_t spotTiles = Config::MAX_SHADOW_CASTERS_2D - (sun ? Config::NUM_CASCADES : 0u);
     const bool spotsShort  = spots > spotTiles;
@@ -174,8 +172,8 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     };
     const auto distanceSq = [&](uint32_t i) {
         const LightType type   = view.lights[i].type;
-        const bool      ranked = (type == LightType::Spot && spotsShort)
-            || (type == LightType::Point && pointsShort);
+        const bool      cube   = castsThroughCube(view.lights[i]);
+        const bool      ranked = cube ? pointsShort : (type == LightType::Spot && spotsShort);
         if (!ranked) return 0.0f;
         const glm::vec3 d = view.lights[i].position - camPos;
         return glm::dot(d, d);
@@ -189,12 +187,10 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
 
     for (const uint32_t i : m_shadowOrder) {
         const LightData& light = view.lights[i];
-        switch (light.type) {
-            case LightType::Directional: fitDirectional(light, i, cam, next2D, haveSun); break;
-            case LightType::Spot:        fitSpot(light, i, next2D);                      break;
-            case LightType::Point:       fitPoint(light, i, nextCube);                   break;
-            default: break;
-        }
+        // A spot too wide for one map casts through a cube as a point light does.
+        if (light.type == LightType::Directional) fitDirectional(light, i, cam, next2D, haveSun);
+        else if (castsThroughCube(light))         fitPoint(light, i, nextCube);
+        else if (light.type == LightType::Spot)   fitSpot(light, i, next2D);
     }
     fitTilesToAtlas();
 
@@ -224,6 +220,12 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
 
 namespace {
 
+// What @p object's shadow key is made from.
+KeyedCaster keyedOf(const RenderObjects& objects, uint32_t object) {
+    const ObjectDraw& draw = objects.draws[object];
+    return {object, draw.mesh.id(), draw.material.id(), draw.fixed, draw.skinCount > 0};
+}
+
 // Whether an AABB touches a sphere: the closest-point-on-box test.
 bool aabbIntersectsSphere(const Math::AABB& bounds, const glm::vec3& center, float radius) {
     const glm::vec3 closest = glm::clamp(center, bounds.min, bounds.max);
@@ -248,6 +250,8 @@ bool aabbIntersectsSphere(const Math::AABB& bounds, const glm::vec3& center, flo
  *                       material and map), precomputed.
  * @param slotCount      The range of the keys' low digit; @p keys run to KEY_GROUPS times it.
  * @param source         Which casters to consider: every one, or a light's sphere survivors.
+ * @param moving         Null to test @p source; else the moving ones of it, alone tested, the
+ *                       fixed survivors kept from the batch's last cull (fixedSurvivors).
  * @param viewProjection The tile or face matrix to cull against.
  * @param cascade        Whether the job is a cascade: culled with no near plane (see
  *                       Shadow2DJob::cascade).
@@ -261,6 +265,7 @@ void cullInto(
     const std::vector<uint64_t>& uploads,
     uint32_t slotCount,
     const std::vector<uint32_t>& source,
+    const std::vector<uint32_t>* moving,
     const glm::mat4& viewProjection,
     bool cascade
 ) {
@@ -279,20 +284,28 @@ void cullInto(
     uint64_t movingSignature = FNV1A_OFFSET_BASIS;
     bool     posed           = false;
 
-    // Pass 1: survivors, counting each key. Signed by mesh id, not key: masked keys are numbered
-    // over the scene's masked casters, so one added anywhere renumbers the rest.
+    // Pass 1: survivors, the fixed ones first when they are kept. Each key's survivors stay in
+    // source order either way, so the batch is the same.
     const uint32_t keyCount  = slotCount * KEY_GROUPS;
     const uint32_t movingKey = slotCount * STATIC_GROUP;
     const uint32_t posedKey  = slotCount * POSED_GROUP;
     scratch.survivors.clear();
+    if (moving) scratch.survivors = batch.fixedSurvivors;
+    else        batch.fixedSurvivors.clear();
+    for (uint32_t caster : moving ? *moving : source) {
+        if (!Math::frustumIntersectsAABB(frustum, objects.bounds[casters[caster]])) continue;
+        scratch.survivors.push_back(caster);
+        if (!moving && keys[caster] < movingKey) batch.fixedSurvivors.push_back(caster);
+    }
+    batch.culledFixedSerial = objects.fixedSerial;
+
+    // Each key counted. Signed by mesh id, not key: masked keys are numbered over the scene's
+    // masked casters, so one added anywhere renumbers the rest.
     scratch.counts.assign(keyCount, 0);
     scratch.firstOf.resize(movingKey);
-    for (uint32_t caster : source) {
+    for (uint32_t caster : scratch.survivors) {
         const uint32_t object = casters[caster];
-        if (!Math::frustumIntersectsAABB(frustum, objects.bounds[object]))
-            continue;
-        scratch.survivors.push_back(caster);
-        const uint32_t key = keys[caster];
+        const uint32_t key    = keys[caster];
         if (key < movingKey) {
             if (scratch.counts[key] == 0) scratch.firstOf[key] = caster;
         } else {
@@ -300,7 +313,8 @@ void cullInto(
             const uint32_t mesh = objects.draws[object].mesh.id();
             movingSignature = fnv1a64Bytes(&mesh, sizeof(mesh), movingSignature);
             movingSignature = fnv1a64Bytes(&uploads[caster], sizeof(uploads[caster]), movingSignature);
-            movingSignature = fnv1a64Bytes(&objects.models[object], sizeof(glm::mat4), movingSignature);
+            const glm::mat4& model = objects.models[object];
+            movingSignature = fnv1a64Bytes(&model, sizeof(model), movingSignature);
         }
         ++scratch.counts[key];
     }
@@ -318,7 +332,7 @@ void cullInto(
         const uint32_t n = scratch.counts[key];
         scratch.counts[key] = running;
         if (n > 0) {
-            batch.runs.push_back({ running, n, key, key >= posedKey });
+            batch.runs.push_back({ running, n, key, key >= posedKey, key < movingKey });
             if (key < movingKey) {
                 const uint32_t caster = scratch.firstOf[key];
                 const uint32_t mesh   = objects.draws[casters[caster]].mesh.id();
@@ -332,7 +346,8 @@ void cullInto(
     // Zero is the "always draw" mark: a posed survivor earns it, and a hash that happens to land
     // on it moves off it.
     const uint64_t whole = fnv1a64Bytes(&movingSignature, sizeof(movingSignature), fixedSignature);
-    batch.signature = posed ? 0 : (whole == 0 ? 1 : whole);
+    batch.signature      = posed ? 0 : (whole == 0 ? 1 : whole);
+    batch.fixedSignature = fixedSignature == 0 ? 1 : fixedSignature;
 
     // Pass 2: scatter each survivor's object into its key's run.
     for (uint32_t caster : scratch.survivors) batch.order[scratch.counts[keys[caster]]++] = casters[caster];
@@ -351,10 +366,18 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
 
     // Every caster is a 2D job's candidate: cascades and spots have no cheaper volume to reject
     // against. Casters are the view's prefix, so non-casting meshes are never walked. The keys are
-    // the last frame's while no object changed, none was rebuilt and no asset was walked again.
-    const bool keysHold = !objects.allChanged && objects.changed.empty()
-        && objects.serial == m_preparedSerial + 1 && glView.syncedRevision() == m_preparedRevision
-        && objects.casterCount == m_casters.size();
+    // the last frame's while every caster draws as it was keyed, none was rebuilt and no asset was
+    // walked again: one that only moved keeps its key. With nothing changed, every caster is as it
+    // was, and none is walked to say so.
+    const auto drawnAsKeyed = [&] {
+        for (uint32_t i = 0; i < objects.casterCount; ++i) {
+            if (!(keyedOf(objects, casters[i]) == m_keyed[i])) return false;
+        }
+        return true;
+    };
+    const bool keysHold = !objects.allChanged && objects.serial == m_preparedSerial + 1
+        && glView.syncedRevision() == m_preparedRevision && objects.casterCount == m_keyed.size()
+        && (objects.changed.empty() || drawnAsKeyed());
     m_preparedSerial   = objects.serial;
     m_preparedRevision = glView.syncedRevision();
     if (!keysHold) {
@@ -362,6 +385,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
         // Keys flattened once, so each job's grouping reads them linearly.
         const uint32_t count = objects.casterCount;
         m_casters.resize(count);
+        m_keyed.resize(count);
         m_meshKeys.resize(count);
         m_meshUploads.resize(count);
         m_maskedCasters.clear();
@@ -378,6 +402,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
         for (uint32_t i = 0; i < count; ++i) {
             const ObjectDraw& draw = objects.draws[casters[i]];
             m_casters[i] = i;
+            m_keyed[i]   = keyedOf(objects, casters[i]);
             if (i == 0 || draw.mesh != runMesh || draw.material != runMaterial) {
                 runMesh     = draw.mesh;
                 runMaterial = draw.material;
@@ -424,20 +449,33 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
 
         m_slotCount = count ? slot + 1 : 0;
         for (uint32_t i = 0; i < count; ++i) m_meshKeys[i] += m_meshGroups[i] * m_slotCount;
+        m_movingCasters.clear();
+        for (uint32_t i = 0; i < count; ++i) {
+            if (m_meshGroups[i] != FIXED_GROUP) m_movingCasters.push_back(i);
+        }
     }
 
     // With no object changed since the last frame, a tile or face culled against the same matrix
     // then keeps its batch: a still scene culls nothing.
+    const bool   still     = keysHold && objects.changed.empty();
     const size_t jobs2D    = m_jobs2D.size();
     const size_t cubeFaces = m_jobsCube.size() * 6;
     const auto   keeps     = [&](ShadowCasterBatch& batch, const glm::mat4& viewProjection) {
         const bool culledLast = batch.culledAt + 1 == objects.serial;
-        if (!keysHold || !culledLast || batch.culledFor != viewProjection) return false;
+        if (!still || !culledLast || batch.culledFor != viewProjection) return false;
         batch.culledAt = objects.serial;
         return true;
     };
     m_recull.resize(jobs2D + cubeFaces);
     for (size_t j = 0; j < jobs2D; ++j) m_recull[j] = !keeps(m_batches2D[j], m_jobs2D[j].lightVP);
+    // A tile culled last frame against the same matrix, no fixed object changed since, tests only
+    // what moves: the far cascade as the view walks, a still light's spot, any still view.
+    m_movingOnly.resize(jobs2D);
+    for (size_t j = 0; j < jobs2D; ++j) {
+        const ShadowCasterBatch& batch = m_batches2D[j];
+        m_movingOnly[j] = keysHold && batch.culledAt + 1 == objects.serial
+            && batch.culledFor == m_jobs2D[j].lightVP && batch.culledFixedSerial == objects.fixedSerial;
+    }
     for (size_t face = 0; face < cubeFaces; ++face) {
         m_recull[jobs2D + face] = !keeps(m_batchesCube[face], m_jobsCube[face / 6].faceVP[face % 6]);
     }
@@ -483,6 +521,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
 
 void GLShadowData::cullTask(size_t task) {
     if (!m_recull[task]) return;
+    PROFILE_SCOPE("Shadow/Cull/Task");
     const RenderObjects& objects = *m_cullView->objects;
     const uint32_t*      casters = objects.scene.data();
     const size_t jobs2D = m_jobs2D.size();
@@ -496,6 +535,7 @@ void GLShadowData::cullTask(size_t task) {
             m_meshUploads,
             m_slotCount,
             m_casters,
+            m_movingOnly[task] ? &m_movingCasters : nullptr,
             m_jobs2D[task].lightVP,
             m_jobs2D[task].cascade
         );
@@ -514,6 +554,7 @@ void GLShadowData::cullTask(size_t task) {
         m_meshUploads,
         m_slotCount,
         m_cubeCandidates[job],
+        nullptr,
         m_jobsCube[job].faceVP[face],
         false
     );
@@ -585,25 +626,45 @@ void GLShadowData::fitDirectional(
         float radius = 0.0f;
         for (const glm::vec3& p : corners) radius = std::max(radius, glm::length(p - center));
         radius = std::ceil(radius * 64.0f) / 64.0f;
+        // The layered cascade (GLShadowAtlas) is fitted HOLD_MARGIN wider, so it can keep its place
+        // a while, drawing only what moves while its layer holds.
+        const bool  layered = c == SHADOW_LAYERED_CASCADE;
+        const float fit     = layered ? radius * (1.0f + HOLD_MARGIN) : radius;
 
         // Drives the normal-offset bias so it scales with cascade density, and is the quantum the
         // centre snaps to below.
-        const uint32_t tile       = c < FULL_CASCADES ? m_tileRes : m_tileRes / 2;
-        const float    worldTexel = (2.0f * radius) / static_cast<float>(tile);
+        const uint32_t tile       = cascadeTileRes(c, m_tileRes);
+        const float    worldTexel = (2.0f * fit) / static_cast<float>(tile);
 
         // The sphere fit holds the size still as the camera turns; an unsnapped centre still
         // slides, crawling every edge and voiding a texel-measured bias. The basis is the light
         // direction alone, since the cascade's own view is built from the snapped centre.
         const glm::mat4 lightBasis = glm::lookAt(glm::vec3(0.0f), dir, up);
-        glm::vec3 centerLight = glm::vec3(lightBasis * glm::vec4(center, 1.0f));
+        const glm::vec3 slice      = glm::vec3(lightBasis * glm::vec4(center, 1.0f));
+        glm::vec3 centerLight = slice;
         centerLight.x = std::floor(centerLight.x / worldTexel) * worldTexel;
         centerLight.y = std::floor(centerLight.y / worldTexel) * worldTexel;
+        // Kept while the slice's sphere is inside the held fit, which then draws the same; a fit
+        // that moved draws its tile whole, as a refilled layer and its restore would cost more - a
+        // sun turning with the day moves it every frame.
+        bool drawnLayered = false;
+        if (layered) {
+            const glm::vec3 off   = glm::abs(slice - m_held.centre);
+            const bool      keeps = m_held.radius == radius && m_held.dir == dir
+                && std::max(off.x, std::max(off.y, off.z)) + radius <= fit;
+            if (keeps) {
+                centerLight  = m_held.centre;
+                drawnLayered = true;
+            } else {
+                m_held = {dir, centerLight, radius};
+            }
+        }
         center = glm::vec3(glm::inverse(lightBasis) * glm::vec4(centerLight, 1.0f));
 
-        const float     zExtend = radius;  // pull the near plane back to catch occluders
-        const glm::vec3 eye     = center - dir * (radius + zExtend);
+        const float     zExtend = fit;  // pull the near plane back to catch occluders
+        const glm::vec3 eye     = center - dir * (fit + zExtend);
         const glm::mat4 lView   = glm::lookAt(eye, center, up);
-        const glm::mat4 lProj   = glm::ortho(-radius, radius, -radius, radius, 0.0f, 2.0f * radius + zExtend);
+        const glm::mat4 lProj   = glm::ortho(-fit, fit, -fit, fit, 0.0f, 2.0f * fit + zExtend);
         const glm::mat4 lightVP = lProj * lView;
 
         const uint32_t slot = base + c;
@@ -613,11 +674,11 @@ void GLShadowData::fitDirectional(
         e.lightVP = lightVP;
         // z is the ortho depth range, so a depth difference read off the tile
         // becomes metres between a blocker and what it shades.
-        e.params  = glm::vec4(light.shadowBias, worldTexel, 2.0f * radius + zExtend, tanSource);
+        e.params  = glm::vec4(light.shadowBias, worldTexel, 2.0f * fit + zExtend, tanSource);
         e.shape   = glm::vec4(light.shadowNormalBias, 0.0f, 0.0f, 0.0f);
         const glm::vec2 half = glm::vec2(0.5f * static_cast<float>(tile));
         const glm::vec2 grid = glm::round(glm::vec2(centerLight) / worldTexel) - half;
-        m_jobs2D.push_back({ lightVP, slot, true, grid });
+        m_jobs2D.push_back({ lightVP, slot, true, grid, drawnLayered });
 
         m_data.cascadeSplits[static_cast<int>(c)] =
             cam.nearDepth + fr[c + 1] * (cam.farDepth - cam.nearDepth);
@@ -637,14 +698,10 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
     const glm::vec3 dir = glm::normalize(light.direction);
     const glm::vec3 up  = stableUp(dir);
 
-    // Neither may be degenerate: a range at or below near gives far <= near, and a zero cone
-    // divides by tan(0), writing infinities that NaN whatever samples the matrix.
+    // The range may not be degenerate: at or below near it gives far <= near, writing infinities
+    // that NaN whatever samples the matrix.
     const float range = std::max(light.radius, Config::SHADOW_NEAR * 2.0f);
-    const float fov = glm::clamp(
-        2.0f * light.outerConeAngle * 1.1f,
-        glm::radians(1.0f),
-        glm::radians(170.0f)
-    );
+    const float fov   = spotMapFov(light);
 
     const glm::mat4 lView   = glm::lookAt(light.position, light.position + dir, up);
     const glm::mat4 lProj   = glm::perspective(fov, 1.0f, Config::SHADOW_NEAR, range);
@@ -692,7 +749,8 @@ uint32_t GLShadowData::spotTileSize(const LightData& light, float range) const {
     }
     const float    texels = pixels * SPOT_TEXELS_PER_PIXEL;
     const float    wanted = std::min(texels, static_cast<float>(m_tileRes));
-    const uint32_t size   = std::clamp(ceilPowerOfTwo(wanted), SHADOW_ATLAS_MIN_TILE_RES, m_tileRes);
+    const uint32_t texel  = static_cast<uint32_t>(std::ceil(std::fmax(wanted, 1.0f)));
+    const uint32_t size   = std::clamp(glm::ceilPowerOfTwo(texel), SHADOW_ATLAS_MIN_TILE_RES, m_tileRes);
 
     const auto held = std::find_if(m_spotTiles.begin(), m_spotTiles.end(), [&](const SpotTile& tile) {
         return tile.entitySlot == light.entitySlot;

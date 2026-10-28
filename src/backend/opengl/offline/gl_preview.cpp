@@ -15,6 +15,7 @@
 #include "gl_shader.h"
 #include "gl_texture.h"
 
+#include "gl_forward_programs.h"
 #include "gl_view.h"
 #include "storage/gl_ibl.h"
 #include "asset/gl_material.h"
@@ -25,9 +26,10 @@
 #include "convention/gl_depth.h"
 #include "resource/resource_manager.h"
 #include "system/render/editor_render_hooks.h"
-#include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
 #include "system/ocean/ocean_data.h"
+#include "core/math/axes.h"
+#include "core/math/bounds.h"
 
 namespace Vkm::Engine {
 
@@ -75,14 +77,14 @@ void GLPreview::init() {
     m_scratch.resize(SCENE_SIZE, SCENE_SIZE);
 }
 
-GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
+GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t width, uint32_t height) {
     std::unique_ptr<Entry>& slot = m_entries[key];
     if (!slot) slot = std::make_unique<Entry>();
     Entry& e = *slot;
-    if (e.size != size) {
+    if (e.width != width || e.height != height) {
         Vkm::GL::Texture2DParams p;
-        p.width           = size;
-        p.height          = size;
+        p.width           = width;
+        p.height          = height;
         p.internalFormat  = GL_RGBA8;
         p.format          = GL_RGBA;
         p.type            = GL_UNSIGNED_BYTE;
@@ -95,9 +97,10 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
 
         e.fbo.attachTexture(GL_COLOR_ATTACHMENT0, e.ldr->getID());
         if (!e.fbo.isComplete()) {
-            LOG_ERROR("Preview framebuffer incomplete (%ux%u)", size, size);
+            LOG_ERROR("Preview framebuffer incomplete (%ux%u)", width, height);
         }
-        e.size = size;
+        e.width  = width;
+        e.height = height;
     }
     return e;
 }
@@ -111,55 +114,72 @@ uint32_t GLPreview::render(
     const PreviewRequest& req,
     const ResourceManager& resources
 ) {
-    if (!req.mesh || !req.material || req.size == 0) return 0;
+    if (req.draws.empty() || req.width == 0 || req.height == 0) return 0;
     if (!m_composite) init();
 
-    // Mirror the request's assets onto the GPU. The tables are shared with the
-    // main frame and version-gated, so this is cheap when nothing changed.
-    m_object.models    = { glm::mat4(1.0f) };
-    m_object.bounds    = { Math::AABB{} };
-    m_object.draws     = { ObjectDraw{ req.mesh, req.material, 0 } };
-    m_object.skinFirst = { 0u };
-    m_object.visible   = { 0u };
+    // Mirror the request's assets onto the GPU. The tables are shared with the main frame and
+    // version-gated, so this is cheap when nothing changed. Opaque ones draw first, the
+    // transparent blended over them and the backdrop.
+    const size_t count = req.draws.size();
+    m_object.models.resize(count);
+    m_object.bounds.resize(count);
+    m_object.draws.resize(count);
+    m_object.skinFirst.assign(count, 0u);
+    m_object.visible.clear();
+    m_bones.clear();
+    m_opaque.clear();
+    m_transparent.clear();
+    Math::AABB drawn = Math::AABB::empty();
+    for (size_t i = 0; i < count; ++i) {
+        const PreviewDraw& draw = req.draws[i];
+        if (!draw.mesh || !draw.material) return 0;
+        glView.ensureDrawn(draw.mesh, draw.material, resources);
+        const GLMaterial* material = glView.getMaterial(draw.material);
+        if (!glView.getMesh(draw.mesh) || !material) return 0;
 
-    RenderView view;
-    view.viewportWidth  = SCENE_SIZE;
-    view.viewportHeight = SCENE_SIZE;
-    view.surfaceWidth   = SCENE_SIZE;
-    view.surfaceHeight  = SCENE_SIZE;
-    view.objects        = &m_object;
+        const MeshAsset& asset = resources.get(draw.mesh);
+        Math::AABB box = Math::AABB::empty();
+        box.expand(asset.boundsMin);
+        box.expand(asset.boundsMax);
+        const auto object = static_cast<uint32_t>(i);
+        m_object.models[i] = draw.model;
+        m_object.bounds[i] = box.valid() ? Math::transform(draw.model, box) : box;
+        // Posed when the request brings a palette, which holds a bone for each its mesh is skinned to
+        // (PreviewDraw::bones).
+        const bool posed = !asset.skin.empty() && !draw.bones.empty();
+        const auto bones      = posed ? static_cast<uint32_t>(draw.bones.size()) : 0u;
+        m_object.draws[i]     = ObjectDraw{draw.mesh, draw.material, bones};
+        m_object.skinFirst[i] = posed ? static_cast<uint32_t>(m_bones.size()) : 0u;
+        if (posed) m_bones.insert(m_bones.end(), draw.bones.begin(), draw.bones.end());
+        m_object.visible.push_back(object);
+        if (m_object.bounds[i].valid()) drawn.expand(m_object.bounds[i]);
+        (material->getType() == MaterialType::Transparent ? m_transparent : m_opaque).push_back(object);
+    }
+
     // The scene's sun, or the studio rig where the scene has none: a preview cannot place lamps.
+    std::vector<LightData> lights;
     if (scene.sun) {
-        view.lights = {*scene.sun};
-        view.lights.front().castShadows = false;
+        lights = {*scene.sun};
+        lights.front().castShadows = false;
     } else {
-        view.lights = studioLights();
+        lights = studioLights();
     }
     if (req.lightYawDeg != 0.0f) {
         // Rotate the light around Y so the user can swing it across the material without
         // moving the camera.
         const float     a = glm::radians(req.lightYawDeg);
         const glm::mat3 rot(glm::rotate(glm::mat4(1.0f), a, glm::vec3(0.0f, 1.0f, 0.0f)));
-        for (LightData& l : view.lights) l.direction = glm::normalize(rot * l.direction);
+        for (LightData& l : lights) l.direction = glm::normalize(rot * l.direction);
     }
-    glView.sync(view, resources);
 
-    const GLMesh*     mesh     = glView.getMesh(req.mesh);
-    const GLMaterial* material = glView.getMaterial(req.material);
-    if (!mesh || !material) return 0;
-
-    // Orbit camera framed on the mesh bounds; distance is in bounding radii so
-    // the same zoom value frames a pebble and a building alike.
-    const MeshAsset& asset = resources.get(req.mesh);
+    // Orbit camera framed on what is drawn; distance and pan are in bounding radii so the same
+    // view frames a pebble and a building alike.
     glm::vec3 center(0.0f);
-    float radius = 1.0f;
-    if (asset.boundsMin.x <= asset.boundsMax.x
-        && asset.boundsMin.y <= asset.boundsMax.y
-        && asset.boundsMin.z <= asset.boundsMax.z) {
-        center = (asset.boundsMin + asset.boundsMax) * 0.5f;
-        radius = std::max(0.001f, glm::length(asset.boundsMax - asset.boundsMin) * 0.5f);
+    float     radius = 1.0f;
+    if (drawn.valid()) {
+        center = drawn.center();
+        radius = std::max(0.001f, glm::length(drawn.max - drawn.min) * 0.5f);
     }
-
     const float yaw   = glm::radians(req.yawDeg);
     const float pitch = glm::radians(req.pitchDeg);
     const glm::vec3 orbitDir(
@@ -167,24 +187,37 @@ uint32_t GLPreview::render(
         std::sin(pitch),
         std::cos(pitch) * std::cos(yaw)
     );
+    const glm::vec3 right = glm::normalize(glm::cross(Math::WORLD_UP, orbitDir));
+    const glm::vec3 up    = glm::cross(orbitDir, right);
+    center += (right * req.pan.x + up * req.pan.y) * radius;
     const float dist = std::max(0.05f, req.distance) * radius;
     const glm::vec3 eye = center + orbitDir * dist;
 
+    // A square thumbnail shares the fixed target; a viewport's size keeps its own.
+    Entry&       entry  = ensureEntry(req.key, req.width, req.height);
+    const bool   thumb  = req.width == req.height && req.width <= SCENE_SIZE;
+    if (!thumb && !entry.scene) entry.scene = std::make_unique<GLTarget>(GLTarget::Layout::ColorDepth);
+    if (thumb) entry.scene.reset();
+    GLTarget&    target = thumb ? m_scratch : *entry.scene;
+    const glm::uvec2 sceneSize = thumb ? glm::uvec2(SCENE_SIZE) : glm::uvec2(req.width, req.height);
+    if (!thumb) target.resize(sceneSize.x, sceneSize.y);
+
+    const float aspect = static_cast<float>(sceneSize.x) / static_cast<float>(sceneSize.y);
     const glm::mat4 projection = glm::perspective(
-        glm::radians(40.0f),
-        1.0f,
+        glm::radians(PreviewRequest::FIELD_DEGREES),
+        aspect,
         std::max(0.001f * radius, dist - radius * 2.0f),
         dist + radius * 4.0f
     );
-    const glm::mat4 lookAt = glm::lookAt(eye, center, glm::vec3(0.0f, 1.0f, 0.0f));
-    m_camera.update(CameraData::from(lookAt, projection, eye), glm::vec2(static_cast<float>(SCENE_SIZE)));
+    const glm::mat4 lookAt = glm::lookAt(eye, center, up);
+    m_camera.update(CameraData::from(lookAt, projection, eye), glm::vec2(sceneSize));
     m_ocean.update(OceanData{});
 
     // An empty slot view answers -1 for every light, so the PBR shader reads
     // no shadow value: a preview's lights cast none.
-    m_lights.update(view.lights);
+    m_lights.update(lights);
 
-    m_scratch.bind(gl);
+    target.bind(gl);
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
     gl.setDepthFunc(GLDepth::EYE_TEST);
@@ -197,48 +230,68 @@ uint32_t GLPreview::render(
     gl.setClearColor(backdrop);
     gl.clear(true, true, false, GLDepth::EYE_CLEAR);
 
-    const bool hasIBL = ibl.isReady();
-
     // Sky backdrop, drawn first so a transparent material blends over it.
     // Before the bake finishes this falls back to the clear.
-    if (req.background == PreviewBackground::Sky && hasIBL) {
+    if (req.background == PreviewBackground::Sky && ibl.isReady()) {
         m_capture.drawSky(gl, ibl, projection, scene.skyIntensity);
-    }
-
-    gl.setFaceCulling(true);
-    gl.setCullFace(GL_BACK);
-    bindOfflinePbrUniforms(m_capture.pbrProgram(), ibl);
-    m_capture.pbrProgram().setUniform1i("u_hasSceneColor", 0);
-    m_capture.pbrProgram().setUniform1f("u_iblIntensity", scene.skyIntensity);
-
-    // Transparent materials blend over the backdrop. One mesh, so no sorting or
-    // partitioning is needed.
-    const bool transparent = material->getType() == MaterialType::Transparent;
-    if (transparent) {
-        gl.setBlending(true);
-        gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
     // Never read - every preview light is shadowless - but the shader declares the slot
     // as sampler2DShadow, and the driver validates a declared sampler at draw time.
     shadows.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
 
-    // No palette: the preview draws shaders/forward/pbr only, so a character
-    // thumbnails in bind pose.
-    m_objectBuffer.upload(m_object, false, false, glView.stream());
+    // A posed mesh reads its bones from the preview's own palette; the frame binds its own again.
+    const bool posed = !m_bones.empty();
+    m_skin.update(posed ? &m_bones : nullptr, glView.stream());
+    if (posed) m_skin.bind();
+    m_objectBuffer.upload(m_object, posed, false, glView.stream());
     m_objectBuffer.bind();
-    const std::vector<InstanceDraw>& draws = m_batcher.buildGrouped(m_object.visible, m_object, glView, 0);
-    material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-    material->bindTextures(glView);
-    for (const InstanceDraw& draw : draws) m_batcher.draw(gl, draw);
 
-    if (transparent) gl.setBlending(false);
+    // Drawn as the frame draws them: a layered material through its own program, a double-sided
+    // one from behind too. The forward pass draws with these programs too, and leaves its render
+    // mode, air and coverage in them.
+    GLForwardPrograms& programs = m_capture.programs();
+    programs.zeroUniforms();
+    gl.setCullFace(GL_BACK);
+    std::vector<const Vkm::GL::Shader*> lit;
+    const Vkm::GL::Shader* boundProgram  = nullptr;
+    const GLMaterial*      boundMaterial = nullptr;
+    const auto drawEach = [&](const std::vector<uint32_t>& objects) {
+        const auto bones = static_cast<uint32_t>(m_bones.size());
+        for (const InstanceDraw& draw : m_batcher.buildGrouped(objects, m_object, glView, bones)) {
+            const GLMaterial* material = glView.getMaterial(draw.material);
+            Vkm::GL::Shader&  program  = programs.programFor(material, draw.skinned, false);
+            if (&program != boundProgram) {
+                if (std::find(lit.begin(), lit.end(), &program) == lit.end()) {
+                    GLForwardPrograms::bindOffline(program, ibl);
+                    program.setUniform1f("u_iblIntensity", scene.skyIntensity);
+                    lit.push_back(&program);
+                } else {
+                    program.bind();
+                }
+                boundProgram = &program;
+            }
+            if (material != boundMaterial) {
+                material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+                material->bindTextures(glView);
+                gl.setFaceCulling(!material->doubleSided());
+                boundMaterial = material;
+            }
+            m_batcher.draw(gl, draw);
+        }
+    };
+    drawEach(m_opaque);
+    if (!m_transparent.empty()) {
+        gl.setBlending(true);
+        gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        drawEach(m_transparent);
+        gl.setBlending(false);
+    }
 
     // Tonemapped and exposed as the scene is, by its composite shader.
-    Entry& entry = ensureEntry(req.key, req.size);
     entry.fbo.bind();
     entry.fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
-    gl.setViewport(0, 0, static_cast<int32_t>(entry.size), static_cast<int32_t>(entry.size));
+    gl.setViewport(0, 0, static_cast<int32_t>(entry.width), static_cast<int32_t>(entry.height));
     gl.setDepthTest(false);
 
     m_composite->bind();
@@ -246,7 +299,7 @@ uint32_t GLPreview::render(
     // declares the atlas slot as a plain sampler2D, and the driver validates a
     // declared sampler at draw time.
     shadows.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
-    m_scratch.bindTexture(GLTarget::Attachment::Color, GLBindings::CompositeTextureSlots::SCENE);
+    target.bindTexture(GLTarget::Attachment::Color, GLBindings::CompositeTextureSlots::SCENE);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
     m_composite->setUniform1i("u_renderMode", static_cast<int>(RenderMode::Default));
     m_composite->setUniform1i("u_tonemap", static_cast<int>(scene.tonemap));
@@ -268,10 +321,14 @@ uint32_t GLPreview::texture(uint64_t key) const {
 }
 
 void GLPreview::release(uint64_t key) {
-    m_entries.erase(key);
+    const auto it = m_entries.find(key);
+    if (it == m_entries.end()) return;
+    m_released.push_back(std::move(it->second));
+    m_entries.erase(it);
 }
 
 void GLPreview::releaseAll() {
+    for (auto& [key, entry] : m_entries) m_released.push_back(std::move(entry));
     m_entries.clear();
 }
 

@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "gl_stream_ring.h"
+#include "gl_buffer.h"
 #include "gl_vertex_array.h"
 
 namespace Vkm::GL {
@@ -19,7 +19,7 @@ struct MeshAsset;
  * @brief Which vertex streams a mesh carries, and so which of the pool's vertex arrays draws it.
  */
 enum class VertexLayout : uint8_t {
-    Static,   ///< Vertex alone.
+    Static,   ///< Vertex, and its lightmap coordinates in a parallel stream.
     Skinned,  ///< Vertex, and its SkinVertex in a parallel stream.
     Count,
 };
@@ -74,10 +74,11 @@ struct SpanList {
  * VertexLayout.
  *
  * The skin stream sits at divisor 0, so locations 8/9 stay enabled while a program that never
- * declares them draws a skinned mesh in bind pose. Location 4, the object index, is at divisor
- * 1 on both arrays; a draw with no list reads a zero the pool owns, since drawing with an
- * enabled attribute that has no buffer is an error. A full stream doubles, copying on the GPU;
- * every GLMesh keeps its range, since offsets do not move.
+ * declares them draws a skinned mesh in bind pose. The static layout carries a lightmap stream
+ * beside its vertices (location 5), zero for a mesh with none (MeshAsset::lightmapUVs). Location
+ * 4, the object index, is at divisor 1 on both arrays; a draw with no list reads a zero the pool
+ * owns, since drawing with an enabled attribute that has no buffer is an error. A full stream
+ * doubles, copying on the GPU; every GLMesh keeps its range, since offsets do not move.
  */
 class GLMeshPool {
     public:
@@ -96,7 +97,7 @@ class GLMeshPool {
          *
          * @param mesh The geometry; a non-empty `skin` puts it in the skinned layout.
          * @return Where it went, for remove() and the draw commands; empty for no geometry, a
-         *         skin not one entry per vertex, or no room.
+         *         skin or lightmap stream not one entry per vertex, or no room.
          */
         MeshRange add(const MeshAsset& mesh);
 
@@ -153,11 +154,13 @@ class GLMeshPool {
         void wire();
 
     private:
-        Vkm::GL::VertexArray m_arrays[static_cast<size_t>(VertexLayout::Count)];
+        /// A layout's vertex array; mutable as each draw points its instance binding afresh.
+        mutable Vkm::GL::VertexArray m_arrays[static_cast<size_t>(VertexLayout::Count)];
 
         std::unique_ptr<Vkm::GL::VertexBuffer> m_indices;
         std::unique_ptr<Vkm::GL::VertexBuffer> m_vertices[static_cast<size_t>(VertexLayout::Count)];
         std::unique_ptr<Vkm::GL::VertexBuffer> m_skin;      ///< Parallel to m_vertices[Skinned].
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_lightmap;  ///< Parallel to m_vertices[Static].
         /// One zero, behind location 4 for a draw with no list.
         std::unique_ptr<Vkm::GL::VertexBuffer> m_noObject;
 

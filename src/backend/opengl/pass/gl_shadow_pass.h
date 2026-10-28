@@ -22,6 +22,8 @@ class GLView;
  *
  * Executes GLShadowData's plan: cascades and spots into the 2D atlas, point lights into cubes.
  * A no-op with no shadowed light; a tile or face not held is cleared and drawn, casters or none.
+ * A layered tile (Shadow2DJob::layered) starts from the layer instead, drawing its fixed casters into
+ * it first if it does not hold them, and then draws only what moves.
  *
  * Each tile's culled objects go into one shared GLDrawList, a command per run sharing a mesh.
  * Runs come grouped by program and layout (ShadowRun::key), so a tile is one multi-draw per
@@ -63,6 +65,13 @@ class GLShadowPass : public GLPass {
             uint32_t          program  = 0;        ///< Index into m_programs.
             uint32_t          first    = 0;        ///< First command in m_list.
             uint32_t          count    = 0;        ///< Commands.
+        };
+
+        /// Which of a batch's casters addCasters takes.
+        enum class Casters {
+            All,
+            Fixed,   ///< Those of fixed runs (ShadowRun::fixed): what a layer holds.
+            Moving,  ///< The rest: what a tile draws over its layer.
         };
 
         /**
@@ -108,6 +117,14 @@ class GLShadowPass : public GLPass {
         void beginTile(const glm::mat4& lightVP, const glm::vec2& ditherShift);
 
         /**
+         * @brief Write the layer's depth over tile @p slot, which resumeTile has bound.
+         *
+         * @param ctx  For the atlas and the screen triangle.
+         * @param slot The tile, a layered one (Shadow2DJob::layered).
+         */
+        void restoreLayer(GLFrameContext& ctx, uint32_t slot);
+
+        /**
          * @brief Write and upload the drawn tiles' commands, and bind the objects they index.
          *
          * @param ctx For the plan and the caster list.
@@ -125,9 +142,15 @@ class GLShadowPass : public GLPass {
          * @param ctx   For the GL view and the caster list.
          * @param batch The surviving caster indices, grouped.
          * @param first Where the batch's indices start in the instance list.
+         * @param which Which of its runs to take.
          * @return Where the tile's draws sit in m_draws.
          */
-        TileDraws addCasters(const GLFrameContext& ctx, const ShadowCasterBatch& batch, uint32_t first);
+        TileDraws addCasters(
+            const GLFrameContext& ctx,
+            const ShadowCasterBatch& batch,
+            uint32_t first,
+            Casters which
+        );
 
         /**
          * @brief Submit one tile's or face's draws against the matrix beginTile() recorded.
@@ -149,7 +172,8 @@ class GLShadowPass : public GLPass {
         void useProgram(DepthProgram& program);
 
     private:
-        DepthProgram m_programs[4];  ///< Indexed cut * 2 + posed.
+        DepthProgram    m_programs[4];  ///< Indexed cut * 2 + posed.
+        Vkm::GL::Shader m_restore;      ///< A layer over its tile (shaders/shadow/restore).
 
         const Vkm::GL::Shader* m_bound = nullptr;    ///< The program that is current, reset each execute().
         glm::mat4              m_lightVP{1.0f};      ///< The tile being drawn's, as it rasterises.
@@ -163,6 +187,7 @@ class GLShadowPass : public GLPass {
         GLDrawList              m_list;
         std::vector<ShadowDraw> m_draws;      ///< Every drawn tile's draws, tile after tile.
         std::vector<TileDraws>  m_tiles2D;    ///< Each 2D job's draws.
+        std::vector<TileDraws>  m_layers2D;   ///< Each 2D job's layer's draws; HELD for none to draw.
         std::vector<TileDraws>  m_tilesCube;  ///< Each cube face's draws, six per job.
 };
 

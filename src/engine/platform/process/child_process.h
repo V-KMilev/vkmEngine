@@ -12,7 +12,7 @@ namespace Vkm::Engine {
  * @brief A program run in the background, its output collected as it arrives.
  *
  * Standard output and error share one pipe, read on a thread of the process's own, so
- * a caller polls output() and finished() from its frame. stop() ends the program and
+ * a caller polls takeOutput() and running() from its frame. stop() ends the program and
  * everything it started - a build's compilers included - so nothing outlives it. Should
  * this process die without stopping it, the program is ended too: on Windows with all it
  * started, its job's; on Linux it alone is sent SIGTERM, and what it started is its own to
@@ -37,7 +37,7 @@ class ChildProcess {
          * @param program The executable, by path.
          * @param args Its arguments, each passed as one argument.
          * @param workingDir Where it runs; empty keeps this process's.
-         * @return Whether it started; a failure is in output().
+         * @return Whether it started; a failure is in takeOutput().
          */
         bool start(
             const std::filesystem::path& program,
@@ -72,7 +72,13 @@ class ChildProcess {
         int exitCode();
 
     private:
-        /// Reads the pipe until the program closes it, then reaps the program.
+        /**
+         * @brief Collects the output until the program exits, then keeps its exit code.
+         *
+         * On Linux it asks after the program between reads and, once it is reaped, reads what is
+         * left in the pipe. On Windows it reads until every holder of the pipe has closed it, then
+         * waits for the program.
+         */
         void readUntilExit();
 
     private:

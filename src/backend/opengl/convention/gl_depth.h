@@ -3,6 +3,8 @@
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
+#include "gl_texture.h"
+
 namespace Vkm::Engine {
 
 /**
@@ -23,6 +25,8 @@ namespace GLDepth {
 
     inline constexpr float  SHADOW_CLEAR    = 1.0f;         ///< A shadow map's far plane.
     inline constexpr GLenum SHADOW_TEST     = GL_LESS;
+    /// How a sampler compares a shadow map's depth: lit where nearer, as SHADOW_TEST drew it.
+    inline constexpr Vkm::GL::TextureCompare SHADOW_COMPARE = Vkm::GL::TextureCompare::LessEqual;
 
     /**
      * @brief @p projection with clip z remapped by @p zFromW and @p zFromZ, in double.

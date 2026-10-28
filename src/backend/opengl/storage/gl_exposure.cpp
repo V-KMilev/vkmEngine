@@ -1,8 +1,6 @@
 #include "storage/gl_exposure.h"
 
-#include <stdexcept>
-
-#include "gl_error_handle.h"
+#include "gl_context.h"
 
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
@@ -12,57 +10,42 @@ namespace Vkm::Engine {
 
 namespace {
 
-constexpr GLsizeiptr HISTOGRAM_BYTES = Exposure::BINS * sizeof(uint32_t);
-constexpr GLbitfield READ_MAPPED = GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+constexpr uint32_t HISTOGRAM_BYTES = Exposure::BINS * sizeof(uint32_t);
 
 } // namespace
 
 GLExposure::GLExposure()
     : m_histogram("shaders/exposure/histogram")
-    , m_bins(nullptr, static_cast<uint32_t>(HISTOGRAM_BYTES))
-{
-    for (Readback& readback : m_readbacks) {
-        VKM_GL_CHECK(glCreateBuffers(1, &readback.buffer));
-        VKM_GL_CHECK(glNamedBufferStorage(readback.buffer, HISTOGRAM_BYTES, nullptr, READ_MAPPED));
-        readback.bins = static_cast<const uint32_t*>(
-            glMapNamedBufferRange(readback.buffer, 0, HISTOGRAM_BYTES, READ_MAPPED)
-        );
-        if (!readback.bins) throw std::runtime_error("Failed to map an exposure readback buffer");
-    }
-}
+    , m_bins(nullptr, HISTOGRAM_BYTES)
+    , m_readbacks{
+        Vkm::GL::ReadbackBuffer(HISTOGRAM_BYTES),
+        Vkm::GL::ReadbackBuffer(HISTOGRAM_BYTES),
+        Vkm::GL::ReadbackBuffer(HISTOGRAM_BYTES),
+    } {}
 
-GLExposure::~GLExposure() {
-    dropPending();
-    for (Readback& readback : m_readbacks) {
-        if (readback.buffer != 0) VKM_GL_CHECK(glDeleteBuffers(1, &readback.buffer));
-    }
-}
+GLExposure::~GLExposure() = default;
 
 float GLExposure::stops(const RenderSettings& settings, float seconds) {
     if (!settings.autoExposure) dropPending();
 
-    // Oldest first, so the last read is the newest; a fence still pending holds the rest back.
+    // Oldest first, so the last read is the newest; a copy still in flight holds the rest back.
     const uint32_t* newest = nullptr;
     for (int i = 0; i < READBACKS; ++i) {
-        Readback& readback = m_readbacks[(m_next + i) % READBACKS];
-        if (!readback.fence) continue;
-        const GLenum status = glClientWaitSync(readback.fence, 0, 0);
-        if (status != GL_ALREADY_SIGNALED && status != GL_CONDITION_SATISFIED) break;
-        VKM_GL_CHECK(glDeleteSync(readback.fence));
-        readback.fence = nullptr;
-        newest         = readback.bins;
+        Vkm::GL::ReadbackBuffer& readback = m_readbacks[(m_next + i) % READBACKS];
+        if (!readback.pending()) continue;
+        if (!readback.arrived()) break;
+        newest = static_cast<const uint32_t*>(readback.data());
     }
     return m_adaptation.update(newest, seconds, settings);
 }
 
 void GLExposure::measure(const GLTarget& scene, uint32_t width, uint32_t height) {
-    Readback& readback = m_readbacks[m_next];
-    if (readback.fence) return;
+    Vkm::GL::ReadbackBuffer& readback = m_readbacks[m_next];
+    if (readback.pending()) return;
 
     namespace Groups = GLBindings::ComputeGroups;
     namespace SSBO   = GLBindings::SSBOBindingPoints;
-    const GLuint zero = 0;
-    VKM_GL_CHECK(glClearNamedBufferData(m_bins.getID(), GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &zero));
+    m_bins.clear(GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     m_bins.bindBase(SSBO::EXPOSURE_HISTOGRAM);
     scene.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
     m_histogram.bind();
@@ -72,10 +55,9 @@ void GLExposure::measure(const GLTarget& scene, uint32_t width, uint32_t height)
         Groups::covering((height + stride - 1) / stride, Groups::IMAGE)
     );
 
-    VKM_GL_CHECK(glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT));
-    VKM_GL_CHECK(glCopyNamedBufferSubData(m_bins.getID(), readback.buffer, 0, 0, HISTOGRAM_BYTES));
-    readback.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    m_next         = (m_next + 1) % READBACKS;
+    Vkm::GL::memoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    readback.capture(m_bins);
+    m_next = (m_next + 1) % READBACKS;
 }
 
 void GLExposure::forget() {
@@ -84,11 +66,7 @@ void GLExposure::forget() {
 }
 
 void GLExposure::dropPending() {
-    for (Readback& readback : m_readbacks) {
-        if (!readback.fence) continue;
-        VKM_GL_CHECK(glDeleteSync(readback.fence));
-        readback.fence = nullptr;
-    }
+    for (Vkm::GL::ReadbackBuffer& readback : m_readbacks) readback.drop();
 }
 
 } // namespace Vkm::Engine

@@ -50,6 +50,7 @@
     "thicknessFactor": 0.0,
     "transmission": 0.0,
     "type": "Opaque",
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

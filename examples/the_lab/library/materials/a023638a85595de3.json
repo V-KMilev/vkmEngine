@@ -2,9 +2,9 @@
   "name": "lab:plinth_dark",
   "source": {
     "albedo": [
-      0.05999999865889549,
-      0.05999999865889549,
-      0.06499999761581421,
+      0.06,
+      0.06,
+      0.065,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -22,8 +22,8 @@
     ],
     "attenuationDistance": 1.0,
     "boxMapping": 0.0,
-    "clearcoat": 0.800000011920929,
-    "clearcoatRoughness": 0.07999999821186066,
+    "clearcoat": 0.8,
+    "clearcoatRoughness": 0.08,
     "doubleSided": false,
     "emission": [
       0.0,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.3499999940395355,
+    "rippleScale": 0.5,
+    "roughness": 0.35,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

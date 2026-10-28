@@ -1,6 +1,10 @@
 #include "physics/physics_support.h"
 
+#include <cmath>
+#include <limits>
+
 #include "ecs/component/physics/character_controller.h"
+#include "ecs/component/render/terrain.h"
 #include "system/physics/character/character_controller_system.h"
 #include "system/physics/physics_system.h"
 
@@ -295,6 +299,49 @@ void testAKinematicCharacterIsLeftAlone() {
     check("  and moving again it does not jump", rose < 0.05f);
 }
 
+// A character that may sleep dozes off standing still; the velocity a request to walk gives it wakes
+// it on the next tick's gather, before writeback would zero it.
+void testADozingCharacterWalksWhenAsked() {
+    std::printf("A character that dozed off, asked to walk:\n");
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.5f, 0.0f);
+    scene.get<Rigidbody>(walker).canSleep = true;
+    scene.get<CharacterController>(walker).moveInput = glm::vec3(0.0f);
+    bool dozed = false;
+    for (int i = 0; i < 60 && !dozed; ++i) {
+        simulate(scene, 10);
+        dozed = scene.get<Rigidbody>(walker).sleeping;
+    }
+    check("standing still, it dozes off", dozed);
+
+    const float from = scene.get<Transform>(walker).position.x;
+    scene.get<CharacterController>(walker).moveInput = {2.0f, 0.0f, 0.0f};
+    simulate(scene, 60);
+    check("  asked to walk, it walks", scene.get<Transform>(walker).position.x - from > 0.5f);
+}
+
+// A character asks for room as collision would: a beam that does not collide with its layer is no
+// ceiling to it, though its own mask takes the beam's layer.
+void testACrouchStandsUnderWhatDoesNotCollideWithIt() {
+    std::printf("A crouched character under a beam that does not collide with it:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {10.0f, 0.5f, 4.0f});
+    const EntityId beam   = addBox(scene, {0.0f, 1.4f, 0.0f}, {0.5f, 0.2f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.6f, 0.4f);
+    scene.get<Rigidbody>(beam).collidesWith = 1;
+    scene.get<Rigidbody>(walker).layer      = 2;
+    CharacterController& cc = scene.get<CharacterController>(walker);
+    cc.crouchHeight = 1.0f;
+    cc.crouched     = true;
+    cc.moveInput    = glm::vec3(0.0f);
+    TestFrame frame(scene);
+    CharacterControllerSystem controller;
+    controller.fixedUpdate(frame.ctx);
+    check("it stands", !cc.crouched);
+}
+
 // A beam at head height stops a character standing and lets one crouching under; let go beneath
 // it, the character stays crouched until it has walked out from under.
 void testACrouchPassesUnderABeamAndStandsOnlyWithRoom() {
@@ -420,6 +467,45 @@ void testACharacterRidesWhatItStandsOn() {
     check("  and says how fast it turns", turning.get<CharacterController>(spun).groundSpin == 1.0f);
 }
 
+// A dynamic body's velocity is its centre of mass's, so what stands on one pivoted off its middle
+// is carried at the speed of the surface under it, not of a point turning about the pivot.
+void testARiderTakesTheSpeedOfTheSurfaceUnderIt() {
+    std::printf("A character on a spinning crate pivoted off its middle:\n");
+    Scene scene;
+    addBox(scene, {0.0f, -1.5f, 0.0f}, {10.0f, 0.5f, 10.0f});
+    const EntityId crate = scene.createEntity();
+    Transform pivot;
+    pivot.position = {-2.0f, -1.0f, 0.0f};
+    scene.add<Transform>(crate, std::move(pivot));
+    Rigidbody body;
+    body.mass = 5000.0f;
+    scene.add<Rigidbody>(crate, std::move(body));
+    ColliderPart part;
+    part.shape       = ColliderShape::Box;
+    part.center      = {2.0f, 0.5f, 0.0f};
+    part.halfExtents = {3.0f, 0.5f, 3.0f};
+    Collider collider;
+    collider.parts = {part};
+    scene.add<Collider>(crate, std::move(collider));
+
+    const EntityId rider = addCharacter(scene, 0.3f, 0.5f, 0.4f);
+    scene.get<CharacterController>(rider).moveInput = glm::vec3(0.0f);
+    scene.get<Transform>(rider).position.x = 1.0f;
+    simulate(scene, 10, [&]() {
+        scene.get<Rigidbody>(crate).linearVelocity  = glm::vec3(0.0f);
+        scene.get<Rigidbody>(crate).angularVelocity = {0.0f, 1.0f, 0.0f};
+    });
+
+    const Rigidbody& spun   = scene.get<Rigidbody>(crate);
+    const Transform& at     = scene.get<Transform>(crate);
+    const glm::vec3  centre = at.position + at.rotation * part.center;
+    const glm::vec3  feet   = scene.get<Transform>(rider).position - glm::vec3(0.0f, 0.8f, 0.0f);
+    const glm::vec3  under  = spun.linearVelocity + glm::cross(spun.angularVelocity, feet - centre);
+    const glm::vec3  told   = scene.get<CharacterController>(rider).groundVelocity;
+    std::printf("      told %.3f m/s, the surface moves %.3f m/s\n", glm::length(told), glm::length(under));
+    check("it is carried at the speed of the surface under its feet", glm::length(told - under) < 0.05f);
+}
+
 // A ladder is a wall gameplay says to climb, each tick it holds on: pushing into it goes up,
 // letting go hangs, a jump leaps off, and once gameplay stops saying so it falls.
 void testACharacterClimbsAWall() {
@@ -481,6 +567,307 @@ void testAHeavierCrateIsHarderToPush() {
     check("  and the heavy one far less", heavy < light * 0.25f);
 }
 
+// Ground whose height runs along X alone, walked along +X: a floor of slopes and crests.
+using Profile = float (*)(float);
+
+// A static mesh following @p height from @p from to @p to along X, a strip across Z.
+MeshAsset makeProfileMesh(Profile height, float from, float to, int cells) {
+    MeshAsset mesh;
+    const float step = (to - from) / static_cast<float>(cells);
+    for (int z = 0; z <= 1; ++z) {
+        for (int x = 0; x <= cells; ++x) {
+            const float at = from + static_cast<float>(x) * step;
+            Vertex vertex;
+            vertex.position = {at, height(at), z == 0 ? -3.0f : 3.0f};
+            vertex.normal   = {0.0f, 1.0f, 0.0f};
+            mesh.vertices.push_back(vertex);
+        }
+    }
+    const uint32_t stride = static_cast<uint32_t>(cells + 1);
+    for (uint32_t x = 0; x < static_cast<uint32_t>(cells); ++x) {
+        mesh.indices.insert(mesh.indices.end(), {x, x + stride, x + 1, x + 1, x + stride, x + stride + 1});
+    }
+    return mesh;
+}
+
+// How far @p point is from the profile's polyline, in its X-Y plane: the mesh is flat across Z.
+float distanceToProfile(Profile height, float from, float to, int cells, const glm::vec2& point) {
+    const float step = (to - from) / static_cast<float>(cells);
+    float best = std::numeric_limits<float>::max();
+    for (int x = 0; x < cells; ++x) {
+        const float     ax = from + static_cast<float>(x) * step;
+        const glm::vec2 a  = {ax, height(ax)};
+        const glm::vec2 b  = {ax + step, height(ax + step)};
+        const float     t  = glm::clamp(glm::dot(point - a, b - a) / glm::dot(b - a, b - a), 0.0f, 1.0f);
+        best = glm::min(best, glm::length(point - (a + (b - a) * t)));
+    }
+    return best;
+}
+
+struct GroundWalk {
+    int   ticks    = 0;     ///< walked, after the run-up
+    int   airborne = 0;     ///< of them not grounded
+    int   thrown   = 0;     ///< of them `jumping`
+    float above    = 0.0f;  ///< the capsule's furthest from the ground, m
+    float below    = 0.0f;  ///< and furthest into it
+};
+
+// A character running at 4 m/s over @p height at @p tickRate, from a standing start on its flat
+// run-up at x = 0 to x = 14; the ground's restitution is the default 0.2, which bounces a landing.
+GroundWalk walkOver(Profile height, uint32_t tickRate) {
+    constexpr float RADIUS = 0.3f, HALF = 0.6f;
+    constexpr float FROM = -4.0f, TO = 20.0f;
+    constexpr int   CELLS = 96;
+
+    Scene scene;
+    const EntityId ground = addMeshBody(scene, makeProfileMesh(height, FROM, TO, CELLS));
+    scene.get<Rigidbody>(ground).restitution = 0.2f;
+    const EntityId walker = addCharacter(scene, RADIUS, HALF, 0.4f);
+    Transform& at = scene.get<Transform>(walker);
+    at.position.y = height(0.0f) + HALF + RADIUS;
+    CharacterController& cc = scene.get<CharacterController>(walker);
+    cc.moveInput = glm::vec3(0.0f);
+
+    TestFrame frame(scene, meshLibrary());
+    frame.clock.setTickRate(tickRate);
+    PhysicsSystem physics;
+    CharacterControllerSystem controller;
+    const auto tick = [&]() {
+        physics.fixedUpdate(frame.ctx);
+        controller.fixedUpdate(frame.ctx);
+    };
+
+    // Settled standing, then up to speed before the flat ends at x = 2.
+    const int second = static_cast<int>(tickRate);
+    for (int i = 0; i < second / 2; ++i) tick();
+    cc.moveInput = {4.0f, 0.0f, 0.0f};
+    for (int i = 0; i < second / 4; ++i) tick();
+
+    GroundWalk walk;
+    while (at.position.x < 14.0f && walk.ticks < 10 * second) {
+        tick();
+        ++walk.ticks;
+        if (!cc.grounded) ++walk.airborne;
+        if (cc.jumping) ++walk.thrown;
+        // The bottom sphere's centre, a radius off the ground when it rests on it.
+        const glm::vec2 foot = {at.position.x, at.position.y - HALF};
+        const float     gap  = distanceToProfile(height, FROM, TO, CELLS, foot) - RADIUS;
+        walk.above = glm::max(walk.above, gap);
+        walk.below = glm::max(walk.below, -gap);
+    }
+    return walk;
+}
+
+float flatGround(float) {
+    return 0.0f;
+}
+
+// Flat to x = 2, then down at 15 degrees: walked onto, the edge is a crest.
+float descent(float x) {
+    return x < 2.0f ? 0.0f : -(x - 2.0f) * std::tan(glm::radians(15.0f));
+}
+
+// Up at 12 degrees from x = 2, over a crest at x = 6, down at 12 to flat at x = 10.
+float crest(float x) {
+    const float rise = std::tan(glm::radians(12.0f));
+    if (x < 2.0f || x > 10.0f) return 0.0f;
+    return x < 6.0f ? (x - 2.0f) * rise : (10.0f - x) * rise;
+}
+
+// Rolling ground from x = 2: 15 cm high, 4 m from crest to crest, never steeper than 14 degrees.
+float undulation(float x) {
+    return x < 2.0f ? 0.0f : 0.15f * std::sin(glm::two_pi<float>() * (x - 2.0f) * 0.25f);
+}
+
+// A character's contact is real overlap, met at the pose the tick began at, so contact alone would
+// fly it off every crest and skip it down every slope - each skip a jump clip in a game. Grounding
+// holds it: on the ground every tick, never thrown, and its capsule within a centimetre and a half of
+// it - a tick of a slope's fall at 64 Hz, or the solve's give at a slope's foot.
+void testACharacterStaysOnRollingGround() {
+    std::printf("A character running over slopes and crests:\n");
+
+    const struct {
+        const char* name;
+        Profile     height;
+    } grounds[] = {
+        {"flat ground", flatGround},
+        {"a 15 degree descent", descent},
+        {"a 12 degree crest", crest},
+        {"rolling ground", undulation},
+    };
+    for (const uint32_t rate : {Config::DEFAULT_TICK_RATE, 128u}) {
+        for (const auto& ground : grounds) {
+            const GroundWalk walk = walkOver(ground.height, rate);
+            std::printf(
+                "      %s at %u Hz: %d of %d ticks airborne, %d thrown, %.4f m above, %.4f m into it\n",
+                ground.name,
+                rate,
+                walk.airborne,
+                walk.ticks,
+                walk.thrown,
+                static_cast<double>(walk.above),
+                static_cast<double>(walk.below)
+            );
+            check("  it is grounded every tick", walk.ticks > 0 && walk.airborne == 0);
+            check("  never thrown off it", walk.thrown == 0);
+            check("  and its feet stay on it", walk.above < 0.015f && walk.below < 0.015f);
+        }
+    }
+}
+
+// Landing from a fall strikes ground of restitution 0.2 faster than the solver's bounce threshold.
+// The bounce is the contact's, on ground the character was not standing on: grounding takes it back,
+// so it lands and stays down.
+void testALandingDoesNotBounce() {
+    std::printf("A character landing from a fall:\n");
+
+    Scene scene;
+    const EntityId ground = addMeshBody(scene, makeGridMesh(8, 16.0f));
+    scene.get<Rigidbody>(ground).restitution = 0.2f;
+    const EntityId walker = addCharacter(scene, 0.3f, 0.6f, 0.4f);
+    Transform& at = scene.get<Transform>(walker);
+    at.position.y += 1.5f;
+    CharacterController& cc = scene.get<CharacterController>(walker);
+    cc.moveInput = glm::vec3(0.0f);
+
+    TestFrame frame(scene, meshLibrary());
+    PhysicsSystem physics;
+    CharacterControllerSystem controller;
+    const auto tick = [&]() {
+        physics.fixedUpdate(frame.ctx);
+        controller.fixedUpdate(frame.ctx);
+    };
+    for (int i = 0; i < 128 && !cc.grounded; ++i) tick();
+    check("it lands", cc.grounded);
+
+    const float landed   = at.position.y;
+    float       highest  = landed;
+    int         airborne = 0;
+    for (int i = 0; i < 64; ++i) {
+        tick();
+        highest = glm::max(highest, at.position.y);
+        if (!cc.grounded) ++airborne;
+    }
+    std::printf("      %d ticks off the ground after it, rose %.4f m\n", airborne, highest - landed);
+    check("  and stays down: no tick off the ground", airborne == 0);
+    check("  nor any hop", highest - landed < 0.005f);
+}
+
+// What gameplay throws off the ground - a jump pad's launch - stays thrown: grounding takes back only
+// what the ground itself gave.
+void testAThrowOffTheGroundIsKept() {
+    std::printf("A character launched off the ground by gameplay:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.5f, 0.4f);
+    CharacterController& cc = scene.get<CharacterController>(walker);
+    simulate(scene, 30);
+    check("it stands", cc.grounded && !cc.jumping);
+
+    const float from = scene.get<Transform>(walker).position.y;
+    simulate(scene, 1, [&]() { scene.get<Rigidbody>(walker).linearVelocity.y = 8.0f; });
+    const bool launched = cc.jumping && !cc.grounded;
+    float highest = from;
+    for (int i = 0; i < 160; ++i) {
+        simulate(scene, 1);
+        highest = glm::max(highest, scene.get<Transform>(walker).position.y);
+    }
+    std::printf("      rose %.3f m\n", highest - from);
+    check("thrown, it is jumping and not grounded", launched);
+    check("  and flies as high as the throw sends it", highest - from > 2.5f);
+    check("  coming down to stand again", cc.grounded && !cc.jumping);
+
+    // Its own jump, from where it stands: the floor it leaves is still in contact a tick later.
+    const float stood = scene.get<Transform>(walker).position.y;
+    cc.jumpRequested  = true;
+    float top = stood;
+    for (int i = 0; i < 64; ++i) {
+        simulate(scene, 1);
+        top = glm::max(top, scene.get<Transform>(walker).position.y);
+    }
+    std::printf("      jumped %.3f m\n", top - stood);
+    check("a jump rises its jumpSpeed's height", top - stood > 1.1f);
+}
+
+// The same on a real terrain, rolling both ways: its triangles are rebuilt from heights, not
+// authored, and walked across the grid's diagonals.
+void testACharacterStaysOnATerrain() {
+    std::printf("A character running across a rolling terrain:\n");
+
+    constexpr int   RESOLUTION = 65;
+    constexpr float RADIUS = 0.3f, HALF = 0.6f;
+    TerrainAsset terrain;
+    terrain.resolution = RESOLUTION;
+    terrain.size       = 32.0f;
+    terrain.heights.resize(RESOLUTION * RESOLUTION);
+    terrain.weights.assign(RESOLUTION * RESOLUTION * 4, 0);
+    for (int j = 0; j < RESOLUTION; ++j) {
+        for (int i = 0; i < RESOLUTION; ++i) {
+            const float x = static_cast<float>(i) * 0.5f - 16.0f;
+            const float z = static_cast<float>(j) * 0.5f - 16.0f;
+            const size_t at = static_cast<size_t>(j) * RESOLUTION + i;
+            terrain.heights[at] = 0.4f * std::sin(0.5f * x) * std::cos(0.4f * z);
+        }
+    }
+    const TerrainHandle handle = meshLibrary().add(TerrainAsset(terrain), "test:rolling-terrain");
+
+    Scene scene;
+    const EntityId ground = scene.createEntity();
+    scene.add<Transform>(ground, Transform{});
+    Rigidbody still;
+    still.motion = RigidbodyMotion::Static;
+    scene.add<Rigidbody>(ground, std::move(still));
+    ColliderPart part;
+    part.shape = ColliderShape::Terrain;
+    Collider collider;
+    collider.parts = {part};
+    scene.add<Collider>(ground, std::move(collider));
+    Terrain component;
+    component.terrain = handle;
+    scene.add<Terrain>(ground, std::move(component));
+
+    const EntityId walker = addCharacter(scene, RADIUS, HALF, 0.4f);
+    Transform& at = scene.get<Transform>(walker);
+    at.position = {-12.0f, terrain.heightAt(-12.0f, -4.0f) + HALF + RADIUS, -4.0f};
+    CharacterController& cc = scene.get<CharacterController>(walker);
+    cc.moveInput = glm::vec3(0.0f);
+
+    TestFrame frame(scene, meshLibrary());
+    frame.clock.setTickRate(128);
+    PhysicsSystem physics;
+    CharacterControllerSystem controller;
+    const auto tick = [&]() {
+        physics.fixedUpdate(frame.ctx);
+        controller.fixedUpdate(frame.ctx);
+    };
+    for (int i = 0; i < 64; ++i) tick();
+    cc.moveInput = glm::normalize(glm::vec3(1.0f, 0.0f, 0.4f)) * 4.0f;
+    for (int i = 0; i < 32; ++i) tick();
+
+    int   airborne = 0;
+    float above    = 0.0f;
+    float below    = 0.0f;
+    for (int i = 0; i < 4 * 128; ++i) {
+        tick();
+        if (!cc.grounded || cc.jumping) ++airborne;
+        // The capsule's lowest point over the surface beneath it: on a slope it sits a little above.
+        const float rise = at.position.y - HALF - RADIUS - terrain.heightAt(at.position.x, at.position.z);
+        above = glm::max(above, rise);
+        below = glm::max(below, -rise);
+    }
+    std::printf(
+        "      reached x = %.1f; %d ticks off the ground, %.4f m above it, %.4f m into it\n",
+        static_cast<double>(at.position.x),
+        airborne,
+        static_cast<double>(above),
+        static_cast<double>(below)
+    );
+    check("it crosses the terrain", at.position.x > 2.0f);
+    check("  grounded every tick", airborne == 0);
+    check("  its feet on it", above < 0.02f && below < 0.005f);
+}
+
 } // namespace
 
 void runPhysicsCharacterTests() {
@@ -488,11 +875,18 @@ void runPhysicsCharacterTests() {
     testAShoveCarriesWithKnockbackDrag();
     testLettingGoIsNotAShove();
     testAKinematicCharacterIsLeftAlone();
+    testADozingCharacterWalksWhenAsked();
     testACharacterClimbsAWall();
     testACrouchPassesUnderABeamAndStandsOnlyWithRoom();
+    testACrouchStandsUnderWhatDoesNotCollideWithIt();
     testACharacterRidesWhatItStandsOn();
+    testARiderTakesTheSpeedOfTheSurfaceUnderIt();
     testCharacterStaircase();
     testCharacterStepUp();
     testAJumpDuringAStepIsAWholeJump();
     testStepUpPastOwnBones();
+    testACharacterStaysOnRollingGround();
+    testALandingDoesNotBounce();
+    testAThrowOffTheGroundIsKept();
+    testACharacterStaysOnATerrain();
 }

@@ -32,7 +32,7 @@ For every Mesh, in parallel (`update` in `visibility_system.cpp`):
 - A mesh with no mesh asset, no material, no `Transform`, degenerate bounds or
   `visible` off is in no list - it neither draws nor casts.
 - Its local box (the posed one for a posed skinned mesh, see
-  [Posed bounds](#posed-bounds)) goes to world space; a `waves` surface under an
+  [Posed bounds](#posed-bounds)) goes to world space; a Sea surface under an
   ocean grows by how far the sea carries water
   ([rendering.md](rendering.md#the-ocean)).
 - Its columns are written for **every** valid mesh, not only visible ones.
@@ -40,7 +40,7 @@ For every Mesh, in parallel (`update` in `visibility_system.cpp`):
   distance (`Culling::isNearEnough`, `RenderSettings::cullMaxDistance`, off at
   0 or below) and screen-size (`Culling::isLargeEnough`,
   `RenderSettings::cullMinPixels`) tests.
-- It casts if `Mesh::castShadows` is set, unless it is a `waves` surface under an
+- It casts if `Mesh::castShadows` is set, unless it is a Sea surface under an
   ocean.
 - Through a scene camera, `Mesh::seenBy` has its say: `AllButEye` (a
   first-person body) is in `scene` and casts but is never visible; `EyeOnly` (arms,
@@ -88,7 +88,7 @@ Transform, WorldTransform or LOD, or a source every object reads
 
 A broken promise is caught: each frame one in `FIXED_CHECK_STRIDE` kept meshes
 is recomputed and compared; a mismatch logs a warning once per world and
-rebuilds everything the next frame. A skinned mesh, a `waves` surface under an
+rebuilds everything the next frame. A skinned mesh, a Sea surface under an
 ocean and a viewmodel are never kept, whatever the flag.
 
 ## Level of detail
@@ -105,7 +105,8 @@ level; the choice is published as `ObjectDraw::mesh`, so the renderer never read
 **Generate Levels** on the inspector's LOD card (`generateLOD`,
 `src/tools/cook/lod_generator.h`) simplifies the mesh into named assets
 (`<mesh>:lod1`, ...) and sets each hand-over where the next level's error
-projects to about a pixel.
+projects to about a pixel. The card edits each level's mesh and range by hand
+too, and adds or removes one.
 
 ## Occlusion culling, on the GPU, as an option
 

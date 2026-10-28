@@ -2,9 +2,9 @@
  * Billboard particle - fragment stage.
  *
  * A procedural soft round sprite, or a frame of the emitter's texture, tinted by the particle's
- * colour. An additive particle gives off that colour. An alpha one is lit as a ball: a sphere's
+ * color. An additive particle gives off that color. An alpha one is lit as a ball: a sphere's
  * normal under the card - or its normal map's folds - turns toward or away from the light at its
- * centre, with the ambient from all round, and it gives off the share of its colour its emission
+ * centre, with the ambient from all round, and it gives off the share of its color its emission
  * says. A sheet's frames fade one into the next when the emitter asks. A distortion one bends
  * the scene behind it - outward from its middle, or as its texture says, read as a normal map.
  */

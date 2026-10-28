@@ -17,8 +17,8 @@ namespace Vkm::Engine {
  *
  * `ReflectedBehavior::visitFields` dispatches each field: leaves to a `field()`
  * overload (the one closed set; add an overload for a new type), VKM_ENUM_NAMES enums
- * to `enumField()`, AssetRef<Asset> to `assetField()`, and VKM_REFLECT-ed structs
- * through beginStruct()/endStruct().
+ * to `enumField()`, AssetRef<Asset> to `assetField()`, PrefabRef to `prefabField()`,
+ * and VKM_REFLECT-ed structs through beginStruct()/endStruct().
  */
 class BehaviorFieldVisitor {
     public:
@@ -66,6 +66,14 @@ class BehaviorFieldVisitor {
          * @param type      Asset kind the field may reference.
          */
         virtual void assetField(const char* name, std::string& assetName, AssetType type) = 0;
+
+        /**
+         * @brief Visit a field that names a prefab file (PrefabRef), by its project-relative path.
+         *
+         * @param name Field name.
+         * @param path In: the current path, empty for none. Out: the visitor's chosen one.
+         */
+        virtual void prefabField(const char* name, std::string& path) = 0;
 
         /**
          * @brief Enter a nested reflected-struct field; return true to descend.

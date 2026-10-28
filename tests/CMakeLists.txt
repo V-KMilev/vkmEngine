@@ -13,8 +13,12 @@ list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/render/[^/]+$")
 # The src/editor files below depend on nothing else from it. PlaySnapshot is a
 # scene, a resource manager and the serializers; the undo machinery is a scene
 # and a CommandHost, the seam it asks the editor for rather than the editor's
-# whole state; the editor's view is a System over an InputMap of its own; a
-# content pack is files copied, and a project's terrain files read and written.
+# whole state; the editor's view is a System over an InputMap of its own, what
+# it frames boxes, and where it puts a new entity a ray through the scene; a
+# content pack is files copied, a file imported is copied into the project and
+# read, a project's terrain files read and written and a scene's assets cooked
+# with them, a crash's copy of unsaved changes kept and found, and the log file
+# followed.
 # Compiled in here so each is tested without a window.
 #
 # Nothing else from src/editor belongs here. A file that needs ImGui is a file
@@ -23,19 +27,28 @@ list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/render/[^/]+$")
 #
 # The cooker is the same case from src/tools: asset_cooker.cpp decides what a
 # cook re-bakes and reaches the importers only through the AssetFactory table,
-# so the suite compiles it alone and installs a stand-in importer, rather than
-# linking the whole of vkm_cook. The cook key, the mesh processing, the LOD
-# generation and the texture bake come with it, and with them meshoptimizer,
-# the mip filter and the block encoders; so does the model parse, and with it
-# cgltf, ufbx and MikkTSpace - plain CPU code with no dependencies of its own,
-# so the binary still needs nothing installed. The texture loaders come for the
-# recipe readers, and with them the stb decode vkm_core already holds.
+# so the suite compiles it rather than linking the whole of vkm_cook, and a test
+# installs a stand-in importer where the real one is beside the point. The
+# table itself comes too (recipe_registration.cpp), with the importers it
+# names - the model, terrain, audio and texture loaders and the format list
+# they share (import_formats.cpp) - decoding with the stb and miniaudio vkm_core
+# already holds. The cook key, the mesh processing, the LOD generation and the
+# texture bake come with it, and with them meshoptimizer, xatlas, the mip filter
+# and the block encoders; so does the model parse, and with it cgltf, ufbx and
+# MikkTSpace - plain CPU code with no dependencies of its own, so the binary
+# still needs nothing installed.
 add_executable(vkm_engine_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
     ${VKM_TEST_SOURCES}
     ${CMAKE_SOURCE_DIR}/src/editor/input/camera_controller_system.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/input/view_framing.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/input/view_placement.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/session/asset_writes.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/session/content_pack.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/session/file_import.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/session/log_tail.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/session/play_snapshot.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/session/scene_recovery.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/session/terrain_files.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/command/command_stack.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/command/editor_commands.cpp
@@ -45,9 +58,13 @@ add_executable(vkm_engine_tests
     ${CMAKE_SOURCE_DIR}/src/tools/cook/cook_key.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/cook/lod_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/cook/mesh_processing.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/cook/recipe_registration.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/cook/texture_bake.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/audio_loaders.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/import/import_formats.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/import/model_loaders.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/model_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/import/terrain_loaders.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/texture_loaders.cpp
 )
 
@@ -84,6 +101,7 @@ target_link_libraries(vkm_engine_tests PRIVATE
     vkm_render
     vkm_tools
     meshoptimizer
+    xatlas
     stb_image_resize
     bc7e
     cgltf
@@ -197,6 +215,9 @@ if(TARGET OpenGL::EGL)
     # with the backend's own prelude, which is GLBackend's to build. Nothing here
     # opens a window - the EGL context above is the whole GL surface.
     target_link_libraries(vkm_render_tests PRIVATE vkm_backend_gl vkm_gl vkm_log OpenGL::EGL)
+
+    # The golden suite's PNG writer.
+    target_link_libraries(vkm_render_tests PRIVATE stb_image_write)
 
     # Where the shaders are. The loader resolves their paths against the working
     # directory, which the suite sets to this root before it loads any.

@@ -52,6 +52,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/brass_goblets/textures/brass_goblet_01_diff_1k.jpg"
@@ -115,19 +116,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.2567543983459473,
+              "maxDistance": 1.2567544,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 5.511364936828613,
+              "maxDistance": 5.511365,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 12.547998428344727,
+              "maxDistance": 12.547998,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 25.095996856689453,
+              "maxDistance": 25.095997,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod3"
             }
           ]
@@ -145,9 +146,9 @@
         },
         "Transform": {
           "position": [
-            -0.00032767606899142265,
-            0.004920530132949352,
-            0.12025979906320572
+            -0.00032767607,
+            0.00492053,
+            0.1202598
           ],
           "rotation": [
             1.0,
@@ -171,19 +172,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.0469884872436523,
+              "maxDistance": 1.0469885,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1"
             },
             {
-              "maxDistance": 5.733097553253174,
+              "maxDistance": 5.7330976,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod1"
             },
             {
-              "maxDistance": 12.268630027770996,
+              "maxDistance": 12.26863,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod2"
             },
             {
-              "maxDistance": 24.537260055541992,
+              "maxDistance": 24.53726,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod3"
             }
           ]
@@ -201,9 +202,9 @@
         },
         "Transform": {
           "position": [
-            -0.14954441785812378,
-            0.005822327919304371,
-            -0.030845999717712402
+            -0.14954442,
+            0.005822328,
+            -0.030846
           ],
           "rotation": [
             1.0,
@@ -227,19 +228,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 1.0832722187042236,
+              "maxDistance": 1.0832722,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2"
             },
             {
-              "maxDistance": 8.191549301147461,
+              "maxDistance": 8.191549,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod1"
             },
             {
-              "maxDistance": 12.528826713562012,
+              "maxDistance": 12.528827,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod2"
             },
             {
-              "maxDistance": 25.057653427124023,
+              "maxDistance": 25.057653,
               "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod3"
             }
           ]
@@ -257,9 +258,9 @@
         },
         "Transform": {
           "position": [
-            0.15866722166538239,
-            0.006193193141371012,
-            -0.027895381674170494
+            0.15866722,
+            0.006193193,
+            -0.027895382
           ],
           "rotation": [
             1.0,

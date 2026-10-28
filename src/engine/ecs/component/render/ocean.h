@@ -28,17 +28,17 @@ struct OceanSurge {
 };
 
 /**
- * @brief The scene's sea: wind-driven waves moving every surface whose material is `waves`.
+ * @brief The scene's sea: wind-driven waves moving every surface whose material is Sea water.
  *
  * The waves are drawn from an ocean wave spectrum - JONSWAP, shortened by TMA's correction
- * where `depth` is set (Horvath 2015) - as a sum of Gerstner waves, moved per vertex on the GPU
- * and, by the same sum, by OceanSurface for gameplay that floats things on it. A scene uses
+ * where `depth` is set (Horvath 2015) - every wavenumber of it a wave, on repeating grids
+ * transformed to the water's movement (OceanSwell, Tessendorf 2001), moved per vertex on the GPU
+ * and, by the same grids, by OceanSurface for gameplay that floats things on it. A scene uses
  * one: @ref findOcean picks it. Its Transform is where the waves are whole - past `calmRadius`
  * from it they die away, gone at `stillRadius` - and the height its water rests at, which its
- * `waves` surfaces should share: what breaks the water foams by it.
+ * Sea surfaces should share: what breaks the water foams by it.
  */
 struct Ocean {
-    static constexpr uint32_t MAX_WAVES  = 64;
     static constexpr uint32_t MAX_SURGES = 4;
     /// Metres across the square of sea ahead of the eye where the water meets what stands in it.
     static constexpr float    WATERLINE_SQUARE = 128.0f;
@@ -52,9 +52,10 @@ struct Ocean {
     float choppiness    = 0.7f;    ///< 0 round swells; 1 crests drawn to a point.
     float heightScale   = 1.0f;    ///< On the heights the spectrum gives.
     float minWavelength = 2.0f;    ///< Metres; shorter are ripples, per pixel.
-    float maxWavelength = 200.0f;  ///< Metres.
-    uint32_t waveCount  = 32;      ///< Waves summed, up to MAX_WAVES.
-    uint32_t seed       = 1;       ///< Which waves and ripples: their directions and phases.
+    /// Metres: the longest wave, and the largest grid's repeat - unless the band fits one grid, which
+    /// then repeats as far as minWavelength still resolves (OceanSwell).
+    float maxWavelength = 200.0f;
+    uint32_t seed       = 1;       ///< Which waves and ripples: their heights and phases.
     /// Metres: the spectrum on below minWavelength, down to this, are ripples - every one of
     /// them, for the surface's light and foam alone, too short to move a vertex or anything afloat.
     float    shortestRipple = 0.03f;
@@ -97,7 +98,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Ocean)
     VKM_F(heightScale)
     VKM_F(minWavelength)
     VKM_F(maxWavelength)
-    VKM_F(waveCount)
     VKM_F(seed)
     VKM_F(shortestRipple)
     VKM_F(calmRadius)

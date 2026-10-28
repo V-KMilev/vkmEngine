@@ -13,6 +13,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/barrel_03/textures/barrel_03_diff_1k.jpg"

@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/component/core/transform.h"
+#include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/entity.h"
 #include "net/prediction/command.h"
@@ -81,7 +82,7 @@ class NetClient {
         bool simulates(const Scene& scene, EntityId entity) const;
 
         /// See NetSession::lease.
-        void lease(const std::vector<EntityId>& entities);
+        void lease(const Scene& scene, const std::vector<EntityId>& entities);
 
         /// Count every lease down a tick, outside a replay, and hand back the lapsed.
         void ageLeases();
@@ -113,6 +114,20 @@ class NetClient {
 
         /// The world as loaded; see NetSession::setWorld.
         void adoptWorld(const Scene& scene) { m_names.adoptWorld(scene); }
+
+        /// See NetSession::takeSceneToLoad.
+        std::string takeSceneToLoad();
+
+        /// Whether the server named a world to move to that this end has not yet taken up.
+        bool awaitingWorld() const { return m_world.named; }
+
+        /**
+         * @brief Take up the world the server named, now loaded here in place of the last.
+         *
+         * @param scene The world just loaded.
+         * @return False when it is not the scene the server named (logged), and the session ends.
+         */
+        bool completeWorld(Scene& scene);
 
         /// Destroy what the session last closed had made (NetNames::sweepEnded).
         void sweepEnded(Scene& scene) { m_names.sweepEnded(scene); }
@@ -185,10 +200,12 @@ class NetClient {
          * what was held is then put back, or dropped for a replay to recompute.
          */
         struct Held {
-            EntityId  entity;
-            Transform transform;
-            Rigidbody body;
-            bool      hasBody = false;
+            EntityId            entity;
+            Transform           transform;
+            Rigidbody           body;
+            CharacterController controller;
+            bool                hasBody       = false;
+            bool                hasController = false;
         };
 
         /**
@@ -235,11 +252,31 @@ class NetClient {
             glm::vec3 drawn{0.0f};
         };
 
+        /// The world the server moved the session to, until this end has taken it up.
+        struct WorldToLoad {
+            std::string path;                 ///< Project-relative scene.
+            uint64_t    fingerprint = 0;      ///< What fingerprintScene said of it there.
+            uint32_t    slot        = 0;      ///< This end's entity in it, by the server's slot.
+            uint8_t     generation  = 0;      ///< NetCore::worldGeneration it is.
+            bool        named       = false;
+            bool        taken       = false;  ///< Handed to the host to load.
+        };
+
     private:
         bool onWelcome(Scene& scene, BitReader& reader);
         bool onRefuse(BitReader& reader);
         bool onGoodbye();
         void onSnapshot(Scene& scene, BitReader& reader);
+        bool onWorld(BitReader& reader);
+
+        /**
+         * @brief Make the entity the server's @p slot names in @p scene this end's to drive.
+         *
+         * @param scene The world the slot names an entity of.
+         * @param slot  The server's slot for this end's entity.
+         * @return False when the wire cannot name that slot here (logged), and the session ends.
+         */
+        bool claimLocalEntity(Scene& scene, uint32_t slot);
 
         /**
          * @brief Set aside what this end predicts, before a snapshot overwrites it.
@@ -319,6 +356,8 @@ class NetClient {
         PlayerId m_localPlayer = NO_PLAYER;
         EntityId m_localEntity;
         uint64_t m_token = 0;  ///< Proves this end owns the seat.
+
+        WorldToLoad m_world;  ///< The world the server moved the session to, until taken up.
 
         bool m_warnedTickJump = false;  ///< Said once, not once a packet.
 

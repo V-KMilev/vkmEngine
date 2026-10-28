@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
+
+#include <glm/glm.hpp>
 
 #include "core/reflect.h"
 
@@ -27,21 +30,34 @@ enum class PreviewBackground : uint8_t {
     Count  ///< Enum size marker (reflection); not a backdrop.
 };
 
+/// One mesh a preview draws: with what, where in the preview's own space, and how it is posed.
+struct PreviewDraw {
+    MeshHandle             mesh;
+    MaterialHandle         material;
+    glm::mat4              model = glm::mat4(1.0f);
+    std::vector<glm::mat4> bones = {};  ///< Its skin palette, as PoseBuffer::palette; none is its bind pose.
+};
+
 /**
- * @brief One editor preview: a mesh with a material under the scene's light, from an orbit camera.
+ * @brief One editor preview: meshes with their materials under the scene's light, from an orbit
+ *        camera around them.
  *
  * Rendering the same key again overwrites that key's cached target.
  */
 struct PreviewRequest {
-    uint64_t          key      = 0;      ///< Identifies the cached target.
-    uint32_t          size     = 256;    ///< Square edge, pixels.
-    MeshHandle        mesh;
-    MaterialHandle    material;
-    float             yawDeg   = 35.0f;
-    float             pitchDeg = 20.0f;
-    float             distance = 3.0f;   ///< In mesh bounding radii.
-    PreviewBackground background = PreviewBackground::Dark;
-    float             lightYawDeg = 0.0f;  ///< The light's rotation around Y, degrees.
+    /// The vertical field of view every preview is drawn with, in degrees.
+    static constexpr float FIELD_DEGREES = 40.0f;
+
+    uint64_t                 key         = 0;    ///< Identifies the cached target.
+    uint32_t                 width       = 256;  ///< Pixels.
+    uint32_t                 height      = 256;  ///< Pixels.
+    std::vector<PreviewDraw> draws;
+    float                    yawDeg      = 35.0f;
+    float                    pitchDeg    = 20.0f;
+    float                    distance    = 3.0f;    ///< From the drawn's centre, in its bounding radii.
+    glm::vec2                pan{0.0f};             ///< The centre moved across the view, in radii.
+    PreviewBackground        background  = PreviewBackground::Dark;
+    float                    lightYawDeg = 0.0f;    ///< The light's rotation around Y, degrees.
 };
 
 /**
@@ -165,7 +181,8 @@ class EditorRenderHooks {
         virtual void beginImGuiFrame() = 0;
 
         /**
-         * @brief Draw ImGui's finished frame into the window.
+         * @brief Draw ImGui's finished frame into the window, and each panel dragged out of it
+         *        into its own.
          *
          * @param data ImGui::GetDrawData() after ImGui::Render().
          */

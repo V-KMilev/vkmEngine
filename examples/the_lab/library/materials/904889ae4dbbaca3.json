@@ -2,9 +2,9 @@
   "name": "lab:rubber",
   "source": {
     "albedo": [
-      0.07999999821186066,
-      0.07999999821186066,
-      0.07999999821186066,
+      0.08,
+      0.08,
+      0.08,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.8500000238418579,
+    "rippleScale": 0.5,
+    "roughness": 0.85,
     "sheenColor": [
-      0.10000000149011612,
-      0.10000000149011612,
-      0.10000000149011612
+      0.1,
+      0.1,
+      0.1
     ],
-    "sheenRoughness": 0.800000011920929,
+    "sheenRoughness": 0.8,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

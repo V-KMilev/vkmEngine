@@ -28,8 +28,47 @@ using EditorStyle::overlayStripHeight;
 namespace {
 constexpr int CONTROLS = 4;  // play/pause, step, stop, eject
 
-// Frame the viewport during a session: edits there are a scratch copy Stop throws away.
-// The label also says when ejected, as nothing else shows the game is deaf.
+/// The playback speeds offered; one is the game as written.
+constexpr float SPEEDS[] = {0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
+
+/// A function: px() needs an ImGui context, absent when file-scope initializers run.
+float speedWidth() { return overlayButton() * 1.6f; }
+
+/**
+ * @brief The host's playback speed (Clock::setHostScale), with a list of SPEEDS to pick from.
+ *
+ * In the warning color while not 1x, so a slowed session is never mistaken for a slow game.
+ *
+ * @param clock Holds the host's speed; a pick sets it.
+ */
+void drawSpeed(Clock& clock) {
+    const float speed = clock.getHostScale();
+    char label[24];
+    snprintf(label, sizeof(label), "%gx##speed", speed);
+    const bool bent = speed != 1.0f;
+    if (bent) ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+    if (ImGui::Button(label, ImVec2(speedWidth(), overlayButton()))) ImGui::OpenPopup("##Speeds");
+    if (bent) ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("Playback speed; the game's own time scale is untouched");
+    if (ImGui::BeginPopup("##Speeds")) {
+        for (const float choice : SPEEDS) {
+            char text[16];
+            snprintf(text, sizeof(text), "%gx", choice);
+            if (ImGui::Selectable(text, choice == speed)) clock.setHostScale(choice);
+        }
+        ImGui::EndPopup();
+    }
+}
+
+/**
+ * @brief Frame the viewport during a session: edits there are a scratch copy Stop throws away.
+ *
+ * The label also says when ejected, as nothing else shows the game is deaf.
+ *
+ * @param ec        Supplies the viewport's rect.
+ * @param barBottom Window-relative y the playback bar ends at; the label goes below it.
+ * @param ejected   Whether the session is ejected.
+ */
 void drawSessionMarker(EditorContext& ec, float barBottom, bool ejected) {
     const ImU32 accent = ImGui::GetColorU32(EditorStyle::WARNING);
     ImVec2 min = ec.viewportPos;
@@ -45,8 +84,17 @@ void drawSessionMarker(EditorContext& ec, float barBottom, bool ejected) {
     const char* label = ejected
         ? "PLAY MODE, EJECTED - the game hears no input; edits are discarded on Stop"
         : "PLAY MODE - edits are discarded on Stop";
-    const float width = ImGui::GetWindowSize().x;
-    ImGui::SetCursorPos(ImVec2((width - ImGui::CalcTextSize(label).x) * 0.5f, barBottom + overlayGap()));
+    // On the overlays' backing, as the viewport's other notices are: bare, a bright scene washes it out.
+    const float  width = ImGui::GetWindowSize().x;
+    const ImVec2 words = ImGui::CalcTextSize(label);
+    const ImVec2 at((width - words.x) * 0.5f, barBottom + overlayGap());
+    const ImVec2 pad(EditorStyle::px(10.0f), EditorStyle::px(4.0f));
+    const ImVec2 corner = ImGui::GetWindowPos();
+    const ImVec2 from(corner.x + at.x - pad.x, corner.y + at.y - pad.y);
+    const ImVec2 to(corner.x + at.x + words.x + pad.x, corner.y + at.y + words.y + pad.y);
+    const ImU32  backing = ImGui::GetColorU32(EditorStyle::OVERLAY_BG);
+    ImGui::GetWindowDrawList()->AddRectFilled(from, to, backing, EditorStyle::px(6.0f));
+    ImGui::SetCursorPos(at);
     ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
     ImGui::TextUnformatted(label);
     ImGui::PopStyleColor();
@@ -59,7 +107,7 @@ void PlaybackBar::playOrPause(EditorContext& ec, SceneIOController& sceneIO) {
     const bool    running = playing && !ctx.clock.isPaused();
 
     // No snapshot, no session: it is the only way back to the authored scene.
-    if (!playing && !sceneIO.captureSnapshot(ctx, ec.state)) return;
+    if (!playing && !sceneIO.snapshotForPlay(ctx, ec.state)) return;
 
     ctx.clock.setPaused(running);
     AudioDevice& audio = ec.audioSystem.device();
@@ -70,6 +118,8 @@ void PlaybackBar::playOrPause(EditorContext& ec, SceneIOController& sceneIO) {
 void PlaybackBar::restart(EditorContext& ec, SceneIOController& sceneIO) {
     if (!sceneIO.isPlaying()) return;
     sceneIO.stopPlaySession(ec.frame, ec.state);
+    // A failed restore keeps the session, frozen: a play now would run what Stop could not put back.
+    if (sceneIO.isPlaying()) return;
     playOrPause(ec, sceneIO);
 }
 
@@ -94,7 +144,8 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO, float left
     const bool paused  = clock.isPaused();
 
     const float barH = overlayStripHeight();
-    const float barW = overlayButton() * CONTROLS + overlayGap() * (CONTROLS - 1) + overlayStripChrome();
+    const float barW = overlayButton() * CONTROLS + overlayGap() * CONTROLS + speedWidth()
+        + overlayStripChrome();
     // Centred, unless that would put it on a strip beside it.
     const float centred = (ImGui::GetWindowSize().x - barW) * 0.5f;
     ImGui::SetCursorPos(ImVec2(std::max(std::min(centred, right - barW), left), overlayInset()));
@@ -124,7 +175,7 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO, float left
         ImGui::SameLine();
         const char* stepTip = "Step one fixed tick (while paused)";
         if (iconButton("vpStep", EditorIcon::Step, false, paused, stepTip, overlayButton())) {
-            if (playing || sceneIO.captureSnapshot(ctx, ec.state)) {
+            if (playing || sceneIO.snapshotForPlay(ctx, ec.state)) {
                 if (!playing) clock.setPaused(true);
                 clock.requestStep(1);
                 m_stepPending = true;
@@ -154,6 +205,9 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO, float left
         if (iconButton("vpEject", EditorIcon::Camera, ejected, playing, ejectTip, overlayButton())) {
             sceneIO.setEjected(ctx, !ejected);
         }
+
+        ImGui::SameLine();
+        drawSpeed(clock);
 
         m_hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem

@@ -16,6 +16,10 @@ enum KeyMod : uint8_t {
     KEY_MOD_ALT   = 1 << 2,
 };
 
+/// Renames the hovered row - the selected one in the Hierarchy, a loaded tile in the Assets panel;
+/// fixed, not one of the keybinds.
+inline constexpr ImGuiKey RENAME_KEY = ImGuiKey_F2;
+
 /**
  * @brief A single keybind: one ImGuiKey plus a modifier bitmask.
  */
@@ -38,7 +42,7 @@ struct KeyBind {
     X(newScene,             "File",                            "New Scene",        ImGuiKey_N,            KEY_MOD_CTRL) \
     X(saveScene,            "File",                            "Save Scene",       ImGuiKey_S,            KEY_MOD_CTRL) \
     X(saveSceneAs,          "File",                            "Save Scene As",    ImGuiKey_S,            KEY_MOD_CTRL | KEY_MOD_SHIFT) \
-    X(loadScene,            "File",                            "Load Scene",       ImGuiKey_O,            KEY_MOD_CTRL) \
+    X(loadScene,            "File",                            "Open Scene",       ImGuiKey_O,            KEY_MOD_CTRL) \
     X(undo,                 "Edit",                            "Undo",             ImGuiKey_Z,            KEY_MOD_CTRL) \
     X(redo,                 "Edit",                            "Redo",             ImGuiKey_Z,            KEY_MOD_CTRL | KEY_MOD_SHIFT) \
     X(playStop,             "Play (live during a session)",    "Play / Stop",      ImGuiKey_P,            KEY_MOD_CTRL) \
@@ -49,16 +53,23 @@ struct KeyBind {
     X(toggleAssets,         "Windows & Panels",                "Toggle Assets",    ImGuiKey_3,            KEY_MOD_CTRL) \
     X(toggleRenderSettings, "Windows & Panels",                "Render Settings",  ImGuiKey_4,            KEY_MOD_CTRL) \
     X(toggleTerrain,        "Windows & Panels",                "Toggle Terrain",   ImGuiKey_5,            KEY_MOD_CTRL) \
+    X(showConsole,          "Windows & Panels",                "Console",          ImGuiKey_6,            KEY_MOD_CTRL) \
     X(toggleEditor,         "Windows & Panels",                "Toggle Editor",    ImGuiKey_F5,           KEY_MOD_NONE) \
     X(openPreferences,      "Windows & Panels",                "Preferences",      ImGuiKey_Comma,        KEY_MOD_CTRL) \
     X(deleteEntity,         "Entity",                          "Delete",           ImGuiKey_Delete,       KEY_MOD_NONE) \
     X(deselect,             "Entity",                          "Deselect",         ImGuiKey_Escape,       KEY_MOD_NONE) \
     X(duplicate,            "Entity",                          "Duplicate",        ImGuiKey_D,            KEY_MOD_CTRL) \
+    X(copyEntity,           "Entity",                          "Copy",             ImGuiKey_C,            KEY_MOD_CTRL) \
+    X(cutEntity,            "Entity",                          "Cut",              ImGuiKey_X,            KEY_MOD_CTRL) \
+    X(pasteEntity,          "Entity",                          "Paste",            ImGuiKey_V,            KEY_MOD_CTRL) \
+    X(selectAll,            "Entity",                          "Select All",       ImGuiKey_A,            KEY_MOD_CTRL) \
+    X(alignWithView,        "Entity",                          "Align With View",  ImGuiKey_F,            KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(dropToGround,         "Entity",                          "Drop to Ground",   ImGuiKey_End,          KEY_MOD_NONE) \
     X(focusSelected,        "View",                            "Focus Selected",   ImGuiKey_F,            KEY_MOD_NONE) \
     X(frameAll,             "View",                            "Frame All",        ImGuiKey_F,            KEY_MOD_SHIFT) \
     X(toggleOrthographic,   "View",                            "Orthographic",     ImGuiKey_Keypad5,      KEY_MOD_NONE) \
     X(gizmoSelect,          "Gizmo (disabled during fly-cam)", "Select",           ImGuiKey_Q,            KEY_MOD_NONE) \
-    X(gizmoTranslate,       "Gizmo (disabled during fly-cam)", "Translate",        ImGuiKey_W,            KEY_MOD_NONE) \
+    X(gizmoTranslate,       "Gizmo (disabled during fly-cam)", "Move",             ImGuiKey_W,            KEY_MOD_NONE) \
     X(gizmoRotate,          "Gizmo (disabled during fly-cam)", "Rotate",           ImGuiKey_E,            KEY_MOD_NONE) \
     X(gizmoScale,           "Gizmo (disabled during fly-cam)", "Scale",            ImGuiKey_R,            KEY_MOD_NONE) \
     X(gizmoToggleSpace,     "Gizmo (disabled during fly-cam)", "Local/World",      ImGuiKey_X,            KEY_MOD_NONE) \

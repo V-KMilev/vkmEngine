@@ -15,8 +15,42 @@ namespace Vkm::Engine {
 
 struct LightData;
 
+/// A spot's map is drawn this much wider than its cone, so a filter disk at the cone's edge stays on it.
+inline constexpr float SPOT_MAP_MARGIN = 1.1f;
+/// The widest a spot's one map is drawn: wider, a perspective map degenerates.
+inline const float SPOT_MAP_WIDEST = glm::radians(170.0f);
+
 /**
- * @brief A read-only view of the per-light shadow slots GLShadowData assigned.
+ * @brief Whether @p light is a spot whose cone, with the margin, is wider than one map holds.
+ *
+ * Such a spot casts through a cube, as a point light does (GpuLight.bake.y), so its rim is shadowed.
+ *
+ * @param light A light of the frame.
+ * @return True for a spot too wide for one map.
+ */
+bool spotCastsThroughCube(const LightData& light);
+
+/**
+ * @brief Whether @p light's shadow is drawn into a cube: a point light, or a spot too wide for one map.
+ *
+ * @param light A light of the frame.
+ * @return True for a light whose shadow takes a cube.
+ */
+bool castsThroughCube(const LightData& light);
+
+/**
+ * @brief The field of view of the one map of spot @p light: its cone with the margin.
+ *
+ * Never zero, so a zero cone's projection does not divide by tan(0).
+ *
+ * @param light A spot of the frame that does not cast through a cube.
+ * @return Radians, at most SPOT_MAP_WIDEST.
+ */
+float spotMapFov(const LightData& light);
+
+/**
+ * @brief A read-only view of a value per light of the frame, by its place in the list, -1 for none:
+ *        its shadow slot (GLShadowData) or its lightmap mask channel (GLLightmaps::channels).
  *
  * Two members rather than std::span because the engine is C++17.
  */
@@ -24,7 +58,7 @@ struct LightSlots {
     const int* slots = nullptr;
     uint32_t   count = 0;
 
-    /// @return The slot of the light at @p index, or -1 when it has none.
+    /// @return The value of the light at @p index, or -1 when it has none.
     int operator[](uint32_t index) const { return index < count ? slots[index] : -1; }
 };
 
@@ -40,10 +74,13 @@ struct LightSlots {
  *  - spot:      xy = the cone as a scale and offset on cos(angle to the axis):
  *               x = 1 / (cos inner - cos outer), y = -cos outer * x;
  *               z = tan of LightData::sourceRadius (directional; 0 otherwise),
- *               w = shadowSlot (-1 = no shadow)
+ *               w = shadowSlot (-1 = no shadow): a cube's for a spot that casts through one
  *  - axisU:     xyz = half-right world axis (Rect/Disk), w = twoSided (0/1)
  *  - axisV:     xyz = half-up    world axis (Rect/Disk),
  *               w = sourceRadius (Point/Spot; 0 otherwise)
+ *  - bake:      x = the lightmap mask channel its shadow on fixed meshes is read from, -1 for
+ *               none (GLLightmaps); y = 1 for a spot that casts through a cube
+ *               (spotCastsThroughCube); zw unused
  *
  * For punctual lights (Directional / Point / Spot) the axes' xyz are zero; the
  * shader's area-light branch is gated on type.
@@ -55,6 +92,7 @@ struct GpuLight {
     glm::vec4 spot;
     glm::vec4 axisU;
     glm::vec4 axisV;
+    glm::vec4 bake;
 };
 
 struct LightsBuffer {
@@ -87,14 +125,21 @@ class GLLights {
         /**
          * @brief Upload the frame's light list, tagging each with its shadow slot.
          *
-         * @param lights      The frame's lights, capped at Config::MAX_LIGHTS.
-         * @param shadowSlots Each light's slot in the shadow atlas; a default one
-         *                    means "none of them cast".
-         * @param steady      For a capture: a flickering light shines steady, and a transient one
-         *                    with nothing, keeping its place, so what a probe bakes holds after
-         *                    the flash has gone and whatever the flame was doing.
+         * @param lights       The frame's lights, capped at Config::MAX_LIGHTS.
+         * @param shadowSlots  Each light's slot in the shadow atlas; a default one
+         *                     means "none of them cast".
+         * @param steady       For a capture: a flickering light shines steady, and one not in
+         *                     captures (LightData::inCaptures) with nothing, keeping its place, so
+         *                     what a probe bakes holds whatever the flame or the flash was doing.
+         * @param maskChannels Each light's lightmap mask channel (GLLightmaps::channels); a default
+         *                     one means none.
          */
-        void update(const std::vector<LightData>& lights, LightSlots shadowSlots = {}, bool steady = false);
+        void update(
+            const std::vector<LightData>& lights,
+            LightSlots shadowSlots = {},
+            bool steady = false,
+            LightSlots maskChannels = {}
+        );
 
     private:
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;

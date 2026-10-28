@@ -7,7 +7,7 @@
  * A plane's lines follow the zoom in powers of ten from a metre up: each pixel takes the
  * level whose cells are at least MIN_CELL_PX wide there, so a grid reads the same from any
  * distance, and the finer of two levels fades as its parent takes over. A plane fades where
- * it is seen nearly edge-on, which no spacing keeps from turning to noise. Colours are
+ * it is seen nearly edge-on, which no spacing keeps from turning to noise. Colors are
  * display values, blended as the gizmos are.
  */
 in vec2 vUV;

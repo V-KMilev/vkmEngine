@@ -12,9 +12,10 @@ namespace Vkm::Engine {
  *        then every second, fourth and eighth, for the cull to pick by distance.
  *
  * Each level hangs a skirt from each rim it shares with another chunk, so where two neighbours meet
- * at different levels the gap between their edges shows the skirt, not the sky. A vertex's uv is
- * the centre of its texel of a map with a texel a grid vertex (the layer weights), so a share
- * painted at a vertex is read there.
+ * at different levels the gap between their edges shows the skirt, not the sky. A vertex's
+ * lightmap coordinates are its place in the chunk's grid, the same at every level, and a skirt's
+ * its rim's. A vertex's uv is the centre of its texel of a map with a texel a grid vertex (the
+ * layer weights), so a share painted at a vertex is read there.
  */
 namespace TerrainChunks {
 

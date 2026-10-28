@@ -15,7 +15,7 @@ namespace Vkm::Engine {
  * @brief The Forward+ cluster light grid: one GPU buffer holding, per cluster,
  *        a light count + up to MAX_LIGHTS_PER_CLUSTER light indices.
  *
- * GPU-only - GLClusterPass fills it each frame; the CPU never touches the
+ * GPU-only - GLClusterPass::cull fills it each frame; the CPU never touches the
  * contents. init() allocates it once the GL context is live; bind() exposes it
  * at the ClusterGrid SSBO binding point.
  */

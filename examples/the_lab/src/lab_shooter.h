@@ -34,8 +34,8 @@ class LabShooter : public ReflectedBehavior<LabShooter> {
         void onFixedUpdate(float dt) override;
 
     public:
-        std::string hitEffect = "prefabs/shot_hit.json";  ///< Made where a shot strikes, project-relative.
-        std::string tracer    = "prefabs/tracer.json";    ///< Made where a shot leaves, along it.
+        PrefabRef hitEffect{"prefabs/shot_hit.json"};  ///< Made where a shot strikes.
+        PrefabRef tracer{"prefabs/tracer.json"};       ///< Made where a shot leaves, along it.
 
         AssetRef<MaterialAsset>  scorch;  ///< Left where a shot strikes scenery, as a Decal.
         AssetRef<AudioClipAsset> zap;     ///< Heard where a shot leaves.

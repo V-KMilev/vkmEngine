@@ -32,11 +32,11 @@ class LabRange : public ReflectedBehavior<LabRange> {
         void onFixedUpdate(float dt) override;
 
     public:
-        std::string blast;                ///< Prefab spawned where each charge was.
-        float radius       = 7.0f;        ///< Metres the blast throws bodies within.
-        float push         = 14.0f;       ///< Metres a second given at the charge, none at the radius.
-        float lift         = 0.6f;        ///< Of the push, the share turned upward.
-        float resetSeconds = 6.0f;        ///< Until the charges stand again.
+        PrefabRef blast;                ///< Prefab spawned where each charge was.
+        float     radius       = 7.0f;  ///< Metres the blast throws bodies within.
+        float     push         = 14.0f; ///< Metres a second given at the charge, none at the radius.
+        float     lift         = 0.6f;  ///< Of the push, the share turned upward.
+        float     resetSeconds = 6.0f;  ///< Until the charges stand again.
 
     private:
         /// A charge, and where it stands when the range is set.

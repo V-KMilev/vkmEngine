@@ -2,49 +2,23 @@
  * The ocean's ripples drawn on a field's grid of wavenumbers and transformed to the water's slopes
  * and squeeze (Tessendorf 2001), for shaders/ocean/ripples and ocean/ripples_columns: every
  * wavenumber of the field's band a ripple of its own, a Gaussian of the spectrum's height there.
- * rippleDensity is OceanRipples::density (system/ocean/ocean_surface.cpp) stated again.
+ * rippleDensity is OceanSpectrum::density (system/ocean/ocean_spectrum.cpp) stated again.
  *
- * A field is OCEAN_FIELD texels square, a line of it transformed by a group, a butterfly a thread.
- * OCEAN_FIELD, OCEAN_GRAVITY and the JONSWAP_ constants come from the shader prelude.
+ * A field is OCEAN_FIELD texels square, a line of it transformed by a group, a butterfly a thread
+ * (ocean_fft.glsl). OCEAN_FIELD, OCEAN_GRAVITY and the JONSWAP_ constants come from the shader
+ * prelude.
  */
 
 #include "constants.glsl"
 #include "ocean.glsl"
 
-// A line of a field, two complex numbers a texel: xy and zw.
-shared vec4 s_line[OCEAN_FIELD];
-
-vec2 complexTimes(vec2 a, vec2 b) {
-    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
-}
+#define FFT_SIZE  OCEAN_FIELD
+#define FFT_LINES 1
+#include "ocean_fft.glsl"
 
 // The wavenumber, in grid steps, that line index @p i holds: past the middle, the negative ones.
 int rippleBin(int i) {
     return i < OCEAN_FIELD / 2 ? i : i - OCEAN_FIELD;
-}
-
-// Where line index @p i is loaded for the butterflies: its bits reversed.
-uint rippleShuffled(uint i) {
-    return bitfieldReverse(i) >> uint(32 - findMSB(uint(OCEAN_FIELD)));
-}
-
-// The inverse transform of s_line, in place, both numbers at once; @p t is this thread's
-// butterfly. s_line is loaded in rippleShuffled order and ends in natural order.
-void rippleTransform(uint t) {
-    for (uint span = 1u; span < uint(OCEAN_FIELD); span <<= 1u) {
-        barrier();
-        const uint  j     = t & (span - 1u);
-        const uint  a     = ((t - j) << 1u) + j;
-        const uint  b     = a + span;
-        const float angle = PI * float(j) / float(span);
-        const vec2  w     = vec2(cos(angle), sin(angle));
-        const vec4  low   = s_line[a];
-        const vec4  high  = s_line[b];
-        const vec4  turned = vec4(complexTimes(w, high.xy), complexTimes(w, high.zw));
-        s_line[a] = low + turned;
-        s_line[b] = low - turned;
-    }
-    barrier();
 }
 
 // Two independent standard normal numbers for grid point @p bin of field @p field, by the

@@ -42,9 +42,18 @@ void GLIrradianceVolume::release() {
     m_ready = false;
 }
 
-void GLIrradianceVolume::setBaked(bool baked) {
-    m_ready = baked;
-    if (baked) ++m_bakeId;
+void GLIrradianceVolume::setBaked(const IrradianceVolumeData& box) {
+    m_ready       = true;
+    m_center      = box.center;
+    m_halfExtents = box.halfExtents;
+    ++m_bakeId;
+}
+
+IrradianceVolumeData GLIrradianceVolume::placed(const IrradianceVolumeData& asked) const {
+    IrradianceVolumeData box = asked;
+    box.center      = m_center;
+    box.halfExtents = m_halfExtents;
+    return box;
 }
 
 void GLIrradianceVolume::swapGrid(GLIrradianceVolume& other) {

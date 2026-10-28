@@ -133,6 +133,19 @@ class Scene {
         }
 
         /**
+         * @brief The entity's T, given a default one first when it has none.
+         *
+         * @tparam T Component type; default-constructible.
+         * @param entity Entity to look on; alive.
+         * @return The component in storage.
+         */
+        template<typename T>
+        T& getOrAdd(EntityId entity) {
+            if (T* held = tryGet<T>(entity)) return *held;
+            return add(entity, T{});
+        }
+
+        /**
          * @brief Take a component of type T off an entity.
          *
          * A missing T is fine. A stale entity asserts and is refused, or the
@@ -397,7 +410,7 @@ class Scene {
         uint64_t epoch() const { return m_epoch; }
 
         /**
-         * @brief The scene's lighting environment, saved with it.
+         * @brief The scene's Environment - sky, fog and acoustics - saved with it.
          *
          * @return This scene's Environment.
          */

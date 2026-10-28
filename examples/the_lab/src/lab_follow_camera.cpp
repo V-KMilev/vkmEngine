@@ -35,7 +35,7 @@ constexpr float REACH_RECOVERY = 3.0f;
 } // namespace
 
 void LabFollowCamera::onStart() {
-    input().define(ACTION_LOOK, { InputBinding{InputSource::MouseButton, GLFW_MOUSE_BUTTON_RIGHT, 1.0f} });
+    input().define(ACTION_LOOK, { InputBinding::mouse(GLFW_MOUSE_BUTTON_RIGHT) });
 }
 
 float LabFollowCamera::clearDistance(const glm::vec3& pivot, const glm::vec3& back) {

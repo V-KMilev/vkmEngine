@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "core/reflect.h"
+#include "io/scene/prefab_ref.h"
 #include "resource/asset_ref.h"
 #include "resource/asset_type.h"
 #include "system/script/behavior.h"
@@ -47,6 +48,8 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
             "authored, because the assets block has no section for the others."
         );
         visitor.assetField(name, value.name, ASSET_TYPE<typename V::asset_t>);
+    } else if constexpr (std::is_same_v<V, PrefabRef>) {
+        visitor.prefabField(name, value.path);
     } else if constexpr (Reflect::IS_REFLECTED<V>) {
         if (visitor.beginStruct(name)) {
             Reflect::forEachField(value, [&](std::string_view subName, auto& sub) {
@@ -59,7 +62,7 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
             Reflect::DEPENDENT_FALSE<V>,
             "ReflectedBehavior: a reflected field must be float, int, bool, std::string, "
             "glm::vec2, glm::vec3, glm::vec4, glm::quat, an enum registered with "
-            "VKM_ENUM_NAMES, an AssetRef<Asset>, or a struct with its own reflect block. "
+            "VKM_ENUM_NAMES, an AssetRef<Asset>, a PrefabRef, or a struct with its own reflect block. "
             "Keep anything else as runtime state: leave it out of VKM_REFLECT."
         );
     }

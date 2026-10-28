@@ -25,6 +25,7 @@
 #include "resource/asset_source_kind.h"
 #include "io/asset/terrain_file.h"
 #include "io/project_paths.h"
+#include "io/whole_file.h"
 
 namespace Vkm::Engine::AssetCook {
 
@@ -43,9 +44,9 @@ constexpr uint16_t KIND_TERRAIN    = 6;
 // magic[4] + sentinel + kind + version + payloadBytes.
 constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t);
 
-// Mesh body: boundsMin + boundsMax + vertexCount + indexCount + skinCount + skinRadius + skeletonNameLen,
-// then bulk vertices, indices, skin and the name.
-constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 3
+// Mesh body: boundsMin + boundsMax + vertexCount + indexCount + skinCount + lightmapCount + skinRadius
+// + skeletonNameLen, then bulk vertices, indices, skin, lightmap coordinates and the name.
+constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 4
     + sizeof(float) + sizeof(uint32_t);
 // Texture body: 2*u32 params + 6 enum bytes + the mipmap flag + the level count + pixelBytes field.
 constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 6 + 1 + sizeof(uint32_t) + sizeof(uint64_t);
@@ -232,38 +233,6 @@ bool verifyFileSize(std::istream& is, const std::filesystem::path& path, uint64_
     return true;
 }
 
-// Where a cooked write goes until it is whole.
-std::filesystem::path tempFor(const std::filesystem::path& path) {
-    return std::filesystem::path(path).concat(".tmp");
-}
-
-// Create parent dirs and open a temporary beside `path`; the stream is unopened on failure. The artifact
-// wears its own name only once whole.
-std::ofstream openCookedWrite(const std::filesystem::path& path, const char* what) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    std::ofstream os(tempFor(path), std::ios::binary | std::ios::trunc);
-    if (!os) LOG_ERROR("Cooked %s '%s': cannot open for writing", what, path.string().c_str());
-    return os;
-}
-
-// Rename the temporary onto the artifact's name: atomic within a directory, so the file is absent or
-// complete.
-bool commitCookedWrite(std::ofstream& os, const std::filesystem::path& path, const char* what) {
-    os.close();
-
-    const std::filesystem::path temp = tempFor(path);
-    std::error_code ec;
-    std::filesystem::rename(temp, path, ec);
-    if (ec) {
-        LOG_ERROR("Cooked %s '%s': cannot publish (%s)", what, path.string().c_str(), ec.message().c_str());
-        std::filesystem::remove(temp, ec);
-        return false;
-    }
-    return true;
-}
-
 // Open `path` and validate header and declared size against kind, cooker version and fixed-body size.
 // On success `is` is at the body start.
 bool openCookedRead(
@@ -305,6 +274,7 @@ bool isEnumerator(TextureInternalFormat value) {
         case TextureInternalFormat::BC5RG:
         case TextureInternalFormat::BC7RGBA:
         case TextureInternalFormat::BC7SRGBA: return true;
+        case TextureInternalFormat::Count:    return false;
     }
     return false;
 }
@@ -366,23 +336,26 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh) {
     const uint64_t vertexCount = mesh.vertices.size();
     const uint64_t indexCount  = mesh.indices.size();
     const uint64_t skinCount   = mesh.skin.size();
-    // The skin stream is parallel to the vertices or absent: the vertex stage reads both by one index.
-    if (skinCount != 0 && skinCount != vertexCount) {
+    const uint64_t uvCount     = mesh.lightmapUVs.size();
+    // Each stream is parallel to the vertices or absent: the vertex stage reads them all by one index.
+    if ((skinCount != 0 && skinCount != vertexCount) || (uvCount != 0 && uvCount != vertexCount)) {
         LOG_ERROR(
-            "Cooked mesh '%s': %llu skin entries against %llu vertices",
+            "Cooked mesh '%s': %llu skin entries and %llu lightmap coordinates against %llu vertices",
             path.string().c_str(),
             static_cast<unsigned long long>(skinCount),
+            static_cast<unsigned long long>(uvCount),
             static_cast<unsigned long long>(vertexCount)
         );
         return false;
     }
 
-    std::ofstream os = openCookedWrite(path, "mesh");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked mesh");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
 
     const uint64_t payloadBytes = MESH_FIXED_BYTES
         + vertexCount * sizeof(Vertex) + indexCount * sizeof(uint32_t)
-        + skinCount * sizeof(SkinVertex) + mesh.skeleton.size();
+        + skinCount * sizeof(SkinVertex) + uvCount * sizeof(glm::vec2) + mesh.skeleton.size();
 
     writeHeader(os, KIND_MESH, payloadBytes);
     writeRaw(os, mesh.boundsMin);
@@ -390,18 +363,16 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh) {
     writeRaw(os, vertexCount);
     writeRaw(os, indexCount);
     writeRaw(os, skinCount);
+    writeRaw(os, uvCount);
     writeRaw(os, mesh.skinRadius);
     writeRaw(os, static_cast<uint32_t>(mesh.skeleton.size()));
     writeBulk(os, mesh.vertices);
     writeBulk(os, mesh.indices);
     writeBulk(os, mesh.skin);
+    writeBulk(os, mesh.lightmapUVs);
     os.write(mesh.skeleton.data(), static_cast<std::streamsize>(mesh.skeleton.size()));
 
-    if (!os) {
-        LOG_ERROR("Cooked mesh '%s': write failed", path.string().c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "mesh");
+    return cooked.commit();
 }
 
 uint64_t cacheKey(uint64_t recipeHash, AssetType type) {
@@ -440,11 +411,13 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
     uint64_t vertexCount = 0;
     uint64_t indexCount  = 0;
     uint64_t skinCount   = 0;
+    uint64_t uvCount     = 0;
     float    skinRadius  = 0.0f;
     uint32_t skeletonNameLen = 0;
     if (!readRaw(is, boundsMin) || !readRaw(is, boundsMax)
         || !readRaw(is, vertexCount) || !readRaw(is, indexCount)
-        || !readRaw(is, skinCount) || !readRaw(is, skinRadius) || !readRaw(is, skeletonNameLen)) {
+        || !readRaw(is, skinCount) || !readRaw(is, uvCount)
+        || !readRaw(is, skinRadius) || !readRaw(is, skeletonNameLen)) {
         LOG_ERROR("Cooked mesh '%s': truncated body", p.c_str());
         return false;
     }
@@ -453,18 +426,20 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
     if (!takeCount(vertexCount, sizeof(Vertex), remaining, p, "mesh", "vertex")
         || !takeCount(indexCount, sizeof(uint32_t), remaining, p, "mesh", "index")
         || !takeCount(skinCount, sizeof(SkinVertex), remaining, p, "mesh", "skin")
+        || !takeCount(uvCount, sizeof(glm::vec2), remaining, p, "mesh", "lightmap coordinate")
         || !takeCount(skeletonNameLen, 1, remaining, p, "mesh", "rig name")) return false;
     if (remaining != 0) {
         LOG_ERROR("Cooked mesh '%s': payload size inconsistent with counts", p.c_str());
         return false;
     }
-    // Checked at write too: the vertex stage reads both streams by one index, so a short skin stream is
-    // an out-of-bounds fetch on every draw.
-    if (skinCount != 0 && skinCount != vertexCount) {
+    // Checked at write too: the vertex stage reads every stream by one index, so a short one is an
+    // out-of-bounds fetch on every draw.
+    if ((skinCount != 0 && skinCount != vertexCount) || (uvCount != 0 && uvCount != vertexCount)) {
         LOG_ERROR(
-            "Cooked mesh '%s': %llu skin entries against %llu vertices",
+            "Cooked mesh '%s': %llu skin entries and %llu lightmap coordinates against %llu vertices",
             p.c_str(),
             static_cast<unsigned long long>(skinCount),
+            static_cast<unsigned long long>(uvCount),
             static_cast<unsigned long long>(vertexCount)
         );
         return false;
@@ -480,6 +455,7 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
     readBulk(is, out.vertices, vertexCount);
     readBulk(is, out.indices, indexCount);
     readBulk(is, out.skin, skinCount);
+    readBulk(is, out.lightmapUVs, uvCount);
     out.skeleton.resize(skeletonNameLen);
     if (skeletonNameLen) is.read(out.skeleton.data(), skeletonNameLen);
     // One check for the whole body: the counts above proved the bytes are there, so a failure is an IO
@@ -489,6 +465,7 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
         out.vertices.clear();
         out.indices.clear();
         out.skin.clear();
+        out.lightmapUVs.clear();
         return false;
     }
 
@@ -505,6 +482,7 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
             out.vertices.clear();
             out.indices.clear();
             out.skin.clear();
+            out.lightmapUVs.clear();
             return false;
         }
     }
@@ -522,6 +500,7 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
                 out.vertices.clear();
                 out.indices.clear();
                 out.skin.clear();
+                out.lightmapUVs.clear();
                 return false;
             }
         }
@@ -597,8 +576,9 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
         return false;
     }
 
-    std::ofstream os = openCookedWrite(path, "texture");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked texture");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
 
     const uint64_t payloadBytes = TEXTURE_FIXED_BYTES + pixelBytes;
 
@@ -616,11 +596,7 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
     writeRaw(os, pixelBytes);
     if (pixelBytes) os.write(reinterpret_cast<const char*>(texture.pixelData.data()), pixelBytes);
 
-    if (!os) {
-        LOG_ERROR("Cooked texture '%s': write failed", path.string().c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "texture");
+    return cooked.commit();
 }
 
 bool readTexture(const std::filesystem::path& path, TextureAsset& out) {
@@ -726,8 +702,9 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
         return false;
     }
 
-    std::ofstream os = openCookedWrite(path, "skeleton");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked skeleton");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
 
     uint64_t nameBytes = 0;
     for (const Bone& bone : skeleton.bones) nameBytes += bone.name.size();
@@ -745,11 +722,7 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
         os.write(bone.name.data(), static_cast<std::streamsize>(bone.name.size()));
     }
 
-    if (!os) {
-        LOG_ERROR("Cooked skeleton '%s': write failed", path.string().c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "skeleton");
+    return cooked.commit();
 }
 
 bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out) {
@@ -874,8 +847,9 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
         return false;
     }
 
-    std::ofstream os = openCookedWrite(path, "clip");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked clip");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
 
     uint64_t markerNameBytes = 0;
     for (const ClipMarker& marker : clip.markers) markerNameBytes += marker.name.size();
@@ -916,11 +890,7 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
         os.write(marker.name.data(), static_cast<std::streamsize>(marker.name.size()));
     }
 
-    if (!os) {
-        LOG_ERROR("Cooked clip '%s': write failed", path.string().c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "clip");
+    return cooked.commit();
 }
 
 bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out) {
@@ -1076,8 +1046,9 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
         return false;
     }
 
-    std::ofstream os = openCookedWrite(path, "sound");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked sound");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
 
     const uint64_t payloadBytes = AUDIO_FIXED_BYTES + audio.sampleCount() * sizeof(int16_t);
 
@@ -1088,11 +1059,7 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
     writeRaw(os, audio.loopStart);
     if (audio.samples) writeBulk(os, *audio.samples);
 
-    if (!os) {
-        LOG_ERROR("Cooked sound '%s': write failed", p.c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "sound");
+    return cooked.commit();
 }
 
 bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
@@ -1177,15 +1144,12 @@ bool writeTerrain(const std::filesystem::path& path, const TerrainAsset& terrain
         LOG_ERROR("Cooked terrain '%s': its file '%s' %s", p.c_str(), ref.c_str(), error.c_str());
         return false;
     }
-    std::ofstream os = openCookedWrite(path, "terrain");
-    if (!os) return false;
+    WholeFileWrite cooked(path, std::ios::binary, "Cooked terrain");
+    if (!cooked) return false;
+    std::ofstream& os = cooked.stream();
     writeHeader(os, KIND_TERRAIN, body.size());
     writeBulk(os, body);
-    if (!os) {
-        LOG_ERROR("Cooked terrain '%s': write failed", p.c_str());
-        return false;
-    }
-    return commitCookedWrite(os, path, "terrain");
+    return cooked.commit();
 }
 
 bool readTerrain(const std::filesystem::path& path, TerrainAsset& out, TerrainFile::Names& names) {

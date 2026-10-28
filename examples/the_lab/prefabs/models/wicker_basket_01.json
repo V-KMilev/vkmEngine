@@ -19,6 +19,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wicker_basket_01/textures/wicker_basket_01_diff_1k.jpg"
@@ -64,15 +65,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 4.314387798309326,
+              "maxDistance": 4.314388,
               "mesh": "assets/models/wicker_basket_01/wicker_basket_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 17.708532333374023,
+              "maxDistance": 17.708532,
               "mesh": "assets/models/wicker_basket_01/wicker_basket_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 35.41706466674805,
+              "maxDistance": 35.417065,
               "mesh": "assets/models/wicker_basket_01/wicker_basket_01_1k.gltf:mesh0:lod2"
             }
           ]

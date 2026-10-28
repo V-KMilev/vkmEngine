@@ -2,9 +2,9 @@
   "name": "lab:paint_yellow",
   "source": {
     "albedo": [
-      0.949999988079071,
-      0.6600000262260437,
-      0.05000000074505806,
+      0.95,
+      0.66,
+      0.05,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -22,8 +22,8 @@
     ],
     "attenuationDistance": 1.0,
     "boxMapping": 0.0,
-    "clearcoat": 0.30000001192092896,
-    "clearcoatRoughness": 0.20000000298023224,
+    "clearcoat": 0.3,
+    "clearcoatRoughness": 0.2,
     "doubleSided": false,
     "emission": [
       0.0,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.4000000059604645,
+    "rippleScale": 0.5,
+    "roughness": 0.4,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

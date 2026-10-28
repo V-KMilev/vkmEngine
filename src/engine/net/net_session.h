@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -23,12 +24,23 @@ class Scene;
 class ResourceManager;
 
 /**
- * @brief How often the world goes out, in packets a second, independent of frame rate.
+ * @brief The most the world goes out, in packets a second, independent of frame rate; see
+ *        snapshotRate.
  *
- * Decides how late another player looks: the interpolation delay is counted in
- * snapshots, two of them 31 ms at this rate.
+ * Decides how late another player looks: the interpolation delay is counted in snapshots.
  */
 constexpr float NET_SNAPSHOT_RATE = 64.0f;
+
+/**
+ * @brief Snapshots a second a session of @p tickRate ticks a second sends and hears: NET_SNAPSHOT_RATE,
+ *        or one a tick where ticks are fewer, since one sent between ticks says nothing new.
+ *
+ * @param tickRate The session's ticks a second; zero for none yet.
+ * @return Snapshots a second.
+ */
+inline float snapshotRate(uint32_t tickRate) {
+    return tickRate > 0 ? std::min(NET_SNAPSHOT_RATE, static_cast<float>(tickRate)) : NET_SNAPSHOT_RATE;
+}
 
 /**
  * @brief How often input goes up, in packets a second.
@@ -72,6 +84,12 @@ struct NetCore {
     bool     ticked      = false;  ///< A tick has run, so the count is real.
 
     uint64_t world = 0;  ///< Which world this end loaded, or zero for none.
+
+    /// Which of the session's worlds this end holds: the server moves it each time its world is
+    /// replaced mid-session, never back to zero, and a client takes the server's once it has loaded
+    /// the same.
+    uint8_t     worldGeneration = 0;
+    std::string worldPath;  ///< The scene the world was loaded from, project-relative; empty if none.
 
     /// The authority's tick: its own count on a server; on a client, the newest a
     /// snapshot carried, since the two clocks are unrelated.
@@ -146,6 +164,7 @@ class NetSession {
             private:
                 NetSession& m_session;
                 Scene&      m_scene;
+                uint64_t    m_epoch;  ///< Scene::epoch() as the scope began.
         };
 
         /**
@@ -203,10 +222,32 @@ class NetSession {
          * now is what both ends share; a client names those entities by their own
          * slots, and makes whatever else the server names where it has room.
          *
-         * @param fingerprint What fingerprintScene said of the entry scene.
+         * A world replaced while a session is live is the next of the session's worlds: a server
+         * spawns its players in it again and tells each client which scene to load (@p path), and
+         * a client that loaded the one it was told to plays on in it.
+         *
+         * @param fingerprint What fingerprintScene said of the scene's file.
          * @param scene       The world, just opened.
+         * @param path        The scene it was loaded from, project-relative: what a server tells
+         *                    its clients to load when it changes world. Empty for none.
          */
-        void setWorld(uint64_t fingerprint, const Scene& scene);
+        void setWorld(uint64_t fingerprint, const Scene& scene, const std::string& path = {});
+
+        /**
+         * @brief The scene the server has moved to and this end should load, once; empty if none.
+         *
+         * A host's scene loading takes it (BehaviorSystem), and once the world it loaded is in
+         * place this end plays on in it.
+         *
+         * @return The project-relative path, or empty.
+         */
+        std::string takeSceneToLoad();
+
+        /**
+         * @brief The scene takeSceneToLoad named did not load: this end cannot play on in the world
+         *        it left, so it leaves, with lastError saying why.
+         */
+        void worldFailed();
 
         /**
          * @brief Take players on @p port.
@@ -259,6 +300,9 @@ class NetSession {
 
         /// Why the last attempt to join ended, or an empty string.
         const std::string& lastError() const { return m_core.lastError; }
+
+        /// The scene this end's world was loaded from, project-relative; empty for none.
+        const std::string& worldPath() const { return m_core.worldPath; }
 
         PlayerId localPlayer() const { return m_client.localPlayer(); }
 
@@ -317,10 +361,13 @@ class NetSession {
          * back and forth. Re-reporting refreshes, so pass the whole island
          * every tick.
          *
-         * @param entities Bodies to simulate; null ids and this end's own
-         *                 entity are skipped.
+         * @param scene    The world the bodies are in.
+         * @param entities Bodies to simulate; null ids, this end's own entity and what it runs
+         *                 already (the server names it not, or it is NetLocal) are skipped.
          */
-        void lease(const std::vector<EntityId>& entities) { m_client.lease(entities); }
+        void lease(const Scene& scene, const std::vector<EntityId>& entities) {
+            m_client.lease(scene, entities);
+        }
 
         /**
          * @brief Send the server something it must have: a move, a name, a choice in a lobby.
@@ -356,6 +403,15 @@ class NetSession {
          *         client, and for nothing on a server.
          */
         bool isMine(EntityId entity) const;
+
+        /**
+         * @brief Whether a seated player drives @p entity, so a spawn can seat a player on a
+         *        character no one else has.
+         *
+         * @param entity Character a spawn is about to hand out.
+         * @return True on a server for an entity a seated player drives; false in every other role.
+         */
+        bool isDriven(EntityId entity) const;
 
         /**
          * @brief What the server's @p slot names on this end.

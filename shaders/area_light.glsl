@@ -17,7 +17,7 @@ bool areaReaches(Light light, vec3 p, out float facing, out float window) {
     return window > 0.0;
 }
 
-// The light's diffuse irradiance over PI at @p p around @p n, per unit of its colour times
+// The light's diffuse irradiance over PI at @p p around @p n, per unit of its color times
 // intensity: radiance (one over its area) times the horizon-clipped form factor, faded by range.
 float areaIrradiance(Light light, int type, vec3 p, vec3 n, float facing, float window) {
     float area;

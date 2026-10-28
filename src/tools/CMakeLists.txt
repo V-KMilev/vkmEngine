@@ -27,6 +27,7 @@ target_link_libraries(vkm_tools PUBLIC
     vkm_core
 )
 target_link_libraries(vkm_tools PRIVATE
+    stb_truetype       # the font bake
     vkm_warnings
     vkm_build_info     # printBuildInfo
 )
@@ -71,6 +72,7 @@ target_link_libraries(vkm_cook PRIVATE
     ufbx               # FBX and OBJ import
     mikktspace         # tangents for an imported mesh that carries none
     meshoptimizer      # LOD simplification, draw order and the import's vertex weld
+    xatlas             # lightmap UVs
     stb_image_resize   # mip chains
     bc7e               # BC7 encode
     vkm_warnings

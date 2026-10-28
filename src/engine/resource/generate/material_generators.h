@@ -19,4 +19,26 @@ class ResourceManager;
  */
 MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager);
 
+/**
+ * @brief The graph's default water (MaterialAsset::water), created on first ask: still, smooth,
+ *        a deep green-blue scattering its light.
+ *
+ * Keyed on "material:water", as the default is.
+ *
+ * @param resourceManager Where it is found or created.
+ * @return Handle to the graph's water material.
+ */
+MaterialHandle generateWaterMaterial(ResourceManager& resourceManager);
+
+/**
+ * @brief The graph's default sea (WaterKind::Sea), created on first ask: dark, near mirror-smooth,
+ *        scattering a deep green-blue, the scene's ripples on it.
+ *
+ * Keyed on "material:sea".
+ *
+ * @param resourceManager Where it is found or created.
+ * @return Handle to the graph's sea material.
+ */
+MaterialHandle generateSeaMaterial(ResourceManager& resourceManager);
+
 } // namespace Vkm::Engine

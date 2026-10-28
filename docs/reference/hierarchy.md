@@ -12,7 +12,7 @@ way to change the graph - never write the components directly.
 
 | Function                                  | Purpose                                                                                |
 |-------------------------------------------|----------------------------------------------------------------------------------------|
-| `setParent(scene, child, parent, before)` | Link `child` under `parent`, last or in front of `before`. Refuses a ring and a dead entity. |
+| `setParent(scene, child, parent, before)` | Link `child` under `parent`, last or in front of `before`. Refuses a ring, a chain deeper than `MAX_DEPTH` entities and a dead entity. |
 | `removeFromParent(scene, entity)`         | Make `entity` a root.                                                                  |
 | `destroyHierarchy(scene, entity)`         | Destroy `entity` and every descendant.                                                 |
 

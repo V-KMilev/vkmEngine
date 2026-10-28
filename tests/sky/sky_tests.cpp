@@ -36,7 +36,7 @@ void testTheSkyAimsTheKeyLight() {
 
     const glm::vec3 aim = Math::computeForward(scene.get<Transform>(sun).rotation);
     check("a sun overhead lights straight down", nearly(aim.y, -1.0f));
-    check("  in the colour the environment says", nearly(scene.get<Light>(sun).color.g, 0.5f));
+    check("  in the color the environment says", nearly(scene.get<Light>(sun).color.g, 0.5f));
     check("  at the intensity it says", nearly(scene.get<Light>(sun).intensity, 4.0f));
 
     // Below the horizon the moon takes over - a swap, not a blend: the two sit
@@ -184,7 +184,7 @@ void testTheSkyIsLitByTheScenesSun() {
 
     sky.lightColor = {1.0f, 0.5f, 0.25f};
     const glm::vec3 tinted = Atmosphere::solarIlluminance(sky);
-    check("  and in its colour", nearly(tinted.g, 0.5f * twice.g) && nearly(tinted.b, 0.25f * twice.b));
+    check("  and in its color", nearly(tinted.g, 0.5f * twice.g) && nearly(tinted.b, 0.25f * twice.b));
 }
 
 // A disabled light is not the key (see findKeyLight); aiming it would turn a light

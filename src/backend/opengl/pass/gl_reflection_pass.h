@@ -18,10 +18,10 @@ namespace Vkm::Engine {
  * Runs while `ssr` is on or a planar reflection was drawn (GLFrameContext::planarPictures). On a
  * reflector's rectangle the resolve lays its picture, and the trace skips the pixels there.
  *
- * The lit colour goes into a mip chain filtered by shaders/downsample.glsl, so a glossy surface
+ * The lit color goes into a mip chain filtered by shaders/downsample.glsl, so a glossy surface
  * reads the scene blurred to its lobe. A trace marches each glossy pixel's ray through the depth
- * and records the facing surface it met, or none. The resolve swaps the hit colour in through
- * the weight the forward pass wrote: colour + (weight x traced - weight x environment) x trust.
+ * and records the facing surface it met, or none. The resolve swaps the hit color in through
+ * the weight the forward pass wrote: color + (weight x traced - weight x environment) x trust.
  * Averaging neighbours' rays, weighted by surface likeness, gives a smooth lobe and soft edges
  * without a temporal filter.
  *
@@ -30,7 +30,7 @@ namespace Vkm::Engine {
  */
 class GLReflectionPass : public GLPass {
     public:
-        /// The colour chain's most levels: enough for a lobe at the roughness limit to span most of
+        /// The color chain's most levels: enough for a lobe at the roughness limit to span most of
         /// the screen. A planar reflection's chain is capped at the same.
         static constexpr int MAX_CHAIN_MIPS = 8;
 
@@ -49,7 +49,7 @@ class GLReflectionPass : public GLPass {
 
     private:
         /**
-         * @brief Fill the colour chain and march each glossy pixel's ray into the hits.
+         * @brief Fill the color chain and march each glossy pixel's ray into the hits.
          *
          * @param ctx  The frame.
          * @param step Pixels a hit stands for on each axis.
@@ -72,7 +72,7 @@ class GLReflectionPass : public GLPass {
         void bindPlanar(GLFrameContext& ctx);
 
         /**
-         * @brief (Re)allocate the colour chain and the trace target for a scene size.
+         * @brief (Re)allocate the color chain and the trace target for a scene size.
          *
          * @param width  The scene's width in pixels.
          * @param height The scene's height in pixels.
@@ -81,10 +81,10 @@ class GLReflectionPass : public GLPass {
         void ensureTargets(uint32_t width, uint32_t height, uint32_t step);
 
     private:
-        Vkm::GL::ComputeShader m_source;      ///< Lit colour -> chain base.
+        Vkm::GL::ComputeShader m_source;      ///< Lit color -> chain base.
         Vkm::GL::ComputeShader m_downsample;  ///< Each chain level from the one before.
         Vkm::GL::Shader        m_trace;       ///< Ray march, a hit a pixel or a 2x2 block.
-        Vkm::GL::Shader        m_resolve;     ///< Hits -> the colour chain's next link.
+        Vkm::GL::Shader        m_resolve;     ///< Hits -> the color chain's next link.
 
         Vkm::GL::MipChainTexture m_chain;  ///< The lit scene, filtered down.
 
@@ -92,7 +92,7 @@ class GLReflectionPass : public GLPass {
          * @brief Per-pixel hit uv, trust, and chain level as a fraction of the last.
          *
          * Unsigned 16-bit: a half float spaces uv past 0.5 almost a pixel
-         * apart at 1920 wide, and the resolve reads the colour a hit landed on.
+         * apart at 1920 wide, and the resolve reads the color a hit landed on.
          */
         GLTarget m_hits{GLTarget::Layout::Color, GL_RGBA16};
         uint32_t m_width  = 0;

@@ -46,10 +46,26 @@ struct Surface {
 };
 
 #ifdef LAYERED
-// Each layer's share at @p uv, summing to one.
-vec4 layerShares(vec2 uv) {
+// A share below this is left out: it moves no 8-bit channel of what the layers make.
+const float LAYER_SKIP = 1.0 / 512.0;
+
+// A fragment's view of the layers: each one's share, summing to one with the negligible ones left
+// out, and the mesh uv's screen gradients. Reads take those gradients explicitly, so a layer
+// skipped where its share is zero leaves the mips the others read as they were.
+struct LayerFrame {
+    vec4 w;
+    vec2 dx;
+    vec2 dy;
+};
+
+LayerFrame layerFrame(vec2 uv) {
     vec4 w = texture(u_layerWeights, uv);
-    return w / max(dot(w, vec4(1.0)), 1e-4);
+    w *= step(vec4(LAYER_SKIP), w / max(dot(w, vec4(1.0)), 1e-4));
+    LayerFrame f;
+    f.w  = w / max(dot(w, vec4(1.0)), 1e-4);
+    f.dx = dFdx(uv);
+    f.dy = dFdy(uv);
+    return f;
 }
 
 // Where layer @p i reads its maps at the mesh's @p uv.
@@ -59,10 +75,13 @@ vec3 layerAt(vec2 uv, int i) {
 
 // The layers' tangent-space normal at @p uv, each at its own scale, blended by share.
 vec2 layeredNormalXY(vec2 uv) {
-    vec4 w  = layerShares(uv);
-    vec2 xy = vec2(0.0);
+    LayerFrame f  = layerFrame(uv);
+    vec2       xy = vec2(0.0);
     for (int i = 0; i < MATERIAL_MAX_LAYERS; ++i) {
-        xy += w[i] * (texture(u_layerNormal, layerAt(uv, i)).rg * 2.0 - 1.0) * u_material.layerTint[i].w;
+        if (f.w[i] == 0.0) continue;
+        vec2 scale = u_material.layerUV[i].xy;
+        vec2 rg    = textureGrad(u_layerNormal, layerAt(uv, i), f.dx * scale, f.dy * scale).rg;
+        xy += f.w[i] * (rg * 2.0 - 1.0) * u_material.layerTint[i].w;
     }
     return xy;
 }
@@ -71,32 +90,42 @@ vec2 layeredNormalXY(vec2 uv) {
 // line up.
 const float LAYER_MACRO_SCALE = 0.137;
 
-// Layer @p i's colour at @p at. Where its maps repeat often enough on screen to show their tiling,
-// they are read again at a far larger scale and blended in, so a far hillside is no grid of one tile.
-vec3 layerAlbedo(vec3 at, int i) {
-    vec2  footprint = fwidth(at.xy);
+// Layer @p i's color at @p at, whose screen gradients are @p dx and @p dy. Where its maps repeat
+// often enough on screen to show their tiling, they are read again at a far larger scale and
+// blended in, so a far hillside is no grid of one tile; elsewhere that read is not made.
+vec3 layerAlbedo(vec3 at, int i, vec2 dx, vec2 dy) {
+    vec2  footprint = abs(dx) + abs(dy);
     float far       = 0.5 * smoothstep(0.004, 0.04, max(footprint.x, footprint.y));
-    vec3  near      = texture(u_layerAlbedo, at).rgb;
-    vec3  macro     = texture(u_layerAlbedo, vec3(at.xy * LAYER_MACRO_SCALE + vec2(0.31, 0.57), at.z)).rgb;
-    return mix(near, macro, far) * u_material.layerTint[i].rgb;
+    vec3  albedo    = textureGrad(u_layerAlbedo, at, dx, dy).rgb;
+    if (far > 0.0) {
+        vec3 macroAt = vec3(at.xy * LAYER_MACRO_SCALE + vec2(0.31, 0.57), at.z);
+        vec2 macroDx = dx * LAYER_MACRO_SCALE;
+        vec2 macroDy = dy * LAYER_MACRO_SCALE;
+        vec3 macro   = textureGrad(u_layerAlbedo, macroAt, macroDx, macroDy).rgb;
+        albedo       = mix(albedo, macro, far);
+    }
+    return albedo * u_material.layerTint[i].rgb;
 }
 
-// Every layer is read at every fragment: a read skipped where its share is zero would be in
-// control flow that differs between neighbours, where the mip a read takes is undefined.
+// Only the layers with a share are read.
 Surface sampleSurface(vec2 uv) {
-    vec4    w = layerShares(uv);
-    Surface s;
+    LayerFrame f = layerFrame(uv);
+    Surface    s;
     s.albedo    = vec3(0.0);
     s.ao        = 0.0;
     s.roughness = 0.0;
     s.metallic  = 0.0;
     for (int i = 0; i < MATERIAL_MAX_LAYERS; ++i) {
+        if (f.w[i] == 0.0) continue;
         vec3 at      = layerAt(uv, i);
-        vec3 surface = texture(u_layerSurface, at).rgb * u_material.layerSurface[i].xyz;
-        s.albedo    += w[i] * layerAlbedo(at, i);
-        s.ao        += w[i] * surface.r;
-        s.roughness += w[i] * surface.g;
-        s.metallic  += w[i] * surface.b;
+        vec2 scale   = u_material.layerUV[i].xy;
+        vec2 dx      = f.dx * scale;
+        vec2 dy      = f.dy * scale;
+        vec3 surface = textureGrad(u_layerSurface, at, dx, dy).rgb * u_material.layerSurface[i].xyz;
+        s.albedo    += f.w[i] * layerAlbedo(at, i, dx, dy);
+        s.ao        += f.w[i] * surface.r;
+        s.roughness += f.w[i] * surface.g;
+        s.metallic  += f.w[i] * surface.b;
     }
     s.opacity            = 1.0;
     s.emission           = vec3(0.0);

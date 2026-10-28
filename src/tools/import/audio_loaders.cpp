@@ -15,6 +15,7 @@
 
 #include "logger.h"
 
+#include "core/little_endian.h"
 #include "io/project_paths.h"
 #include "resource/asset_source_kind.h"
 #include "resource/resource_manager.h"
@@ -73,9 +74,7 @@ bool decodeAll(ma_decoder& decoder, uint32_t channels, std::vector<int16_t>& sam
  * @brief A little-endian uint32 at @p at; the caller has checked the four bytes are there.
  */
 uint32_t readU32(const std::vector<char>& bytes, size_t at) {
-    uint32_t v = 0;
-    for (int i = 3; i >= 0; --i) v = (v << 8) | static_cast<uint8_t>(bytes[at + static_cast<size_t>(i)]);
-    return v;
+    return readLittleEndian<uint32_t>(reinterpret_cast<const uint8_t*>(bytes.data() + at));
 }
 
 /**

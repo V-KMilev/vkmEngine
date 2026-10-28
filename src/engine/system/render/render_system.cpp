@@ -10,33 +10,61 @@
 #include "logger.h"
 
 #include "core/host_chrome.h"
+#include "platform/input/input_map.h"
 #include "platform/window/window_manager.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
+#include "debug/debug_draw.h"
 #include "debug/profiler.h"
 #include "core/clock.h"
 #include "debug/screenshot.h"
 #include "net/net_session.h"
+#include "system/loading/loading_frame.h"
 
 namespace Vkm::Engine {
 
 void RenderSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("RenderSystem");
 
+    if (ctx.readiness) *ctx.readiness = m_backend ? m_backend->readiness() : RenderReadiness{};
     if (!m_backend || !ctx.visibility) return;
 
     const HostChrome::ViewportRect vp = ctx.chrome.viewport(ctx.window);
-    m_view.viewportX      = vp.x;
-    m_view.viewportY      = vp.y;
-    m_view.viewportWidth  = vp.width;
-    m_view.viewportHeight = vp.height;
-    m_view.surfaceWidth   = static_cast<uint32_t>(ctx.window.getWidth());
-    m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
-    m_view.settings       = ctx.render;
-    m_view.frameSeconds   = ctx.clock.getDeltaTime();
-    m_view.worldSeconds   = ctx.net.worldTime(ctx.clock);
+    m_view.viewportX       = vp.x;
+    m_view.viewportY       = vp.y;
+    m_view.viewportWidth   = vp.width;
+    m_view.viewportHeight  = vp.height;
+    m_view.surfaceWidth    = static_cast<uint32_t>(ctx.window.getWidth());
+    m_view.surfaceHeight   = static_cast<uint32_t>(ctx.window.getHeight());
+    m_view.settings        = ctx.render;
+    m_view.frameSeconds    = ctx.clock.getDeltaTime();
+    m_view.bakeBudget      = RENDER_BAKE_BUDGET;
+    m_view.worldSeconds    = ctx.net.worldTime(ctx.clock);
+    m_view.worldArriving   = m_bakeHold.holds(ctx.scene, ctx.resources);
+    m_view.loadingOpacity  = ctx.loading ? ctx.loading->opacity : 0.0f;
+    m_view.loadingContent  = ctx.loading ? ctx.loading->content : 0.0f;
+    m_view.loadingProgress = ctx.loading ? ctx.loading->progress : 0.0f;
+    m_view.loadingWater    = !ctx.loading || ctx.loading->water;
+    m_view.pointer         = ctx.input.pointer() * ctx.window.framebufferScale();
+    m_view.debug           = {};
+    if (ctx.debug) {
+        // Last of the frame's drawers but the editor, whose lines join the next frame's.
+        ctx.debug->collect(ctx.clock.getDeltaTime(), ctx.clock.getSimDelta(), ctx.scene.epoch());
+        m_view.debug.lines      = &ctx.debug->lines();
+        m_view.debug.seconds    = ctx.debug->seconds();
+        m_view.debug.pointScale = ctx.window.framebufferScale() * ctx.debug->pointScale();
+    }
 
-    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses, ctx.particles, ctx.ocean);
+    m_view.build(
+        ctx.scene,
+        *ctx.visibility,
+        ctx.ui,
+        ctx.cover,
+        ctx.splash,
+        ctx.poses,
+        ctx.particles,
+        ctx.ocean
+    );
     m_backend->render(m_view, ctx.resources);
     if (std::string path = ctx.window.takeScreenshotRequest(); !path.empty()) writeScreenshot(path);
     if (m_releaseUploadedPixels) releaseHeldPixels(ctx.resources);

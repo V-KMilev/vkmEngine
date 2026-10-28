@@ -7,6 +7,7 @@
 #include <imgui_impl_opengl3.h>
 
 #include "gl_window_surface.h"
+#include "platform/window/glfw_include.h"
 
 namespace Vkm::Engine {
 
@@ -21,6 +22,17 @@ void GLBackend::beginImGuiFrame() {
 
 void GLBackend::renderImGui(ImDrawData* data) {
     ImGui_ImplOpenGL3_RenderDrawData(data);
+
+    // Panels dragged out of the main window: each draws into its own window, whose context it
+    // makes current, so the main one is made current again after.
+    if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
+        GLFWwindow* main = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(main);
+    }
+    // A window closed this frame drew its preview before it closed; the texture outlived that.
+    m_preview.freeReleased();
 }
 
 void GLBackend::shutdownImGui() {

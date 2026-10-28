@@ -35,6 +35,8 @@ void main() {
     vec2  uv = gl_FragCoord.xy / u_camera.viewport;
     float d  = texture(u_sceneDepth, uv).r;
     if (isFarDepth(d)) discard;  // background: nothing to project onto
+    // A viewmodel's squashed depth reads back as a point at the eye, which a box there would paint.
+    if (inViewmodelBand(d)) discard;
 
     vec3 worldPos = worldPosFromDepth(uv, d, u_camera.invViewProjection);
 
@@ -70,7 +72,9 @@ void main() {
         float atten = punctualAttenuation(light, type, worldPos, L);
         float ndotl = dot(worldN, L);
         if (atten <= 0.0 || ndotl <= 0.0) continue;
-        atten *= surfaceShadow(type, int(light.spot.w), worldPos, worldN, ndotl, screenShadow, CSM_SOFT);
+        const int shadowType = shadowTypeOf(light, type);
+        const int slot       = int(light.spot.w);
+        atten *= surfaceShadow(shadowType, slot, worldPos, worldN, ndotl, screenShadow, CSM_SOFT, 1.0);
         direct += lightCol * atten * ndotl / PI;
     }
 

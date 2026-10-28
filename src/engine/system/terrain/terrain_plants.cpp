@@ -76,6 +76,18 @@ void growSquare(
 
 void scatter(const TerrainAsset& terrain, std::vector<Plant>& out) {
     out.clear();
+    const uint32_t squares = terrain.resolution > 0 ? terrain.resolution - 1 : 0;
+    grow(terrain, 0, squares, 0, squares, out);
+}
+
+void grow(
+    const TerrainAsset& terrain,
+    uint32_t i0,
+    uint32_t i1,
+    uint32_t j0,
+    uint32_t j1,
+    std::vector<Plant>& out
+) {
     const uint32_t side = terrain.resolution;
     const size_t   grid = static_cast<size_t>(side) * side;
     if (!TerrainAsset::validResolution(side) || terrain.heights.size() != grid) return;
@@ -86,10 +98,18 @@ void scatter(const TerrainAsset& terrain, std::vector<Plant>& out) {
         if (foliage.density.size() != grid || foliage.parts.empty()) continue;
         if (foliage.perSquareMetre <= 0.0f) continue;
         const float full = foliage.perSquareMetre * area;
-        for (uint32_t j = 0; j + 1 < side; ++j) {
-            for (uint32_t i = 0; i + 1 < side; ++i) growSquare(terrain, layer, i, j, full, out);
+        for (uint32_t j = j0; j < std::min(j1, side - 1); ++j) {
+            for (uint32_t i = i0; i < std::min(i1, side - 1); ++i) {
+                growSquare(terrain, layer, i, j, full, out);
+            }
         }
     }
+}
+
+bool sameScatter(const TerrainFoliage& a, const TerrainFoliage& b) {
+    return a.parts.empty() == b.parts.empty() && a.density.size() == b.density.size()
+        && a.perSquareMetre == b.perSquareMetre && a.minScale == b.minScale && a.maxScale == b.maxScale
+        && a.seed == b.seed;
 }
 
 } // namespace Vkm::Engine::TerrainPlants

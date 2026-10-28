@@ -66,7 +66,12 @@ void BuildController::run(std::vector<std::string> args, std::string openWhenDon
 
 void BuildController::update(EditorState& state, const fs::path& modulePath) {
     if (!state.requestVkm.empty()) {
-        run(std::move(state.requestVkm), std::move(state.requestVkmOpens));
+        // One at a time: a second would race the first over a project half made or a build half linked.
+        if (m_status == Status::Running) {
+            state.pushToast(ToastKind::Warning, m_command + " is still running", ConsoleView::Build);
+        } else {
+            run(std::move(state.requestVkm), std::move(state.requestVkmOpens));
+        }
         state.requestVkm.clear();
         state.requestVkmOpens.clear();
     }
@@ -89,7 +94,7 @@ void BuildController::update(EditorState& state, const fs::path& modulePath) {
     const int code = m_process.exitCode();
     m_status = code == 0 ? Status::Succeeded : Status::Failed;
     if (code != 0) {
-        state.pushToast(ToastKind::Error, m_command + " failed - see the Build window");
+        state.pushToast(ToastKind::Error, m_command + " failed", ConsoleView::Build);
         return;
     }
     if (!m_openWhenDone.empty()) {
@@ -169,8 +174,8 @@ void BuildController::draw(EditorState& state) {
             const bool error = line.find("error") != std::string::npos;
             const bool warning = line.find("warning") != std::string::npos;
             const bool marked = error || warning;
-            const ImVec4& colour = error ? EditorStyle::DANGER : EditorStyle::WARNING;
-            if (marked) ImGui::PushStyleColor(ImGuiCol_Text, colour);
+            const ImVec4& color = error ? EditorStyle::DANGER : EditorStyle::WARNING;
+            if (marked) ImGui::PushStyleColor(ImGuiCol_Text, color);
             ImGui::TextUnformatted(line.c_str());
             if (marked) ImGui::PopStyleColor();
         }

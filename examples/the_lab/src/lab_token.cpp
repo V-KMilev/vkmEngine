@@ -11,18 +11,15 @@
 #include "logger.h"
 
 #include "core/math/axes.h"
+#include "core/math/easing.h"
 #include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "resource/resource_manager.h"
-#include "system/audio/audio_events.h"
-#include "system/script/script_component.h"
 
 #include "lab_seat.h"
 #include "lab_state.h"
@@ -44,21 +41,19 @@ uint32_t bitOf(int index) {
 
 uint32_t everyToken(Scene& scene) {
     uint32_t every = 0;
-    scene.forEach<ScriptComponent>([&](EntityId id, ScriptComponent&) {
-        if (const LabToken* token = findBehavior<LabToken>(scene, id)) every |= bitOf(token->index);
-    });
+    forEachBehavior<LabToken>(scene, [&](EntityId, const LabToken& token) { every |= bitOf(token.index); });
     return every;
 }
 
 void LabToken::onStart() {
-    m_gem   = HierarchyOperations::findNamed(scene(), entity(), "Gem");
-    m_burst = HierarchyOperations::findNamed(scene(), entity(), "Burst");
+    m_gem   = findPart("Gem");
+    m_burst = findPart("Burst");
     if (const Transform* gem = scene().tryGet<Transform>(m_gem)) m_gemRest = gem->position;
     m_parts = HierarchyOperations::collectSubtree(scene(), entity());
 }
 
 void LabToken::onTriggerEnter(EntityId other) {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     LabScore* score = scene().tryGet<LabScore>(other);
     const uint32_t bit = bitOf(index);
     if (!score || !bit || (score->tokens & bit)) return;
@@ -83,11 +78,7 @@ void LabToken::onUpdate(float) {
         if (ParticleEmitter* burst = scene().tryGet<ParticleEmitter>(m_burst)) {
             burst->burst += static_cast<uint32_t>(std::max(sparkle, 0));
         }
-        const Transform* at = tryGet<Transform>();
-        const AudioClipHandle sound = resources().find(chime);
-        if (at && sound) {
-            events().emit(PlaySoundEvent::at(sound, resolvedWorldPosition(scene(), entity(), *at)));
-        }
+        playSound(chime);
     }
     if (found != m_hidden) {
         m_hidden = found;
@@ -97,12 +88,10 @@ void LabToken::onUpdate(float) {
 
     Transform* gem = scene().tryGet<Transform>(m_gem);
     if (!gem) return;
-    const double now   = net().worldTime(clock());
-    const double turns = now * static_cast<double>(spin) / DEGREES_A_TURN;
-    const double bobs  = now / BOB_SECONDS;
-    const float  tau   = glm::two_pi<float>();
-    const float  turn  = tau * static_cast<float>(glm::fract(turns));
-    const float  rise  = bob * std::sin(tau * static_cast<float>(glm::fract(bobs)));
+    const double now  = worldTime();
+    const float  tau  = glm::two_pi<float>();
+    const float  turn = tau * cycle(now * static_cast<double>(spin), DEGREES_A_TURN);
+    const float  rise = bob * std::sin(tau * cycle(now, BOB_SECONDS));
     gem->rotation = glm::angleAxis(turn, Math::WORLD_UP);
     gem->position = m_gemRest + Math::WORLD_UP * rise;
 }

@@ -5,11 +5,12 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Draws what a `waves` surface's pixels read besides the OceanBlock (GLOceanFields): the
- * ocean's ripples, and its shore.
+ * @brief Draws what water's pixels read besides the OceanBlock: the ripples (GLOceanFields), which
+ * the sea and every other water show, and the sea's shore (GLOceanShore).
  *
- * Just before the forward pass, which binds them on their units (OceanTextureSlots). A scene with
- * no ocean draws neither; an ocean with no ripples or no waterline foam skips that one.
+ * Before the mirrors and the forward pass, which both bind them on their units (OceanTextureSlots).
+ * The ripples are drawn while the scene has an ocean or other water is drawn, and the wind raises
+ * any (GLOcean::rippling); the shore only for an ocean with waterline foam, seen from a camera.
  */
 class GLOceanPass : public GLPass {
     public:

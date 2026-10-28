@@ -8,6 +8,7 @@
     #include <cerrno>
     #include <csignal>
     #include <fcntl.h>
+    #include <poll.h>
     #include <sys/wait.h>
     #if defined(__linux__)
         #include <sys/prctl.h>
@@ -159,10 +160,10 @@ void ChildProcess::readUntilExit() {
 
 void ChildProcess::stop() {
     if (!m_reader.joinable()) return;
-    const bool ended = running();
-    if (ended) TerminateJobObject(static_cast<HANDLE>(m_job), 1);
+    const bool ending = running();
+    if (ending) TerminateJobObject(static_cast<HANDLE>(m_job), 1);
     m_reader.join();
-    if (ended) {
+    if (ending) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_exitCode = -1;
     }
@@ -233,18 +234,36 @@ bool ChildProcess::start(
 }
 
 void ChildProcess::readUntilExit() {
+    // The pipe ends when every holder closes it, which a daemon the program left behind never
+    // does: so the program is asked after between reads, and once it is reaped, what is left in
+    // the pipe is read and the rest is not its output.
+    constexpr int ASK_MS = 50;
     char buffer[4096];
+    int  status = 0;
+    bool reaped = false;
     for (;;) {
-        const ssize_t got = read(m_pipeFd, buffer, sizeof(buffer));
-        if (got > 0) {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_output.append(buffer, static_cast<size_t>(got));
-        } else if (got == 0 || errno != EINTR) {
+        pollfd waiting{m_pipeFd, POLLIN, 0};
+        const int ready = poll(&waiting, 1, reaped ? 0 : ASK_MS);
+        if (ready < 0 && errno == EINTR) continue;
+        if (ready > 0) {
+            const ssize_t got = read(m_pipeFd, buffer, sizeof(buffer));
+            if (got > 0) {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_output.append(buffer, static_cast<size_t>(got));
+                continue;
+            }
+            if (got < 0 && errno == EINTR) continue;
             break;
         }
+        if (ready < 0 || reaped) break;
+        const pid_t asked = waitpid(m_pid, &status, WNOHANG);
+        if (asked == m_pid) reaped = true;
+        if (asked < 0 && errno != EINTR) {
+            reaped = true;
+            status = -1;
+        }
     }
-    int status = 0;
-    while (waitpid(m_pid, &status, 0) < 0 && errno == EINTR) {}
+    while (!reaped && waitpid(m_pid, &status, 0) < 0 && errno == EINTR) {}
 
     std::lock_guard<std::mutex> lock(m_mutex);
     m_exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
@@ -253,8 +272,8 @@ void ChildProcess::readUntilExit() {
 
 void ChildProcess::stop() {
     if (!m_reader.joinable()) return;
-    const bool ended = running();
-    if (ended) {
+    const bool ending = running();
+    if (ending) {
         // Asked first; whatever is still holding the pipe two seconds on is ended.
         kill(-m_pid, SIGTERM);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -264,7 +283,7 @@ void ChildProcess::stop() {
         if (running()) kill(-m_pid, SIGKILL);
     }
     m_reader.join();
-    if (ended) {
+    if (ending) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_exitCode = -1;
     }

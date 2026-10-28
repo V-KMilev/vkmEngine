@@ -14,38 +14,7 @@
 
 #include "ui/editor_style.h"
 #include "core/utf8.h"
-#include "ecs/scene.h"
-#include "ecs/component/animation/animation.h"
-#include "ecs/component/animation/animator.h"
-#include "ecs/component/animation/bone_socket.h"
-#include "ecs/component/audio/audio_listener.h"
-#include "ecs/component/audio/audio_source.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/physics/character_controller.h"
-#include "ecs/component/physics/collider.h"
-#include "ecs/component/physics/joint.h"
-#include "ecs/component/physics/ragdoll.h"
-#include "ecs/component/physics/rigidbody.h"
-#include "ecs/component/render/camera.h"
-#include "ecs/component/render/decal.h"
-#include "ecs/component/render/irradiance_volume.h"
-#include "ecs/component/prefab/prefab_instance.h"
-#include "ecs/component/render/light.h"
-#include "ecs/component/render/lod.h"
-#include "ecs/component/render/mesh.h"
-#include "ecs/component/render/particle_emitter.h"
-#include "ecs/component/render/planar_reflector.h"
-#include "ecs/component/render/reflection_probe.h"
-#include "ecs/component/render/terrain.h"
-#include "ecs/component/ui/ui_button.h"
-#include "ecs/component/ui/ui_canvas.h"
-#include "ecs/component/ui/ui_choice.h"
-#include "ecs/component/ui/ui_element.h"
-#include "ecs/component/ui/ui_image.h"
-#include "ecs/component/ui/ui_scroll.h"
-#include "ecs/component/ui/ui_slider.h"
-#include "ecs/component/ui/ui_toggle.h"
-#include "ecs/component/ui/ui_text.h"
+#include "io/project.h"
 #include "io/project_paths.h"
 
 namespace Vkm::Engine {
@@ -150,6 +119,127 @@ bool comboList(const char* id, int* index, const char* const* labels, int count)
     }
     ImGui::EndCombo();
     return changed;
+}
+
+std::string physicsLayerName(const std::vector<std::string>& names, int bit) {
+    if (bit >= 0 && static_cast<size_t>(bit) < names.size() && !names[bit].empty()) return names[bit];
+    return "Layer " + std::to_string(bit + 1);
+}
+
+std::string assetFileStem(const std::string& name) {
+    const std::string file = name.substr(0, name.find(':'));
+    if (file.find_first_of("/.") == std::string::npos) return {};
+    const size_t slash = file.find_last_of('/');
+    std::string  stem  = slash == std::string::npos ? file : file.substr(slash + 1);
+    if (const size_t dot = stem.find_last_of('.'); dot != std::string::npos && dot > 0) stem.resize(dot);
+    return stem;
+}
+
+std::string assetShortName(const std::string& name) {
+    const std::string stem = assetFileStem(name);
+    return stem.empty() ? name.substr(name.rfind(':') + 1) : stem;
+}
+
+namespace {
+
+constexpr int LAYER_BITS = static_cast<int>(Project::MAX_PHYSICS_LAYERS);
+
+/// The least number of layers a list offers, named or not.
+constexpr int MIN_LAYERS_SHOWN = 8;
+
+/// The first two layers @p bits holds, by name, and a count of the rest.
+std::string layersListed(const std::vector<std::string>& names, uint32_t bits) {
+    std::string out;
+    int count = 0;
+    for (int bit = 0; bit < LAYER_BITS; ++bit) {
+        if ((bits & (1u << bit)) == 0) continue;
+        if (++count > 2) continue;
+        if (!out.empty()) out += ", ";
+        out += physicsLayerName(names, bit);
+    }
+    if (count > 2) out += " +" + std::to_string(count - 2);
+    return out;
+}
+
+/// What a closed layer box reads: Everything, Nothing, what it holds, or what it lacks.
+std::string layersPreview(const std::vector<std::string>& names, uint32_t bits) {
+    if (bits == ~0u) return "Everything";
+    if (bits == 0u) return "Nothing";
+    int held = 0;
+    for (int bit = 0; bit < LAYER_BITS; ++bit) held += (bits >> bit) & 1u;
+    // Most of the bits: a mask that leaves a layer out reads by what it leaves out.
+    if (held > LAYER_BITS / 2) return "Everything but " + layersListed(names, ~bits);
+    return layersListed(names, bits);
+}
+
+/// How many layers, from the first, a list offers: the named, those @p bits holds, and a few more.
+int layersShown(const std::vector<std::string>& names, uint32_t bits) {
+    int shown = std::max(static_cast<int>(names.size()) + 1, MIN_LAYERS_SHOWN);
+    if (bits != ~0u) {
+        for (int bit = 0; bit < LAYER_BITS; ++bit) {
+            if (bits & (1u << bit)) shown = std::max(shown, bit + 1);
+        }
+    }
+    return std::min(shown, LAYER_BITS);
+}
+
+} // namespace
+
+bool propLayer(const char* label, int* layer, const std::vector<std::string>& names, const char* tooltip) {
+    return propRow(label, tooltip, [&] {
+        const uint32_t bits    = static_cast<uint32_t>(*layer);
+        const bool     single  = bits != 0u && (bits & (bits - 1u)) == 0u;
+        std::string    preview = bits == 0u ? "None" : layersPreview(names, bits);
+        if (!single && bits != 0u) preview += " (several)";
+        if (!beginCombo("##v", preview.c_str())) return false;
+
+        bool changed = false;
+        if (ImGui::Selectable("None", bits == 0u) && bits != 0u) {
+            *layer  = 0;
+            changed = true;
+        }
+        for (int bit = 0; bit < layersShown(names, bits); ++bit) {
+            const uint32_t    one  = 1u << bit;
+            const std::string name = physicsLayerName(names, bit) + "##" + std::to_string(bit);
+            if (ImGui::Selectable(name.c_str(), bits == one) && bits != one) {
+                *layer  = static_cast<int>(one);
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+        return changed;
+    });
+}
+
+bool propLayerMask(const char* label, int* mask, const std::vector<std::string>& names, const char* tooltip) {
+    return propRow(label, tooltip, [&] {
+        uint32_t bits = static_cast<uint32_t>(*mask);
+        if (!beginCombo("##v", layersPreview(names, bits).c_str())) return false;
+
+        bool changed = false;
+        const ImGuiSelectableFlags stay = ImGuiSelectableFlags_DontClosePopups;
+        if (ImGui::Selectable("Everything", bits == ~0u, stay) && bits != ~0u) {
+            bits    = ~0u;
+            changed = true;
+        }
+        if (ImGui::Selectable("Nothing", bits == 0u, stay) && bits != 0u) {
+            bits    = 0u;
+            changed = true;
+        }
+        ImGui::Separator();
+        for (int bit = 0; bit < layersShown(names, bits); ++bit) {
+            const uint32_t    one  = 1u << bit;
+            const std::string name = physicsLayerName(names, bit) + "##" + std::to_string(bit);
+            bool on = (bits & one) != 0u;
+            if (ImGui::Checkbox(name.c_str(), &on)) {
+                bits ^= one;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+        if (changed) *mask = static_cast<int>(bits);
+        return changed;
+    });
 }
 
 bool beginOverlayStrip(const char* id, ImVec2 size) {
@@ -262,6 +352,20 @@ void drawPropertyLabel(const char* label) {
     ImGui::SetNextItemWidth(-1);
 }
 
+bool searchField(const char* id, char* buf, size_t size, float width, const char* hint) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+        && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_F, ImGuiInputFlags_RouteFocused)) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(width);
+    return ImGui::InputTextWithHint(id, hint, buf, size, ImGuiInputTextFlags_EscapeClearsAll);
+}
+
+void factRow(const char* label, const char* value) {
+    drawPropertyLabel(label);
+    ImGui::TextUnformatted(value);
+}
+
 namespace {
 struct CardState {
     ImVec4 accent;
@@ -309,7 +413,13 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent, bool defaul
 }
 } // namespace
 
-bool beginComponentCard(const char* title, const ImVec4& accent, bool defaultOpen, bool* removeClicked) {
+bool beginComponentCard(
+    const char* title,
+    const ImVec4& accent,
+    bool defaultOpen,
+    bool* removeClicked,
+    const char* menu
+) {
     // Reset per frame, as ImGui's stacks are, so a skipped end cannot shift later cards.
     std::vector<CardState>& stack = cardStack();
     if (!stack.empty() && stack.back().frame != ImGui::GetFrameCount()) stack.clear();
@@ -319,15 +429,9 @@ bool beginComponentCard(const char* title, const ImVec4& accent, bool defaultOpe
 
     const bool open   = styledCollapsingHeader(title, accent, defaultOpen);
     const ImVec2 rMin = ImGui::GetItemRectMin();
+    if (menu) ImGui::OpenPopupOnItemClick(menu, ImGuiPopupFlags_MouseButtonRight);
 
-    if (removeClicked) {
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - EditorStyle::px(20.0f));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
-        if (ImGui::SmallButton("x")) *removeClicked = true;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove component");
-        ImGui::PopStyleColor(2);
-    }
+    if (removeClicked && removeButton("removeCard", "Remove component")) *removeClicked = true;
 
     CardState st;
     st.accent = accent;
@@ -442,6 +546,16 @@ void centreNextItem(float width) {
     ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - width) * 0.5f));
 }
 
+bool removeButton(const char* id, const char* tooltip) {
+    const float side = ImGui::GetFrameHeight();
+    ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - side);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
+    const bool pressed = iconButton(id, EditorIcon::Cross, false, true, tooltip, side);
+    ImGui::PopStyleColor(2);
+    return pressed;
+}
+
 bool tileFace(
     ImTextureID picture,
     float face,
@@ -495,6 +609,81 @@ void clippedLine(const char* text, float maxWidth, bool dim) {
     else     ImGui::TextUnformatted(line.c_str());
 }
 
+bool segmentedControl(const char* id, const Segment* segments, int count, int* chosen) {
+    ImGui::PushID(id);
+    const ImGuiStyle& style   = ImGui::GetStyle();
+    const ImVec2      origin  = ImGui::GetCursorScreenPos();
+    const float       height  = ImGui::GetFrameHeight();
+    const float       padding = style.FramePadding.x * 1.5f;
+
+    const auto widthOf = [&](int i) {
+        return ImGui::CalcTextSize(segments[i].label, nullptr, true).x + padding * 2.0f;
+    };
+    float width = 0.0f;
+    for (int i = 0; i < count; ++i) width += widthOf(i);
+
+    ImDrawList* dl       = ImGui::GetWindowDrawList();
+    const float rounding = style.FrameRounding;
+    const ImU32 well     = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    dl->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), well, rounding);
+
+    bool changed = false;
+    float x = origin.x;
+    for (int i = 0; i < count; ++i) {
+        const float  w   = widthOf(i);
+        const ImVec2 min(x, origin.y);
+        const ImVec2 max(x + w, origin.y + height);
+        ImGui::SetCursorScreenPos(min);
+        ImGui::PushID(i);
+        if (ImGui::InvisibleButton("##segment", ImVec2(w, height)) && *chosen != i) {
+            *chosen = i;
+            changed = true;
+        }
+        ImGui::PopID();
+        if (segments[i].tooltip) ImGui::SetItemTooltip("%s", segments[i].tooltip);
+        const bool picked  = *chosen == i;
+        const bool hovered = ImGui::IsItemHovered();
+        if (picked || hovered) {
+            // Inset, so the fill reads as a key pressed into the control.
+            const ImU32  fill = ImGui::GetColorU32(picked ? ImGuiCol_ButtonActive : ImGuiCol_FrameBgHovered);
+            const float  inset = EditorStyle::px(2.0f);
+            const ImVec2 from(min.x + inset, min.y + inset);
+            dl->AddRectFilled(from, ImVec2(max.x - inset, max.y - inset), fill, rounding - inset * 0.5f);
+        }
+        const ImVec4 text = segments[i].tint ? *segments[i].tint : ImGui::GetStyleColorVec4(ImGuiCol_Text);
+        const char*  end  = ImGui::FindRenderedTextEnd(segments[i].label);
+        const ImVec2 size = ImGui::CalcTextSize(segments[i].label, end);
+        const ImVec2 at(min.x + (w - size.x) * 0.5f, min.y + (height - size.y) * 0.5f);
+        // Chosen, it reads on the accent fill as any pressed button's label does.
+        const ImVec4 shown = picked ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : text;
+        dl->AddText(at, ImGui::ColorConvertFloat4ToU32(shown), segments[i].label, end);
+        x += w;
+    }
+    // Leave the cursor after the control, as an item of its size would.
+    ImGui::SetCursorScreenPos(origin);
+    ImGui::Dummy(ImVec2(width, height));
+    ImGui::PopID();
+    return changed;
+}
+
+bool toggleChip(const char* label, bool* on, const ImVec4& color) {
+    ImVec4 off = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+    off.w *= 0.75f;
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetFrameHeight() * 0.5f);
+    const auto tint = [&](float alpha) { return ImVec4(color.x, color.y, color.z, alpha); };
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, *on ? 1.0f : 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, tint(0.55f));
+    ImGui::PushStyleColor(ImGuiCol_Button, tint(*on ? 0.22f : 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tint(0.30f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, tint(0.38f));
+    ImGui::PushStyleColor(ImGuiCol_Text, *on ? color : off);
+    const bool clicked = ImGui::Button(label);
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(2);
+    if (clicked) *on = !*on;
+    return clicked;
+}
+
 bool matchesFilter(const char* text, const char* filter) {
     if (!filter || !filter[0]) return true;
     for (const char* p = text; *p; ++p) {
@@ -508,91 +697,6 @@ bool matchesFilter(const char* text, const char* filter) {
         if (!*s) return true;
     }
     return false;
-}
-
-namespace {
-
-struct EntityLabel {
-    const char* name;
-    EditorIcon  icon;
-};
-
-// One row per LightType, in order; the viewport marker wears the same glyph.
-constexpr EntityLabel LIGHT_LABELS[] = {
-    {"Dir Light",   EditorIcon::LightDir},
-    {"Point Light", EditorIcon::LightPoint},
-    {"Spot Light",  EditorIcon::LightSpot},
-    {"Rect Light",  EditorIcon::LightRect},
-    {"Disk Light",  EditorIcon::LightDisk},
-};
-static_assert(
-    std::size(LIGHT_LABELS) == static_cast<size_t>(LightType::Count),
-    "every light type needs a label and a glyph"
-);
-
-EntityLabel lightLabelOf(LightType type) {
-    const auto index = static_cast<size_t>(type);
-    return index < std::size(LIGHT_LABELS)
-        ? LIGHT_LABELS[index]
-        : EntityLabel{"Light", EditorIcon::LightPoint};
-}
-
-// Order is precedence. A Light answers by its type, and a Mesh carrying an
-// Animation reads "Animated Mesh" while keeping the plain mesh glyph.
-EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
-    // First: being a prefab constrains editing. Only the root holds PrefabInstance;
-    // PrefabEntity is on the whole subtree.
-    if (scene.has<PrefabInstance>(id)) return {"Prefab", EditorIcon::Prefab};
-    if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
-    if (const Light* light = scene.tryGet<Light>(id)) return lightLabelOf(light->type);
-    // Before Mesh: an Animator makes it the rig (its meshes are children); a socket likewise.
-    if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
-    if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
-    if (scene.has<Terrain>(id)) return {"Terrain", EditorIcon::Terrain};
-    if (scene.has<Mesh>(id)) {
-        if (scene.has<Animation>(id)) return {"Animated Mesh", EditorIcon::Mesh};
-        if (scene.has<LOD>(id))       return {"LOD Mesh",      EditorIcon::Mesh};
-        return {"Mesh", EditorIcon::Mesh};
-    }
-    if (scene.has<Animation>(id))        return {"Animation", EditorIcon::Anim};
-    if (scene.has<ReflectionProbe>(id))  return {"Probe",     EditorIcon::Probe};
-    if (scene.has<PlanarReflector>(id))  return {"Mirror",    EditorIcon::Probe};
-    if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
-    if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
-    if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
-    if (const AudioSource* source = scene.tryGet<AudioSource>(id)) {
-        return source->spatial
-            ? EntityLabel{"Sound",    EditorIcon::Audio}
-            : EntityLabel{"2D Sound", EditorIcon::Audio2D};
-    }
-    if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
-    if (scene.has<UISlider>(id))         return {"Slider",    EditorIcon::UISlider};
-    if (scene.has<UIToggle>(id))         return {"Toggle",    EditorIcon::UIToggle};
-    if (scene.has<UIChoice>(id))         return {"Choice",    EditorIcon::UIChoice};
-    if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
-    if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
-    if (scene.has<UIScroll>(id))         return {"Scroll",    EditorIcon::UIScroll};
-    if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};
-    if (scene.has<UICanvas>(id))         return {"Canvas",    EditorIcon::UICanvas};
-    if (scene.has<UIElement>(id))        return {"Widget",    EditorIcon::UIWidget};
-    // Below the visual rows: a crate keeps its mesh glyph; these catch what has no other face.
-    if (scene.has<CharacterController>(id)) return {"Character", EditorIcon::Character};
-    if (scene.has<Ragdoll>(id))          return {"Ragdoll",   EditorIcon::Ragdoll};
-    if (scene.has<Joint>(id))            return {"Jointed Body", EditorIcon::Joint};
-    if (scene.has<Collider>(id))         return {"Collider",  EditorIcon::Colliders};
-    if (scene.has<Rigidbody>(id))        return {"Body",      EditorIcon::Colliders};
-    return {"Entity", EditorIcon::Entity};
-}
-
-} // namespace
-
-void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize) {
-    const Name* name = scene.tryGet<Name>(id);
-    if (name && name->value[0] != '\0') {
-        snprintf(buf, bufSize, "%s", name->value);
-        return;
-    }
-    snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.slot());
 }
 
 namespace {
@@ -623,14 +727,6 @@ void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
     );
 }
 } // namespace
-
-EditorIcon entityIconKind(const Scene& scene, EntityId id) {
-    return entityLabelOf(scene, id).icon;
-}
-
-EditorIcon lightIcon(LightType type) {
-    return lightLabelOf(type).icon;
-}
 
 void inlineIcon(EditorIcon icon, float size, ImU32 color) {
     const ImVec2 p = ImGui::GetCursorScreenPos();

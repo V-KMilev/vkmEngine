@@ -107,7 +107,7 @@ serve the site.
     Clock, and the loop flushes it at the top of the Simulation stage. */
 
 /** @dir src/engine/debug
-    @brief Diagnostics: the Tracy profiler facade, the recoverable-error sink, a fault latch and the screenshot writer.
+    @brief Diagnostics: world drawing (DebugDraw, DebugPalette), the Tracy profiler facade, the recoverable-error sink, a fault latch and the screenshot writer.
 
     Engine code includes the profiler facade rather than Tracy. The profiler compiles to
     nothing when it is off; reportError always logs, and also records into the
@@ -120,7 +120,7 @@ serve the site.
     published on FrameContext for the Visibility and Render stages to read. */
 
 /** @dir src/engine/system/audio
-    @brief The mixer seam: voices, spatialization and the one place miniaudio is reached.
+    @brief The mixer seam: voices, spatialization, the acoustics' occlusion and room reverb, and the one place miniaudio is reached.
 
     No device is a normal state - the engine runs silently rather than refusing
     to run. Main-thread only; see the reference page before lending it one. */

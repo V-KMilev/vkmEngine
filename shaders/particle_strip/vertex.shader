@@ -32,7 +32,7 @@ uniform vec4 u_clipPlane;  // a planar reflection's plane, while GL_CLIP_DISTANC
 out vec2  vUV;         // x along the strip, y across it, 0 to 1
 out vec4  vColor;
 out float vSize;       // half its width here, how deep its fade runs
-out vec3  vLight;      // what lights it, over its colour; 1 for one that is not lit
+out vec3  vLight;      // what lights it, over its color; 1 for one that is not lit
 out vec2  vAcross;     // its across in the view's right and up, which a bend follows
 flat out vec3 vLook;   // StripPoint.look: falloff, emission or bend, viewmodel
 

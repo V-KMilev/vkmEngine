@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 #include <utility>
 
 #include <glm/gtc/constants.hpp>
+
+#include "core/math/bounds.h"
 
 namespace Vkm::Engine {
 
@@ -15,21 +16,10 @@ namespace {
 // At or below this many triangles a node is a leaf; splitting further costs more than the tests saved.
 constexpr uint32_t LEAF_TRIANGLES = 4;
 
-struct Bounds {
-    glm::vec3 min{0.0f};
-    glm::vec3 max{0.0f};
-};
-
-Bounds boundsOf(const std::vector<glm::vec3>& triangles, uint32_t first, uint32_t count) {
-    Bounds bounds;
-    bounds.min = glm::vec3(std::numeric_limits<float>::max());
-    bounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+Math::AABB boundsOf(const std::vector<glm::vec3>& triangles, uint32_t first, uint32_t count) {
+    Math::AABB bounds = Math::AABB::empty();
     for (uint32_t t = first; t < first + count; ++t) {
-        for (uint32_t c = 0; c < 3; ++c) {
-            const glm::vec3& point = triangles[t * 3 + c];
-            bounds.min = glm::min(bounds.min, point);
-            bounds.max = glm::max(bounds.max, point);
-        }
+        for (uint32_t c = 0; c < 3; ++c) bounds.expand(triangles[t * 3 + c]);
     }
     return bounds;
 }
@@ -54,7 +44,7 @@ uint32_t buildNode(
     const uint32_t self = static_cast<uint32_t>(nodes.size());
     nodes.push_back({});
 
-    const Bounds bounds = boundsOf(triangles, first, count);
+    const Math::AABB bounds = boundsOf(triangles, first, count);
     nodes[self].min = bounds.min;
     nodes[self].max = bounds.max;
 

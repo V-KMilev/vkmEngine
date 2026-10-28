@@ -17,11 +17,11 @@ void main() {
     const int  field  = int(gl_WorkGroupID.z);
 
     for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) {
-        s_line[rippleShuffled(i)] = imageLoad(u_rows, ivec3(column, i, field));
+        s_fft[fftShuffled(i)] = imageLoad(u_rows, ivec3(column, i, field));
     }
-    rippleTransform(t);
+    fftTransform(t);
     for (uint i = t; i < uint(OCEAN_FIELD); i += uint(GROUP_OCEAN_FFT)) {
-        const vec4 water = s_line[i];
+        const vec4 water = s_fft[i];
         imageStore(u_fields, ivec3(column, i, field), vec4(water.xyz, dot(water.xy, water.xy)));
     }
 }

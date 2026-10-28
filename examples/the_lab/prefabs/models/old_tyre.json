@@ -13,6 +13,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/old_tyre/textures/old_tyre_diff_1k.jpg"

@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
-    "ior": 1.4500000476837158,
+    "ior": 1.45,
     "metallic": 1.0,
     "normalScale": 1.0,
+    "rippleScale": 0.5,
     "roughness": 1.0,
     "sheenColor": [
-      0.3499999940395355,
-      0.33000001311302185,
-      0.30000001192092896
+      0.35,
+      0.33,
+      0.3
     ],
-    "sheenRoughness": 0.550000011920929,
+    "sheenRoughness": 0.55,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -64,6 +66,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

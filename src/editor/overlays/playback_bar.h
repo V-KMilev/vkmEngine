@@ -63,6 +63,8 @@ class PlaybackBar {
          * @brief Start the running session over, as a game's restartScene() asks: Stop puts back
          *        the scene as Play found it, and Play takes it again.
          *
+         * A Stop that could not put the scene back leaves the session paused, and nothing is played.
+         *
          * @param ec For the clock and the audio device.
          * @param sceneIO Restores and snapshots the scene.
          */

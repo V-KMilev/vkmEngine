@@ -2,9 +2,9 @@
   "name": "assets/bot.fbx:mat0",
   "source": {
     "albedo": [
-      0.6696000099182129,
-      0.24184642732143402,
-      0.21092401444911957,
+      0.6696,
+      0.24184643,
+      0.21092401,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.8082915544509888,
+    "rippleScale": 0.5,
+    "roughness": 0.80829155,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

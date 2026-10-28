@@ -36,7 +36,7 @@ void uploadLevels(const Vkm::GL::Texture2D& texture, const TextureAsset& asset) 
 }
 
 // Every channel of a one-channel map reads as its grey, so a shader taking roughness from green
-// and metalness from blue gets what a grey colour file would give, not zero.
+// and metalness from blue gets what a grey color file would give, not zero.
 void swizzleGrey(Vkm::GL::Texture2D& texture, TextureInternalFormat format) {
     if (format != TextureInternalFormat::R8 && format != TextureInternalFormat::BC4R) return;
     const GLint grey[4] = {GL_RED, GL_RED, GL_RED, GL_ONE};
@@ -120,7 +120,10 @@ void GLTexture::applyFiltering(TextureFiltering sceneMode, float maxAnisotropy) 
 std::unique_ptr<Vkm::GL::Texture2D> uploadImageFile(const std::string& path) {
     const DecodedImage image = decodeImageRGBA(path);
     if (!image.isValid()) return nullptr;
+    return uploadImage(image, path);
+}
 
+std::unique_ptr<Vkm::GL::Texture2D> uploadImage(const DecodedImage& image, const std::string& name) {
     Vkm::GL::Texture2DParams params;
     params.width           = image.width;
     params.height          = image.height;
@@ -128,7 +131,7 @@ std::unique_ptr<Vkm::GL::Texture2D> uploadImageFile(const std::string& path) {
     params.generateMipmaps = true;
     params.minFilter       = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
     params.data            = image.pixels.data();
-    return std::make_unique<Vkm::GL::Texture2D>(path, params);
+    return std::make_unique<Vkm::GL::Texture2D>(name, params);
 }
 
 } // namespace Vkm::Engine

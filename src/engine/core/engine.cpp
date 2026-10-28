@@ -26,6 +26,13 @@ std::atomic<bool> g_interrupted{false};
 
 extern "C" void onInterrupt(int) { g_interrupted.store(true, std::memory_order_relaxed); }
 
+/// Whether the frames a host shows carry the debug lines drawn into them: never a shipped game's.
+#if VKM_SHIPPING
+constexpr bool SHOWS_DEBUG_DRAWING = false;
+#else
+constexpr bool SHOWS_DEBUG_DRAWING = true;
+#endif
+
 } // namespace
 
 Engine::Engine()  = default;
@@ -55,6 +62,10 @@ void Engine::run() {
             m_render,
             m_projectRender
         };
+        ctx.readiness = &m_readiness;
+        // A host that shows nothing draws nothing, nor does a shipped game: their behaviors get
+        // DebugDraw::inert().
+        if (SHOWS_DEBUG_DRAWING && m_window.isOpen()) ctx.debug = &m_debug;
 
         m_window.updateInput();
 
@@ -78,8 +89,9 @@ void Engine::run() {
             initSystems(ctx);
         }
 
-        // Ticks re-run because the server disagreed. No event flush, no
-        // InputMap::beginTick, only isReplayed systems - see networking.md, "Replay".
+        // Ticks re-run because the server disagreed. No event flush, no InputMap::beginTick, only
+        // isReplayed systems - see networking.md, "Replay". What they draw was drawn the first time.
+        m_debug.setMuted(true);
         for (const InputCommand& command : m_net.replayCommands()) {
             PROFILE_SCOPE("Replay");
             m_net.beginReplayTick(command);
@@ -91,11 +103,16 @@ void Engine::run() {
             m_net.endTick(m_scene, command.tick);
         }
         m_net.endReplay(m_scene);
+        m_debug.setMuted(false);
+
+        // Loads land outside the ticks: here, so a world that arrived this frame runs none yet.
+        m_clock.setHeld(m_arrival.holds(m_scene, m_resources));
 
         bool ticked = false;
         while (m_clock.consumeFixedStep()) {
             PROFILE_SCOPE("FixedUpdate");
             ticked = true;
+            m_debug.beginTick();
             m_input.beginTick(m_clock.getTick());
             m_net.beginTick(
                 m_clock.getTick(),
@@ -117,6 +134,7 @@ void Engine::run() {
 
             // Kept so the server's answer can be compared rather than believed.
             m_net.endTick(m_scene, m_clock.getTick());
+            m_debug.endTick();
         }
 
         // A still world runs no tick, and a press made meanwhile is not one it was running for.
@@ -142,6 +160,7 @@ void Engine::run() {
 
         // After the ticks, so a snapshot is the world now, not a frame ago.
         m_net.send(m_scene, m_clock.getTick());
+        m_debug.endFrame();
 
         m_window.swapBuffers();
 

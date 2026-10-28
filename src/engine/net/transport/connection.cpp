@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "core/little_endian.h"
+
 namespace Vkm::Engine {
 
 namespace {
@@ -24,25 +26,6 @@ constexpr uint16_t SEQUENCE_HALF = 0x8000;
  * Bounded against a peer that never answers; anything older is not timed.
  */
 constexpr size_t SENT_REMEMBERED = 256;
-
-void writeU16(uint8_t* at, uint16_t value) {
-    at[0] = static_cast<uint8_t>(value & 0xFF);
-    at[1] = static_cast<uint8_t>(value >> 8);
-}
-
-uint16_t readU16(const uint8_t* at) {
-    return static_cast<uint16_t>(at[0] | (at[1] << 8));
-}
-
-void writeU32(uint8_t* at, uint32_t value) {
-    for (int i = 0; i < 4; ++i) at[i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFF);
-}
-
-uint32_t readU32(const uint8_t* at) {
-    uint32_t value = 0;
-    for (int i = 0; i < 4; ++i) value |= static_cast<uint32_t>(at[i]) << (i * 8);
-    return value;
-}
 
 } // namespace
 
@@ -71,9 +54,9 @@ void NetConnection::frame(const uint8_t* payload, size_t size, std::vector<uint8
     const uint16_t sequence = m_outgoing++;
     // On the wrap as well as at the start: NO_SEQUENCE means "nothing heard".
     if (m_outgoing == NO_SEQUENCE) ++m_outgoing;
-    writeU16(&out[0], sequence);
-    writeU16(&out[2], m_newest);
-    writeU32(&out[4], m_seen);
+    writeLittleEndian(&out[0], sequence);
+    writeLittleEndian(&out[2], m_newest);
+    writeLittleEndian(&out[4], m_seen);
     if (size > 0) std::memcpy(&out[HEADER_BYTES], payload, size);
 
     m_sent.push_back({sequence, 0.0f});
@@ -88,9 +71,9 @@ bool NetConnection::accept(
 ) {
     if (size < HEADER_BYTES) return false;
 
-    const uint16_t sequence     = readU16(&bytes[0]);
-    const uint16_t acknowledgedNewest = readU16(&bytes[2]);
-    const uint32_t acknowledgedBefore = readU32(&bytes[4]);
+    const auto sequence           = readLittleEndian<uint16_t>(&bytes[0]);
+    const auto acknowledgedNewest = readLittleEndian<uint16_t>(&bytes[2]);
+    const auto acknowledgedBefore = readLittleEndian<uint32_t>(&bytes[4]);
 
     if (m_heard && !isNewerSequence(sequence, m_newest)) return false;
 

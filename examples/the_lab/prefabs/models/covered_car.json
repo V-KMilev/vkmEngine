@@ -34,6 +34,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/covered_car/textures/covered_car_diff_1k.jpg"
@@ -88,9 +89,9 @@
         },
         "Transform": {
           "position": [
-            0.7576000690460205,
-            0.30000001192092896,
-            1.2806000709533691
+            0.75760007,
+            0.3,
+            1.2806001
           ],
           "rotation": [
             1.0,
@@ -123,9 +124,9 @@
         },
         "Transform": {
           "position": [
-            -0.6823999881744385,
-            0.30000001192092896,
-            1.2806000709533691
+            -0.6824,
+            0.3,
+            1.2806001
           ],
           "rotation": [
             1.0,
@@ -158,9 +159,9 @@
         },
         "Transform": {
           "position": [
-            -0.6724001169204712,
-            0.30000001192092896,
-            -1.299399971961975
+            -0.6724001,
+            0.3,
+            -1.2994
           ],
           "rotation": [
             1.0,
@@ -193,9 +194,9 @@
         },
         "Transform": {
           "position": [
-            0.7475999593734741,
-            0.30000001192092896,
-            -1.2993998527526855
+            0.74759996,
+            0.3,
+            -1.2993999
           ],
           "rotation": [
             1.0,
@@ -219,15 +220,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 28.231325149536133,
+              "maxDistance": 28.231325,
               "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4"
             },
             {
-              "maxDistance": 197.73849487304688,
+              "maxDistance": 197.7385,
               "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod1"
             },
             {
-              "maxDistance": 395.47698974609375,
+              "maxDistance": 395.477,
               "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod2"
             }
           ]
@@ -245,9 +246,9 @@
         },
         "Transform": {
           "position": [
-            0.037599992007017136,
+            0.037599992,
             0.0,
-            0.037599992007017136
+            0.037599992
           ],
           "rotation": [
             1.0,

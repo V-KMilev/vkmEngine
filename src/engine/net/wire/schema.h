@@ -19,8 +19,23 @@ namespace Vkm::Engine {
  */
 inline constexpr uint32_t MAX_COMPONENT_BYTES = 512;
 
+namespace detail {
+
+/**
+ * @brief One of the two buffers this thread's sameOnWire encodes into, kept for its capacity.
+ *
+ * @param second Which of the two.
+ * @return The buffer.
+ */
+std::vector<uint8_t>& wireScratch(bool second);
+
+} // namespace detail
+
 /**
  * @brief Whether @p a and @p b encode to the same bits: the wire cannot tell them apart.
+ *
+ * Asked of every component a snapshot brings that the client holds, so it encodes into buffers
+ * kept per thread rather than made each time.
  *
  * @param a One value.
  * @param b The other.
@@ -28,8 +43,8 @@ inline constexpr uint32_t MAX_COMPONENT_BYTES = 512;
  */
 template <typename T>
 bool sameOnWire(const T& a, const T& b) {
-    std::vector<uint8_t> first;
-    std::vector<uint8_t> second;
+    std::vector<uint8_t>& first  = detail::wireScratch(false);
+    std::vector<uint8_t>& second = detail::wireScratch(true);
     BitWriter one(first, MAX_COMPONENT_BYTES);
     BitWriter two(second, MAX_COMPONENT_BYTES);
     netEncode(a, one);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <string>
 
 #include "ui/asset_picker.h"
@@ -14,6 +16,7 @@ struct FrameContext;
 struct EditorState;
 class BehaviorSystem;
 class CameraControllerSystem;
+class LoadingSystem;
 class MaterialPreviewSession;
 
 /**
@@ -28,7 +31,8 @@ class SceneIOController {
         SceneIOController(
             CameraControllerSystem& cameraController,
             MaterialPreviewSession& materialPreviews,
-            BehaviorSystem&         behaviors
+            BehaviorSystem&         behaviors,
+            const LoadingSystem&    loading
         );
         ~SceneIOController();
 
@@ -102,8 +106,8 @@ class SceneIOController {
         /**
          * @brief Render any pending Save-As / Load modals.
          *
-         * Must be called once per frame from the menu-bar scope so the modals
-         * survive the menu closing.
+         * Called once per frame, shown or hidden: a Save the unsaved-changes prompt
+         * answers may be waiting on a name.
          *
          * @param ctx Frame context supplying the scene and resources to save/load.
          * @param state Editor state read for paths/flags and updated on a completed pick.
@@ -111,12 +115,27 @@ class SceneIOController {
         void drawDialogs(FrameContext& ctx, EditorState& state);
 
         /**
+         * @brief Keep a copy of the scene's unsaved changes where a crash cannot take them.
+         *
+         * Once every SceneRecovery::INTERVAL while the scene is dirty, outside a session,
+         * in the user's folder (ProjectPaths::userRoot), never the project's.
+         *
+         * @param ctx   Supplies the scene, its assets and the frame's time.
+         * @param state Says whether the scene is dirty.
+         */
+        void serviceRecovery(FrameContext& ctx, EditorState& state);
+
+        /// Remove the open scene's copy: its changes were saved or given up.
+        void discardRecovery();
+
+        /**
          * @brief Snapshot the live scene and assets in memory, for Stop to restore.
          *
-         * Call when entering play. Bakes every loaded asset into the cooked
-         * library first: the snapshot is the scene file format, which names its
+         * Bakes every loaded asset into the cooked library first, and writes the
+         * terrains: the snapshot is the scene file format, which names its
          * assets, and a name is only restorable when the library holds a record
-         * for it.
+         * for it; a terrain comes back from its file. Play takes it through
+         * snapshotForPlay.
          *
          * May block while an import that has not landed finishes, since the cook
          * waits on outstanding async loads.
@@ -124,12 +143,26 @@ class SceneIOController {
          * @param ctx Frame context supplying the scene and resources to snapshot.
          * @param state Editor state whose dirty flag is remembered for Stop,
          *              whose undo history is parked until it, and which
-         *              receives a toast if the cook or the serialization failed.
-         * @return Whether a play session may begin. False only when the scene
-         *         could not be serialized at all. A partial cook still answers
-         *         true, and the toast names what Stop may lose.
+         *              receives a toast for what failed.
+         * @param action The gesture taking the snapshot, as its toasts name it.
+         * @return Whether a session may begin: false when a terrain could not be
+         *         written, which the restore would put back without its
+         *         sculpting, or the scene could not be serialized. A partial
+         *         cook still answers true, and the toast names what the restore
+         *         may lose.
          */
-        bool captureSnapshot(FrameContext& ctx, EditorState& state);
+        bool captureSnapshot(FrameContext& ctx, EditorState& state, const char* action);
+
+        /**
+         * @brief Take Play's snapshot: end a Render Settings tier preview, then captureSnapshot.
+         *
+         * The clock is the caller's to start.
+         *
+         * @param ctx Frame context supplying the scene, resources and render settings.
+         * @param state Editor state holding the preview; see captureSnapshot.
+         * @return What captureSnapshot answered.
+         */
+        bool snapshotForPlay(FrameContext& ctx, EditorState& state);
 
         /**
          * @brief Swap the captured snapshot back in, through load()'s housekeeping, and release it.
@@ -276,7 +309,7 @@ class SceneIOController {
          * @param ctx Frame context supplying the scene and resources to write.
          * @param state Editor state whose dirty flag, recents and toasts are updated.
          * @param path Absolute path of the scene file to write.
-         * @return Whether the scene reached disk.
+         * @return Whether the scene and its terrains reached disk; if not, it stays dirty.
          */
         bool writeScene(FrameContext& ctx, EditorState& state, const std::string& path);
         /**
@@ -291,11 +324,11 @@ class SceneIOController {
          * @brief Load m_currentScenePath through afterSceneReplace(), keeping the active entity
          * selected by name.
          *
-         * The swap replaces the asset graph, so an asset nothing in the
-         * outgoing scene named - a sound imported and not yet assigned to a
-         * source - has no name in the new document to be recreated from and
-         * goes. The ones that went are counted into a toast and named in the
-         * log.
+         * The swap replaces the asset graph, so an asset neither the outgoing
+         * scene nor the loading screen named - a sound imported and not yet
+         * assigned to a source - has no name in the new document to be recreated
+         * from and goes. The ones that went are counted into a toast and named in
+         * the log.
          *
          * @param ctx Frame context owning the scene being replaced.
          * @param state Editor state whose scene-scoped parts are reset.
@@ -318,14 +351,30 @@ class SceneIOController {
         void endPlaySession(FrameContext& ctx);
 
         /**
+         * @brief Replace the world with what @p fill makes, in the one order an open takes.
+         *
+         * The session's behaviors end while their world is whole, the outgoing imports are
+         * counted, @p fill makes the new world, the imports it dropped are reported, and what was
+         * keyed by the old world goes (afterSceneReplace, dropping the history). A failed fill
+         * leaves the outgoing world live and the editor's state as it was. Stop is the opposite
+         * of an open and has its own (restoreSnapshot).
+         *
+         * @param ctx   Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         * @param fill  Makes the new world; false when it could not.
+         * @return What @p fill answered.
+         */
+        bool openWorld(FrameContext& ctx, EditorState& state, const std::function<bool()>& fill);
+
+        /**
          * @brief Editor housekeeping for a scene swap, once the scene and
          * resources have been replaced.
          *
          * Ends the play session, drops the history when told to, drops the GPU
-         * previews and the pinned material keyed by the outgoing graph, clears
-         * the selection, and ends a preview through a camera of the outgoing
-         * world. What the selection becomes is the caller's. The editor's
-         * viewpoint is left where it is; restoreView puts back a scene's own.
+         * previews keyed by the outgoing graph, clears the selection, and ends
+         * a preview through a camera of the outgoing world. What the selection
+         * becomes is the caller's. The editor's viewpoint is left where it is;
+         * restoreView puts back a scene's own.
          *
          * Keep is for a restore that puts the very scene it snapshotted back at
          * the same slots; a swap that replaces every entity drops the history.
@@ -353,16 +402,38 @@ class SceneIOController {
          */
         void restoreView(const Scene& scene, const EditorState& state);
 
+        /// Where the open scene's copy of unsaved changes is kept; see SceneRecovery.
+        std::filesystem::path recoveryCopy() const { return recoveryCopyOf(m_currentScenePath); }
+        std::filesystem::path recoveryCopyOf(const std::string& scenePath) const;
+
+        /// Ask whether to take back a copy left newer than the scene just opened.
+        void offerRecovery();
+
+        /**
+         * @brief Put the copy's changes in place of the scene just opened, unsaved.
+         *
+         * @param ctx   Supplies the scene and assets replaced.
+         * @param state Takes the dirty flag and a toast.
+         */
+        void recover(FrameContext& ctx, EditorState& state);
+
     private:
         CameraControllerSystem& m_cameraController;
         MaterialPreviewSession& m_materialPreviews;
         /// Ends the running behaviors' session before a scene is replaced
         BehaviorSystem&         m_behaviors;
+        /// Holds the loading screen, whose assets are no import an open leaves behind
+        const LoadingSystem&    m_loading;
 
         std::string m_currentScenePath;  ///< The file Save writes; empty while the scene has none.
 
         /// The world as Play found it, and whether it is ejected, held until Stop. See PlaySnapshot.
         PlaySnapshot m_play;
+
+        float m_recoveryTimer     = 0.0f;   ///< Seconds dirty since the last copy.
+        bool  m_openRecoveryPopup = false;
+        /// A crash's copy offered and kept: no new copy is written over it until it is discarded.
+        bool  m_recoveryHeld      = false;
 
         bool        m_openSaveAsPopup = false;
         char        m_saveAsBuffer[256] = "scene.json";

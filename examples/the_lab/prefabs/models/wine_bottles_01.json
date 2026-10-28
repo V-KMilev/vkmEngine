@@ -91,6 +91,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_diff_1k.jpg"
@@ -167,7 +168,7 @@
         },
         "Transform": {
           "position": [
-            0.20999999344348907,
+            0.21,
             0.0,
             0.0
           ],
@@ -221,7 +222,7 @@
         },
         "Transform": {
           "position": [
-            0.4099999964237213,
+            0.41,
             0.0,
             0.0
           ],
@@ -248,7 +249,7 @@
         },
         "Transform": {
           "position": [
-            0.5999999642372131,
+            0.59999996,
             0.0,
             0.0
           ],

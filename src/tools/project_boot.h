@@ -1,13 +1,8 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <string>
-
-#include "core/fnv1a.h"
 
 namespace Vkm::Engine {
 
@@ -33,6 +28,20 @@ struct Project;
  *         already exists.
  */
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag);
+
+/**
+ * @brief The file bootHost chose for this run's log, and how long it was before the run.
+ *
+ * The log is appended to across runs; a reader of this run's lines starts at the offset.
+ * Empty before bootHost succeeds.
+ */
+struct HostLog {
+    std::filesystem::path path;
+    std::uintmax_t        start = 0;
+};
+
+/// See HostLog.
+const HostLog& hostLog();
 
 /**
  * @brief Whether argv[1] names a project directory rather than a flag.
@@ -102,33 +111,6 @@ enum class SceneBoot {
     Default,  ///< The project names no world; the default scene stands in.
     Failed    ///< The named entry scene did not load.
 };
-
-/**
- * @brief A hash of the scene file at @p path, line ends aside, or zero when there
- *        is no file.
- *
- * Both ends of a game must load the same world, as a slot is an entity's name on the wire; this
- * catches a stale scene. Zero (no file behind the world) compares equal to nothing, so such a host
- * neither offers nor demands agreement.
- *
- * @param path Absolute path of the entry scene, as SceneBootResult reports it.
- * @return The hash, or zero.
- */
-inline uint64_t fingerprintScene(const std::filesystem::path& path) {
-    if (path.empty()) return 0;
-
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return 0;
-
-    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (bytes.empty()) return 0;
-
-    // Without '\r': a Windows checkout may hold CRLF, and in JSON '\r' is only whitespace.
-    bytes.erase(std::remove(bytes.begin(), bytes.end(), '\r'), bytes.end());
-
-    const uint64_t hash = fnv1a64Bytes(bytes.data(), bytes.size());
-    return hash == 0 ? 1 : hash;  // zero is reserved for "no file"
-}
 
 /**
  * @brief Which world bootProjectWorld left standing, and the file it came from.

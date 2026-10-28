@@ -94,18 +94,17 @@ constexpr const char* ACTION_RESET     = "Toggle/Reset";
 constexpr const char* ACTION_CAMERA    = "Toggle/Camera";
 
 void installStressBindings(InputMap& map) {
-    const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
-    map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });
-    map.define(ACTION_SHADOWS,   { key(GLFW_KEY_2) });
-    map.define(ACTION_PROPS,     { key(GLFW_KEY_3) });
-    map.define(ACTION_PARTICLES, { key(GLFW_KEY_4) });
-    map.define(ACTION_PHYSICS,   { key(GLFW_KEY_5) });
-    map.define(ACTION_ANIM,      { key(GLFW_KEY_6) });
-    map.define(ACTION_DECALS,    { key(GLFW_KEY_7) });
-    map.define(ACTION_FOG,       { key(GLFW_KEY_8) });
-    map.define(ACTION_UI,        { key(GLFW_KEY_9) });
-    map.define(ACTION_RESET,     { key(GLFW_KEY_0) });
-    map.define(ACTION_CAMERA,    { key(GLFW_KEY_F) });
+    map.define(ACTION_LIGHTS,    { InputBinding::key(GLFW_KEY_1) });
+    map.define(ACTION_SHADOWS,   { InputBinding::key(GLFW_KEY_2) });
+    map.define(ACTION_PROPS,     { InputBinding::key(GLFW_KEY_3) });
+    map.define(ACTION_PARTICLES, { InputBinding::key(GLFW_KEY_4) });
+    map.define(ACTION_PHYSICS,   { InputBinding::key(GLFW_KEY_5) });
+    map.define(ACTION_ANIM,      { InputBinding::key(GLFW_KEY_6) });
+    map.define(ACTION_DECALS,    { InputBinding::key(GLFW_KEY_7) });
+    map.define(ACTION_FOG,       { InputBinding::key(GLFW_KEY_8) });
+    map.define(ACTION_UI,        { InputBinding::key(GLFW_KEY_9) });
+    map.define(ACTION_RESET,     { InputBinding::key(GLFW_KEY_0) });
+    map.define(ACTION_CAMERA,    { InputBinding::key(GLFW_KEY_F) });
 }
 
 // Generated paving: the arena ships no source art.
@@ -754,7 +753,7 @@ void StressArena::buildLights() {
 
     Light sunLight;
     sunLight.type           = LightType::Directional;
-    // Colour and intensity come from the sky, set in onStart.
+    // Color and intensity come from the sky, set in onStart.
     sunLight.castShadows    = true;
     sunLight.shadowDistance = 280.0f;
     scene().add(sun, std::move(sunLight));
@@ -928,7 +927,7 @@ void StressArena::buildModels() {
     // Every kind costs a cooked read at startup.
     const size_t kinds = std::min(usable.size(), static_cast<size_t>(std::max(1, modelKinds)));
 
-    // A model's embedded colour image is an albedo map (ModelPartNames::embeddedName).
+    // A model's embedded color image is an albedo map (ModelPartNames::embeddedName).
     const std::string colorSuffix = std::string("#") + Reflect::enumName(TextureUsage::Color);
     std::vector<MaterialHandle> materials;
     for (size_t i = 0; i < textureNames.size() && materials.size() < 8; ++i) {

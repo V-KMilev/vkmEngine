@@ -8,7 +8,7 @@
 
 // The ocean's ripple fields (GLOceanFields), repeating, a layer each, the longest ripples in 0.
 layout(binding = OCEAN_SLOT_RIPPLES) uniform sampler2DArray u_ripples;
-// Metres from each point of a square of sea to whatever breaks the water (GLOceanFields), and the
+// Metres from each point of a square of sea to whatever breaks the water (GLOceanShore), and the
 // square (shoreUV); w how far it looks round a point, 0 when there is none.
 layout(binding = OCEAN_SLOT_SHORE) uniform sampler2D u_oceanShoreMap;
 uniform vec4 u_oceanShore;
@@ -18,7 +18,7 @@ const float FOAM_ROUGHNESS = 0.7;
 // The squeeze over which foam's edge goes from none to covering.
 const float FOAM_EDGE = 0.06;
 // Past its edge, the squeeze over which foam thickens from thin lace to whole, and how much of
-// the water's colour thin foam hides: fresh foam is dense, and thins as it fades.
+// the water's color thin foam hides: fresh foam is dense, and thins as it fades.
 const float FOAM_BODY = 0.45;
 const float FOAM_THIN = 0.35;
 // The most foam's edge widens to hide its steps: where the squeeze changes faster than a pixel,
@@ -27,6 +27,8 @@ const float FOAM_BLUR = 0.2;
 // How far the ripples' squeeze moves foam's edge, in squeezes it rarely passes: a crest foams in
 // torn patches, and its foam thins to lace as it fades.
 const float FOAM_TEAR  = 0.35;
+// How much harder the ripples tear the foam a crest left than the crest's own.
+const float FOAM_AGED_TEAR = 2.0;
 // A waterline's foam: how far into its body it stands at the contact, in oceanFroth's past; how
 // far the finer ripples tear it, in their squeeze's rare reach; and how much wider a crest a
 // significant height high makes it. Torn more than it is solid, it froths as suds rather than a
@@ -38,7 +40,7 @@ const float WATERLINE_SWELL = 0.6;
 const float WATERLINE_FRAY  = 0.5;
 
 // The water's scattering (oceanScatter): through a backlit crest, toward the viewer, on the lit
-// side, and from the sky. Shares of the scattering colour, as albedo is of diffuse.
+// side, and from the sky. Shares of the scattering color, as albedo is of diffuse.
 const float SCATTER_THROUGH = 6.0;
 const float SCATTER_TOWARD  = 0.4;
 const float SCATTER_LIT     = 0.15;
@@ -130,14 +132,14 @@ float oceanCrest(float height) {
 // The light the water scatters back out of light @p radiance arriving along @p L (after Atlas's
 // ocean, GDC 2019): through a crest standing @p crest high when looking toward the light, most
 // where the face turns from it; toward the viewer from a face turned to them; and a little
-// wherever the light falls. @p colour is the water's scattering; the caller weighs it by what the
+// wherever the light falls. @p color is the water's scattering; the caller weighs it by what the
 // surface lets in, one less its Fresnel.
-vec3 oceanScatter(vec3 colour, vec3 N, vec3 V, vec3 L, vec3 radiance, float crest) {
+vec3 oceanScatter(vec3 color, vec3 N, vec3 V, vec3 L, vec3 radiance, float crest) {
     float through = max(crest, 0.0) * pow(clamp(dot(L, -V), 0.0, 1.0), 4.0) * pow(0.5 - 0.5 * dot(L, N), 3.0);
     float toward  = pow(clamp(dot(V, N), 0.0, 1.0), 2.0);
     float lit     = clamp(dot(N, L), 0.0, 1.0);
     float share   = SCATTER_THROUGH * through + SCATTER_TOWARD * toward + SCATTER_LIT * lit;
-    return colour / PI * radiance * share;
+    return color / PI * radiance * share;
 }
 
 // How much of the shore's square a waterline fades out over at its edges.
@@ -167,6 +169,68 @@ vec2 oceanShoreAt(vec2 point) {
     return vec2(texture(u_oceanShoreMap, uv).r, say);
 }
 
+// GGX's alpha for water of perceptual roughness @p roughness whose ripples, too fine for the pixel,
+// spread its slope by @p variance: alpha squared takes twice their variance, as Beckmann's would.
+float waterAlpha(float roughness, float variance) {
+    const float alpha = roughness * roughness;
+    return sqrt(alpha * alpha + 2.0 * variance);
+}
+
+// Seconds a flowing water's ripples run before they start over (bodyWater), near enough: short
+// enough that they never stretch far. The cycle taken is the ripples' own loop over a whole number,
+// so neither jumps where the loop ends.
+const float FLOW_CYCLE = 2.0;
+
+// Water that is not the sea (MaterialAsset::water), at @p worldPos on a surface of unit normal
+// @p normal whose +U runs along @p tangent: the scene's ripples on it, @p scale of them, running
+// along +U at @p speed metres a second. A flow reads the fields twice, half a cycle
+// apart, each faded in and out over its cycle as it runs - the flow map's two phases (Vlachos
+// 2010) - so the ripples carry on downstream and never stretch.
+OceanShade bodyWater(vec3 normal, vec3 tangent, vec3 worldPos, float speed, float scale) {
+    vec4 ripples = vec4(0.0);
+    float spanned = 0.0;
+    if (u_ocean.squeeze.y > 0.0) {
+        const vec3  along   = tangent - normal * dot(normal, tangent);
+        const vec2  run     = dot(along.xz, along.xz) > 1e-8 ? normalize(along.xz) : vec2(0.0);
+        const vec2  flow    = run * speed;
+        // The ripples' loop in seconds, from the turn a second it makes, and the cycles it holds.
+        const float turning = u_ocean.rippling.y;
+        const float loop    = turning > 0.0 ? 2.0 * PI / turning : FLOW_CYCLE;
+        const float cycles  = max(round(loop / FLOW_CYCLE), 1.0);
+        const float cycle   = loop / cycles;
+        const int   phases  = speed != 0.0 ? 2 : 1;
+        // Where in its cycle a place is, wandering over some fifteen metres, so the cycles' joins do not
+        // fall on the whole surface at once (Vlachos 2010); still in time, so the loop stays whole.
+        const float wander = 0.25 * sin(0.37 * worldPos.x + 0.21 * worldPos.z)
+            + 0.25 * sin(0.17 * worldPos.x - 0.43 * worldPos.z);
+        float shares = 0.0;
+        for (int p = 0; p < phases; ++p) {
+            const float into   = fract(u_ocean.rippling.x * cycles + 0.5 * float(p) + wander);
+            const float weight = phases == 1 ? 1.0 : 1.0 - abs(2.0 * into - 1.0);
+            shares += weight * weight;
+            const vec2  at     = worldPos.xz - flow * (into - 0.5) * cycle;
+            vec4 fields[OCEAN_RIPPLE_FIELDS];
+            fields[0] = smoothRipples(at * u_ocean.tiles.x, 0.0);
+            fields[1] = texture(u_ripples, vec3(at * u_ocean.tiles.y, 1.0));
+            fields[2] = texture(u_ripples, vec3(at * u_ocean.tiles.z, 2.0));
+            ripples += weight * (fields[0] + fields[1] + fields[2]);
+            for (int f = 0; f < OCEAN_RIPPLE_FIELDS; ++f) {
+                spanned += weight * (fields[f].w - dot(fields[f].xy, fields[f].xy));
+            }
+        }
+        // Two phases blended keep their slopes' spread only scaled by the weights' length: midway
+        // they would halve its variance, and the ripples pulse (Heitz and Neyret 2018).
+        ripples /= sqrt(max(shares, 1e-4));
+    }
+    OceanShade shade;
+    // The ripples' slopes are the height's change along world X and Z: they tilt the surface's normal.
+    shade.normal   = normalize(normal - scale * vec3(ripples.x, 0.0, ripples.y));
+    shade.tangent  = tangent;
+    shade.variance = 0.5 * scale * scale * max(spanned, 0.0);
+    shade.pressed  = 0.0;
+    return shade;
+}
+
 // The water at @p worldPos, resting at @p rest with the waves' tangents @p alongX and @p alongZ
 // and lifted @p height; @p lingering is the foam a crest left there. @p foam is its whitecaps and
 // waterline, 0..1.
@@ -191,9 +255,12 @@ OceanShade waterSurface(
     OceanShade sea = oceanShadeAt(rest, alongX, alongZ, fields);
     // Foam's share of the ripples dies away with the waves, as their light does.
     for (int f = 0; f < OCEAN_RIPPLE_FIELDS; ++f) fields[f] *= oceanReach(rest);
-    // Foam where a crest squeezes the water now or did a moment ago, its edge torn by the ripples.
-    const float whitecap = max(sea.pressed, lingering) + oceanTear(fields);
-    foam = oceanFoam(whitecap, fwidth(whitecap));
+    // Foam where a crest squeezes the water now, dense, its edge torn by the ripples; and where one
+    // did a moment ago, faded to lace: thin, and torn harder.
+    const float tear  = oceanTear(fields);
+    const float fresh = sea.pressed + tear;
+    const float aged  = lingering + FOAM_AGED_TEAR * tear;
+    foam = max(oceanFoam(fresh, fwidth(fresh)), FOAM_THIN * oceanFoam(aged, fwidth(aged)));
     // A waterline: water near whatever breaks it, torn by the ripples and washed out and back by
     // the waves.
     if (u_oceanShore.w > 0.0) {

@@ -17,6 +17,7 @@
 
 namespace Vkm::GL {
     class Context;
+    class RenderBuffer;
 }
 
 namespace Vkm::Engine {
@@ -30,7 +31,7 @@ struct RenderView;
  * @brief Bakes an irradiance volume, and lights it again when the lights or the sky change.
  *
  * The bake captures what every grid probe sees as surfaces, not as light: a small cube of
- * surfels (shaders/irradiance/surfel.glsl) - the nearest surface through each texel, the colour
+ * surfels (shaders/irradiance/surfel.glsl) - the nearest surface through each texel, the color
  * it bounces, its normal, distance and emission - drawn into the probe's tile of an atlas that
  * stays on the GPU. A compute pass then lights every surfel as the forward pass lights a diffuse
  * surface and projects what each probe sees to SH-L1 (shaders/irradiance/relight). Light is a
@@ -61,6 +62,13 @@ struct RenderView;
 class GLIrradianceBaker {
     public:
         static constexpr int FACE_SIZE = 16;  ///< Per-face surfel resolution.
+
+        // The words of the relight's light list, as shaders/irradiance/relight reads them
+        // (RELIGHT_* there): each list a count and where it begins, for the directional lights,
+        // for those reaching out of the box, then one a cell.
+        static constexpr int RELIGHT_DIRECTIONAL_HEAD = 0;
+        static constexpr int RELIGHT_OUTSIDE_HEAD     = 2;
+        static constexpr int RELIGHT_CELL_HEADS       = 4;
 
         /// Gathers per lighting: the most times light reaching a probe has bounced off a surface.
         static constexpr int BOUNCES = 6;
@@ -105,11 +113,24 @@ class GLIrradianceBaker {
         );
 
         /**
-         * @brief Forget what the volume was baked from, so the next update() bakes it.
+         * @brief Forget what the volume was baked from, so the next update() bakes it, and stop
+         *        showing @p volume meanwhile.
          *
          * For a replaced world: the same box and grid, a different scene.
          */
-        void invalidate() { m_bakedFrom.invalidate(); }
+        void invalidate(GLIrradianceVolume& volume) {
+            m_bakedFrom.invalidate();
+            volume.setUnbaked();
+        }
+
+        /// Whether a bake is part-way through its captures, a slice a frame.
+        bool baking() const { return m_capturing; }
+
+        /// Probes a bake under way has captured, of bakingCells().
+        uint32_t cellsCaptured() const { return m_captured; }
+
+        /// Probes the bake under way captures in all; 0 with none under way.
+        uint32_t bakingCells() const { return m_capturing ? m_cells : 0; }
 
     private:
         /**
@@ -137,19 +158,41 @@ class GLIrradianceBaker {
 
     private:
         /**
-         * @brief Capture every probe of @p data and light the grid into @p volume.
+         * @brief Start a bake of @p data: size the grids and the atlas and clear it, for
+         *        captureSlice() to fill.
+         *
+         * @param gl     Live GL context.
+         * @param volume Destination SH volume; what it shows stays until the bake trades its grid in.
+         * @param data   The volume's world box + grid resolution, kept for the slices.
+         */
+        void beginBake(Vkm::GL::Context& gl, GLIrradianceVolume& volume, const IrradianceVolumeData& data);
+
+        /**
+         * @brief Capture the bake's next probes, for up to @p budget seconds, and light the grid
+         *        into @p volume once the last is in.
+         *
+         * A probe's capture draws the scene six times, so a whole grid can take seconds: a slice a
+         * frame keeps frames coming, a loading screen's among them. At least one probe a call.
          *
          * @param gl        Live GL context the captures draw through.
-         * @param volume    Destination SH volume (resized to the grid by the caller).
-         * @param data      The volume's world box + grid resolution.
+         * @param volume    Destination SH volume.
          * @param view      Frame snapshot supplying the geometry + lights to capture.
          * @param glView    GPU resource mirror for material/mesh lookups.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
+         * @param budget    Seconds this call may capture for; 0 or less captures every probe left.
          */
-        void bake(
+        void captureSlice(
             Vkm::GL::Context& gl,
             GLIrradianceVolume& volume,
-            const IrradianceVolumeData& data,
+            const RenderView& view,
+            GLView& glView,
+            const GLIBL& globalIBL,
+            float budget
+        );
+
+        /// Light the captured surfels into @p volume, and say how it went.
+        void finishBake(
+            GLIrradianceVolume& volume,
             const RenderView& view,
             GLView& glView,
             const GLIBL& globalIBL
@@ -193,14 +236,6 @@ class GLIrradianceBaker {
          * @param probes Probes the atlas holds a tile for.
          */
         void ensureAtlas(uint32_t probes);
-
-        /**
-         * @brief Draw every probe's surfel cube into its tile of the atlas.
-         *
-         * @param gl   Live GL context the captures draw through.
-         * @param data The volume's world box + grid resolution.
-         */
-        void captureSurfels(Vkm::GL::Context& gl, const IrradianceVolumeData& data);
 
         /**
          * @brief Run every gather over the surfels at once and trade the last into @p volume.
@@ -265,6 +300,13 @@ class GLIrradianceBaker {
         std::unique_ptr<Vkm::GL::Texture2D> m_atlas;            ///< Every probe's surfels, a tile each.
         Vkm::GL::FrameBuffer                m_fbo;
         uint32_t                            m_tilesPerRow = 0;  ///< Probe tiles across the atlas.
+
+        /// A depth as large as the atlas, for a bake's captures alone: a relight reads the surfels.
+        std::unique_ptr<Vkm::GL::RenderBuffer> m_captureDepth;
+        IrradianceVolumeData m_baking;          ///< The box and grid the bake under way captures.
+        uint32_t             m_cells     = 0;   ///< Its probes.
+        uint32_t             m_captured  = 0;   ///< Of them, captured.
+        bool                 m_capturing = false;
 
         /// probeFillWeights, as the fill reads it.
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_repair;

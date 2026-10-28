@@ -37,6 +37,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/wooden_military_crate/textures/wooden_military_crate_diff_1k.jpg"
@@ -82,19 +83,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.8503996729850769,
+              "maxDistance": 0.8503997,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 21.768110275268555,
+              "maxDistance": 21.76811,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 56.731502532958984,
+              "maxDistance": 56.731503,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 113.46300506591797,
+              "maxDistance": 113.463005,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0:lod3"
             }
           ]
@@ -113,7 +114,7 @@
         "Transform": {
           "position": [
             0.0,
-            0.03422325849533081,
+            0.03422326,
             0.0
           ],
           "rotation": [
@@ -138,19 +139,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.6238548159599304,
+              "maxDistance": 0.6238548,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh1"
             },
             {
-              "maxDistance": 17.277950286865234,
+              "maxDistance": 17.27795,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh1:lod1"
             },
             {
-              "maxDistance": 54.1782341003418,
+              "maxDistance": 54.178234,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh1:lod2"
             },
             {
-              "maxDistance": 108.3564682006836,
+              "maxDistance": 108.35647,
               "mesh": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh1:lod3"
             }
           ]
@@ -169,8 +170,8 @@
         "Transform": {
           "position": [
             0.0,
-            0.4156857132911682,
-            -0.23233745992183685
+            0.4156857,
+            -0.23233746
           ],
           "rotation": [
             1.0,
@@ -204,8 +205,8 @@
         "Transform": {
           "position": [
             0.0,
-            0.39665794372558594,
-            0.23507647216320038
+            0.39665794,
+            0.23507647
           ],
           "rotation": [
             1.0,

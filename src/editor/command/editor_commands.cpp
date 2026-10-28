@@ -46,6 +46,14 @@ EntityId liveEntity(const Scene& scene, EntityId captured) {
     return scene.entityAt(captured.slot());
 }
 
+// The entity in @p slot if it is a child of @p parent, to insert before; none appends.
+EntityId siblingUnder(const Scene& scene, EntityId parent, uint32_t slot) {
+    if (slot == 0 || !scene.isAliveAtIndex(slot)) return {};
+    const EntityId sibling = scene.entityAt(slot);
+    const Hierarchy* node = scene.tryGet<Hierarchy>(sibling);
+    return node && node->parent == parent ? sibling : EntityId{};
+}
+
 // createEntityAt asserts on a live slot, and a step reclaiming one cannot rule
 // that out: the world may have been rebuilt underneath the history.
 EntityId reclaimSlot(Scene& scene, uint32_t slot) {
@@ -78,13 +86,13 @@ bool CompositeCommand::tryMerge(Command& incoming) {
     // The label is the literal one call site passes, so it is the group's identity.
     auto* p = dynamic_cast<CompositeCommand*>(&incoming);
     if (!p || std::strcmp(p->m_label, m_label) != 0) return false;
-    for (auto& step : p->m_commands) {
-        bool merged = false;
-        for (auto& held : m_commands) {
-            if (held->tryMerge(*step)) {
-                merged = true;
-                break;
-            }
+    // A gesture's steps come in the order its first did, each into the held step at its own place:
+    // that one is asked first, so a drag over a large selection merges in a pass, not a search each.
+    for (size_t i = 0; i < p->m_commands.size(); ++i) {
+        std::unique_ptr<Command>& step = p->m_commands[i];
+        bool merged = i < m_commands.size() && m_commands[i]->tryMerge(*step);
+        for (size_t h = 0; !merged && h < m_commands.size(); ++h) {
+            merged = h != i && m_commands[h]->tryMerge(*step);
         }
         if (!merged) m_commands.push_back(std::move(step));
     }
@@ -229,15 +237,38 @@ void TerrainEditCommand::redo(Scene&, CommandHost&) {
 }
 
 void TerrainEditCommand::undo(Scene&, CommandHost&) {
+    if (!m_resources->isAlive(m_handle)) return;
+    m_after = TerrainAsset(m_resources->get(m_handle));
     step(m_before);
 }
 
 bool TerrainEditCommand::tryMerge(Command& incoming) {
     auto* p = dynamic_cast<TerrainEditCommand*>(&incoming);
-    if (!p || p->m_handle != m_handle || std::strcmp(p->m_label, m_label) != 0) return false;
-    // Moved, not copied: a terrain's grid is megabytes, and the incoming step is spent.
-    m_after = std::move(p->m_after);
-    return true;
+    // The asset already holds the incoming edit; this step's before is still the gesture's.
+    return p && continues(p->m_handle, p->m_label);
+}
+
+void TerrainEditCommand::apply(
+    ResourceManager& resources,
+    CommandHost& host,
+    TerrainHandle handle,
+    const std::function<void(TerrainAsset&)>& edit,
+    const char* label
+) {
+    const auto* open = dynamic_cast<const TerrainEditCommand*>(host.commandStack().mergeTarget());
+    std::unique_ptr<TerrainEditCommand> step;
+    if (!open || !open->continues(handle, label)) {
+        TerrainAsset before(resources.get(handle));
+        step = std::make_unique<TerrainEditCommand>(resources, handle, std::move(before), label);
+    }
+    edit(resources.edit(handle));
+    resources.commit(handle);
+    if (step) host.pushStep(std::move(step));
+    else      host.markSceneDirty();
+}
+
+bool TerrainEditCommand::continues(TerrainHandle handle, const char* label) const {
+    return handle == m_handle && std::strcmp(label, m_label) == 0;
 }
 
 namespace {
@@ -462,6 +493,7 @@ SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
     if (!scene.isAlive(root)) return s;
     if (const Hierarchy* node = scene.tryGet<Hierarchy>(root)) {
         s.rootParentSlot = node->parent.slot();
+        s.rootNextSlot   = node->nextSibling.slot();
     }
     // The set a delete destroys: parents before children, siblings in order.
     for (const EntityId id : HierarchyOperations::collectSubtree(scene, root)) {
@@ -488,7 +520,14 @@ EntityId SubtreeSnapshot::liveRoot(const Scene& scene) const {
     return root;
 }
 
-EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
+namespace {
+
+// SubtreeSnapshot::apply()'s work: every node of @p snap's entity, in node order; null where one did
+// not come back.
+std::vector<EntityId> applyNodes(const SubtreeSnapshot& snap, Scene& scene, SnapshotSlots slots) {
+    const auto&    nodes          = snap.nodes;
+    const uint32_t rootParentSlot = snap.rootParentSlot;
+    const uint32_t rootNextSlot   = snap.rootNextSlot;
     // Pass 1: recreate every entity, keeping the ids rather than asking the scene
     // later - a refused slot holds an unrelated entity. Null: did not come back.
     std::vector<EntityId> live(nodes.size());
@@ -522,7 +561,7 @@ EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
             if (nodes[i].snap.slotIndex != stored.slot()) continue;
             return live[i];
         }
-        return scene.isAlive(stored) ? stored : EntityId{};
+        return slots != SnapshotSlots::Foreign && scene.isAlive(stored) ? stored : EntityId{};
     };
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -541,7 +580,8 @@ EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
         const EntityId child = live[i];
         if (!child) continue;
 
-        const uint32_t parentSlot = (node.parentSlot != 0) ? node.parentSlot : rootParentSlot;
+        const uint32_t rootParent = slots == SnapshotSlots::Foreign ? 0 : rootParentSlot;
+        const uint32_t parentSlot = (node.parentSlot != 0) ? node.parentSlot : rootParent;
         if (parentSlot == 0) continue;  // top-level
 
         // A parent inside the subtree is what pass 1 brought back (null if its
@@ -557,19 +597,56 @@ EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
         if (!ours) parent = scene.entityAt(parentSlot);
 
         if (!scene.isAlive(parent)) continue;  // external parent died in the meantime
-        HierarchyOperations::setParent(scene, child, parent);
+        // The root back where it stood among its siblings.
+        const EntityId before = i == 0 ? siblingUnder(scene, parent, rootNextSlot) : EntityId{};
+        HierarchyOperations::setParent(scene, child, parent, before);
     }
 
+    return live;
+}
+
+} // namespace
+
+EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
+    const std::vector<EntityId> live = applyNodes(*this, scene, slots);
     return live.empty() ? EntityId{} : live.front();
 }
 
-void SubtreeReplaceCommand::swapTo(Scene& scene, CommandHost& host, const SubtreeSnapshot& to) {
+std::vector<EntityId> SubtreeSnapshot::applyTogether(
+    Scene& scene,
+    const std::vector<SubtreeSnapshot>& trees
+) {
+    // One snapshot of them all, so a reference from one to another is re-stamped, not dropped.
+    SubtreeSnapshot all;
+    std::vector<size_t> roots;
+    roots.reserve(trees.size());
+    for (const SubtreeSnapshot& tree : trees) {
+        roots.push_back(all.nodes.size());
+        all.nodes.insert(all.nodes.end(), tree.nodes.begin(), tree.nodes.end());
+    }
+    const std::vector<EntityId> live = applyNodes(all, scene, SnapshotSlots::Foreign);
+    std::vector<EntityId> made;
+    made.reserve(roots.size());
+    for (size_t i = 0; i < roots.size(); ++i) {
+        const bool empty = trees[i].nodes.empty();
+        made.push_back(empty ? EntityId{} : live[roots[i]]);
+    }
+    return made;
+}
+
+void SubtreeReplaceCommand::swap(
+    Scene& scene,
+    CommandHost& host,
+    const SubtreeSnapshot& from,
+    const SubtreeSnapshot& to
+) {
     if (to.nodes.empty()) return;
     // Both snapshots share the root's slot, so tearing down what is there and
-    // applying the target swaps in either direction.
-    const EntityId root = to.liveRoot(scene);
+    // applying the target swaps in either direction. The root is checked against the side it is
+    // on: a step may change what describes it (an unpacked instance loses its prefab uid).
+    const EntityId root = from.liveRoot(scene);
     if (!root) {
-        refuseOtherEntity(host, label(), to.nodes.front().snap.slotIndex);
+        refuseOtherEntity(host, label(), from.nodes.front().snap.slotIndex);
         return;
     }
     HierarchyOperations::destroyHierarchy(scene, root);
@@ -696,11 +773,18 @@ bool PrefabOverrideCommand::tryMerge(Command& incoming) {
 }
 
 namespace {
-void applyReparent(Scene& scene, EntityId child, EntityId capturedParent, const Transform& local) {
+void applyReparent(
+    Scene& scene,
+    EntityId child,
+    EntityId capturedParent,
+    EntityId capturedNext,
+    const Transform& local
+) {
     if (capturedParent) {
         const EntityId parent = liveEntity(scene, capturedParent);
         if (!parent) return;
-        HierarchyOperations::setParent(scene, child, parent);
+        const EntityId next = liveEntity(scene, capturedNext);
+        HierarchyOperations::setParent(scene, child, parent, siblingUnder(scene, parent, next.slot()));
     } else {
         HierarchyOperations::removeFromParent(scene, child);
     }
@@ -711,13 +795,13 @@ void applyReparent(Scene& scene, EntityId child, EntityId capturedParent, const 
 void ReparentCommand::redo(Scene& scene, CommandHost& host) {
     const EntityId child = liveEntity(scene, m_child);
     if (!child) return;
-    applyReparent(scene, child, m_newParent, m_after);
+    applyReparent(scene, child, m_newParent, m_newNext, m_after);
 }
 
 void ReparentCommand::undo(Scene& scene, CommandHost& host) {
     const EntityId child = liveEntity(scene, m_child);
     if (!child) return;
-    applyReparent(scene, child, m_oldParent, m_before);
+    applyReparent(scene, child, m_oldParent, m_oldNext, m_before);
 }
 
 void pushActiveCamera(Scene& scene, ResourceManager& resources, CommandHost& host, EntityId target) {

@@ -21,7 +21,7 @@ struct TextureAsset : public Resource {
     bool loading                   = false;
 
     /**
-     * @brief Whether the texture stores colour in sRGB.
+     * @brief Whether the texture stores color in sRGB.
      *
      * Read off the internal format, which a decode in flight already carries.
      *

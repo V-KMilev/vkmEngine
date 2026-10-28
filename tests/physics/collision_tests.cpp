@@ -532,6 +532,101 @@ void testOffsetMeshPartCollides() {
     check("  rather than falling through it", y > 0.0f);
 }
 
+// A triangle is solid on the side its winding says; a mirroring scale reverses the winding, and
+// must reverse it back, or a mirrored floor is solid only from below.
+void testAMirroredMeshPartFacesOut() {
+    std::printf("A mesh part mirrored by its scale:\n");
+
+    Scene scene;
+    const EntityId floorId = scene.createEntity();
+    scene.add<Transform>(floorId, Transform{});
+    Rigidbody floorBody;
+    floorBody.motion = RigidbodyMotion::Static;
+    scene.add<Rigidbody>(floorId, std::move(floorBody));
+
+    Collider collider;
+    collider.parts.clear();
+    const MeshHandle grid = addTestMesh(makeGridMesh(8, 12.0f));
+    const glm::vec3 mirror = {-1.0f, 1.0f, 1.0f};
+    check("a mirrored mesh to stand on", addMeshCollider(collider, grid, meshLibrary(), mirror) > 0);
+    scene.add<Collider>(floorId, std::move(collider));
+
+    const EntityId faller = addFallingBody(scene, {0.5f, 6.0f, 0.5f}, 0.4f);
+    simulate(scene, 400);
+
+    const float y = scene.get<Transform>(faller).position.y;
+    check("  a body lands on it", y > 0.0f && y < 1.0f);
+}
+
+// A floor of triangles has no thickness, so a small body fast enough to cross it in one tick would
+// be past it with nothing touched. The tick's path is swept, and it lands.
+void testASmallFastBodyLandsOnAThinFloor() {
+    std::printf("A small, fast body falling onto a mesh floor:\n");
+
+    int landed = 0;
+    int dropped = 0;
+    for (const float speed : {8.0f, 20.0f, 40.0f}) {
+        for (const float half : {0.05f, 0.1f}) {
+            Scene scene;
+            addMeshBody(scene, makeGridMesh(16, 16.0f));
+            const EntityId body = addFallingBody(scene, {0.3f, 2.0f, 0.2f}, half);
+            scene.get<Rigidbody>(body).linearVelocity = {0.0f, -speed, 0.0f};
+            simulate(scene, 120);
+            const float y = scene.get<Transform>(body).position.y;
+            ++dropped;
+            if (y > 0.0f && y < 0.5f) ++landed;
+        }
+    }
+    std::printf("      %d of %d landed\n", landed, dropped);
+    check("every one lands, however small and fast", landed == dropped);
+}
+
+// A thin body sliding along a floor moves past its thickness every tick, so the sweep that stops a
+// fast body runs while it rests on the floor: touching it is not crossing it, and it slides on.
+void testAThinBodySlidesAlongAFloor() {
+    std::printf("A thin body sliding along a floor:\n");
+
+    for (const bool mesh : {false, true}) {
+        Scene scene;
+        const EntityId floor = mesh
+            ? addMeshBody(scene, makeGridMesh(16, 16.0f))
+            : addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 8.0f});
+        scene.get<Rigidbody>(floor).friction = 0.0f;
+        const EntityId plank = addFallingBody(scene, {-3.0f, 0.02f, 0.2f}, 0.3f);
+        scene.get<Collider>(plank).parts[0].halfExtents = {0.3f, 0.02f, 0.3f};
+        Rigidbody& body = scene.get<Rigidbody>(plank);
+        body.friction       = 0.0f;
+        body.linearVelocity = {3.0f, 0.0f, 0.0f};
+        simulate(scene, 60);
+        const glm::vec3 at = scene.get<Transform>(plank).position;
+        std::printf("      on a %s floor: x %.2f, y %.3f\n", mesh ? "mesh" : "box", at.x, at.y);
+        const char* name = mesh ? "  it slides on a mesh floor" : "it slides a second's run on a box floor";
+        check(name, at.x > -0.3f && at.y > 0.0f && at.y < 0.1f);
+    }
+}
+
+// The sweep that stops a fast body asks what the body collides with as collision does, both ways
+// round: a floor that does not collide with the body's layer is not one it can be stopped on.
+void testAFastBodyCrossesWhatItDoesNotCollideWith() {
+    std::printf("A fast body over a floor that does not collide with it:\n");
+
+    Scene scene;
+    const EntityId floor = addMeshBody(scene, makeGridMesh(16, 16.0f));
+    scene.get<Rigidbody>(floor).collidesWith = 1;
+    const EntityId body = addFallingBody(scene, {0.3f, 0.5f, 0.2f}, 0.05f);
+    scene.get<Rigidbody>(body).layer          = 2;
+    scene.get<Rigidbody>(body).linearVelocity = {0.0f, -40.0f, 0.0f};
+    simulate(scene, 1);
+    check("it is not stopped on it", scene.get<Transform>(body).position.y < 0.0f);
+
+    scene.get<Rigidbody>(floor).collidesWith = ~0;
+    Transform& at = scene.get<Transform>(body);
+    at.position = {0.3f, 0.5f, 0.2f};
+    scene.get<Rigidbody>(body).linearVelocity = {0.0f, -40.0f, 0.0f};
+    simulate(scene, 1);
+    check("  one that does is", scene.get<Transform>(body).position.y > 0.0f);
+}
+
 // A terrain collides where its triangles are, the surface TerrainAsset::heightAt reads, and
 // where a brush moved them as soon as it has.
 void testATerrainCollidesAsItsHeights() {
@@ -1237,6 +1332,10 @@ void runPhysicsCollisionTests() {
     testAShapeRestsOnATriangleByItsWholeFace();
     testALedgeRiserDoesNotLaunchWhatBrushesIt();
     testOffsetMeshPartCollides();
+    testAMirroredMeshPartFacesOut();
+    testASmallFastBodyLandsOnAThinFloor();
+    testAThinBodySlidesAlongAFloor();
+    testAFastBodyCrossesWhatItDoesNotCollideWith();
     testAMeshColliderFollowsItsMesh();
     testATerrainCollidesAsItsHeights();
     testAMeshBuildsOneTreeEverywhere();

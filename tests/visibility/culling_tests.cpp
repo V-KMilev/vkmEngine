@@ -10,12 +10,14 @@
 #include "core/math/frustum.h"
 #include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/camera.h"
+#include "ecs/component/render/decal.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/ocean/ocean_system.h"
 #include "system/render/render_view.h"
+#include "system/terrain/terrain_frame.h"
 #include "system/visibility/culling.h"
 #include "system/visibility/host_view.h"
 #include "system/visibility/visibility.h"
@@ -150,7 +152,7 @@ void testALightsSourceIsItsOwn() {
     VisibilitySystem visibility;
     visibility.update(frame.ctx);
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     const LightData* sunData  = lowestSlotDirectional(view.lights);
     const LightData* lampData = nullptr;
@@ -161,11 +163,51 @@ void testALightsSourceIsItsOwn() {
     check("  and a spot's is its own, in metres", lampData && nearly(lampData->sourceRadius, 0.2f));
 
     scene.get<Light>(sun).sourceRadius = 3.0f;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     sunData = lowestSlotDirectional(view.lights);
     check(
         "a disc wider than a quarter turn is held to one",
         sunData && nearly(sunData->sourceRadius, glm::quarter_pi<float>())
+    );
+}
+
+// A decal draws a box over the screen, its material bound for it: one behind the camera is
+// work for nothing, and a material's decals drawn apart bind it again each time.
+void testTheDecalsAreTheCamerasAMaterialsTogether() {
+    std::printf("What decals reach the frame:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    scene.add(eye, Camera{});
+
+    const auto decal = [&](const glm::vec3& at, uint32_t material) {
+        const EntityId id = scene.createEntity();
+        Transform placed;
+        placed.position = at;
+        scene.add(id, placed);
+        Decal projector;
+        projector.material.key = StorageIndex{material, 1};
+        scene.add(id, std::move(projector));
+    };
+    decal({0.0f, 0.0f, -5.0f}, 2);
+    decal({0.0f, 0.0f, 5.0f}, 1);   // behind
+    decal({1.0f, 0.0f, -6.0f}, 1);
+    decal({-1.0f, 0.0f, -7.0f}, 2);
+
+    VisibilitySystem visibility;
+    visibility.update(frame.ctx);
+    RenderView view;
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    check("a decal behind the camera is left out", view.decals.size() == 3);
+    const bool together = view.decals.size() == 3 && view.decals[0].material.id() == 1
+        && view.decals[1].material.id() == 2 && view.decals[2].material.id() == 2;
+    check("  and a material's are together, in the scene's order", together);
+    check(
+        "  each keeping its place",
+        together && nearly(view.decals[1].model[3].z, -5.0f) && nearly(view.decals[2].model[3].z, -7.0f)
     );
 }
 
@@ -211,7 +253,7 @@ void testTheFrameCarriesWhatTheCameraCannotSee() {
     check("the camera resolved", frame.ctx.visibility && frame.ctx.visibility->hasCamera);
 
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     const RenderObjects& objects = *view.objects;
     check("a mesh behind the camera is not one the camera draws", objects.visible.empty());
@@ -268,7 +310,7 @@ void testAWorldWithNoMeshesHasNoCasters() {
     );
 
     RenderView view;
-    view.build(bare, result, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.build(bare, result, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     check("  so the frame hands the shadow pass none", view.objects->casterCount == 0);
 }
 
@@ -298,21 +340,21 @@ void testAMeshWithNoMaterialCastsNothing() {
     visibility.update(frame.ctx);
 
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     check("a mesh in view with no material is not drawn", view.objects->visible.empty());
     check("  and casts no shadow either", view.objects->casterCount == 0 && view.objects->scene.empty());
 }
 
-// A `waves` surface casts no shadow while an ocean moves it - a held tile would picture one moment
+// A Sea surface casts no shadow while an ocean moves it - a held tile would picture one moment
 // of its waves - and with no ocean draws, and casts, as any surface does.
 void testWaterCastsUnlessTheSeaMovesIt() {
-    std::printf("What shadow a waves surface casts:\n");
+    std::printf("What shadow a Sea surface casts:\n");
 
     Scene scene;
     TestFrame frame(scene);
     const MeshHandle cube = frame.resources.add(generateCube(), "culling:pool");
     MaterialAsset waterAsset;
-    waterAsset.waves = true;
+    waterAsset.water = WaterKind::Sea;
     const MaterialHandle water = frame.resources.add(std::move(waterAsset), "culling:water");
 
     const EntityId eye = scene.createEntity();
@@ -1080,6 +1122,57 @@ void testAnAssetChangeReworksOnlyWhatReadsIt() {
     check("  and then nothing again", !objects.allChanged && objects.changed.empty());
 }
 
+// A plant's key names it to what is baked from it, so one terrain's plants grown again must not
+// rename another's.
+void testAPlantIsKeyedWithinItsOwnTerrain() {
+    std::printf("Two terrains' plants, the first's grown again:\n");
+    FixedWorld world;
+    const EntityId first  = world.scene.createEntity();
+    const EntityId second = world.scene.createEntity();
+    const auto plant = [&](EntityId terrain, float x) {
+        TerrainPlantDraw draw;
+        draw.entity      = terrain;
+        draw.mesh        = world.cube;
+        draw.material    = world.paint;
+        draw.model       = glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.0f, -5.0f));
+        draw.bounds      = Math::AABB{glm::vec3(x - 0.5f, -0.5f, -5.5f), glm::vec3(x + 0.5f, 0.5f, -4.5f)};
+        draw.maxDistance = 100.0f;
+        return draw;
+    };
+    TerrainFrame terrains;
+    const auto relist = [&]() {
+        TerrainPlantGroup group;
+        group.count       = static_cast<uint32_t>(terrains.plants.size());
+        group.bounds      = terrains.plants.front().bounds;
+        group.maxDistance = 100.0f;
+        for (const TerrainPlantDraw& draw : terrains.plants) group.bounds.expand(draw.bounds);
+        terrains.plantGroups = {group};
+        ++terrains.plantsRevision;
+    };
+    terrains.plants = {plant(first, 0.0f), plant(second, 1.0f), plant(second, 2.0f)};
+    relist();
+    world.frame.ctx.terrain = &terrains;
+
+    const auto keysOf = [&](EntityId terrain) {
+        const Visibility&     seen = *world.frame.ctx.visibility;
+        std::vector<uint64_t> keys;
+        for (size_t i = 0; i < seen.entities.size(); ++i) {
+            if (seen.entities[i] == terrain) keys.push_back(seen.objects.keys[i]);
+        }
+        return keys;
+    };
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    const std::vector<uint64_t> before = keysOf(second);
+    check("the second terrain's plants are listed", before.size() == 2);
+
+    terrains.plants.insert(terrains.plants.begin() + 1, plant(first, -1.0f));
+    relist();
+    visibility.update(world.frame.ctx);
+    check("the first's grown again leaves the second's keys as they were", keysOf(second) == before);
+    check("  while the first's has one more", keysOf(first).size() == 2);
+}
+
 } // namespace
 
 void runCullingTests() {
@@ -1092,7 +1185,9 @@ void runCullingTests() {
     testAFixedMeshGainingAParentIsWorkedOut();
     testTheFixedSerialMovesWithAFixedMeshAlone();
     testAnAssetChangeReworksOnlyWhatReadsIt();
+    testAPlantIsKeyedWithinItsOwnTerrain();
     testALightsSourceIsItsOwn();
+    testTheDecalsAreTheCamerasAMaterialsTogether();
     testWaterCastsUnlessTheSeaMovesIt();
     testWhatTheEyeSeesAndWhatOnlyItSees();
     testAViewmodelIsTheEyesThroughItsOwnLens();

@@ -4,7 +4,7 @@
     "albedo": [
       0.25,
       0.5,
-      0.2800000011920929,
+      0.28,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 1.0,
     "normalScale": 1.0,
+    "rippleScale": 0.5,
     "roughness": 1.0,
     "sheenColor": [
-      0.20000000298023224,
+      0.2,
       0.5,
-      0.20000000298023224
+      0.2
     ],
-    "sheenRoughness": 0.699999988079071,
+    "sheenRoughness": 0.7,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -64,6 +66,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

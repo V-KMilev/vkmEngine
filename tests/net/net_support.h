@@ -7,6 +7,8 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -239,16 +241,22 @@ class DelayedLink {
             if (m_client) m_front.send(m_client, bytes.data(), bytes.size());
         }
 
+        /// Pass @p rewrite each datagram toward the client before it goes on; it may change or cut it.
+        void rewriteToClient(std::function<void(std::vector<uint8_t>&)> rewrite) {
+            m_rewriteToClient = std::move(rewrite);
+        }
+
         /// One round: take what reached either socket, pass on what is due.
         void pump() {
             ++m_round;
             take(m_front, true);
             take(m_back, false);
             while (!m_held.empty() && m_held.front().due <= m_round) {
-                const Held& held = m_held.front();
+                Held& held = m_held.front();
                 if (held.towardServer) {
                     m_back.send(m_server, held.bytes.data(), held.bytes.size());
                 } else if (m_client) {
+                    if (m_rewriteToClient) m_rewriteToClient(held.bytes);
                     m_front.send(m_client, held.bytes.data(), held.bytes.size());
                     m_lastToClient = held.bytes;
                 }
@@ -291,4 +299,6 @@ class DelayedLink {
         int                  m_rounds = 0;
         int                  m_round  = 0;
         bool                 m_open   = false;
+
+        std::function<void(std::vector<uint8_t>&)> m_rewriteToClient;
 };

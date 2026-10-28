@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -24,6 +25,11 @@ struct TerrainPlantPart {
     MeshHandle     mesh;
     MaterialHandle material;
     glm::mat4      local{1.0f};  ///< Where the part lies in the plant.
+
+    /// What its file named for a mesh or material that resolved to none (TerrainFile::resolve):
+    /// written back in its place until the slot is set, so a save does not erase it.
+    std::string unresolvedMesh;
+    std::string unresolvedMaterial;
 };
 
 /**
@@ -69,6 +75,8 @@ struct TerrainAsset : public Resource {
 
     /// What each share is drawn with; an empty layer draws black where it is painted.
     std::array<MaterialHandle, MaterialAsset::MAX_LAYERS> layers{};
+    /// What its file named for each layer that resolved to none, kept as TerrainPlantPart's are.
+    std::array<std::string, MaterialAsset::MAX_LAYERS> unresolvedLayers{};
     /// Metres one repeat of each layer's maps spans: sand finer than a field, whatever the layer's
     /// material says for a mesh.
     std::array<float, MaterialAsset::MAX_LAYERS> layerTiling{4.0f, 4.0f, 4.0f, 4.0f};

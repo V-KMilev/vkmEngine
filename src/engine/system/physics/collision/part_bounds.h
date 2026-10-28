@@ -33,4 +33,21 @@ inline Math::AABB partLocalBounds(const Collider& collider, const ColliderPart& 
     return {-part.halfExtents, part.halfExtents};
 }
 
+/**
+ * @brief Every part's bound in the body's own frame, together.
+ *
+ * @param collider Collider whose parts are bounded.
+ * @return The bound; a point at the origin with no parts.
+ */
+inline Math::AABB colliderLocalBounds(const Collider& collider) {
+    if (collider.parts.empty()) return {glm::vec3(0.0f), glm::vec3(0.0f)};
+
+    Math::AABB out = Math::AABB::empty();
+    for (const ColliderPart& part : collider.parts) {
+        const Math::AABB local = partLocalBounds(collider, part);
+        out.expand(Math::AABB{part.center + local.min, part.center + local.max});
+    }
+    return out;
+}
+
 } // namespace Vkm::Engine

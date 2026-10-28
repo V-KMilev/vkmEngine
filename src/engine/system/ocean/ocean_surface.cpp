@@ -5,175 +5,18 @@
 
 #include <glm/gtc/constants.hpp>
 
-#include "core/math/random.h"
-
 namespace Vkm::Engine {
 
-namespace {
-
-constexpr double GRAVITY = OceanSurface::GRAVITY;
-
-
-// The waves' stream of the ocean's seed.
-constexpr uint64_t WAVE_STREAM = 0x6f6365616eull;
-
-// Bins of the directional spread's cumulative table, over the whole circle.
-constexpr int SPREAD_BINS = 256;
-
-// Radians a second for a wave of @p k radians a metre over @p depth metres (0 deep).
-double frequencyOf(double k, double depth) {
-    return std::sqrt(GRAVITY * k * (depth > 0.0 ? std::tanh(k * depth) : 1.0));
-}
-
-// The wavenumber with frequency @p omega: deep water's, or where shallow, Eckart's estimate
-// (within 5%) refined by Newton's steps on g k tanh(kd) - w^2, which double in digits each.
-double wavenumberOf(double omega, double depth) {
-    const double deep = omega * omega / GRAVITY;
-    if (depth <= 0.0) return deep;
-    double k = deep / std::sqrt(std::tanh(deep * depth));
-    for (int i = 0; i < 4; ++i) {
-        const double t = std::tanh(k * depth);
-        k -= (GRAVITY * k * t - omega * omega) / (GRAVITY * (t + k * depth * (1.0 - t * t)));
-    }
-    return k;
-}
-
-// How fast frequencyOf grows with @p k: the speed a group of waves that long travels at.
-double groupSpeed(double k, double depth) {
-    const double omega = frequencyOf(k, depth);
-    if (depth <= 0.0) return 0.5 * GRAVITY / omega;
-    const double t = std::tanh(k * depth);
-    return GRAVITY * (t + k * depth * (1.0 - t * t)) / (2.0 * omega);
-}
-
-// JONSWAP's energy density, in square metres per radian a second.
-struct Jonswap {
-    double peak  = 0.0;  // radians a second
-    double scale = 0.0;  // Phillips' alpha times g squared
-
-    // For a wind of @p wind m/s over @p fetch metres.
-    static Jonswap of(double wind, double fetch) {
-        return {
-            22.0 * std::cbrt(GRAVITY * GRAVITY / (wind * fetch)),
-            0.076 * std::pow(wind * wind / (fetch * GRAVITY), 0.22) * GRAVITY * GRAVITY,
-        };
-    }
-
-    double at(double omega) const {
-        const double sigma = omega <= peak ? JONSWAP_SIGMA_BELOW : JONSWAP_SIGMA_ABOVE;
-        const double r     = std::exp(-(omega - peak) * (omega - peak) / (2.0 * sigma * sigma * peak * peak));
-        return scale / std::pow(omega, 5.0) * std::exp(-1.25 * std::pow(peak / omega, 4.0))
-             * std::pow(JONSWAP_GAMMA, r);
-    }
-};
-
-// TMA's share of JONSWAP that water @p depth metres deep holds at @p omega (Kitaigorodskii).
-double shallowShare(double omega, double depth) {
-    if (depth <= 0.0) return 1.0;
-    const double w = omega * std::sqrt(depth / GRAVITY);
-    if (w <= 1.0) return 0.5 * w * w;
-    if (w < 2.0) return 1.0 - 0.5 * (2.0 - w) * (2.0 - w);
-    return 1.0;
-}
-
-// Draws angles off the wind from the cos^2s(theta / 2) spread (Longuet-Higgins), by its table.
-struct Spread {
-    std::array<double, SPREAD_BINS + 1> cumulative{};
-    bool narrow = false;  ///< Every wave rolls with the wind.
-
-    explicit Spread(float spread) {
-        narrow = spread < 1e-3f;
-        if (narrow) return;
-        const double s = 2.0 / std::max(double(spread) * double(spread), 1e-4);
-        for (int i = 0; i < SPREAD_BINS; ++i) {
-            const double theta = glm::pi<double>() * (2.0 * (i + 0.5) / SPREAD_BINS - 1.0);
-            cumulative[i + 1] = cumulative[i] + std::pow(std::cos(0.5 * theta), 2.0 * s);
-        }
-    }
-
-    // The angle at cumulative share @p u, 0..1.
-    double angle(double u) const {
-        if (narrow) return 0.0;
-        const double target = u * cumulative[SPREAD_BINS];
-        const auto   upper  = std::upper_bound(cumulative.begin(), cumulative.end(), target);
-        const int    bin    = std::clamp(int(upper - cumulative.begin()) - 1, 0, SPREAD_BINS - 1);
-        const double width  = cumulative[bin + 1] - cumulative[bin];
-        const double within = width > 0.0 ? (target - cumulative[bin]) / width : 0.5;
-        return glm::pi<double>() * (2.0 * (bin + within) / SPREAD_BINS - 1.0);
-    }
-};
-
-// Where the water resting at a point goes, and the partial derivatives of that by rest X and Z:
-// the surface's tangents.
-struct Moved {
-    glm::vec3 offset = glm::vec3(0.0f);
-    glm::vec3 alongX = {1.0f, 0.0f, 0.0f};
-    glm::vec3 alongZ = {0.0f, 0.0f, 1.0f};
-};
-
-// Draws @p count waves of @p ocean's spectrum between @p longest and @p shortest metres into
-// @p waves at @p time; returns the sum of their slopes, k a.
-// None for a windless ocean or an empty band.
-double drawBand(
-    const Ocean& ocean,
-    double longest,
-    double shortest,
-    uint32_t count,
-    double time,
-    GerstnerWave* waves
-) {
-    const double wind  = ocean.windSpeed;
-    const double fetch = double(ocean.fetch) * 1000.0;
-    const double depth = std::max(double(ocean.depth), 0.0);
-    if (!(wind > 0.0) || !(fetch > 0.0) || !(longest > shortest) || count == 0) return 0.0;
-
-    // Frequency bands spaced evenly in log, one wave a band, each carrying the band's energy:
-    // a = sqrt(2 S(w) dw). Seeded jitter inside the band, and a shuffled stratum of the spread,
-    // so neighbouring frequencies do not share a direction.
-    const double lowest = frequencyOf(glm::two_pi<double>() / longest, depth);
-    const double ratio  = frequencyOf(glm::two_pi<double>() / shortest, depth) / lowest;
-    Math::Rng    rng(ocean.seed, WAVE_STREAM);
-    const Jonswap spectrum = Jonswap::of(wind, fetch);
-
-    std::array<uint32_t, Ocean::MAX_WAVES> stratum{};
-    for (uint32_t i = 0; i < count; ++i) stratum[i] = i;
-    for (uint32_t i = count; i > 1; --i) std::swap(stratum[i - 1], stratum[rng.nextU32() % i]);
-
-    const Spread spread(ocean.spread);
-    const double heading = glm::radians(double(ocean.windDirection));
-    double slope = 0.0;
-    for (uint32_t i = 0; i < count; ++i) {
-        const double from  = lowest * std::pow(ratio, double(i) / count);
-        const double to    = lowest * std::pow(ratio, double(i + 1) / count);
-        const double omega = from + (to - from) * rng.nextFloat(0.25f, 0.75f);
-        const double k     = wavenumberOf(omega, depth);
-        const double energy = spectrum.at(omega) * shallowShare(omega, depth) * (to - from);
-        const double angle  = heading + spread.angle((stratum[i] + rng.nextFloat()) / count);
-
-        GerstnerWave& wave = waves[i];
-        wave.direction  = glm::vec2(float(std::sin(angle)), float(std::cos(angle)));
-        wave.wavenumber = float(k);
-        wave.frequency  = float(omega);
-        wave.amplitude  = float(std::sqrt(2.0 * energy) * ocean.heightScale);
-        // The phase as it rolls: k (d . x) - w t, the time part wrapped here in double.
-        const double start = rng.nextFloat() * glm::two_pi<double>();
-        double       phase = std::fmod(start - omega * time, glm::two_pi<double>());
-        if (phase < 0.0) phase += glm::two_pi<double>();
-        wave.phase = float(phase);
-        slope += k * wave.amplitude;
-    }
-    return slope;
-}
-
-// Each crest draws the water `choppiness` amplitudes toward it (Tessendorf's lambda), held where
-// the slopes add past one so the surface never folds over itself.
-float steepnessOf(const Ocean& ocean, double slope) {
-    return std::clamp(ocean.choppiness, 0.0f, 1.0f) / float(std::max(slope, 1.0));
-}
-
-} // namespace
-
 OceanSurface OceanSurface::at(const Ocean& ocean, const glm::vec3& centre, double time) {
+    return at(OceanSwell::of(OceanShape::of(ocean)), ocean, centre, time);
+}
+
+OceanSurface OceanSurface::at(
+    std::shared_ptr<const OceanSwell> swell,
+    const Ocean& ocean,
+    const glm::vec3& centre,
+    double time
+) {
     OceanSurface surface;
     // Each surge rolls along its direction made unit; one with none to roll along is none.
     for (uint32_t i = 0; i < Ocean::MAX_SURGES; ++i) {
@@ -186,76 +29,28 @@ OceanSurface OceanSurface::at(const Ocean& ocean, const glm::vec3& centre, doubl
     surface.centre      = {centre.x, centre.z};
     surface.calmRadius  = ocean.calmRadius;
     surface.stillRadius = ocean.stillRadius;
-
-    const double   shortest = std::max(double(ocean.minWavelength), 0.01);
-    const uint32_t count    = std::clamp<uint32_t>(ocean.waveCount, 1u, Ocean::MAX_WAVES);
-    GerstnerWave*  waves    = surface.waves.data();
-    const double   slope    = drawBand(ocean, ocean.maxWavelength, shortest, count, time, waves);
-    if (slope <= 0.0) return surface;
-    for (uint32_t i = 0; i < count; ++i) surface.waves[i].steepness = steepnessOf(ocean, slope);
-    surface.count = count;
+    surface.time        = time;
+    if (swell) surface.swell = std::make_shared<const SwellMoment>(std::move(swell), cycleOf(time));
     return surface;
+}
+
+float OceanSurface::cycleOf(double time) {
+    double into = std::fmod(time, OceanSpectrum::LOOP);
+    if (into < 0.0) into += OceanSpectrum::LOOP;
+    return float(into / OceanSpectrum::LOOP);
 }
 
 OceanRipples OceanRipples::at(const Ocean& ocean, double time) {
     OceanRipples ripples;
-    const double wind  = ocean.windSpeed;
-    const double fetch = double(ocean.fetch) * 1000.0;
-    if (!(wind > 0.0) || !(fetch > 0.0)) return ripples;
-
-    const Jonswap spectrum = Jonswap::of(wind, fetch);
-    const double  heading  = glm::radians(double(ocean.windDirection));
-    // The spread as Spread draws it, scaled by its integral round the circle,
-    // 2 sqrt(pi) Gamma(s + 1/2) / Gamma(s + 1).
-    const double  power    = 2.0 / std::max(double(ocean.spread) * double(ocean.spread), 1e-4);
-    double        into     = std::fmod(time, LOOP);
-    if (into < 0.0) into += LOOP;
-
-    ripples.longest     = float(glm::two_pi<double>() / std::max(double(ocean.minWavelength), 0.01));
-    ripples.shortest    = float(glm::two_pi<double>() / std::max(double(ocean.shortestRipple), 0.001));
-    ripples.peak        = float(spectrum.peak);
-    ripples.alpha       = float(spectrum.scale);
-    ripples.depth       = std::max(ocean.depth, 0.0f);
-    ripples.heightScale = ocean.heightScale;
-    ripples.choppiness  = std::clamp(ocean.choppiness, 0.0f, 1.0f);
-    ripples.wind        = glm::vec2(float(std::sin(heading)), float(std::cos(heading)));
-    ripples.spreadPower = float(power);
-    ripples.spreadScale = float(
-        std::exp(std::lgamma(power + 1.0) - std::lgamma(power + 0.5)) / (2.0 * std::sqrt(glm::pi<double>()))
-    );
-    ripples.seed  = ocean.seed;
-    ripples.cycle = float(into / LOOP);
+    const OceanShape shape = OceanShape::of(ocean);
+    ripples.spectrum = OceanSpectrum::of(shape);
+    if (!ripples.spectrum.any()) return ripples;
+    ripples.longest    = float(glm::two_pi<double>() / OceanSwell::shortestOf(shape));
+    ripples.shortest   = float(glm::two_pi<double>() / std::max(double(ocean.shortestRipple), 0.001));
+    ripples.choppiness = std::clamp(ocean.choppiness, 0.0f, 1.0f);
+    ripples.seed       = ocean.seed;
+    ripples.cycle      = OceanSurface::cycleOf(time);
     return ripples;
-}
-
-float OceanRipples::density(const glm::vec2& k) const {
-    const double length = glm::length(k);
-    if (!(length > 0.0) || !any()) return 0.0f;
-    // A band of frequency and angle holds S(w) D(theta) dw dtheta; over wavenumber, that is
-    // S D (dw / dk) / k a square radian a metre.
-    const double omega  = frequencyOf(length, depth);
-    const double along  = std::max(0.5 + 0.5 * glm::dot(k, wind) / length, 0.0);
-    const double spread = spreadScale * std::pow(along, double(spreadPower));
-    const double energy = Jonswap{peak, alpha}.at(omega) * shallowShare(omega, depth);
-    return float(energy * spread * groupSpeed(length, depth) / length * heightScale * heightScale);
-}
-
-float OceanRipples::slopeVariance(float from, float to) const {
-    if (!(from > 0.0f) || !(to > from) || !any()) return 0.0f;
-    // The slope's spectrum is k^2 S, the spread integrating to one: summed over bands even in log.
-    constexpr int STEPS    = 256;
-    const Jonswap spectrum = {peak, alpha};
-    const double  lowest   = frequencyOf(from, depth);
-    const double  ratio    = frequencyOf(to, depth) / lowest;
-    double        sum      = 0.0;
-    for (int i = 0; i < STEPS; ++i) {
-        const double a     = lowest * std::pow(ratio, double(i) / STEPS);
-        const double b     = lowest * std::pow(ratio, double(i + 1) / STEPS);
-        const double omega = 0.5 * (a + b);
-        const double k     = wavenumberOf(omega, depth);
-        sum += k * k * spectrum.at(omega) * shallowShare(omega, depth) * (b - a);
-    }
-    return float(sum * heightScale * heightScale);
 }
 
 float OceanSurface::reach(const glm::vec2& rest) const {
@@ -299,21 +94,21 @@ glm::vec3 surgesAt(const OceanSurface& surface, const glm::vec2& rest) {
 } // namespace
 
 glm::vec3 OceanSurface::displacement(const glm::vec2& rest) const {
-    const float fade = reach(rest);
-    glm::vec3   moved(0.0f);
-    for (uint32_t i = 0; fade > 0.0f && i < count; ++i) {
-        const GerstnerWave& w = waves[i];
-        const float theta = w.wavenumber * glm::dot(w.direction, rest) + w.phase;
-        const float along = w.steepness * w.amplitude * std::cos(theta);
-        moved.x += along * w.direction.x;
-        moved.z += along * w.direction.y;
-        moved.y += w.amplitude * std::sin(theta);
-    }
-    // A surge only lifts the water: no carry across, so the inverse below steps over the waves alone.
+    const float     fade  = reach(rest);
+    const glm::vec3 moved = swell && fade > 0.0f ? swell->offsetAt(rest) : glm::vec3(0.0f);
+    // A surge only lifts the water: no carry across, so the inverse below steps over the swell alone.
     return moved * fade + glm::vec3(0.0f, surgesAt(*this, rest).x, 0.0f);
 }
 
 namespace {
+
+// Where the water resting at a point goes, and the partial derivatives of that by rest X and Z:
+// the surface's tangents.
+struct Moved {
+    glm::vec3 offset = glm::vec3(0.0f);
+    glm::vec3 alongX = {1.0f, 0.0f, 0.0f};
+    glm::vec3 alongZ = {0.0f, 0.0f, 1.0f};
+};
 
 // The rest point the water over world @p point came from.
 glm::vec2 restUnder(const OceanSurface& surface, const glm::vec2& point) {
@@ -336,25 +131,14 @@ glm::vec2 reachSlope(const OceanSurface& surface, const glm::vec2& rest) {
     return -6.0f * u * (1.0f - u) / band * off / r;
 }
 
-// The waves summed whole, then faded: the fade's own slope tilts the tangents too, where it fades.
+// The swell, then faded: the fade's own slope tilts the tangents too, where it fades.
 Moved movedAt(const OceanSurface& surface, const glm::vec2& rest) {
     const float fade = surface.reach(rest);
-    glm::vec3   offset(0.0f);
     glm::vec3   alongX(0.0f);
     glm::vec3   alongZ(0.0f);
-    for (uint32_t i = 0; fade > 0.0f && i < surface.count; ++i) {
-        const GerstnerWave& w = surface.waves[i];
-        const float theta = w.wavenumber * glm::dot(w.direction, rest) + w.phase;
-        const float wa    = w.wavenumber * w.amplitude;
-        const float s     = std::sin(theta);
-        const float c     = std::cos(theta);
-        const float d     = w.direction.x * w.direction.y;
-        const float across = w.steepness * w.amplitude * c;
-        const float pull   = w.steepness * wa * s;
-        offset += glm::vec3(across * w.direction.x, w.amplitude * s, across * w.direction.y);
-        alongX += glm::vec3(-pull * w.direction.x * w.direction.x, wa * w.direction.x * c, -pull * d);
-        alongZ += glm::vec3(-pull * d, wa * w.direction.y * c, -pull * w.direction.y * w.direction.y);
-    }
+    const glm::vec3 offset = surface.swell && fade > 0.0f
+        ? surface.swell->movedAt(rest, alongX, alongZ)
+        : glm::vec3(0.0f);
     const glm::vec2 slope = reachSlope(surface, rest);
     const glm::vec3 surge = surgesAt(surface, rest);
     Moved moved;
@@ -380,14 +164,11 @@ OceanSample OceanSurface::sampleAt(const glm::vec2& point) const {
 }
 
 float OceanSurface::significantHeight() const {
-    float m0 = 0.0f;
-    for (uint32_t i = 0; i < count; ++i) m0 += 0.5f * waves[i].amplitude * waves[i].amplitude;
-    return 4.0f * std::sqrt(m0);
+    return swell ? swell->swell().significantHeight() : 0.0f;
 }
 
 glm::vec2 OceanSurface::farthestReach() const {
-    glm::vec2 reach(0.0f);
-    for (uint32_t i = 0; i < count; ++i) reach += waves[i].amplitude * glm::vec2(waves[i].steepness, 1.0f);
+    glm::vec2 reach = swell ? swell->swell().farthestReach() : glm::vec2(0.0f);
     // Where surges cross, they add.
     float risen = 0.0f;
     for (const OceanSurge& surge : surges) risen += std::max(surge.height, 0.0f);
@@ -395,9 +176,9 @@ glm::vec2 OceanSurface::farthestReach() const {
 }
 
 OceanSurface OceanSurface::withoutSurges() const {
-    OceanSurface swell = *this;
-    swell.surges       = {};
-    return swell;
+    OceanSurface calm = *this;
+    calm.surges       = {};
+    return calm;
 }
 
 } // namespace Vkm::Engine

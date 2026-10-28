@@ -16,6 +16,8 @@
 #include "ui/editor_style.h"
 #include "core/math/axes.h"
 #include "ecs/component/core/world_transform.h"
+#include "system/loading/loading_frame.h"
+#include "system/render/render_backend.h"
 #include "system/visibility/visibility.h"
 #include "input/camera_controller_system.h"
 #include "input/view_framing.h"
@@ -31,6 +33,69 @@ float endpointRadius() { return EditorStyle::px(8.0f); }
 float edgeInset()      { return axisLength() + EditorStyle::px(12.0f); }
 
 } // namespace
+
+void ViewportOverlay::drawFlySpeed(EditorContext& ec, const CameraControllerSystem& camera) {
+    const float shown = camera.speedShownFor();
+    if (shown <= 0.0f) return;
+
+    char text[64];
+    const float speed = camera.getSettings().moveSpeed * camera.speedScale();
+    snprintf(text, sizeof(text), "Fly speed %.2g m/s (x%.2g)", speed, camera.speedScale());
+
+    // The last half second fades.
+    const float  alpha = std::min(shown * 2.0f, 1.0f);
+    const ImVec2 size  = ImGui::CalcTextSize(text);
+    const float  pad   = EditorStyle::px(8.0f);
+    const ImVec2 at(
+        ec.viewportPos.x + (ec.viewportSize.x - size.x) * 0.5f,
+        ec.viewportPos.y + ec.viewportSize.y - size.y - pad * 2.0f - EditorStyle::overlayInset()
+    );
+    ImVec4 bg = EditorStyle::OVERLAY_BG;
+    bg.w *= alpha;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(
+        ImVec2(at.x - pad, at.y - pad),
+        ImVec2(at.x + size.x + pad, at.y + size.y + pad),
+        ImGui::GetColorU32(bg),
+        EditorStyle::px(6.0f)
+    );
+    dl->AddText(at, ImGui::GetColorU32(ImGuiCol_Text, alpha), text);
+}
+
+void ViewportOverlay::drawLoadingNotice(EditorContext& ec) {
+    const FrameContext& ctx = ec.frame;
+    if (!ctx.loading || ctx.loading->progress >= 1.0f || ctx.loading->status.empty()) return;
+    const bool blank = ctx.readiness && ctx.readiness->compiled < ctx.readiness->programs;
+
+    const char*  text = ctx.loading->status.c_str();
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const float  pad  = EditorStyle::px(10.0f);
+    const float  barH = EditorStyle::px(4.0f);
+    const float  wide = std::max(size.x, EditorStyle::px(240.0f));
+    const float  tall = size.y + pad + barH;
+    const ImVec2 at(
+        ec.viewportPos.x + (ec.viewportSize.x - wide) * 0.5f,
+        blank
+            ? ec.viewportPos.y + (ec.viewportSize.y - tall) * 0.5f
+            : ec.viewportPos.y + ec.viewportSize.y - tall - pad * 2.0f - EditorStyle::overlayInset()
+    );
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(
+        ImVec2(at.x - pad, at.y - pad),
+        ImVec2(at.x + wide + pad, at.y + tall + pad),
+        ImGui::GetColorU32(EditorStyle::OVERLAY_BG),
+        EditorStyle::px(6.0f)
+    );
+    dl->AddText(ImVec2(at.x + (wide - size.x) * 0.5f, at.y), ImGui::GetColorU32(ImGuiCol_Text), text);
+    const ImVec2 track(at.x, at.y + size.y + pad);
+    dl->AddRectFilled(track, ImVec2(track.x + wide, track.y + barH), ImGui::GetColorU32(ImGuiCol_FrameBg));
+    dl->AddRectFilled(
+        track,
+        ImVec2(track.x + wide * std::clamp(ctx.loading->progress, 0.0f, 1.0f), track.y + barH),
+        ImGui::GetColorU32(EditorStyle::ACCENT)
+    );
+}
 
 float ViewportOverlay::reach() {
     return edgeInset() + axisLength() + endpointRadius();

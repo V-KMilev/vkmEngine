@@ -20,18 +20,20 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/scene.h"
 #include "editor_actions.h"
+#include "session/scene_recovery.h"
+#include "session/asset_writes.h"
 #include "session/terrain_files.h"
 #include "editor_state.h"
 #include "session/material_preview_session.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/scene_serializer.h"
 #include "io/project_paths.h"
-#include "cook/asset_cooker.h"
 #include "platform/input/input_map.h"
 #include "platform/window/window_manager.h"
 #include "resource/resource_manager.h"
 #include "resource/generate/default_scene.h"
 #include "input/camera_controller_system.h"
+#include "system/loading/loading_system.h"
 #include "system/render/render_settings.h"
 #include "system/script/behavior_system.h"
 #include "ui/editor_style.h"
@@ -42,46 +44,38 @@ namespace Vkm::Engine {
 namespace {
 
 // One asset's serializable identity: the section it was written under and the
-// name it is found by. The section is carried because names are only unique
-// within one - a mesh and a texture may share a name.
+// name it is found by (AssetSerializer::namesIn).
 using AssetKey = std::pair<std::string, std::string>;
 
-// Reads whatever sections the block happens to have rather than a list of them,
-// so a new asset kind is counted here the day AssetSerializer starts writing it.
 std::set<AssetKey> assetKeysOf(const nlohmann::json& block) {
-    std::set<AssetKey> keys;
-    if (!block.is_object()) return keys;
-    for (auto section = block.begin(); section != block.end(); ++section) {
-        if (!section.value().is_array()) continue;
-        for (const nlohmann::json& entry : section.value()) {
-            const std::string name = entry.value("name", std::string{});
-            if (!name.empty()) keys.emplace(section.key(), name);
-        }
-    }
-    return keys;
+    const std::vector<AssetKey> names = AssetSerializer::namesIn(block);
+    return std::set<AssetKey>(names.begin(), names.end());
 }
 
-// What the graph held before a swap and the subset the outgoing scene named,
-// read before it so the strays it leaves can be named; see
+// What the graph held before a swap and what of it is named - by the outgoing
+// scene, or by the loading screen, which is built again - read before it so the
+// strays it leaves can be named; see
 // docs/reference/editor.md, "What an open does to the session's imports".
 struct HeldImports {
     std::set<AssetKey> all;
     std::set<AssetKey> named;
 };
 
-HeldImports heldImports(FrameContext& ctx) {
-    return HeldImports{
+HeldImports heldImports(FrameContext& ctx, const std::vector<AssetKey>& loadingScreen) {
+    HeldImports held{
         assetKeysOf(AssetSerializer::saveAllAssets(ctx.resources)),
         assetKeysOf(AssetSerializer::saveAssetsForScene(ctx.scene, ctx.resources))
     };
+    held.named.insert(loadingScreen.begin(), loadingScreen.end());
+    return held;
 }
 
 // Say which of the session's imports the swap just left behind, reading what
 // the graph holds now against what it held before.
 void reportDroppedImports(FrameContext& ctx, EditorState& state, const HeldImports& before) {
-    // Only what the outgoing scene never named can be a left-behind import, and
-    // only what the new graph does not already hold is gone - two scenes sharing
-    // a sound is not a loss.
+    // Only what neither the outgoing scene nor the loading screen named can be a
+    // left-behind import, and only what the new graph does not already hold is
+    // gone - two scenes sharing a sound is not a loss.
     const std::set<AssetKey> nowHeld =
         assetKeysOf(AssetSerializer::saveAllAssets(ctx.resources));
 
@@ -140,11 +134,13 @@ void selectSlots(const Scene& scene, EditorState& state, const std::vector<uint3
 SceneIOController::SceneIOController(
     CameraControllerSystem& cameraController,
     MaterialPreviewSession& materialPreviews,
-    BehaviorSystem&         behaviors
+    BehaviorSystem&         behaviors,
+    const LoadingSystem&    loading
 )
     : m_cameraController(cameraController)
     , m_materialPreviews(materialPreviews)
     , m_behaviors(behaviors)
+    , m_loading(loading)
 {}
 
 SceneIOController::~SceneIOController() = default;
@@ -153,12 +149,8 @@ bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const 
     if (refusedDuringPlay(state)) return false;
 
     // A partial cook does not stop the save: the scene itself is still worth
-    // writing, and the toast below says which half went wrong. The binaries bake
-    // after the save returns; the scene needs only the records. A terrain's file is
-    // what its cook reads, so it is written first.
-    const bool terrains = writeTerrainFiles(ctx.resources);
-    const bool cooked   = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground)
-        && terrains;
+    // writing, and the toast below says which half went wrong.
+    const AssetWrites writes = writeAssets(ctx.resources);
 
     const std::string shown = std::filesystem::path(path).filename().string();
     if (!SceneSerializer::save(ctx.scene, ctx.resources, path)) {
@@ -166,14 +158,82 @@ bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const 
         state.pushToast(ToastKind::Error, "Save failed: " + shown);
         return false;
     }
-    state.sceneDirty = false;
+    // A terrain's sculpting lives in its file, not the scene's: one not written is still unsaved.
+    if (!writes.terrains) {
+        state.pushToast(ToastKind::Error, "Saved " + shown + ", but a terrain could not be written");
+        return false;
+    }
     pushRecentPath(state.recentScenes, path);
-    if (!cooked) {
+    state.sceneDirty = false;
+    // Saved, so a copy kept for a crash is behind the file now; so is one of a scene never saved.
+    SceneRecovery::discard(recoveryCopyOf(path));
+    SceneRecovery::discard(recoveryCopyOf({}));
+    m_recoveryTimer = 0.0f;
+    m_recoveryHeld  = false;
+    if (!writes.cooked) {
         state.pushToast(ToastKind::Error, "Saved " + shown + ", but some assets did not cook");
         return true;
     }
     state.pushToast(ToastKind::Info, "Saved " + shown);
     return true;
+}
+
+std::filesystem::path SceneIOController::recoveryCopyOf(const std::string& scenePath) const {
+    const std::filesystem::path dir = ProjectPaths::userRoot() / "recovery";
+    return SceneRecovery::pathFor(dir, ProjectPaths::projectRoot(), scenePath);
+}
+
+void SceneIOController::discardRecovery() {
+    SceneRecovery::discard(recoveryCopy());
+    m_recoveryHeld = false;
+}
+
+void SceneIOController::offerRecovery() {
+    m_recoveryTimer     = 0.0f;
+    m_openRecoveryPopup = SceneRecovery::hasNewer(recoveryCopy(), m_currentScenePath);
+    m_recoveryHeld      = m_openRecoveryPopup;
+}
+
+void SceneIOController::serviceRecovery(FrameContext& ctx, EditorState& state) {
+    if (isPlaying() || !state.sceneDirty || m_recoveryHeld) {
+        m_recoveryTimer = 0.0f;
+        return;
+    }
+    m_recoveryTimer += ctx.clock.getDeltaTime();
+    if (m_recoveryTimer < SceneRecovery::INTERVAL) return;
+    m_recoveryTimer = 0.0f;
+
+    // The scene format, written as a save writes it, so a recovery is a load. Its new imports are
+    // recorded so they come back by name; its terrains' unsaved bodies go beside it. Nothing the
+    // project holds is rewritten: the author has not saved.
+    const std::filesystem::path copy = recoveryCopy();
+    std::error_code ec;
+    std::filesystem::create_directories(copy.parent_path(), ec);
+    const AssetWrites kept = keepAssets(ctx.resources, SceneRecovery::terrainsOf(copy));
+    if (!kept.terrains) LOG_WARNING("Could not keep the unsaved terrains beside %s", copy.string().c_str());
+    if (!kept.cooked) LOG_WARNING("Could not record the new imports %s names", copy.string().c_str());
+    if (!SceneSerializer::save(ctx.scene, ctx.resources, copy.string())) {
+        LOG_WARNING("Could not keep a copy of the unsaved changes at %s", copy.string().c_str());
+    }
+}
+
+void SceneIOController::recover(FrameContext& ctx, EditorState& state) {
+    const std::filesystem::path copy = recoveryCopy();
+    const bool read = openWorld(ctx, state, [&] {
+        if (!SceneSerializer::load(ctx.scene, ctx.resources, copy.string())) return false;
+        readTerrainCopies(ctx.resources, SceneRecovery::terrainsOf(copy));
+        return true;
+    });
+    if (!read) {
+        state.pushToast(ToastKind::Error, "The kept copy could not be read; it is left where it is");
+        return;
+    }
+    restoreView(ctx.scene, state);
+    // Changes, not the file: saving them is still the author's to do. They are the
+    // scene now, so the next copy may take the old one's place.
+    state.sceneDirty = true;
+    m_recoveryHeld   = false;
+    state.pushToast(ToastKind::Info, "Recovered the unsaved changes - save to keep them");
 }
 
 bool SceneIOController::refusedDuringPlay(EditorState& state) const {
@@ -201,12 +261,19 @@ void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const st
     rememberView(state);
     std::string previous = m_currentScenePath;
     m_currentScenePath = path;
-    if (!load(ctx, state)) m_currentScenePath = std::move(previous);
+    if (!load(ctx, state)) {
+        m_currentScenePath = std::move(previous);
+        return;
+    }
+    // The scene left was saved or given up at the unsaved-changes prompt.
+    if (previous != path) SceneRecovery::discard(recoveryCopyOf(previous));
+    offerRecovery();
 }
 
 void SceneIOController::adoptPath(const Scene& scene, EditorState& state, const std::string& path) {
     m_currentScenePath = path;
     restoreView(scene, state);
+    offerRecovery();
     // Guarded because a world with no file must not put an empty name there.
     if (!path.empty()) pushRecentPath(state.recentScenes, path);
 }
@@ -247,21 +314,17 @@ void SceneIOController::requestLoad() {
 }
 
 bool SceneIOController::isSaveDialogActive() const {
-    // The intent flag stays set for the dialog's whole lifetime (the
-    // dialog scaffold clears it on any dismissal), but keep the popup check
-    // for the single frame between CloseCurrentPopup and the next Begin.
-    return m_openSaveAsPopup || ImGui::IsPopupOpen("Save Scene As");
+    // The intent flag stays set for the dialog's whole lifetime: the dialog scaffold clears it on
+    // any dismissal, and its buttons on Save or Cancel. No popup query: this is asked between
+    // frames, where ImGui has no window to name a popup by.
+    return m_openSaveAsPopup;
 }
 
 bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
     const std::string priorSelection = selectedName(ctx.scene, state);
 
-    // If a play session is somehow active, tear its behaviors down (onDestroy)
-    // before the swap discards them.
-    m_behaviors.endSession(ctx.scene);
-
-    const HeldImports before = heldImports(ctx);
-    if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) {
+    const auto read = [&] { return SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath); };
+    if (!openWorld(ctx, state, read)) {
         LOG_ERROR(
             "SceneIOController::load: failed to load %s - editor state preserved",
             m_currentScenePath.c_str()
@@ -269,13 +332,6 @@ bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
         state.pushToast(ToastKind::Error, "Load failed: " + m_currentScenePath);
         return false;
     }
-
-    reportDroppedImports(ctx, state, before);
-
-    // After the load, not before: a load that fails leaves the outgoing scene
-    // live, and its session is still the session it belongs to. Entity ids do
-    // not carry across scenes, so the history goes with it.
-    afterSceneReplace(ctx, state, History::Drop, m_currentScenePath);
     selectByName(ctx.scene, state, priorSelection);
     restoreView(ctx.scene, state);
 
@@ -287,7 +343,9 @@ bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
 void SceneIOController::endPlaySession(FrameContext& ctx) {
     // A session that has ended is Edit mode - paused, back at 1x whatever a
     // script scaled it to, and with the cursor a game may have grabbed handed
-    // back to the editor.
+    // back to the editor - and renders with the project's settings, not a tier the game chose:
+    // left, the next frame would make the game's the project's (EditorSystem::update).
+    if (isPlaying()) ctx.render = ctx.projectRender;
     m_play.release();
     ctx.clock.setPaused(true);
     ctx.clock.setTimeScale(1.0f);
@@ -297,24 +355,35 @@ void SceneIOController::endPlaySession(FrameContext& ctx) {
 }
 
 void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state) {
+    // Leaving it was saved or given up at the unsaved-changes prompt.
+    discardRecovery();
+
+    openWorld(ctx, state, [&] {
+        ctx.scene.clear();
+        // The asset graph goes with the scene it belonged to; see
+        // docs/reference/editor.md, "What an open does to the session's imports".
+        ResourceManager replaced;
+        ctx.resources.swap(replaced);
+        m_currentScenePath.clear();
+        return true;
+    });
+}
+
+bool SceneIOController::openWorld(FrameContext& ctx, EditorState& state, const std::function<bool()>& fill) {
+    // A session's behaviors get onDestroy while their world and code are whole.
     m_behaviors.endSession(ctx.scene);
-
-    const HeldImports before = heldImports(ctx);
-    ctx.scene.clear();
-
-    // The asset graph goes with the scene it belonged to; see
-    // docs/reference/editor.md, "What an open does to the session's imports".
-    ResourceManager replaced;
-    ctx.resources.swap(replaced);
-
+    const HeldImports before = heldImports(ctx, m_loading.screenNames());
+    // An opened world comes in behind the loading screen; one that fails to fill takes that back.
+    ctx.chrome.coverNextWorld();
+    // A fill that fails leaves the outgoing world live, and the editor's state is still its own.
+    if (!fill()) {
+        ctx.chrome.takeCoverNextWorld();
+        return false;
+    }
     reportDroppedImports(ctx, state, before);
-
-    m_currentScenePath.clear();
-
-    // Same rule as a load, one step further: the scene is empty now, so every
-    // entity the history addresses is gone and nothing it holds can be applied.
-    const std::string noEventPath;
-    afterSceneReplace(ctx, state, History::Drop, noEventPath);
+    // Entity ids do not carry across worlds, so the history goes with it.
+    afterSceneReplace(ctx, state, History::Drop, m_currentScenePath);
+    return true;
 }
 
 void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
@@ -338,14 +407,13 @@ void SceneIOController::afterSceneReplace(
     const std::string& eventPath
 ) {
     endPlaySession(ctx);
-    if (history == History::Drop) state.commands.clear();
+    // A copied component kept over a Stop carries what play tuned back to the authored
+    // scene; another scene's entities and assets are not its own.
+    if (history == History::Drop) state.forgetWorldState();
 
-    // The previews and the pinned material are keyed by handles into the
-    // outgoing graph: an open replaced it, and a Stop dropped whatever the
-    // session made.
+    // The previews are keyed by handles into the outgoing graph: an open replaced it, and a
+    // Stop dropped whatever the session made.
     m_materialPreviews.clear();
-    state.materialEditorTarget = {};
-    state.materialPinnedAt     = {};
 
     state.deselect();
 
@@ -367,18 +435,30 @@ void SceneIOController::afterSceneReplace(
     }
 }
 
-bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
+bool SceneIOController::snapshotForPlay(FrameContext& ctx, EditorState& state) {
+    // A tier Render Settings previews is not the project's: the session starts from its own.
+    state.endRenderPreview(ctx.render);
+    return captureSnapshot(ctx, state, "Play");
+}
+
+bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state, const char* action) {
     // The snapshot is the scene file format, so it names assets the library has
     // to be able to hand back - an unrecorded import would come back empty. A
     // recorded one whose bake has not landed comes back from its recipe; a terrain, from
     // the file written here.
-    const bool terrains = writeTerrainFiles(ctx.resources);
-    const bool cooked   = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground)
-        && terrains;
+    const AssetWrites writes = writeAssets(ctx.resources);
+
+    // Stop puts each terrain back as its file holds it, which would undo the sculpting not written.
+    if (!writes.terrains) {
+        const char* lost = " refused: a terrain could not be written, and the scene put back would lose it";
+        state.pushToast(ToastKind::Error, action + std::string(lost));
+        return false;
+    }
 
     if (!m_play.capture(ctx.scene, ctx.resources, state.sceneDirty)) {
         LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
-        state.pushToast(ToastKind::Error, "Play: could not snapshot the scene, so Play is refused");
+        const char* unsnapped = " refused: the scene could not be snapshotted";
+        state.pushToast(ToastKind::Error, action + std::string(unsnapped));
         return false;
     }
     // The session's steps address the copy Stop discards; see
@@ -388,10 +468,11 @@ bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     ctx.projectRender = ctx.render;
     ctx.input.reset();
 
-    // A partial cook does not stop Play, by the same rule the save follows: the
-    // session is still worth entering, and the toast names what Stop may lose.
-    if (!cooked) {
-        state.pushToast(ToastKind::Error, "Some assets did not cook; Stop may not restore them");
+    // A partial cook does not stop the session, by the same rule the save follows: it
+    // is still worth entering, and the toast names what putting the scene back may lose.
+    if (!writes.cooked) {
+        const char* uncooked = ": some assets did not cook and may not come back";
+        state.pushToast(ToastKind::Error, action + std::string(uncooked));
     }
     return true;
 }
@@ -405,6 +486,7 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
         || (state.sceneDirty && !m_play.dirtyAtCapture());
 
     const std::vector<uint32_t> priorSelection = selectedSlots(state);
+    const uint64_t              played         = ctx.scene.epoch();
 
     // Play stop: fire onDestroy on the played scene's running behaviors while
     // their context is still valid, before the swap restores the snapshot.
@@ -414,14 +496,13 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     // "What an open does to the session's imports".
     if (!m_play.restoreInto(ctx.scene, ctx.resources)) {
         LOG_ERROR("SceneIOController::restoreSnapshot: failed to restore play snapshot");
-        state.pushToast(ToastKind::Error, "Stop: could not restore scene snapshot");
+        state.pushToast(ToastKind::Error, "The scene could not be put back from its snapshot");
         // The snapshot is kept, so Stop can be pressed again. The asset graph
         // is already back, though: it has to be restored before the scene that
         // names it, and only a scene the editor wrote and cannot read gets here.
         return;
     }
 
-    ctx.render = ctx.projectRender;
     // The terrains as Play wrote them: what the session dug or brushed goes too.
     readTerrainFiles(ctx.resources);
 
@@ -435,14 +516,15 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     if (inPlace) state.commands.unpark();
     afterSceneReplace(ctx, state, inPlace ? History::Keep : History::Drop, m_currentScenePath);
     if (inPlace) selectSlots(ctx.scene, state, priorSelection);
+    if (inPlace) EditorActions::carryClipboard(state, played, ctx.scene);
     state.sceneDirty = dirtyAtCapture;
 
     if (discardingEdits) {
-        LOG_WARNING("SceneIOController: Stop discarded the edits made during the session");
-        state.pushToast(ToastKind::Warning, "Stop discarded the edits made during play");
+        LOG_WARNING("SceneIOController: the edits made during the session were discarded");
+        state.pushToast(ToastKind::Warning, "The edits made during play were discarded");
     } else if (!inPlace) {
         LOG_WARNING("SceneIOController: a prefab instance came back in other slots; undo history dropped");
-        state.pushToast(ToastKind::Warning, "Undo history cleared: a prefab changed during play");
+        state.pushToast(ToastKind::Warning, "Undo history cleared: a prefab instance came back elsewhere");
     }
 }
 
@@ -506,8 +588,26 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             std::filesystem::create_directories(ProjectPaths::scenes(), mkdirEc);
             // Set before the write: a failed Save-As leaves the new path
             // current, so Ctrl+S retries where the user asked to go.
+            const std::string from = m_currentScenePath;
             m_currentScenePath = finalPath;
-            writeScene(ctx, state, m_currentScenePath);
+            // Saved elsewhere, the scene left behind has no unsaved changes of its own.
+            if (writeScene(ctx, state, m_currentScenePath)) SceneRecovery::discard(recoveryCopyOf(from));
+        }
+        endDialog();
+    }
+
+    if (beginDialog("Recover Unsaved Changes", m_openRecoveryPopup)) {
+        const std::string shown = m_currentScenePath.empty()
+            ? std::string("the untitled scene")
+            : std::filesystem::path(m_currentScenePath).filename().string();
+        ImGui::Text("The editor closed without saving %s.", shown.c_str());
+        ImGui::TextDisabled("A copy of its unsaved changes was kept.");
+        ImGui::TextDisabled("Cancel keeps it, and keeps no newer one, until the scene is saved or left.");
+        switch (dialogButtons(m_openRecoveryPopup, "Recover", "Discard")) {
+            case DialogResult::Confirm: recover(ctx, state); break;
+            case DialogResult::Alt:     discardRecovery(); break;
+            case DialogResult::Cancel:
+            case DialogResult::None:    break;
         }
         endDialog();
     }

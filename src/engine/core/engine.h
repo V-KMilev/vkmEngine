@@ -9,10 +9,13 @@
 #include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
 #include "core/system.h"
+#include "system/async/async_loader_system.h"
+#include "system/render/render_backend.h"
 #include "system/render/render_settings.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
+#include "debug/debug_draw.h"
 #include "platform/input/input_map.h"
 #include "net/net_session.h"
 
@@ -144,13 +147,16 @@ class Engine {
         Scene m_scene;
         ResourceManager m_resources;
 
-        Clock          m_clock;
-        InputMap       m_input;
-        WindowManager  m_window;
-        NetSession     m_net;
-        HostChrome     m_chrome;
-        RenderSettings m_render;
-        RenderSettings m_projectRender;
+        Clock           m_clock;
+        InputMap        m_input;
+        WindowManager   m_window;
+        NetSession      m_net;
+        HostChrome      m_chrome;
+        RenderSettings  m_render;
+        RenderSettings  m_projectRender;
+        RenderReadiness m_readiness;  ///< FrameContext::readiness: written by one frame, read by the next.
+        ArrivalHold     m_arrival;    ///< Holds m_clock while an arriving world's meshes decode.
+        DebugDraw       m_debug;      ///< FrameContext::debug while frames show; a shipped game's never.
 
         std::array<SystemList, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 

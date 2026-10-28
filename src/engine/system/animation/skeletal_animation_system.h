@@ -88,6 +88,19 @@ class SkeletalAnimationSystem : public System {
         void run(FrameContext& ctx, float step, bool announceMarkers);
 
         /**
+         * @brief Compose the active ragdolls' rigs again from their bodies, the rest left as the tick
+         *        posed them.
+         *
+         * Physics moves a ragdoll's bodies after the tick composed it, and nothing else in the
+         * buffer.
+         *
+         * @param ctx Scene the bodies and rigs are read from.
+         * @return False when a rig took or lost a ragdoll since the tick, or changed its skeleton:
+         *         the whole buffer is posed again then.
+         */
+        bool reposeRagdolls(FrameContext& ctx);
+
+        /**
          * @brief Pose every rig in the scene into the already-cleared buffer.
          *
          * @param ctx Scene to walk and assets to resolve against.

@@ -7,10 +7,12 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
+#include "gl_context.h"
 #include "gl_texture.h"
+#include "gl_texture_2d_array.h"
 
 #include "convention/gl_bindings.h"
+#include "resource/texture_format.h"
 
 namespace Vkm::Engine {
 
@@ -28,9 +30,8 @@ constexpr uint32_t ARRAY_UNITS[3] = {
 
 } // namespace
 
-GLLayerMaps::~GLLayerMaps() {
-    for (Array& array : m_arrays) release(array);
-}
+GLLayerMaps::GLLayerMaps()  = default;
+GLLayerMaps::~GLLayerMaps() = default;
 
 void GLLayerMaps::build(
     const std::array<Layer, MaterialAsset::MAX_LAYERS>& layers,
@@ -60,16 +61,20 @@ void GLLayerMaps::build(
     fillArray(m_arrays[0], albedo, copy);
     fillArray(m_arrays[1], normal, copy);
     fillArray(m_arrays[2], surface, copy);
-    VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
 void GLLayerMaps::bind() const {
     for (size_t i = 0; i < m_arrays.size(); ++i) {
-        VKM_GL_CHECK(glBindTextureUnit(ARRAY_UNITS[i], m_arrays[i].view));
+        if (m_arrays[i]) m_arrays[i]->bindSlot(ARRAY_UNITS[i]);
     }
 }
 
-void GLLayerMaps::fillArray(Array& array, const Fill& fill, const Vkm::GL::ComputeShader& copy) {
+void GLLayerMaps::fillArray(
+    std::unique_ptr<Vkm::GL::Texture2DArray>& array,
+    const Fill& fill,
+    const Vkm::GL::ComputeShader& copy
+) {
     // The largest map's size, so no layer is read coarser than it was made.
     uint32_t width  = 4;
     uint32_t height = 4;
@@ -81,40 +86,21 @@ void GLLayerMaps::fillArray(Array& array, const Fill& fill, const Vkm::GL::Compu
     width  = std::min(width, MAX_SIZE);
     height = std::min(height, MAX_SIZE);
 
-    if (array.width != width || array.height != height || !array.texture) {
-        release(array);
-        array.width  = width;
-        array.height = height;
-        array.levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-        const auto layers = static_cast<GLsizei>(MaterialAsset::MAX_LAYERS);
-        VKM_GL_CHECK(glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &array.texture));
-        VKM_GL_CHECK(glTextureStorage3D(array.texture, array.levels, GL_RGBA8, width, height, layers));
-        array.view = array.texture;
-        if (fill.srgb) {
-            // Written as sRGB bytes, sampled decoded: an image cannot be written as sRGB.
-            VKM_GL_CHECK(glGenTextures(1, &array.view));
-            const GLuint view = array.view;
-            VKM_GL_CHECK(
-                glTextureView(
-                    view,
-                    GL_TEXTURE_2D_ARRAY,
-                    array.texture,
-                    GL_SRGB8_ALPHA8,
-                    0,
-                    array.levels,
-                    0,
-                    layers
-                )
-            );
-        }
-        VKM_GL_CHECK(glTextureParameteri(array.view, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
-        VKM_GL_CHECK(glTextureParameteri(array.view, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-        VKM_GL_CHECK(glTextureParameteri(array.view, GL_TEXTURE_WRAP_S, GL_REPEAT));
-        VKM_GL_CHECK(glTextureParameteri(array.view, GL_TEXTURE_WRAP_T, GL_REPEAT));
-        const float anisotropy = std::min(Vkm::GL::maxSupportedAnisotropy(), MAX_ANISOTROPY);
-        if (anisotropy > 1.0f) {
-            VKM_GL_CHECK(glTextureParameterf(array.view, GL_TEXTURE_MAX_ANISOTROPY, anisotropy));
-        }
+    if (!array || array->getWidth() != width || array->getHeight() != height) {
+        Vkm::GL::Texture2DArrayParams params;
+        params.width          = width;
+        params.height         = height;
+        params.layers         = MaterialAsset::MAX_LAYERS;
+        params.levels         = mipChainLength(width, height);
+        params.internalFormat = GL_RGBA8;
+        params.wrapS          = Vkm::GL::TextureWrap::Repeat;
+        params.wrapT          = Vkm::GL::TextureWrap::Repeat;
+        params.minFilter      = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
+        params.maxAnisotropy  = MAX_ANISOTROPY;
+        // Written as sRGB bytes, sampled decoded: an image cannot be written as sRGB.
+        if (fill.srgb) params.viewFormat = GL_SRGB8_ALPHA8;
+        array.reset();
+        array = std::make_unique<Vkm::GL::Texture2DArray>("layer_maps", params);
     }
 
     copy.bind();
@@ -127,26 +113,17 @@ void GLLayerMaps::fillArray(Array& array, const Fill& fill, const Vkm::GL::Compu
         const float sourceWidth = source ? static_cast<float>(source->getParams().width) : 1.0f;
         copy.setUniform1i("u_copy", static_cast<int>(what));
         copy.setUniform1i("u_layer", static_cast<int>(layer));
-        for (uint32_t level = 0; level < array.levels; ++level) {
-            const uint32_t w = std::max(array.width >> level, 1u);
-            const uint32_t h = std::max(array.height >> level, 1u);
+        for (uint32_t level = 0; level < array->levels(); ++level) {
+            const uint32_t w = mipExtent(width, level);
+            const uint32_t h = mipExtent(height, level);
             // The source level whose texels are this level's: a smaller map is read at its base.
             copy.setUniform1f("u_lod", std::max(std::log2(sourceWidth / static_cast<float>(w)), 0.0f));
-            const auto mip    = static_cast<GLint>(level);
-            const bool layers = true;  // the whole array is bound; the shader writes one layer
-            VKM_GL_CHECK(
-                glBindImageTexture(TARGET_UNIT, array.texture, mip, layers, 0, GL_WRITE_ONLY, GL_RGBA8)
-            );
+            // The whole array is bound; the shader writes one layer.
+            array->bindImage(TARGET_UNIT, GL_WRITE_ONLY, level);
             namespace Groups = GLBindings::ComputeGroups;
             copy.dispatch(Groups::covering(w, Groups::IMAGE), Groups::covering(h, Groups::IMAGE));
         }
     }
-}
-
-void GLLayerMaps::release(Array& array) {
-    if (array.view && array.view != array.texture) VKM_GL_CHECK(glDeleteTextures(1, &array.view));
-    if (array.texture) VKM_GL_CHECK(glDeleteTextures(1, &array.texture));
-    array = Array{};
 }
 
 } // namespace Vkm::Engine

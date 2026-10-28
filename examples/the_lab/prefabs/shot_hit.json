@@ -9,12 +9,14 @@
         "name": "assets/audio/hit.wav"
       }
     ],
+    "terrains": [],
     "textures": []
   },
   "entities": [
     {
       "components": {
         "AudioSource": {
+          "acoustics": true,
           "clip": "assets/audio/hit.wav",
           "loop": false,
           "maxDistance": 35.0,
@@ -24,7 +26,7 @@
           "priority": 0,
           "rolloff": "Inverse",
           "spatial": true,
-          "volume": 0.8999999761581421
+          "volume": 0.9
         },
         "Name": {
           "value": "Shot Hit"
@@ -32,12 +34,12 @@
         "ParticleEmitter": {
           "acceleration": [
             0.0,
-            -9.8100004196167,
+            -9.81,
             0.0
           ],
-          "angle": 0.4363323152065277,
+          "angle": 0.43633232,
           "blend": "Additive",
-          "bounce": 0.30000001192092896,
+          "bounce": 0.3,
           "burst": 40,
           "collide": true,
           "color": {
@@ -45,8 +47,8 @@
               {
                 "color": [
                   1.0,
-                  0.949999988079071,
-                  0.699999988079071,
+                  0.95,
+                  0.7,
                   1.0
                 ],
                 "time": 0.0
@@ -54,8 +56,8 @@
               {
                 "color": [
                   1.0,
-                  0.44999998807907104,
-                  0.10000000149011612,
+                  0.45,
+                  0.1,
                   0.0
                 ],
                 "time": 1.0
@@ -63,7 +65,7 @@
             ]
           },
           "destroyWhenSpent": true,
-          "distortion": 0.029999999329447746,
+          "distortion": 0.03,
           "drag": 0.5,
           "emission": 0.0,
           "emitting": false,
@@ -77,12 +79,19 @@
           "intensity": 8.0,
           "lifeLostOnHit": 0.0,
           "lifetime": {
-            "max": 0.699999988079071,
-            "min": 0.30000001192092896
+            "max": 0.7,
+            "min": 0.3
           },
+          "lightColor": [
+            1.0,
+            0.6,
+            0.3
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
           "maxParticles": 48,
           "normalMap": "",
-          "radius": 0.019999999552965164,
+          "radius": 0.02,
           "randomFrame": false,
           "rate": 30.0,
           "ratePerMetre": 0.0,
@@ -98,8 +107,8 @@
           "sheetFps": 0.0,
           "sheetRows": 1,
           "size": {
-            "max": 0.03999999910593033,
-            "min": 0.02500000037252903
+            "max": 0.04,
+            "min": 0.025
           },
           "sizeOverLife": {
             "keys": [
@@ -109,7 +118,7 @@
               },
               {
                 "time": 1.0,
-                "value": 0.30000001192092896
+                "value": 0.3
               }
             ]
           },
@@ -122,9 +131,9 @@
             "max": 0.0,
             "min": 0.0
           },
-          "stretch": 0.019999999552965164,
+          "stretch": 0.02,
           "texture": "",
-          "trailLength": 0.30000001192092896,
+          "trailLength": 0.3,
           "turbulence": 0.0,
           "turbulenceScale": 1.0
         },
@@ -157,30 +166,30 @@
         "ParticleEmitter": {
           "acceleration": [
             0.0,
-            0.30000001192092896,
+            0.3,
             0.0
           ],
-          "angle": 0.4363323152065277,
+          "angle": 0.43633232,
           "blend": "Alpha",
-          "bounce": 0.30000001192092896,
+          "bounce": 0.3,
           "burst": 8,
           "collide": false,
           "color": {
             "keys": [
               {
                 "color": [
-                  0.44999998807907104,
-                  0.4300000071525574,
-                  0.4000000059604645,
-                  0.550000011920929
+                  0.45,
+                  0.43,
+                  0.4,
+                  0.55
                 ],
                 "time": 0.0
               },
               {
                 "color": [
-                  0.44999998807907104,
-                  0.4300000071525574,
-                  0.4000000059604645,
+                  0.45,
+                  0.43,
+                  0.4,
                   0.0
                 ],
                 "time": 1.0
@@ -188,7 +197,7 @@
             ]
           },
           "destroyWhenSpent": true,
-          "distortion": 0.029999999329447746,
+          "distortion": 0.03,
           "drag": 2.5,
           "emission": 0.0,
           "emitting": false,
@@ -203,17 +212,24 @@
           "lifeLostOnHit": 0.0,
           "lifetime": {
             "max": 1.0,
-            "min": 0.6000000238418579
+            "min": 0.6
           },
+          "lightColor": [
+            1.0,
+            0.6,
+            0.3
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
           "maxParticles": 8,
           "normalMap": "",
-          "radius": 0.05000000074505806,
+          "radius": 0.05,
           "randomFrame": false,
           "rate": 30.0,
           "ratePerMetre": 0.0,
           "render": "Billboard",
           "rotation": {
-            "max": 6.28000020980835,
+            "max": 6.28,
             "min": 0.0
           },
           "seenBy": "All",
@@ -223,14 +239,14 @@
           "sheetFps": 0.0,
           "sheetRows": 1,
           "size": {
-            "max": 0.14000000059604645,
-            "min": 0.07999999821186066
+            "max": 0.14,
+            "min": 0.08
           },
           "sizeOverLife": {
             "keys": [
               {
                 "time": 0.0,
-                "value": 0.6000000238418579
+                "value": 0.6
               },
               {
                 "time": 1.0,
@@ -240,23 +256,23 @@
           },
           "softness": 1.0,
           "speed": {
-            "max": 0.800000011920929,
-            "min": 0.30000001192092896
+            "max": 0.8,
+            "min": 0.3
           },
           "spin": {
             "max": 0.0,
             "min": 0.0
           },
-          "stretch": 0.05000000074505806,
+          "stretch": 0.05,
           "texture": "",
-          "trailLength": 0.30000001192092896,
+          "trailLength": 0.3,
           "turbulence": 0.0,
           "turbulenceScale": 1.0
         },
         "Transform": {
           "position": [
             0.0,
-            0.05000000074505806,
+            0.05,
             0.0
           ],
           "rotation": [

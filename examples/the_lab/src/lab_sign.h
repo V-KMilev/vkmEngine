@@ -41,7 +41,7 @@ class LabSign : public ReflectedBehavior<LabSign> {
          * @param name Entity name of the line.
          * @param text What it says.
          * @param size Its height, in canvas pixels.
-         * @param ink  Its colour.
+         * @param ink  Its color.
          * @param y    How far down the label it starts, in canvas pixels.
          * @return The line.
          */

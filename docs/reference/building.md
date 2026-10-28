@@ -122,8 +122,9 @@ The suites are split by what each one needs to run:
 and the list below agree. The suites are `core`, `ecs`, `hierarchy`, `query`,
 `collision`, `solver`, `joint`, `ragdoll`, `character`, `resource`, `async`,
 `cook`, `import`, `authoring`, `prefab`, `scene`, `play`, `undo`, `culling`,
-`sky`, `ocean`, `terrain`, `animation`, `particle`, `wire`, `transport`,
-`replication`, `prediction`, `session`, `ui`, `audio`, `script`, `hostile`, `docs`.
+`sky`, `ocean`, `water`, `terrain`, `animation`, `particle`, `wire`,
+`transport`, `replication`, `prediction`, `session`, `ui`, `audio`, `script`,
+`debug`, `hostile`, `docs`.
 
 ```bash
 ./build/bin/vkm_engine_tests --list      # what there is
@@ -136,9 +137,11 @@ built in code through `RenderView` and `GLBackend` off-screen, and compares each
 with its image in `tests/render/golden/` (tolerances in
 `tests/render/golden_tests.cpp`; a failing frame is written to
 `/tmp/vkm_golden_<name>.png`). It is built only where CMake finds EGL and skips
-at runtime with no device. Each golden is compared only on the GPU that made it.
-After a change meant to alter the picture, regenerate them, look at them, and
-commit them with the change:
+at runtime with no device, unless `VKM_GPU_REQUIRED=1` (CI's GPU jobs) makes
+that a failure. Each golden is compared only on the GPU that made it.
+`--shard i/n` runs the i-th of n parts, so a slow device splits the suite across
+machines. After a change meant to alter the picture, regenerate them, look at
+them, and commit them with the change:
 
 ```sh
 VKM_UPDATE_GOLDENS=1 ./build/bin/vkm_render_tests
@@ -168,8 +171,8 @@ starting another binary.
 | `vkm_build_info` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, ...), built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's `bin/` |
-| `vkm_runtime_app` | Executable | Bare engine; links no importer and no editor. Runs as `vkm_runtime` |
-| `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; hot-reloads the open project's module. Runs as `vkm_editor` |
+| `vkm_runtime_app` | Executable | Bare engine; links no importer and no editor. Runs as `vkm_runtime`; on Windows a windowed program, so no terminal opens behind a game |
+| `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; hot-reloads the open project's module. Runs as `vkm_editor`, windowed on Windows as the runtime is |
 | `vkm_cook_app` | Executable | Headless asset cook: no window, no graphics context, no `Engine`. Runs as `vkm_cook` |
 | `vkm_server_app` | Executable | The refereeing host: a client's system stack with no window and no render backend. Runs as `vkm_server`; still links glfw through `vkm_core` |
 | `vkm_gl_tests` | Executable | CTest `vkm_gl`. Not installed |
@@ -228,10 +231,10 @@ Building a game *with* the SDK is [getting-started.md](../getting-started.md).
 
 ### The shipping engine
 
-A packaged game runs on `VKM_SHIPPING`: `Release` with asserts and the profiler off
-and `-g` kept, so a player's crash reads against the symbols `vkm package` splits out. It
-configures only the runtime, the server and what they load - no editor, cooker,
-tests or examples.
+A packaged game runs on `VKM_SHIPPING`: `Release` with asserts, the profiler and
+debug drawing off and `-g` kept, so a player's crash reads against the symbols
+`vkm package` splits out. It configures only the runtime, the server and what
+they load - no editor, cooker, tests or examples.
 
 ```bash
 cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON
@@ -258,7 +261,8 @@ or `gh workflow run ci.yml --ref <branch>` - through `.github/workflows/ci.yml`,
 which runs `.github/workflows/build.yml`: GCC and Clang on Linux and Windows
 build the shipping engine and the SDK, run the tests, package the archive, then
 install it on a clean machine and use it (`vkm new`, `vkm doctor`,
-`vkm package`, every example). A version tag (`vX.Y.Z`) runs
+`vkm package`, every example); the GPU suite runs beside them, each compiler's,
+split across runners on their software renderer. A version tag (`vX.Y.Z`) runs
 `.github/workflows/release.yml`: the same build, then the archives, the examples
 as games, the installers (`tools/install/install.sh`, `install.ps1`) and
 `SHA256SUMS` on the tag's GitHub release, with notes from `CHANGELOG.md`.
@@ -271,11 +275,11 @@ this table and the README's list to that directory:
 
 | Module | Path | Provides |
 |--------|------|----------|
-| **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Vkm::GL::`), shader loading/preprocessing. Vendors GLEW privately |
+| **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Vkm::GL::`), shader loading/preprocessing. Vendors GLEW, and exports it |
 | **vkmLog** | `modules/vkmLog` | Logging (`Vkm::Log::`): LOG_TRACE..LOG_FATAL, VKM_ASSERT |
 | **glm** | `modules/glm` | Vector/matrix math |
 | **glfw** | `modules/glfw` | Window + input platform layer |
-| **stb** | `modules/stb` | `stb_image` (texture decode), `stb_truetype` (SDF font bake), `stb_image_resize2` (the cooker's mip chains) |
+| **stb** | `modules/stb` | `stb_image` (texture decode), `stb_image_write` (screenshots), `stb_truetype` (SDF font bake), `stb_image_resize2` (the cooker's mip chains) |
 | **miniaudio** | `modules/miniaudio` | Playback device + wav/mp3/flac decode; only `system/audio` and the audio importer include it |
 | **imgui** | `modules/imgui` | Dear ImGui, `docking` branch, for editor UI |
 | **freetype** | `modules/freetype` | Font rasterizer, trimmed to the core |
@@ -285,9 +289,10 @@ this table and the README's list to that directory:
 | **ufbx** | `modules/ufbx` | FBX and OBJ import, converted to the engine's axes and metres on load |
 | **mikktspace** | `modules/mikktspace` | MikkTSpace tangents for imported meshes that carry none |
 | **meshoptimizer** | `modules/meshoptimizer` | LOD simplification (`decimateMesh`), the vertex-cache / vertex-fetch order of cooked meshes (`optimizeMeshForGpu`), and the import weld |
+| **xatlas** | `modules/xatlas` | The lightmap UVs a baked mesh is unwrapped into at cook |
 | **tracy** | `modules/tracy` | Tracy profiler client (`TracyClient`), linked by vkm_core only when `VKM_PROFILER` is on |
 
-cgltf, ufbx, mikktspace, meshoptimizer and `bc7e` are linked privately by
+cgltf, ufbx, mikktspace, meshoptimizer, xatlas and `bc7e` are linked privately by
 `vkm_cook` and by the test suite only.
 
 ## Shaders
@@ -298,18 +303,21 @@ stage:
 ```
 shaders/
   *.glsl        # the shared includes every program below pulls from, at the root
-  forward/      # pbr/ (the ubershader), pbr_skinned/, pbr_plain/ and pbr_plain_skinned/ (without its optional features), prepass/, prepass_skinned/
-  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cut by alpha), and a skinned variant of each
+  forward/      # pbr/ (the ubershader), pbr_skinned/, pbr_plain/ and pbr_plain_skinned/ (without its optional features), pbr_layered/, a *_baked/ twin of each static one (reads the lightmaps), prepass/, prepass_skinned/
+  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cut by alpha), a skinned variant of each, restore/ (the last cascade's held fixed depth)
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
   atmosphere/   # transmittance/, multiscatter/, sky_view/, aerial_perspective/
   irradiance/   # surfels/, relight/, fill/, surfel.glsl  (the SH probe grid: capture, light, repair)
+  lightmap/     # raster/, dilate/, shadow/  (the fixed lights' baked shadows)
   resolve/      # geometry/, color/  (the MSAA resolves)
   cull/         # pyramid/, instances/  (the GPU occlusion cull)
   exposure/     # histogram/, bins.glsl  (auto-exposure)
-  ocean/        # ripples and shore fields
+  ocean/        # swell, ripples and shore fields
+  material/     # layer_copy/  (a layered material's maps into arrays)
   gtao/  screen_shadow/  cluster/  fog/  reflection/
   bloom/  dof/  decal/  particle/  particle_strip/
-  skybox/  grid/  composite/  ui/  splash/
+  skybox/  grid/  composite/  ui/  splash/  debug/
+  loading/      # water/  water_step/  bar/  (the loading screen's water and bar)
 ```
 
 The loader (vkmGL) hard-codes each stage's file name:
@@ -369,6 +377,7 @@ cooked readers, the scene and prefab loaders, the wire.
 |--------|-------|---------|
 | `-UNDEBUG` | vkm_core (public) | With `VKM_ASSERTS` (on by default, off in a shipping engine): `VKM_ASSERT` and `assert()` run in every first-party file and every gameplay module, whatever the build type |
 | `VKM_PROFILER=1` | vkm_core (public) | Enables Tracy CPU+GPU zones via debug/profiler.h. Default ON unless `CMAKE_BUILD_TYPE` is exactly `Release`; always off in a shipping engine |
+| `VKM_SHIPPING=1` | vkm_core (private) | A shipping engine: it hands no system a `DebugDraw`, so a shipped game draws no debug lines |
 | `GLM_ENABLE_EXPERIMENTAL` | vkm_core (public) | GLM experimental features |
 | `GLM_FORCE_INTRINSICS` | vkm_core (public) | GLM SIMD intrinsics |
 | `VKM_ENGINE_VERSION` | vkm_core (public) | The engine version a gameplay module reports through `vkmModuleEngineVersion()`; a host refuses a module whose string differs |
@@ -399,8 +408,9 @@ modules/tracy/csvexport/build/tracy-csvexport -g -u run.tracy > gpu.csv
 
 (`tracy-capture` and `tracy-csvexport` build from `modules/tracy/capture` and
 `modules/tracy/csvexport`.) Skip the start-up - the scene build and probe bakes,
-until the `SwapBuffers` zones come steadily - then divide each zone's summed time by the number of `SwapBuffers`
-zones, one per frame, for time per frame - not by a stage's own count, as a stage
-opens a zone on every fixed tick too. Compare `GPU.Frame` with the main
-thread's stages to see which side binds; on the CPU side a pass costs mostly
-what it binds and draws, not what its shaders compute.
+until the `SwapBuffers` zones come steadily - then divide each zone's summed
+time by the number of `SwapBuffers` zones, one per frame, for time per frame -
+not by a stage's own count, as a stage opens a zone on every fixed tick too.
+Compare `GPU.Frame` with the main thread's stages to see which side binds; on
+the CPU side a pass costs mostly what it binds and draws, not what its shaders
+compute.

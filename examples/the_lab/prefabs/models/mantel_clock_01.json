@@ -28,6 +28,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_diff_1k.jpg"
@@ -76,19 +77,19 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 0.1611417680978775,
+              "maxDistance": 0.16114177,
               "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 1.8165953159332275,
+              "maxDistance": 1.8165953,
               "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 12.45590877532959,
+              "maxDistance": 12.455909,
               "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod2"
             },
             {
-              "maxDistance": 24.91181755065918,
+              "maxDistance": 24.911818,
               "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod3"
             }
           ]
@@ -142,8 +143,8 @@
         "Transform": {
           "position": [
             0.0,
-            0.09149909764528275,
-            0.05647554621100426
+            0.0914991,
+            0.056475546
           ],
           "rotation": [
             1.0,

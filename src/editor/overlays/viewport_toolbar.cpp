@@ -1,5 +1,8 @@
 #include "overlays/viewport_toolbar.h"
 
+#include <cstddef>
+#include <cstdio>
+
 #include <imgui.h>
 
 #include "ecs/scene.h"
@@ -15,6 +18,7 @@
 #include "input/view_framing.h"
 #include "input/camera_controller_system.h"
 #include "ui/editor_widgets.h"
+#include "ui/entity_labels.h"
 
 namespace Vkm::Engine {
 
@@ -131,7 +135,7 @@ void ViewportToolbar::drawViewBar(EditorContext& ec) {
         ImGui::SameLine();
         const bool canFocus = haveSel && camera.isActive();
         if (iconButton("foc", EditorIcon::Focus, false, canFocus, focTip, overlayButton()))
-            ViewFraming::frameSelected(ctx, state.selectedEntity, camera);
+            ViewFraming::frameSelected(ctx, state.selection, camera);
 
         m_viewBarHovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
@@ -140,6 +144,34 @@ void ViewportToolbar::drawViewBar(EditorContext& ec) {
         m_viewBarHovered = false;
     }
     endOverlayStrip();
+}
+
+namespace {
+
+/// The steps the snap button's menu offers; Preferences takes any other.
+constexpr float MOVE_STEPS[]   = {0.05f, 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 5.0f};
+constexpr float ROTATE_STEPS[] = {5.0f, 10.0f, 15.0f, 22.5f, 30.0f, 45.0f, 90.0f};
+constexpr float SCALE_STEPS[]  = {0.05f, 0.1f, 0.25f, 0.5f, 1.0f};
+
+/// One row of steps, the current one ticked.
+template <size_t N>
+void stepRow(const char* heading, const char* unit, const float (&steps)[N], float& step) {
+    ImGui::SeparatorText(heading);
+    for (const float choice : steps) {
+        char label[24];
+        snprintf(label, sizeof(label), "%g%s", choice, unit);
+        if (ImGui::MenuItem(label, nullptr, step == choice)) step = choice;
+    }
+}
+
+} // namespace
+
+void ViewportToolbar::drawSnapSteps(Preferences& prefs) {
+    if (!ImGui::BeginPopup("##SnapSteps")) return;
+    stepRow("Move", " m", MOVE_STEPS, prefs.snapTranslate);
+    stepRow("Rotate", " deg", ROTATE_STEPS, prefs.snapRotate);
+    stepRow("Scale", "", SCALE_STEPS, prefs.snapScale);
+    ImGui::EndPopup();
 }
 
 void ViewportToolbar::draw(EditorContext& ec) {
@@ -174,9 +206,20 @@ void ViewportToolbar::draw(EditorContext& ec) {
         const EditorIcon spcIcon = world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal;
         if (iconButton("spc", spcIcon, false, true, spcTip, overlayButton()))
             state.gizmoMode = world ? GizmoMode::Local : GizmoMode::World;
-        const char* snapTip = "Grid snap (hold Ctrl for temporary)";
-        if (iconButton("snp", EditorIcon::Snap, state.prefs.snapEnabled, true, snapTip, overlayButton()))
-            state.prefs.snapEnabled = !state.prefs.snapEnabled;
+        Preferences& prefs = state.prefs;
+        char snapTip[160];
+        snprintf(
+            snapTip,
+            sizeof(snapTip),
+            "Grid snap: %g m, %g deg, %g (hold Ctrl for temporary; right-click for the steps)",
+            prefs.snapTranslate,
+            prefs.snapRotate,
+            prefs.snapScale
+        );
+        if (iconButton("snp", EditorIcon::Snap, prefs.snapEnabled, true, snapTip, overlayButton()))
+            prefs.snapEnabled = !prefs.snapEnabled;
+        ImGui::OpenPopupOnItemClick("##SnapSteps", ImGuiPopupFlags_MouseButtonRight);
+        drawSnapSteps(prefs);
 
         m_hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem

@@ -59,7 +59,7 @@ struct TerrainPlantGroup {
  */
 struct TerrainFrame {
     std::vector<TerrainChunk>      chunks;
-    std::vector<TerrainPlantDraw>  plants;
+    std::vector<TerrainPlantDraw>  plants;          ///< Each terrain's one run, which the cull keys them by.
     std::vector<TerrainPlantGroup> plantGroups;     ///< Every plant in one, in order.
     uint64_t                       plantsRevision = 0;  ///< Moves whenever the plants do.
 };

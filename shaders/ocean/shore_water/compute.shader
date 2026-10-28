@@ -1,5 +1,5 @@
 /**
- * The water's height over the ocean's shore (GLOceanFields): above its rest, at each texel of a
+ * The water's height over the ocean's shore (GLOceanShore): above its rest, at each texel of a
  * coarse grid over the shore's square, read by ocean/shore filtered. The waves are metres long, so
  * a grid of them is what each fragment would find, for one read in place of the sum's inversion.
  */

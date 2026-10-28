@@ -1,5 +1,5 @@
 /**
- * The ocean's shore, first half of its distances (GLOceanFields): for each texel, the least of a
+ * The ocean's shore, first half of its distances (GLOceanShore): for each texel, the least of a
  * row's squared distances to its texels, each texel's own depth under the water counted
  * SHORE_UNDER times on top. ocean/shore_columns takes the least down the columns: two passes of
  * a distance transform, exact within u_reach texels (Felzenszwalb and Huttenlocher 2012).

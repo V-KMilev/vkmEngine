@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "gl_shader.h"
@@ -21,12 +22,19 @@ template <typename ResourceType> struct Handle;
  * @brief Draws the UI overlay on top of the composited scene.
  *
  * Writes the frame's UIDrawData into the frame's stream and draws it alpha-blended, depth off,
- * over the viewport rect. A no-op when the draw list is empty. Each command scissors to its
- * own rect, the one state this pass puts back itself: GLBackend::render does not reset it.
+ * over the viewport rect, each command scissored to its own rect. A no-op when the draw list is
+ * empty. Two run: the game's UI before the splash, and the loading screen (RenderView::cover)
+ * after it.
  */
 class GLUIPass : public GLPass {
     public:
-        GLUIPass();
+        /// Which of the frame's draw lists the pass draws.
+        enum class List : uint8_t {
+            Main,   ///< RenderView::ui: the game's own.
+            Cover,  ///< RenderView::cover, over the splash.
+        };
+
+        explicit GLUIPass(List list = List::Main);
         ~GLUIPass() override;
 
         GLUIPass(const GLUIPass& other) = delete;
@@ -56,6 +64,7 @@ class GLUIPass : public GLPass {
         void setScissorRect(GLFrameContext& ctx, const UIRect& clip) const;
 
     private:
+        List                                  m_list;
         Vkm::GL::Shader                       m_shader;
         std::unique_ptr<Vkm::GL::VertexArray> m_vao;  ///< The formats; the frame's stream holds the vertices.
 

@@ -31,6 +31,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_diff_1k.jpg"
@@ -100,9 +101,9 @@
             0.0
           ],
           "scale": [
-            0.686111569404602,
-            0.686111569404602,
-            0.686111569404602
+            0.68611157,
+            0.68611157,
+            0.68611157
           ]
         }
       },
@@ -115,15 +116,15 @@
           "bias": 1.0,
           "levels": [
             {
-              "maxDistance": 10.678391456604004,
+              "maxDistance": 10.678391,
               "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0"
             },
             {
-              "maxDistance": 59.21034622192383,
+              "maxDistance": 59.210346,
               "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod1"
             },
             {
-              "maxDistance": 118.42069244384766,
+              "maxDistance": 118.42069,
               "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod2"
             }
           ]

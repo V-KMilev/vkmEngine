@@ -9,6 +9,7 @@
 #include "core/engine_config.h"
 #include "frame/gl_lights.h"
 #include "platform/threading/thread_pool.h"
+#include "storage/gl_shadow_atlas.h"
 
 namespace Vkm::GL {
     class UniformBuffer;
@@ -16,7 +17,6 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
-class GLShadowAtlas;
 class GLView;
 struct RenderView;
 struct LightData;
@@ -69,9 +69,9 @@ struct alignas(16) ShadowCubeGPU {
 /**
  * @brief ShadowBlock UBO (std140) - must match ShadowBlock in shaders/shadows.glsl.
  *
- * cascadeSplits pick a cascade by view depth; csmBase/csmCount mark the sun's run in s2d, spots
- * take the rest, point lights scube. A light carries its slot in the lights SSBO
- * (GpuLight.spot.w).
+ * cascadeSplits pick a cascade by depth along cascadeDepth, the camera they were fitted to;
+ * csmBase/csmCount mark the sun's run in s2d, spots take the rest, point lights scube. A light
+ * carries its slot in the lights SSBO (GpuLight.spot.w).
  */
 struct alignas(16) ShadowUBOData {
     glm::vec4 cascadeSplits = glm::vec4(0.0f);  ///< View-space far depth per cascade.
@@ -79,6 +79,9 @@ struct alignas(16) ShadowUBOData {
     int csmCount = 0;
     int pad0     = 0;
     int pad1     = 0;
+    /// A world point's depth as the cascades were fitted: dot(vec4(point, 1), this). Not the drawing
+    /// camera's, which a mirror replaces.
+    glm::vec4 cascadeDepth = glm::vec4(0.0f);
     Shadow2DGPU   s2d  [Config::MAX_SHADOW_CASTERS_2D]{};
     ShadowCubeGPU scube[Config::MAX_SHADOW_CASTERS_CUBE]{};
 };
@@ -105,6 +108,15 @@ struct Shadow2DJob {
      * caster's dither is keyed on so its pattern stays put as the camera moves.
      */
     glm::vec2 ditherOrigin = glm::vec2(0.0f);
+    /**
+     * @brief Whether the atlas's layer keeps what the tile's fixed casters draw
+     *        (GLShadowAtlas::beginLayer).
+     *
+     * The sun's last cascade's (SHADOW_LAYERED_CASCADE), while its fit holds: it reaches farthest,
+     * so its fixed casters are most of what it draws, and it keeps its place while the view moves
+     * within its margin; a frame starts it from the layer and draws only what moves.
+     */
+    bool layered = false;
 };
 
 /**
@@ -134,6 +146,7 @@ struct ShadowRun {
      */
     uint32_t key   = 0;
     bool     posed = false;  ///< Whether the frame posed its casters: the last group of `key`.
+    bool     fixed = false;  ///< Whether its casters are fixed (ObjectDraw::fixed): the first group.
 };
 
 /**
@@ -158,9 +171,36 @@ struct ShadowCasterBatch {
      * in its model matrix.
      */
     uint64_t signature = 0;
+    /// What the fixed survivors alone draw, as a hash: the part of `signature` they sign. Never
+    /// zero; a tile's layer (Shadow2DJob::layered) is kept while it holds.
+    uint64_t fixedSignature = 0;
 
     glm::mat4 culledFor{0.0f};  ///< The matrix it was culled against.
     uint64_t  culledAt = 0;     ///< RenderObjects::serial of the frame it was culled or kept in.
+
+    /// The fixed casters among the survivors, as caster positions, in order; while the matrix and
+    /// RenderObjects::fixedSerial hold, a cull tests only what moves and keeps these.
+    std::vector<uint32_t> fixedSurvivors;
+    uint64_t              culledFixedSerial = 0;  ///< RenderObjects::fixedSerial they were culled at.
+};
+
+/**
+ * @brief What a caster's shadow key is made from (GLShadowData::cullCasters): its object, mesh,
+ *        material, and whether it is fixed and posed.
+ *
+ * Its matrix and box are not.
+ */
+struct KeyedCaster {
+    uint32_t object   = 0;
+    uint32_t mesh     = 0;
+    uint32_t material = 0;
+    bool     fixed    = false;
+    bool     posed    = false;
+
+    bool operator==(const KeyedCaster& other) const {
+        return object == other.object && mesh == other.mesh && material == other.material
+            && fixed == other.fixed && posed == other.posed;
+    }
 };
 
 /**
@@ -330,6 +370,13 @@ class GLShadowData {
             uint32_t size       = 0;
         };
 
+        /// The layered cascade's fit, kept while the view's slice stays inside it.
+        struct HeldCascade {
+            glm::vec3 dir    = glm::vec3(0.0f);  ///< The sun it was fitted to.
+            glm::vec3 centre = glm::vec3(0.0f);  ///< Its snapped centre, in the light's basis.
+            float     radius = 0.0f;             ///< Its slice's sphere, without the margin; 0 = none.
+        };
+
     private:
         /**
          * @brief Fork the cull of the caster list against every job recorded this frame.
@@ -438,6 +485,8 @@ class GLShadowData {
 
         bool m_soft = true;  ///< RenderSettings::softShadows: the tiles carry their light's source.
 
+        HeldCascade m_held;  ///< The layered cascade's fit.
+
         /**
          * @brief This frame's shadow-casting lights, in the order they take tiles.
          *
@@ -460,10 +509,14 @@ class GLShadowData {
         std::vector<std::vector<uint32_t>> m_cubeCandidates;
         /// ShadowRun::key per caster, flattened for the grouping pass.
         std::vector<uint32_t>              m_meshKeys;
+        /// The positions of the casters that are not fixed: all a cull keeping its fixed ones tests.
+        std::vector<uint32_t>              m_movingCasters;
         /// Slots a key's low digit counts: every mesh id, then every masked pair.
         uint32_t                           m_slotCount = 0;
         /// Per caster, the uploads its picture is drawn from; 0 for one not on the GPU.
         std::vector<uint64_t>              m_meshUploads;
+        /// Per caster, what its key was made from: a caster drawn otherwise makes the keys again.
+        std::vector<KeyedCaster>           m_keyed;
         /// RenderObjects::serial the keys were made for.
         uint64_t                           m_preparedSerial = 0;
         /// GLView::syncedRevision() the keys were made under.
@@ -475,6 +528,8 @@ class GLShadowData {
         std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.
         /// Per cull task: whether its batch is culled again this frame, or kept from the last.
         std::vector<uint8_t>               m_recull;
+        /// Per 2D job culled again: whether only its moving casters are (fixedSurvivors hold).
+        std::vector<uint8_t>               m_movingOnly;
 
         // The forked cull: the view it reads, the task body the pool borrows,
         // and the batch the pool runs it as, waited for by finishCull.

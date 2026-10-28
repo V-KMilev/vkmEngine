@@ -51,20 +51,13 @@ void buildDefaultLayout(unsigned int dockspace, float width, float height) {
     ImGui::DockBuilderDockWindow(HIERARCHY_WINDOW, left);
     ImGui::DockBuilderDockWindow(VIEWPORT_WINDOW,  centre);
     ImGui::DockBuilderDockWindow(INSPECTOR_WINDOW, right);
-    ImGui::DockBuilderDockWindow(MATERIAL_WINDOW,  right);
     ImGui::DockBuilderDockWindow(TERRAIN_WINDOW,   right);
     ImGui::DockBuilderDockWindow(ASSETS_WINDOW,    bottom);
     ImGui::DockBuilderDockWindow(ANIMATION_WINDOW, bottom);
-    ImGui::DockBuilderDockWindow(ERRORS_WINDOW,    bottom);
-    ImGui::DockBuilderDockWindow(BUILD_WINDOW,     bottom);
+    ImGui::DockBuilderDockWindow(CONSOLE_WINDOW,   bottom);
     openOnTab(right,  INSPECTOR_WINDOW);
     openOnTab(bottom, ASSETS_WINDOW);
     ImGui::DockBuilderFinish(dockspace);
-}
-
-void dockBesideOnFirstUse(const char* beside) {
-    const ImGuiWindow* docked = ImGui::FindWindowByName(beside);
-    if (docked && docked->DockId) ImGui::SetNextWindowDockID(docked->DockId, ImGuiCond_FirstUseEver);
 }
 
 void setViewportWindowClass() {

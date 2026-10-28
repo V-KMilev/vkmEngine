@@ -1,6 +1,6 @@
 /**
  * Particle strip - fragment stage: soft across its width, its texture laid along it, and
- * otherwise a particle's (shaders/particle/shade.glsl): an additive strip gives off its colour, an
+ * otherwise a particle's (shaders/particle/shade.glsl): an additive strip gives off its color, an
  * alpha one is lit, a distortion one bends the scene behind across its width.
  */
 

@@ -7,7 +7,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "gl_compute_shader.h"
-#include "gl_error_handle.h"
+#include "gl_context.h"
 
 #include "gl_frame_context.h"
 #include "storage/gl_fog_volume.h"
@@ -62,7 +62,7 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     m_inject.setUniform1f("u_fogDepth",       depth);
     m_inject.dispatch(gx, gy, dims.z);
 
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     ctx.fog.bindScatterImage(0, GL_READ_ONLY);
     ctx.fog.bindIntegratedImage(1, GL_WRITE_ONLY);
@@ -72,7 +72,7 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     m_integrate.dispatch(gx, gy, 1);
 
     // Order the integrated writes before the passes that fog sample the volume.
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
     ctx.fogReady = true;
 }

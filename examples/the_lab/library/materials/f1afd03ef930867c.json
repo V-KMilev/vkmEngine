@@ -2,9 +2,9 @@
   "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat2",
   "source": {
     "albedo": [
-      0.8000000715255737,
-      0.7333472371101379,
-      0.5533292889595032,
+      0.8000001,
+      0.73334724,
+      0.5533293,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -27,21 +27,23 @@
     "doubleSided": false,
     "emission": [
       1.0,
-      0.7282659411430359,
-      0.4313444495201111
+      0.72826594,
+      0.43134445
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.1664227843284607,
+    "rippleScale": 0.5,
+    "roughness": 0.16642278,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

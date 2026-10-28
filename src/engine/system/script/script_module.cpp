@@ -89,7 +89,7 @@ bool ScriptModule::load(const std::filesystem::path& modulePath, EventBus* event
         return true;
     }
 
-    // openBuilt logged the reason; this is the line for the editor's Errors tab.
+    // openBuilt logged the reason; this is the line for the editor Console's Errors.
     reportError(
         "Script",
         modulePath.string(),
@@ -214,7 +214,10 @@ bool ScriptModule::reload(Scene& scene, BehaviorSystem& behaviors, EventBus& eve
             m_modulePath.string().c_str()
         );
         OpenedModule opened = openBuilt();
-        if (!opened.lib) return false;
+        if (!opened.lib) {
+            reportError("Script", m_modulePath.string(), "Reload failed: the module still does not load.");
+            return false;
+        }
         adopt(std::move(opened));
 
         // Behaviors kept as text by a load with no registry are re-read now their types exist.

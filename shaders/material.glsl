@@ -31,9 +31,9 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     int   textureFlags;
     int   waves;  // 1: the scene's ocean moves the surface (ocean.glsl)
     float boxMapping;  // metres a repeat when box-mapped; 0 reads the mesh's UVs
-    float pad0;
-    float pad1;
-    float pad2;
+    int   water;       // 1: water that is not the sea (MaterialAsset::water)
+    float flowSpeed;   // m/s along the mesh's +U
+    float rippleScale; // how much of the scene's ripples it shows
 
     // A layered material's layers (MaterialAsset::layers), read by the LAYERED programs alone.
     vec4 layerTint[MATERIAL_MAX_LAYERS];     // albedo factor; w the normal scale

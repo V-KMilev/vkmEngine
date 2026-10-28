@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/round.hpp>
 
 #include "gl_buffer_upload.h"
 #include "gl_uniform_buffer.h"
@@ -23,13 +24,25 @@ GLProbeManager::~GLProbeManager() = default;
 void GLProbeManager::init(GLSceneCapture& capture, GLCubeConvolver& convolver) {
     m_baker = std::make_unique<GLProbeBaker>(capture, convolver);
     m_array = std::make_unique<GLProbeArray>();
-    m_array->createTargets(
-        static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES),
-        GLProbeArray::DEFAULT_RESOLUTION
-    );
+    m_array->createTargets(1, GLProbeArray::DEFAULT_RESOLUTION);
+}
+
+int GLProbeManager::capacity() const {
+    return m_array ? m_array->capacity() : 0;
 }
 
 void GLProbeManager::assignLayers(const RenderView& view) {
+    // Room for the probes there are, doubled as more come, up to MAX_PROBES: an array holds all its
+    // layers whatever is used, so one sized for the most a scene may hold costs every scene that.
+    // Grown, the arrays are new, and every bake goes with the old.
+    const auto   most   = static_cast<size_t>(GLBindings::ProbeTextureSlots::MAX_PROBES);
+    const size_t wanted = std::min(view.probes.size(), most);
+    if (wanted > static_cast<size_t>(m_array->capacity())) {
+        const size_t grown = std::min<size_t>(glm::ceilPowerOfTwo(wanted), most);
+        m_array->createTargets(static_cast<int>(grown), m_array->resolution());
+        for (BakeState& st : m_state) st.baked = false;
+        m_baker->endRefresh();
+    }
     const size_t capacity = static_cast<size_t>(m_array->capacity());
     m_state.resize(capacity);
     m_seen.assign(capacity, 0);
@@ -252,6 +265,18 @@ void GLProbeManager::invalidate() {
     for (BakeState& st : m_state) st.baked = false;
     if (m_baker) m_baker->endRefresh();
     m_refreshLayer = -1;
+}
+
+uint32_t GLProbeManager::ownedLayers() const {
+    return static_cast<uint32_t>(std::count_if(m_state.begin(), m_state.end(), [](const BakeState& st) {
+        return st.owned;
+    }));
+}
+
+uint32_t GLProbeManager::bakedLayers() const {
+    return static_cast<uint32_t>(std::count_if(m_state.begin(), m_state.end(), [](const BakeState& st) {
+        return st.owned && st.baked;
+    }));
 }
 
 } // namespace Vkm::Engine

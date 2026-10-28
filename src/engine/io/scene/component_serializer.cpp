@@ -151,6 +151,8 @@ void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
 nlohmann::json save(const CharacterController& cc)          { return saveReflected(cc); }
 void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
+nlohmann::json save(const Buoyancy& b)                      { return saveReflected(b); }
+void load(const nlohmann::json& j, Buoyancy& b)             { loadReflected(j, b); }
 
 nlohmann::json save(const Joint& joint, const EntityNamer& name) {
     // The driver carries all but the entity reference, `type` included: it is
@@ -526,6 +528,9 @@ class BehaviorJsonWriter : public BehaviorFieldVisitor {
             field(name, assetName);
         }
 
+        // As a plain path, as a bare string field wrote it.
+        void prefabField(const char* name, std::string& path) override { field(name, path); }
+
         bool beginStruct(const char* name) override {
             m_scopes.push_back(&(cur()[name] = nlohmann::json::object()));
             return true;
@@ -602,6 +607,8 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
             field(name, assetName);
         }
 
+        void prefabField(const char* name, std::string& path) override { field(name, path); }
+
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
             const nlohmann::json* node = present(name);
             if (!node) return;
@@ -655,34 +662,34 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
 nlohmann::json save(const ScriptComponent& sc) {
     nlohmann::json behaviors = nlohmann::json::array();
 
-    // A held one goes back where it was read from, since order is run order, and
-    // exactly as read: the module that understands its properties is missing.
-    const auto emitHeldAt = [&](size_t position) {
-        for (const UnknownBehavior& kept : sc.unknown) {
-            if (kept.index != position) continue;
-            nlohmann::json props = nlohmann::json::parse(kept.properties, nullptr, false);
-            if (props.is_discarded()) props = nlohmann::json::object();
-            behaviors.push_back({{"type", kept.type}, {"properties", std::move(props)}});
-        }
+    // A held one goes back exactly as read, its module missing; none is dropped. Order is run order, so
+    // it goes back behind as many constructed ones as were listed ahead of it, held ones that share a
+    // place in the order they are listed.
+    std::vector<const UnknownBehavior*> held;
+    held.reserve(sc.unknown.size());
+    for (const UnknownBehavior& kept : sc.unknown) held.push_back(&kept);
+    const auto runsEarlier = [](const UnknownBehavior* a, const UnknownBehavior* b) {
+        return a->constructedBefore < b->constructedBefore;
+    };
+    std::stable_sort(held.begin(), held.end(), runsEarlier);
+    size_t next = 0;
+    const auto emitHeld = [&](const UnknownBehavior& kept) {
+        nlohmann::json props = nlohmann::json::parse(kept.properties, nullptr, false);
+        if (props.is_discarded()) props = nlohmann::json::object();
+        behaviors.push_back({{"type", kept.type}, {"properties", std::move(props)}});
     };
 
-    for (const auto& behavior : sc.behaviors) {
+    for (size_t at = 0; at < sc.behaviors.size(); ++at) {
+        while (next < held.size() && held[next]->constructedBefore <= at) emitHeld(*held[next++]);
+        const std::unique_ptr<Behavior>& behavior = sc.behaviors[at];
         if (!behavior) continue;
-        emitHeldAt(behaviors.size());
         nlohmann::json props = nlohmann::json::object();
         BehaviorJsonWriter writer(props);
         // The writer only reads, so casting away const for visitFields is safe.
         const_cast<Behavior&>(*behavior).visitFields(writer);
         behaviors.push_back({{"type", behavior->typeName()}, {"properties", std::move(props)}});
     }
-
-    // Whatever sat past the last constructed one, in the order recorded.
-    const size_t total = sc.behaviors.size() + sc.unknown.size();
-    while (behaviors.size() < total) {
-        const size_t before = behaviors.size();
-        emitHeldAt(before);
-        if (behaviors.size() == before) break;
-    }
+    while (next < held.size()) emitHeld(*held[next++]);
     return {{"behaviors", std::move(behaviors)}};
 }
 
@@ -702,7 +709,7 @@ void load(const nlohmann::json& j, ScriptComponent& sc) {
             // Kept: an unregistered type means the module is absent, not that
             // the scene stopped wanting the behavior. See UnknownBehavior.
             std::string properties = props ? props->dump() : std::string{"{}"};
-            sc.unknown.push_back({type, std::move(properties), sc.behaviors.size() + sc.unknown.size()});
+            sc.unknown.push_back({type, std::move(properties), sc.behaviors.size()});
             continue;
         }
         if (props) {

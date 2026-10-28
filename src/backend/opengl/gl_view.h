@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -63,12 +64,21 @@ class GLView {
 
     public:
         /**
+         * @brief Start compiling the program a sync runs (shaders/material/layer_copy).
+         *
+         * At startup, with the first frame's: the first sync builds the layered materials, and a
+         * program asked for then would wait behind every other the driver is compiling.
+         */
+        void buildPrograms();
+
+        /**
          * @brief Upload / refresh every asset `view` references.
          *
          * Every RenderView list naming a handle is walked: the camera's objects and the
          * scene-wide ones (mesh, material and its textures - every material, so an object first
-         * turned to uploads nothing that frame), decals, particle textures, and the UI's commands
-         * (font atlas, image).
+         * turned to uploads nothing that frame - and a fixed object's given mesh,
+         * RenderObjects::bases, which the lightmap bake draws), decals, particle textures, and the
+         * UI's commands (font atlas, image).
          *
          * A missing GPU object skips a draw silently, so the walk names every RenderView member:
          * one added there fails to compile here until it has been classified.
@@ -117,6 +127,22 @@ class GLView {
          * @param resources Resolves the handle to its pixels.
          */
         void ensureTexture(const TextureHandle& handle, const ResourceManager& resources);
+
+        /**
+         * @brief Upload @p mesh and @p material, its maps with it, outside a sync().
+         *
+         * For a caller drawing them alone, whose made-up view must not stand in for the frame's:
+         * sync() keeps track of the frame's objects and assets from one call to the next.
+         *
+         * @param mesh      Mesh to upload; an empty handle does nothing.
+         * @param material  Material to upload; the same.
+         * @param resources Resolves both.
+         */
+        void ensureDrawn(
+            const MeshHandle& mesh,
+            const MaterialHandle& material,
+            const ResourceManager& resources
+        );
 
         /**
          * @brief Resolve a handle to its synced GPU object.
@@ -204,7 +230,40 @@ class GLView {
          */
         uint64_t syncedRevision() const { return m_syncedRevision; }
 
+        /**
+         * @brief Whether @p drawn reads lightmap coordinates laid out as @p given's are, so what is
+         *        baked into @p given's lightmap can be read through it.
+         *
+         * True of @p given itself, and of a mesh every lightmap coordinate of which is one of
+         * @p given's: a decimation of it, or a terrain chunk's coarser level. A level unwrapped on
+         * its own lays its charts out elsewhere. As sync() last worked it out for a fixed object
+         * drawing @p drawn for @p given (RenderObjects::bases); false for a pair it has not.
+         *
+         * @param drawn The mesh an object draws.
+         * @param given The mesh it was given.
+         * @return Whether the two lay their lightmap coordinates out alike.
+         */
+        bool readsChartsOf(const MeshHandle& drawn, const MeshHandle& given) const;
+
     private:
+        /// What sync() worked out of one drawn mesh and its given one, as of their uploads.
+        struct ChartsCheck {
+            uint64_t drawnUpload = 0;
+            uint64_t givenUpload = 0;
+            bool     reads       = false;
+        };
+
+    private:
+        /**
+         * @brief Work out readsChartsOf() for @p drawn and @p given, unless their uploads still
+         *        hold the answer.
+         *
+         * @param drawn     The mesh an object draws.
+         * @param given     The mesh it was given.
+         * @param resources Resolves both to their lightmap coordinates.
+         */
+        void checkCharts(const MeshHandle& drawn, const MeshHandle& given, const ResourceManager& resources);
+
         /**
          * @brief Ready a layered material's layers - each with its maps - and build its arrays from
          *        them (GLMaterial::updateLayers).
@@ -265,7 +324,7 @@ class GLView {
         GLMeshPool                  m_meshPool;
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
-        /// Fills a layered material's arrays (GLLayerMaps); made the first time one is readied.
+        /// Fills a layered material's arrays (GLLayerMaps); see buildPrograms.
         std::unique_ptr<Vkm::GL::ComputeShader> m_layerCopy;
         GLResourceTable<GLTexture>  m_textures;
         /// SDF atlases by FontHandle; fonts carry pixels, not TextureAssets.
@@ -278,6 +337,9 @@ class GLView {
 
         /// Texture ids that settled with no pixels, each warned about once.
         std::unordered_set<uint32_t> m_reportedMissing;
+
+        /// readsChartsOf()'s answers, by the two meshes' ids.
+        std::unordered_map<uint64_t, ChartsCheck> m_charts;
 
         /// The filtering and anisotropy every texture was last given.
         TextureFiltering m_filtering  = RenderSettings{}.textureFiltering;

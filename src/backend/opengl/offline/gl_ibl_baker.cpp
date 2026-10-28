@@ -26,7 +26,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-/// A bake's convolution, from the back env cube into the back targets.
+/// The convolution, from the back env cube into the back targets.
 class BackTarget final : public GLCubeConvolver::Target {
     public:
         BackTarget(Vkm::GL::Context& gl, GLIBL& ibl) : m_gl(gl), m_ibl(ibl) {}
@@ -145,14 +145,8 @@ void GLIBLBaker::bakeFrom(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& sou
 
     ibl.bindCaptureFbo();
     for (int face = 0; face < 6; ++face) captureFace(gl, ibl, source, face);
-    ibl.generateEnvMips();
-
-    ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-    m_convolver.irradiance([&](int face) { ibl.attachIrradianceFace(gl, face); });
-    m_convolver.prefilter(
-        GLIBL::PREFILTER_MIPS,
-        [&](int face, int mip) { ibl.attachPrefilterFace(gl, face, mip); }
-    );
+    BackTarget target(gl, ibl);
+    m_convolver.convolve(gl, GLIBL::PREFILTER_SIZE, GLIBL::PREFILTER_MIPS, target);
     ibl.unbindCaptureFbo();
 
     ibl.swap();

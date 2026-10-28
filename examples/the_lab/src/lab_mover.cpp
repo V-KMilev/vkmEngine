@@ -6,10 +6,10 @@
 #include <glm/gtc/constants.hpp>
 
 #include "core/math/axes.h"
+#include "core/math/easing.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/scene.h"
-#include "net/net_session.h"
 
 namespace Lab {
 
@@ -31,19 +31,16 @@ void LabMover::onFixedUpdate(float) {
     Transform* at = tryGet<Transform>();
     if (!at) return;
 
-    // Inside a tick the world's clock is that tick's, the same at every end. Whole turns are dropped,
-    // in double, before each angle is taken, so it stays exact however long the lab runs.
-    const double now   = net().worldTime(clock());
-    const float  tau   = glm::two_pi<float>();
+    // Inside a tick the world's clock is that tick's, the same at every end.
+    const double now = worldTime();
+    const float  tau = glm::two_pi<float>();
     glm::vec3 velocity{0.0f};
     if (period > 0.0f) {
-        const double turns = now / static_cast<double>(period) + static_cast<double>(phase);
-        const float  angle = tau * static_cast<float>(glm::fract(turns));
+        const float angle = tau * (cycle(now, period) + phase);
         at->position = m_origin + travel * (0.5f - 0.5f * std::cos(angle));
         velocity     = travel * (0.5f * std::sin(angle) * tau / period);
     }
-    const double spun = now * static_cast<double>(spin) / DEGREES_A_TURN;
-    const float  turn = tau * static_cast<float>(glm::fract(spun));
+    const float turn = tau * cycle(now * static_cast<double>(spin), DEGREES_A_TURN);
     at->rotation = glm::angleAxis(turn, Math::WORLD_UP) * m_facing;
 
     if (Rigidbody* body = tryGet<Rigidbody>()) {

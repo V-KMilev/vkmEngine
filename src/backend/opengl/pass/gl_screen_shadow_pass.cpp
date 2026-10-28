@@ -7,7 +7,6 @@
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
-#include "gl_error_handle.h"
 #include "gl_context.h"
 
 #include "gl_frame_context.h"
@@ -184,8 +183,8 @@ void GLScreenShadowPass::execute(GLFrameContext& ctx) {
     if (!ctx.aoReady) {
         ctx.ao.resize(view.sceneWidth(), view.sceneHeight());
         ctx.ao.bind(ctx.gl);
-        const GLfloat open[4] = {1.0f, 0.5f, 0.5f, 1.0f};
-        VKM_GL_CHECK(glClearBufferfv(GL_COLOR, 0, open));
+        const float open[4] = {1.0f, 0.5f, 0.5f, 1.0f};
+        ctx.ao.clearColor(open);
     }
 
     const CameraData& camera = view.camera;
@@ -208,8 +207,8 @@ void GLScreenShadowPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
     ctx.ao.bindImage(GLTarget::Attachment::Color, 0, GL_READ_WRITE);
 
-    // GTAO's denoise wrote the target through an image.
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+    // GTAO's upsample wrote the target through an image.
+    Vkm::GL::memoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     for (int i = 0; i < waves.count; ++i) {
         const WaveDispatch& d = waves.dispatches[static_cast<size_t>(i)];
         m_shader.setUniform2i("u_waveOffset", d.offset[0], d.offset[1]);
@@ -219,7 +218,7 @@ void GLScreenShadowPass::execute(GLFrameContext& ctx) {
             static_cast<uint32_t>(d.waves[1])
         );
     }
-    VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+    Vkm::GL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
     ctx.screenShadowReady = true;
 }

@@ -43,6 +43,7 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (isPressed(kb.toggleRenderSettings, false)) state.showRenderSettings = !state.showRenderSettings;
     if (isPressed(kb.toggleTerrain, false))        state.showTerrain        = !state.showTerrain;
+    if (isPressed(kb.showConsole, false))          state.revealConsole      = true;
 
     // One or the other, should a rebind give both the same combo.
     if (isPressed(kb.redo))      EditorActions::redo(ctx.scene, state);
@@ -59,10 +60,27 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.duplicate) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
     }
-    if (isPressed(kb.focusSelected) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
-        ViewFraming::frameSelected(ctx, state.selectedEntity, camera);
+    // The Console's line, when its list has the keyboard, is what a copy takes.
+    const bool copiesEntities = !state.consoleHoldsKeys;
+    if (copiesEntities && isPressed(kb.copyEntity, false)) {
+        EditorActions::copySelection(ctx.scene, ctx.resources, state);
     }
-    if (isPressed(kb.frameAll)) {
+    if (copiesEntities && isPressed(kb.cutEntity, false)) {
+        EditorActions::cutSelection(ctx.scene, ctx.resources, state);
+    }
+    if (isPressed(kb.pasteEntity, false)) EditorActions::paste(ctx.scene, ctx.resources, state);
+    if (isPressed(kb.selectAll, false))   EditorActions::selectAll(ctx.scene, state);
+    // Over a preview, the keys that frame a view are the preview's (PreviewViewport).
+    const bool framesScene = !state.previewHovered;
+    const bool held = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+    if (framesScene && isPressed(kb.focusSelected) && held) {
+        ViewFraming::frameSelected(ctx, state.selection, camera);
+    }
+    if (framesScene && isPressed(kb.alignWithView, false)) {
+        EditorActions::alignWithView(ctx.scene, ctx.resources, state);
+    }
+    if (isPressed(kb.dropToGround, false)) EditorActions::dropToGround(ctx.scene, ctx.resources, state);
+    if (framesScene && isPressed(kb.frameAll)) {
         ViewFraming::frameAll(ctx, camera);
     }
     if (isPressed(kb.toggleOrthographic) && camera.isActive()) {

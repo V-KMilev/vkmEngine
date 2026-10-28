@@ -4,6 +4,7 @@
 #include <string>
 
 #include "core/system.h"
+#include "system/async/async_loader_system.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_settings.h"
 #include "system/render/render_view.h"
@@ -100,6 +101,8 @@ class RenderSystem : public System {
         std::unique_ptr<RenderBackend> m_backend;
 
         RenderView m_view;
+        /// An arriving world's meshes and textures, which its first bakes wait for.
+        ArrivalHold m_bakeHold{ASYNC_LOAD_PATIENCE, assetsLoading, "its first bakes begin"};
 
         bool m_releaseUploadedPixels = false;
 };

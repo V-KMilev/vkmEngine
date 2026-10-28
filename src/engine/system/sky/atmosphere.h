@@ -36,7 +36,7 @@ constexpr float OZONE_HALF_WIDTH = 15000.0f;  ///< Altitude either side where it
 constexpr float GROUND_ALBEDO = 0.3f;
 
 /// Midpoint samples along a path to the top of the air, on the CPU and in the GPU's table
-/// alike, so the sun's colour and the sky's agree; within 0.1% of converged at every elevation.
+/// alike, so the sun's color and the sky's agree; within 0.1% of converged at every elevation.
 constexpr int TRANSMITTANCE_STEPS = 256;
 
 /**
@@ -68,7 +68,7 @@ Coefficients coefficients(const SkySettings& sky);
 /**
  * @brief How much sunlight reaches the scene, relative to a sun straight overhead.
  *
- * So an overhead sun keeps its authored colour; zero once the planet blocks it.
+ * So an overhead sun keeps its authored color; zero once the planet blocks it.
  *
  * @param sky Supplies the sun's elevation and the scattering scales.
  * @return Per-channel transmittance, 1 at the zenith.
@@ -81,15 +81,15 @@ glm::vec3 sunTransmittance(const SkySettings& sky);
  * What, through the air straight down, arrives as `sky.lightColor` times
  * `sky.lightIntensity`: the one sun the scene's light and the sky both stand for.
  *
- * @param sky Supplies the sun's colour and intensity and the air.
+ * @param sky Supplies the sun's color and intensity and the air.
  * @return Per-channel illuminance at the top of the atmosphere.
  */
 glm::vec3 solarIlluminance(const SkySettings& sky);
 
 /**
- * @brief The sun's one colour: the authored daylight colour through the atmosphere.
+ * @brief The sun's one color: the authored daylight color through the atmosphere.
  *
- * @param sky Supplies the sun's colour, elevation and the air.
+ * @param sky Supplies the sun's color, elevation and the air.
  * @return `sky.lightColor` times sunTransmittance.
  */
 glm::vec3 sunlight(const SkySettings& sky);

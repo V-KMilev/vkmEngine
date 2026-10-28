@@ -362,7 +362,7 @@ class ResourceManager {
         }
 
         /**
-         * @brief Visit every live resource of type T; a linear scan for tooling, not hot paths.
+         * @brief Visit every live resource of type T, a linear scan.
          *
          * @tparam T  The resource type.
          * @tparam Fn Callable taking (Handle<T>, const T&).

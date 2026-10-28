@@ -36,7 +36,7 @@ namespace AssetCook {
  * refuses a mismatch - the case of a file copied under a name not baked for it. Only
  * testTheCookersOutputIsPinnedToItsVersion notices a forgotten bump that changes no layout.
  */
-constexpr uint16_t COOKER_VERSION = 13;
+constexpr uint16_t COOKER_VERSION = 14;
 
 /**
  * @brief The complete cache key for one cooked artifact.

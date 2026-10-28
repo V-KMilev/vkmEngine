@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace Vkm::Engine {
@@ -96,6 +97,14 @@ void copyViewFields(const RenderSettings& from, RenderSettings& to);
  * @return Absolute path to the settings JSON document.
  */
 std::string path();
+
+/**
+ * @brief Where the project at @p projectRoot keeps these settings, open or not.
+ *
+ * @param projectRoot A project's directory.
+ * @return The settings JSON document's path.
+ */
+std::filesystem::path pathIn(const std::filesystem::path& projectRoot);
 
 } // namespace EditorSettings
 

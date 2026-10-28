@@ -6,9 +6,14 @@
 #include <future>
 #include <vector>
 
+#include <glm/gtc/packing.hpp>
+
+#include "debug/debug_draw.h"
 #include "debug/engine_error_log.h"
 #include "platform/threading/thread_pool.h"
 
+#include "ecs/component/animation/animation.h"
+#include "system/animation/animation_system.h"
 #include "system/physics/solver/solver.h"
 #include "system/physics/solver/solver_math.h"
 #include "system/physics/solver/contact_cache.h"
@@ -21,6 +26,49 @@
 #include "system/physics/physics_system.h"
 
 namespace {
+
+// A body turns about its centre of mass and gravity pulls there, wherever its origin is: a tall box
+// leaning past its edge topples whether it is pivoted at its middle or, as a model often is, at its
+// base. Pulled at its base instead, the base one would stand there leaning.
+void testABodyTurnsAboutItsCentreNotItsOrigin() {
+    std::printf("A tall box leaning past its edge, pivoted at its middle and at its base:\n");
+
+    constexpr float HALF_WIDTH  = 0.2f;
+    constexpr float HALF_HEIGHT = 1.0f;
+    const glm::quat lean = glm::angleAxis(glm::radians(20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // The bottom face's middle, raised so the low edge just clears the floor.
+    const glm::vec3 base = {0.0f, HALF_WIDTH * std::sin(glm::radians(20.0f)) + 0.01f, 0.0f};
+
+    float tilt[2] = {};
+    for (const bool atBase : {false, true}) {
+        Scene scene;
+        addBox(scene, {0.0f, -0.5f, 0.0f}, {10.0f, 0.5f, 10.0f});
+
+        const EntityId id = scene.createEntity();
+        Transform at;
+        at.rotation = lean;
+        at.position = atBase ? base : base + lean * glm::vec3(0.0f, HALF_HEIGHT, 0.0f);
+        scene.add<Transform>(id, std::move(at));
+        Rigidbody body;
+        body.mass     = 10.0f;
+        body.canSleep = false;
+        scene.add<Rigidbody>(id, std::move(body));
+        ColliderPart part;
+        part.shape       = ColliderShape::Box;
+        part.halfExtents = {HALF_WIDTH, HALF_HEIGHT, HALF_WIDTH};
+        part.center      = atBase ? glm::vec3(0.0f, HALF_HEIGHT, 0.0f) : glm::vec3(0.0f);
+        Collider collider;
+        collider.parts = {part};
+        scene.add<Collider>(id, std::move(collider));
+
+        simulate(scene, 240);
+        const glm::vec3 up = scene.get<Transform>(id).rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+        tilt[atBase ? 1 : 0] = glm::degrees(std::acos(glm::clamp(up.y, -1.0f, 1.0f)));
+    }
+    std::printf("      lying at %.0f degrees pivoted at its middle, %.0f at its base\n", tilt[0], tilt[1]);
+    check("pivoted at its middle, it topples", tilt[0] > 70.0f);
+    check("  and pivoted at its base, it does too", tilt[1] > 70.0f);
+}
 
 // A simulation must be a function of the world, not its assembly order. SparseSet is
 // swap-and-pop, so a storage walk carries insertion history, and Gauss-Seidel is
@@ -405,6 +453,47 @@ void testAStackSleepsTogetherOrNotAtAll() {
         "once nothing disturbs it the stack sleeps",
         scene.get<Rigidbody>(lower).sleeping && scene.get<Rigidbody>(upper).sleeping
     );
+
+    // A launch set on a sleeper, with no call to wake it, is not lost.
+    const float before = scene.get<Transform>(upper).position.y;
+    scene.get<Rigidbody>(upper).linearVelocity = {0.0f, 4.0f, 0.0f};
+    for (int tick = 0; tick < 10; ++tick) physics.fixedUpdate(ctx);
+    check("a sleeper given a velocity goes", scene.get<Transform>(upper).position.y > before + 0.3f);
+}
+
+// A body turns about its centre of mass, so its resting speed is judged by the lever from there:
+// a collider set off its origin moves no faster for it, and sleeps when the same box centred does.
+void testAColliderOffItsOriginSleepsAsOneOnIt() {
+    std::printf("Two boxes turning slowly, one with its collider off its origin:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {16.0f, 0.5f, 16.0f});   // floor, static
+    const EntityId centred = addFallingBody(scene, {-10.0f, 0.49f, 0.0f}, 0.5f);
+    const EntityId offset  = addFallingBody(scene, {10.0f, -2.51f, 0.0f}, 0.5f);
+    scene.get<Collider>(offset).parts[0].center = {0.0f, 3.0f, 0.0f};
+
+    // Slow enough at the box's corner from its centre, too fast at that corner from the far origin.
+    // Frictionless and undamped, so each keeps turning on the floor until it sleeps.
+    constexpr float SPIN = 0.03f;
+    for (const EntityId id : {centred, offset}) {
+        Rigidbody& body      = scene.get<Rigidbody>(id);
+        body.canSleep        = true;
+        body.friction        = 0.0f;
+        body.angularDamping  = 0.0f;
+        body.angularVelocity = {0.0f, SPIN, 0.0f};
+    }
+
+    TestFrame frame(scene);
+    PhysicsSystem physics;
+    int centredSlept = -1;
+    int offsetSlept  = -1;
+    for (int tick = 0; tick < 240 && (centredSlept < 0 || offsetSlept < 0); ++tick) {
+        physics.fixedUpdate(frame.ctx);
+        if (centredSlept < 0 && scene.get<Rigidbody>(centred).sleeping) centredSlept = tick;
+        if (offsetSlept < 0 && scene.get<Rigidbody>(offset).sleeping)   offsetSlept  = tick;
+    }
+    check("the centred box sleeps", centredSlept >= 0);
+    check("  and the offset one on the same tick", offsetSlept == centredSlept);
 }
 
 // A replayed tick's rest time was counted when first lived. Counted again, a client's
@@ -473,6 +562,14 @@ void testAClientRunsWhatTheServerNeverNames() {
     client.endReplay(scene);
     check("a replay runs neither again", held && height(mine) == before);
 
+    // Touching the player's island leases them no more than they are: the replay still runs neither.
+    client.lease(scene, {mine, local});
+    check("  nor are they leased, being the client's already", client.leaseCount() == 0);
+    client.beginReplayTick(InputCommand{});
+    const bool stillHeld = !client.simulates(scene, mine) && !client.simulates(scene, local);
+    client.endReplay(scene);
+    check("  so a replay still runs neither", stillHeld);
+
     client.close();
 }
 
@@ -497,7 +594,7 @@ void testABodyThisEndDoesNotDecideGetsNoGravity() {
     PhysicsSystem physics;
 
     for (int tick = 0; tick < 60; ++tick) {
-        client.lease({held});
+        client.lease(scene, {held});
         physics.fixedUpdate(frame.ctx);
     }
     check("the client decides the box it leased", client.simulates(scene, held));
@@ -829,6 +926,54 @@ void testAContactCarriesItsFrictionIntoTheNextTick() {
     check(
         "  and the vector it resolved is the one that was earned",
         nearly(sideways, std::sqrt(earned1 * earned1 + earned2 * earned2))
+    );
+}
+
+// A body turns about its centre of mass, which the solver measures its arms from; a crate pivoted
+// at its base has it half a metre up. Its contacts are still matched next tick, on both sides.
+void testAContactBetweenOffCentreBodiesIsWarmStarted() {
+    std::printf("A contact between two base-pivoted crates, one tick later:\n");
+
+    const std::vector<EntityId> entities = {EntityId{1, 1}, EntityId{2, 1}};
+    const glm::vec3 centre(0.0f, 0.5f, 0.0f);
+    std::vector<BodyFrame> gathered(2);
+    gathered[0].pose.position = {0.0f, 0.0f, 0.0f};
+    gathered[1].pose.position = {0.0f, 1.0f, 0.0f};
+
+    // The solver's bodies stand at the crates' centres of mass.
+    std::vector<PhysicsBody> bodies(2);
+    for (int i = 0; i < 2; ++i) {
+        gathered[i].centre        = centre;
+        bodies[i].invMass         = 1.0f;
+        bodies[i].invInertiaWorld = glm::mat3(1.0f);
+        bodies[i].position        = gathered[i].pose.position + centre;
+    }
+    bodies[1].linearVelocity = {0.0f, -1.0f, 0.0f};
+    const auto makeManifolds = [] {
+        std::vector<ContactManifold> manifolds(1);
+        manifolds[0].bodyA = 0;
+        manifolds[0].bodyB = 1;
+        manifolds[0].count = 1;
+        manifolds[0].contacts[0].point  = {0.3f, 1.0f, 0.0f};
+        manifolds[0].contacts[0].normal = {0.0f, 1.0f, 0.0f};
+        return manifolds;
+    };
+
+    SolverParams params;
+    params.dt         = 1.0f / 60.0f;
+    params.iterations = 8;
+    std::vector<JointConstraint> noJoints;
+    std::vector<ContactManifold> manifolds = makeManifolds();
+    ContactCache cache;
+    solveStep(bodies, manifolds, noJoints, params);
+    check("the landing pushes the crates apart", manifolds[0].contacts[0].normalImpulse > 1e-4f);
+    cache.record(manifolds, entities, gathered);
+
+    std::vector<ContactManifold> next = makeManifolds();
+    cache.seed(next, entities, gathered);
+    check(
+        "  and the same contact next tick starts with what it held",
+        nearly(next[0].contacts[0].normalImpulse, manifolds[0].contacts[0].normalImpulse)
     );
 }
 
@@ -1218,10 +1363,262 @@ void testADynamicBodyWithNoMassIsNamedAndHeldStill() {
     check("  but it is no static body to the wire", !isStaticBody(scene, slab));
 }
 
+// A clip moving a Kinematic body gives it the speed it moves at: rising under a crate asleep on
+// it, it wakes the crate and lifts it, and once the clip ends it stands still.
+void testAnAnimatedPlatformLiftsWhatSleepsOnIt() {
+    std::printf("A keyframed lift under a sleeping crate:\n");
+    Scene scene;
+    const EntityId lift = addBox(scene, {0.0f, 0.0f, 0.0f}, {2.0f, 0.25f, 2.0f});
+    scene.get<Rigidbody>(lift).motion = RigidbodyMotion::Kinematic;
+    Animation rise;
+    rise.positionTrack.addKeyframe(0.0f, glm::vec3(0.0f));
+    rise.positionTrack.addKeyframe(1.0f, glm::vec3(0.0f, 2.0f, 0.0f));
+    rise.looping     = false;
+    rise.playOnStart = false;
+    scene.add(lift, std::move(rise));
+
+    const EntityId crate = scene.createEntity();
+    Transform on;
+    on.position = {0.0f, 0.75f, 0.0f};
+    scene.add<Transform>(crate, std::move(on));
+    Rigidbody body;
+    body.mass = 10.0f;
+    scene.add<Rigidbody>(crate, std::move(body));
+    ColliderPart part;
+    part.shape       = ColliderShape::Box;
+    part.halfExtents = {0.5f, 0.5f, 0.5f};
+    Collider collider;
+    collider.parts = {part};
+    scene.add<Collider>(crate, std::move(collider));
+
+    TestFrame       frame(scene, meshLibrary());
+    AnimationSystem animation;
+    PhysicsSystem   physics;
+    HierarchySystem hierarchy;
+    const auto run = [&](int ticks) {
+        for (int tick = 0; tick < ticks; ++tick) {
+            animation.fixedUpdate(frame.ctx);
+            physics.fixedUpdate(frame.ctx);
+            hierarchy.update(frame.ctx);
+        }
+    };
+    run(120);
+    check("the crate falls asleep on the lift", scene.get<Rigidbody>(crate).sleeping);
+
+    scene.get<Animation>(lift).playing = true;
+    run(30);
+    const float halfway = scene.get<Transform>(crate).position.y;
+    run(60);
+    const float top = scene.get<Transform>(crate).position.y;
+    std::printf("      the crate at %.2f m halfway, %.2f m once the lift stops at 2 m\n", halfway, top);
+    check("  the lift wakes it and carries it up", std::abs(top - 2.75f) < 0.1f);
+    const Rigidbody& still = scene.get<Rigidbody>(lift);
+    check("  and once its clip ends, the lift stands still", still.linearVelocity == glm::vec3(0.0f));
+}
+
+// A clip's head jumps - a lap wraps, a spent one-shot plays again, a clip starts from wherever its
+// body stood - and the body moves at the clip's speed, not the jump's. A channel the clip has no
+// track for stays gameplay's, and a clip gameplay stops leaves its body standing still.
+void testAClipsJumpGivesItsBodyNoSpeed() {
+    std::printf("A Kinematic body across its clip's jumps:\n");
+    Scene scene;
+    const EntityId lift = addBox(scene, {0.0f, 5.0f, 0.0f}, {1.0f, 0.25f, 1.0f});  // off its track
+    scene.get<Rigidbody>(lift).motion = RigidbodyMotion::Kinematic;
+    Animation rise;
+    rise.positionTrack.addKeyframe(0.0f, glm::vec3(0.0f));
+    rise.positionTrack.addKeyframe(1.0f, glm::vec3(0.0f, 2.0f, 0.0f));
+    rise.looping = true;
+    scene.add(lift, std::move(rise));
+
+    const EntityId wheel = addBox(scene, {4.0f, 0.0f, 0.0f}, {1.0f, 0.25f, 1.0f});
+    scene.get<Rigidbody>(wheel).motion = RigidbodyMotion::Kinematic;
+    Animation turn;
+    turn.rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    turn.rotationTrack.addKeyframe(1.0f, glm::angleAxis(glm::half_pi<float>(), Math::WORLD_UP));
+    scene.add(wheel, std::move(turn));
+
+    TestFrame       frame(scene, meshLibrary());
+    AnimationSystem animation;
+    float fastest = 0.0f;
+    const auto run = [&](int ticks) {
+        for (int tick = 0; tick < ticks; ++tick) {
+            scene.get<Rigidbody>(wheel).linearVelocity = {3.0f, 0.0f, 0.0f};  // gameplay's
+            animation.fixedUpdate(frame.ctx);
+            fastest = std::max(fastest, glm::length(scene.get<Rigidbody>(lift).linearVelocity));
+        }
+    };
+    run(150);
+    std::printf("      fastest %.2f m/s on a clip rising 2 m a second\n", fastest);
+    check("from where it stood, and across a lap's wrap, it moves at its clip's speed", fastest < 2.1f);
+    const Rigidbody& wheeling = scene.get<Rigidbody>(wheel);
+    check(
+        "a clip that only turns its body leaves its speed to gameplay",
+        wheeling.linearVelocity == glm::vec3(3.0f, 0.0f, 0.0f) && wheeling.angularVelocity.y > 1.0f
+    );
+
+    scene.get<Animation>(lift).looping = false;
+    run(90);
+    check("a one-shot run out stands still", scene.get<Rigidbody>(lift).linearVelocity == glm::vec3(0.0f));
+    fastest = 0.0f;
+    scene.get<Animation>(lift).playing = true;
+    run(1);
+    check("  and played again, moves at its clip's speed", fastest > 1.9f && fastest < 2.1f);
+    scene.get<Animation>(lift).playing = false;
+    run(1);
+    const Rigidbody& stopped = scene.get<Rigidbody>(lift);
+    check("  and stopped by gameplay, stands still", stopped.linearVelocity == glm::vec3(0.0f));
+}
+
+constexpr bool SHOWN       = true;
+constexpr bool HIDDEN      = false;
+constexpr bool BOX_FIRST   = true;
+constexpr bool FLOOR_FIRST = false;
+
+// What the contacts view drew: a dot at each contact, and the shaft of each arrow out of one.
+struct DrawnContacts {
+    size_t                 lines = 0;
+    std::vector<glm::vec3> dots;
+    std::vector<glm::vec3> shafts;          ///< Tip less tail
+    bool                   inColor = true;  ///< Every line in the contacts' color
+};
+
+DrawnContacts readContacts(const std::vector<DebugLine>& lines) {
+    const uint32_t color = glm::packUnorm4x8(DebugPalette::of(DebugCategory::Contacts).value());
+    DrawnContacts drawn;
+    for (const DebugLine& line : lines) {
+        ++drawn.lines;
+        drawn.inColor = drawn.inColor && line.color == color;
+        const glm::vec3 a(line.a);
+        const glm::vec3 b(line.b);
+        // A dot is a segment of no length; a shaft leaves the dot before it, the head its tip.
+        if (a == b) {
+            drawn.dots.push_back(a);
+        } else if (!drawn.dots.empty() && a == drawn.dots.back()) {
+            drawn.shafts.push_back(b - a);
+        }
+    }
+    return drawn;
+}
+
+// What the contacts view showed of a box set down on a floor.
+struct SetDown {
+    DrawnContacts drawn;         ///< By the last tick
+    size_t        standing = 0;  ///< Lines a frame with no tick still shows after it
+};
+
+// A box of @p mass set down on a static floor and left a second, as the main loop ticks and a host
+// collects each frame. @p boxFirst makes it before the floor: the pair then runs from it, normal down.
+SetDown boxOnAFloor(float mass, bool boxFirst, bool shown) {
+    Scene scene;
+    const auto addFloor = [&scene] { addBox(scene, {0.0f, -0.5f, 0.0f}, {4.0f, 0.5f, 4.0f}); };
+    if (!boxFirst) addFloor();
+    const EntityId box = addFallingBody(scene, {0.0f, 0.51f, 0.0f}, 0.5f);
+    if (boxFirst) addFloor();
+    scene.get<Rigidbody>(box).mass = mass;
+
+    DebugDraw draw;
+    draw.setShown(DebugCategory::Contacts, shown);
+    TestFrame frame(scene);
+    frame.ctx.debug = &draw;
+    PhysicsSystem physics;
+    for (int tick = 0; tick < 64; ++tick) {
+        draw.beginTick();
+        physics.fixedUpdate(frame.ctx);
+        draw.endTick();
+        draw.collect(0.0f, 0.0f, scene.epoch());
+        draw.endFrame();
+    }
+
+    SetDown set;
+    set.drawn = readContacts(draw.lines());
+    // A frame with no tick in it, as a paused game draws.
+    draw.collect(0.0f, 0.0f, scene.epoch());
+    draw.endFrame();
+    set.standing = draw.lines().size();
+    return set;
+}
+
+// Four arrows, each straight up.
+bool fourUp(const DrawnContacts& drawn) {
+    const auto up = [](const glm::vec3& shaft) { return glm::normalize(shaft).y > 0.99f; };
+    return drawn.shafts.size() == 4 && std::all_of(drawn.shafts.begin(), drawn.shafts.end(), up);
+}
+
+float meanLength(const std::vector<glm::vec3>& shafts) {
+    float sum = 0.0f;
+    for (const glm::vec3& shaft : shafts) sum += glm::length(shaft);
+    return shafts.empty() ? 0.0f : sum / static_cast<float>(shafts.size());
+}
+
+// Where the solver's bodies touch, and how hard it pushes them apart there.
+void testTheContactsViewDrawsWhereBodiesTouchAndHowHard() {
+    std::printf("The contacts, drawn:\n");
+
+    const SetDown kilo    = boxOnAFloor(1.0f, FLOOR_FIRST, SHOWN);
+    const SetDown tenKilo = boxOnAFloor(10.0f, FLOOR_FIRST, SHOWN);
+    const SetDown ton     = boxOnAFloor(1000.0f, FLOOR_FIRST, SHOWN);
+    std::printf(
+        "      under 1 kg %.3f m arrows, 10 kg %.3f m, a ton %.3f m\n",
+        static_cast<double>(meanLength(kilo.drawn.shafts)),
+        static_cast<double>(meanLength(tenKilo.drawn.shafts)),
+        static_cast<double>(meanLength(ton.drawn.shafts))
+    );
+
+    const auto onTheFloor = [](const glm::vec3& dot) {
+        return std::abs(dot.y) < 0.02f && std::abs(dot.x) < 0.52f && std::abs(dot.z) < 0.52f;
+    };
+    const std::vector<glm::vec3>& dots = kilo.drawn.dots;
+    check(
+        "a box on the floor draws a dot at each corner it stands on",
+        dots.size() == 4 && std::all_of(dots.begin(), dots.end(), onTheFloor)
+    );
+    check("  and an arrow out of each, up into the box", fourUp(kilo.drawn));
+    check("  whichever was made first", fourUp(boxOnAFloor(1.0f, BOX_FIRST, SHOWN).drawn));
+    check("  in the contacts' color", kilo.drawn.lines > 0 && kilo.drawn.inColor);
+    check(
+        "  longer the harder the solver pushes",
+        meanLength(tenKilo.drawn.shafts) > 2.0f * meanLength(kilo.drawn.shafts)
+    );
+    float longest = 0.0f;
+    for (const glm::vec3& shaft : ton.drawn.shafts) longest = std::max(longest, glm::length(shaft));
+    check("  but shorter than the box is tall, however heavy", fourUp(ton.drawn) && longest < 1.0f);
+    check(
+        "they stand through a frame with no tick",
+        kilo.drawn.lines > 0 && kilo.standing == kilo.drawn.lines
+    );
+    check(
+        "nothing while the host does not show them",
+        boxOnAFloor(1.0f, FLOOR_FIRST, HIDDEN).drawn.lines == 0
+    );
+
+    // A box leaving the floor fast, still in it as the tick begins: touching, and pushed by nothing.
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {4.0f, 0.5f, 4.0f});
+    const EntityId leaving = addFallingBody(scene, {0.0f, 0.499f, 0.0f}, 0.5f);
+    scene.get<Rigidbody>(leaving).linearVelocity = {0.0f, 5.0f, 0.0f};
+    scene.get<Rigidbody>(leaving).gravityScale   = 0.0f;
+    DebugDraw draw;
+    draw.setShown(DebugCategory::Contacts, SHOWN);
+    TestFrame frame(scene);
+    frame.ctx.debug = &draw;
+    PhysicsSystem physics;
+    physics.fixedUpdate(frame.ctx);
+    draw.collect(0.0f, 0.0f, scene.epoch());
+    const DrawnContacts unpushed = readContacts(draw.lines());
+    check(
+        "a contact the solver does not push draws its dot alone",
+        unpushed.dots.size() == 4 && unpushed.shafts.empty()
+    );
+}
+
 } // namespace
 
 void runPhysicsSolverTests() {
+    testAnAnimatedPlatformLiftsWhatSleepsOnIt();
+    testAClipsJumpGivesItsBodyNoSpeed();
+    testABodyTurnsAboutItsCentreNotItsOrigin();
     testAStackSleepsTogetherOrNotAtAll();
+    testAColliderOffItsOriginSleepsAsOneOnIt();
     testABodyThisEndDoesNotDecideGetsNoGravity();
     testAClientRunsWhatTheServerNeverNames();
     testAReplayedTickDoesNotCountTowardSleep();
@@ -1233,6 +1630,7 @@ void runPhysicsSolverTests() {
     testASleeperWhoseSupportVanishesFalls();
     testAStackRestsOnItselfRatherThanInsideItself();
     testAContactCarriesItsFrictionIntoTheNextTick();
+    testAContactBetweenOffCentreBodiesIsWarmStarted();
     testASleepingPairKeepsWhatItHeld();
     testASleepingJointKeepsWhatItHeld();
     testAContactOnAMovingPlatformIsCarriedIntoTheNextTick();
@@ -1245,4 +1643,5 @@ void runPhysicsSolverTests() {
     testTheSameWorldSimulatesTheSameWay();
     testTheSameWorldRunTwiceEndsBitIdentical();
     testABusyPileStepsTheSameOnAnyThread();
+    testTheContactsViewDrawsWhereBodiesTouchAndHowHard();
 }

@@ -3,9 +3,9 @@
   "source": {
     "albedo": [
       1.0,
-      0.949999988079071,
-      0.800000011920929,
-      0.8999999761581421
+      0.95,
+      0.8,
+      0.9
     ],
     "alphaCutoff": 0.5,
     "anisotropy": 0.0,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.6000000238418579,
+    "rippleScale": 0.5,
+    "roughness": 0.6,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -62,6 +64,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

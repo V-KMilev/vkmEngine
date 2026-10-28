@@ -8,11 +8,10 @@
 #include <string>
 
 #include <imgui.h>
-#include <nlohmann/json.hpp>
 
 #include "editor_context.h"
+#include "editor_settings.h"
 #include "editor_state.h"
-#include "io/json_file.h"
 #include "io/project.h"
 #include "io/project_paths.h"
 #include "system/render/render_backend.h"
@@ -27,6 +26,9 @@ namespace Vkm::Engine {
 
 namespace {
 
+/// Seconds between looks at the recent projects' folders.
+constexpr double RECENTS_LOOKED_AT = 1.0;
+
 using EditorStyle::px;
 
 /// Opaque enough to read on: the sky shows around the panel, not through it.
@@ -36,8 +38,8 @@ const ImVec4 PANEL_BG = ImVec4(0.095f, 0.100f, 0.120f, 0.97f);
 constexpr ImU32 SCRIM_TOP_U32    = IM_COL32(8, 9, 12, 120);
 constexpr ImU32 SCRIM_BOTTOM_U32 = IM_COL32(8, 9, 12, 215);
 
-/// A row's avatar is coloured by the project's name, so a list scans by colour as well as by word.
-const ImVec4* const AVATAR_COLOURS[] = {
+/// A row's avatar is colored by the project's name, so a list scans by color as well as by word.
+const ImVec4* const AVATAR_COLORS[] = {
     &EditorStyle::Accent::PREFAB,
     &EditorStyle::Accent::MESH,
     &EditorStyle::Accent::LIGHT,
@@ -62,7 +64,7 @@ float rowHeight() { return ImGui::GetTextLineHeight() * 2.0f + px(18.0f); }
  */
 std::string lastOpened(const fs::path& root) {
     std::error_code ec;
-    const auto stamp = fs::last_write_time(root / "editor_settings.json", ec);
+    const auto stamp = fs::last_write_time(EditorSettings::pathIn(root), ec);
     if (ec) return {};
 
     const auto age = fs::file_time_type::clock::now() - stamp;
@@ -118,16 +120,16 @@ Project describe(const fs::path& root) {
  * @param dl Draw list to append to.
  * @param min Top-left corner.
  * @param side Side length in pixels.
- * @param name The project's name, which picks the colour and the letter.
+ * @param name The project's name, which picks the color and the letter.
  * @param dim Whether the project is missing.
  */
 void drawAvatar(ImDrawList* dl, ImVec2 min, float side, const std::string& name, bool dim) {
-    const size_t pick = std::hash<std::string>{}(name) % std::size(AVATAR_COLOURS);
-    const ImVec4& colour = *AVATAR_COLOURS[pick];
+    const size_t pick = std::hash<std::string>{}(name) % std::size(AVATAR_COLORS);
+    const ImVec4& color = *AVATAR_COLORS[pick];
     dl->AddRectFilled(
         min,
         ImVec2(min.x + side, min.y + side),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, dim ? 0.10f : 0.24f)),
+        ImGui::GetColorU32(ImVec4(color.x, color.y, color.z, dim ? 0.10f : 0.24f)),
         px(6.0f)
     );
 
@@ -142,7 +144,7 @@ void drawAvatar(ImDrawList* dl, ImVec2 min, float side, const std::string& name,
         ImGui::GetFont(),
         size,
         ImVec2(min.x + (side - extent.x) * 0.5f, min.y + (side - extent.y) * 0.5f),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, dim ? 0.45f : 1.0f)),
+        ImGui::GetColorU32(ImVec4(color.x, color.y, color.z, dim ? 0.45f : 1.0f)),
         letter
     );
 }
@@ -154,10 +156,10 @@ void drawAvatar(ImDrawList* dl, ImVec2 min, float side, const std::string& name,
  * @param right Its right edge.
  * @param centreY The line it sits on.
  * @param text What it says.
- * @param colour Its text, and a faint fill of the same.
+ * @param color Its text, and a faint fill of the same.
  * @return Its width.
  */
-float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, const ImVec4& colour) {
+float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, const ImVec4& color) {
     const ImVec2 size = ImGui::CalcTextSize(text);
     const float padX = px(7.0f);
     const float h = size.y + px(4.0f);
@@ -165,10 +167,10 @@ float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, co
     dl->AddRectFilled(
         min,
         ImVec2(right, min.y + h),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, 0.16f)),
+        ImGui::GetColorU32(ImVec4(color.x, color.y, color.z, 0.16f)),
         h * 0.5f
     );
-    dl->AddText(ImVec2(min.x + padX, min.y + px(2.0f)), ImGui::GetColorU32(colour), text);
+    dl->AddText(ImVec2(min.x + padX, min.y + px(2.0f)), ImGui::GetColorU32(color), text);
     return size.x + padX * 2.0f;
 }
 
@@ -184,7 +186,7 @@ float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, co
  * @param detail Second line, dim: the path, or what the project is.
  * @param note Right-aligned, dim, or empty for none.
  * @param badge Right-aligned pill, or nullptr for none.
- * @param badgeColour The pill's colour.
+ * @param badgeColor The pill's color.
  * @param dim Whether the whole row is drawn faint, for a project that is gone.
  * @param menu Raises the context menu while the row is still the last item.
  * @return Whether the row was clicked.
@@ -196,7 +198,7 @@ bool projectRow(
     const std::string& detail,
     const std::string& note,
     const char* badge,
-    const ImVec4& badgeColour,
+    const ImVec4& badgeColor,
     bool dim,
     Menu&& menu
 ) {
@@ -220,7 +222,7 @@ bool projectRow(
     drawAvatar(dl, ImVec2(mn.x + px(6.0f), centreY - side * 0.5f), side, name, dim);
 
     float right = mx.x - px(10.0f);
-    if (badge) right -= drawBadge(dl, right, centreY, badge, badgeColour) + px(10.0f);
+    if (badge) right -= drawBadge(dl, right, centreY, badge, badgeColor) + px(10.0f);
     if (!note.empty()) {
         const ImVec2 size = ImGui::CalcTextSize(note.c_str());
         dl->AddText(
@@ -234,8 +236,8 @@ bool projectRow(
     const float textX = mn.x + side + px(18.0f);
     const float textW = right - textX;
     const float top   = centreY - lineH;
-    const ImVec4& nameColour = ImGui::GetStyleColorVec4(dim ? ImGuiCol_TextDisabled : ImGuiCol_Text);
-    dl->AddText(ImVec2(textX, top), ImGui::GetColorU32(nameColour), elidedLine(name.c_str(), textW).c_str());
+    const ImVec4& nameColor = ImGui::GetStyleColorVec4(dim ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+    dl->AddText(ImVec2(textX, top), ImGui::GetColorU32(nameColor), elidedLine(name.c_str(), textW).c_str());
     dl->AddText(
         ImVec2(textX, top + lineH),
         ImGui::GetColorU32(ImGuiCol_TextDisabled),
@@ -244,31 +246,20 @@ bool projectRow(
     return clicked;
 }
 
-/**
- * @brief Stamp a project for this engine, touching no other key of its project.json.
- *
- * @param root Project directory.
- * @return Whether the file was rewritten.
- */
-bool moveToThisEngine(const fs::path& root) {
-    const fs::path file = root / "project.json";
-    nlohmann::json doc;
-    if (!detail::readJsonFile(file, doc, "project") || !doc.is_object()) return false;
-    doc["engineVersion"] = APP_VERSION;
-    return detail::writeJsonFile(file, doc, "project");
-}
-
 } // namespace
 
 void StartScreen::syncRecent(const std::vector<std::string>& roots) {
     if (roots == m_recentRoots) return;
 
     m_recentRoots = roots;
+    m_seenAt      = -1.0;
     m_recent.clear();
     m_recent.reserve(roots.size());
     for (const std::string& root : roots) {
         const Project project = describe(root);
-        m_recent.push_back({root, pathKey(root), project.name, project.description, project.engineVersion});
+        m_recent.push_back(
+            {root, pathKey(root), project.name, project.description, project.engineVersion, false, {}}
+        );
     }
 }
 
@@ -284,14 +275,16 @@ void StartScreen::scanExamples() {
     for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         std::error_code entryEc;
         if (!it->is_directory(entryEc)) continue;
-        if (!fs::exists(it->path() / "project.json", entryEc)) continue;
+        if (!isProjectRoot(it->path())) continue;
         const Project project = describe(it->path());
         m_examples.push_back({
             it->path().string(),
             pathKey(it->path()),
             project.name,
             project.description,
-            project.engineVersion
+            project.engineVersion,
+            false,
+            {}
         });
     }
     std::sort(
@@ -305,6 +298,14 @@ void StartScreen::draw(EditorContext& ec) {
     EditorState& state = ec.state;
 
     syncRecent(state.recentProjects);
+    // Looked at again now and then, not each frame: a folder moved or made shows within a second.
+    if (ImGui::GetTime() - m_seenAt >= RECENTS_LOOKED_AT || m_seenAt < 0.0) {
+        m_seenAt = ImGui::GetTime();
+        for (Entry& entry : m_recent) {
+            entry.missing = !isProjectRoot(entry.root);
+            entry.opened  = entry.missing ? std::string{} : lastOpened(entry.root);
+        }
+    }
     scanExamples();
 
     // The sky stays, dimmed under the panel so the text reads.
@@ -435,8 +436,7 @@ void StartScreen::drawProjects(EditorState& state) {
         return;
     }
 
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "Search by name or folder", m_filter, sizeof(m_filter));
+    searchField("##filter", m_filter, sizeof(m_filter), -FLT_MIN, "Search by name or folder");
     ImGui::Spacing();
 
     const bool listed = ImGui::BeginChild(
@@ -455,11 +455,10 @@ void StartScreen::drawProjects(EditorState& state) {
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(1.0f, 1.0f, 1.0f, 0.09f));
 
     // Found ones first, in the recents' order; the gone ones after, faint, until removed.
-    std::error_code ec;
     int shown = 0;
     for (const bool wantMissing : {false, true}) {
         for (const Entry& entry : m_recent) {
-            const bool missing = !fs::exists(fs::path(entry.root) / "project.json", ec);
+            const bool missing = entry.missing;
             if (missing != wantMissing) continue;
             const bool matches = matchesFilter(entry.name.c_str(), m_filter)
                 || matchesFilter(entry.root.c_str(), m_filter);
@@ -486,10 +485,10 @@ void StartScreen::drawProjects(EditorState& state) {
             };
 
             std::string badge;
-            ImVec4 badgeColour = EditorStyle::WARNING;
+            ImVec4 badgeColor = EditorStyle::WARNING;
             if (missing) {
                 badge = "Not found";
-                badgeColour = EditorStyle::DANGER;
+                badgeColor = EditorStyle::DANGER;
             } else if (movable) {
                 badge = "Made for " + entry.engineVersion;
             }
@@ -499,9 +498,9 @@ void StartScreen::drawProjects(EditorState& state) {
                 "##recent",
                 entry.name,
                 entry.root,
-                missing ? std::string{} : lastOpened(entry.root),
+                entry.opened,
                 badge.empty() ? nullptr : badge.c_str(),
-                badgeColour,
+                badgeColor,
                 missing,
                 menu
             );
@@ -574,7 +573,7 @@ void StartScreen::drawExamples(EditorState& state) {
             ImGui::TextDisabled("%s", about.c_str());
             ImGui::PopTextWrapPos();
 
-            // Tinted, as the card's colour would swallow a plain button.
+            // Tinted, as the card's color would swallow a plain button.
             const float buttonH = px(28.0f);
             const ImVec4& accent = EditorStyle::ACCENT;
             ImGui::SetCursorPosY(card.y - buttonH - px(14.0f));
@@ -613,7 +612,7 @@ void StartScreen::drawMoveDialog(EditorState& state) {
     ImGui::Spacing();
 
     if (dialogButtons(m_moveOpen, "Move and Open") == DialogResult::Confirm) {
-        if (moveToThisEngine(m_moving.root)) {
+        if (saveProjectEngine(m_moving.root)) {
             m_recentRoots.clear();   // Re-read, so the row loses its badge.
             state.requestSceneAction(EditorState::SceneAction::OpenProject, m_moving.root);
         } else {

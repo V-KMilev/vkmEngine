@@ -12,6 +12,8 @@
 
 namespace Vkm::Engine {
 
+struct SkeletonAsset;
+
 /**
  * @brief One bone's keys for one channel, as a range into the clip's flat arrays.
  */
@@ -84,6 +86,18 @@ struct AnimationClipAsset : public Resource {
  * @return The first fault found, worded to follow "cannot be played - ".
  */
 std::string findClipFault(const AnimationClipAsset& clip);
+
+/**
+ * @brief Whether @p clip was cooked for @p skeleton: its rig's name, and a channel for each bone.
+ *
+ * A clip's per-bone table is bound at cook time to one rig's name and length; another rig's would
+ * move the wrong bones.
+ *
+ * @param clip     The clip.
+ * @param skeleton The rig it would pose.
+ * @return True when it fits.
+ */
+bool clipFitsRig(const AnimationClipAsset& clip, const SkeletonAsset& skeleton);
 
 using AnimationClipHandle = Handle<AnimationClipAsset>;
 

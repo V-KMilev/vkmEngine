@@ -1,5 +1,5 @@
 /**
- * Auto-exposure's histogram (GLExposure): each group counts its pixels of the scene's HDR colour
+ * Auto-exposure's histogram (GLExposure): each group counts its pixels of the scene's HDR color
  * into bins of log2 luminance, then adds its counts to the frame's. A pixel every EXPOSURE_STRIDE
  * each way.
  */

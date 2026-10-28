@@ -8,6 +8,8 @@
 
 #include "logger.h"
 
+#include "core/math/bounds.h"
+#include "core/math/frustum.h"
 #include "core/math/rotation.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
@@ -59,6 +61,8 @@ void buildLights(RenderView& view, const Scene& scene) {
         data.innerConeAngle = light.innerConeAngle;
         data.outerConeAngle = light.outerConeAngle;
 
+        data.inCaptures       = light.inCaptures;
+        data.movable          = light.movable;
         data.castShadows      = light.castShadows;
         data.shadowBias       = light.shadowBias;
         data.shadowNormalBias = light.shadowNormalBias;
@@ -142,27 +146,36 @@ void buildPlanarReflectors(RenderView& view, const Scene& scene) {
                     reflector.renderScale,
                     PlanarReflector::MIN_RENDER_SCALE,
                     PlanarReflector::MAX_RENDER_SCALE
-                )
+                ),
+                std::max(reflector.drawDistance, 0.0f)
             });
         }
     );
 }
 
 /**
- * @brief Snapshot every decal into world space (box transform + its inverse).
+ * @brief Snapshot every decal the camera sees into world space (box transform + its inverse), a
+ *        material's together.
  *
- * @param view  The view being refilled.
+ * @param view  The view being refilled, its camera set.
  * @param scene Scene whose Decal components are gathered.
  */
 void buildDecals(RenderView& view, const Scene& scene) {
     PROFILE_SCOPE("RenderView::buildDecals");
     view.decals.clear();
 
+    const Math::Frustum seen = Math::extractFrustum(view.camera.viewProjection);
+    const Math::AABB    box{glm::vec3(-0.5f), glm::vec3(0.5f)};
     scene.forEach<Decal, Transform>([&](EntityId id, const Decal& decal, const Transform& transform) {
         if (!decal.enabled) return;
 
         const glm::mat4 model = resolvedWorldMatrix(scene, id, transform);
+        if (!Math::frustumIntersectsAABB(seen, Math::transform(model, box))) return;
         view.decals.push_back({model, glm::inverse(model), decal.material, decal.angleFade, decal.opacity});
+    });
+    // Stable, so decals of one material still overlap in the order the scene holds them.
+    std::stable_sort(view.decals.begin(), view.decals.end(), [](const DecalData& a, const DecalData& b) {
+        return a.material.id() < b.material.id();
     });
 }
 
@@ -210,7 +223,7 @@ void addParticleLight(
     light.direction    = glm::vec3(0.0f, -1.0f, 0.0f);
     light.radius       = std::max(emitter.lightRadius, 0.01f);
     light.sourceRadius = std::min(std::sqrt(spread / shine), 0.5f * light.radius);
-    light.transient    = true;
+    light.inCaptures   = false;
     view.lights.push_back(light);
 }
 
@@ -257,7 +270,7 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
             : emitter.blend == ParticleBlend::Distortion           ? emitter.distortion
             : 0.0f;
 
-        // What a particle looks like at its age: its size and its colour, intensity in the RGB.
+        // What a particle looks like at its age: its size and its color, intensity in the RGB.
         const auto lifeOf = [](const Particle& p) { return p.lifetime > 0.0f ? p.age / p.lifetime : 1.0f; };
         const auto sizeOf = [&](const Particle& p) { return p.size * emitter.sizeOverLife.at(lifeOf(p)); };
         const auto colorOf = [&](const Particle& p) {
@@ -335,8 +348,8 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
         auto& out = emitter.blend == ParticleBlend::Additive ? view.particlesAdditive
             : emitter.blend == ParticleBlend::Alpha          ? view.particlesAlpha
             : view.particlesDistortion;
-        const uint32_t  columns   = std::max(emitter.sheetColumns, 1u);
-        const uint32_t  rows      = std::max(emitter.sheetRows, 1u);
+        const uint32_t  columns   = sheetSide(emitter.sheetColumns);
+        const uint32_t  rows      = sheetSide(emitter.sheetRows);
         const glm::vec2 frameSize(1.0f / static_cast<float>(columns), 1.0f / static_cast<float>(rows));
         const bool      stretched = emitter.render == ParticleRender::Stretched;
         const float     layer     = viewmodel ? 1.0f : 0.0f;
@@ -401,6 +414,7 @@ void RenderView::build(
     const Scene& scene,
     const Visibility& visibility,
     const UIDrawData* uiData,
+    const UIDrawData* coverData,
     const SplashFrame* splashFrame,
     const PoseBuffer* poses,
     const LiveParticles* particles,
@@ -413,8 +427,9 @@ void RenderView::build(
     // still reach downstream caches.
     worldEpoch  = scene.epoch();
 
-    // UI and splash draw without a camera, so they precede the early-out too.
-    ui = uiData;
+    // UI, cover and splash draw without a camera, so they precede the early-out too.
+    ui    = uiData;
+    cover = coverData;
 
     splash = splashFrame ? *splashFrame : SplashFrame{};
 
@@ -432,7 +447,9 @@ void RenderView::build(
             surfaceW,
             surfaceH,
             seconds,
+            bakeSeconds,
             worldClock,
+            arriving,
             cameraData,
             cameraPresent,
             objectLists,
@@ -452,10 +469,17 @@ void RenderView::build(
             volumePresent,
             seaState,
             palettes,
+            debugLines,
             renderSettings,
             env,
             uiOverlay,
             splashState,
+            coverList,
+            coverShown,
+            coverIn,
+            coverFilled,
+            coverWater,
+            pointerAt,
             epoch
         ] = *this;
 
@@ -475,6 +499,7 @@ void RenderView::build(
         volumePresent = false;
         seaState.present = false;
         palettes      = nullptr;
+        debugLines    = DebugFrame{};
         return;
     }
 

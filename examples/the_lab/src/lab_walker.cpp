@@ -13,14 +13,11 @@
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
-#include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
 #include "resource/resource_manager.h"
-#include "system/script/script_component.h"
 
 #include "lab_actions.h"
 #include "lab_jump_pad.h"
@@ -32,16 +29,13 @@ namespace Lab {
 namespace {
 
 void installBindings(InputMap& map) {
-    const auto key = [](int code) {
-        return InputBinding{InputSource::Key, code, 1.0f};
-    };
-    map.define(ACTION_FORWARD, { key(GLFW_KEY_W), key(GLFW_KEY_UP) });
-    map.define(ACTION_BACK,    { key(GLFW_KEY_S), key(GLFW_KEY_DOWN) });
-    map.define(ACTION_LEFT,    { key(GLFW_KEY_A), key(GLFW_KEY_LEFT) });
-    map.define(ACTION_RIGHT,   { key(GLFW_KEY_D), key(GLFW_KEY_RIGHT) });
-    map.define(ACTION_WALK,    { key(GLFW_KEY_LEFT_SHIFT) });
-    map.define(ACTION_JUMP,    { key(GLFW_KEY_SPACE) });
-    map.define(ACTION_USE,     { key(GLFW_KEY_E) });
+    map.define(ACTION_FORWARD, { InputBinding::key(GLFW_KEY_W), InputBinding::key(GLFW_KEY_UP) });
+    map.define(ACTION_BACK,    { InputBinding::key(GLFW_KEY_S), InputBinding::key(GLFW_KEY_DOWN) });
+    map.define(ACTION_LEFT,    { InputBinding::key(GLFW_KEY_A), InputBinding::key(GLFW_KEY_LEFT) });
+    map.define(ACTION_RIGHT,   { InputBinding::key(GLFW_KEY_D), InputBinding::key(GLFW_KEY_RIGHT) });
+    map.define(ACTION_WALK,    { InputBinding::key(GLFW_KEY_LEFT_SHIFT) });
+    map.define(ACTION_JUMP,    { InputBinding::key(GLFW_KEY_SPACE) });
+    map.define(ACTION_USE,     { InputBinding::key(GLFW_KEY_E) });
 }
 
 // How far the push spreads from the hit, in metres, before it falls to half: the struck limbs take most.
@@ -57,11 +51,25 @@ constexpr float STANDING_SPEED = 0.35f;
 // Below this share of the run speed a moving character walks rather than runs.
 constexpr float WALKING_SHARE = 0.6f;
 
+// Share of a speed threshold the speed must pass it by to change the clip, either way: a speed sitting
+// on one would otherwise flip the clip every tick.
+constexpr float SPEED_BAND = 0.15f;
+
+// Falling faster than this, m/s, a character not thrown is airborne: a drop a step deep is walked
+// off rather than jumped.
+constexpr float FALLING_SPEED = 3.0f;
+
+// Whether a speed is past a threshold, as the clip playing leaves it: past it already, it must fall
+// below the band to come back.
+bool past(float speed, float threshold, bool already) {
+    return speed > threshold * (already ? 1.0f - SPEED_BAND : 1.0f + SPEED_BAND);
+}
+
 } // namespace
 
 void LabWalker::onStart() {
     installBindings(input());
-    m_animator = HierarchyOperations::findInSelfOrDescendants<Animator>(scene(), entity());
+    m_animator = findPartWith<Animator>();
     // Offline nobody joins: the seat is taken as play starts.
     if (net().isOffline() && isOfflineSeat(scene(), entity())) seatPlayer(scene(), entity());
 }
@@ -90,10 +98,18 @@ void LabWalker::chooseClip() {
     const glm::vec3 flat  = {body->linearVelocity.x, 0.0f, body->linearVelocity.z};
     const float     speed = glm::length(flat);
 
-    if (!walk->grounded)                        play(jumpClip);
-    else if (speed < STANDING_SPEED)            play(idleClip);
-    else if (speed < runSpeed * WALKING_SHARE)  play(walkClip);
-    else                                        play(runClip);
+    // Thrown, or truly falling: a moment off the ground at a kerb or a bump keeps the stride.
+    // Once in the air clip it holds until grounded: a jump ends at its apex, before the fall.
+    const bool inAir    = m_playing == jumpClip.name;
+    const bool airborne = !walk->grounded
+        && (inAir || walk->jumping || body->linearVelocity.y < -FALLING_SPEED);
+    const bool moving   = past(speed, STANDING_SPEED, m_playing != idleClip.name);
+    const bool running  = past(speed, runSpeed * WALKING_SHARE, m_playing == runClip.name);
+
+    if (airborne)      play(jumpClip);
+    else if (!moving)  play(idleClip);
+    else if (!running) play(walkClip);
+    else               play(runClip);
 }
 
 void LabWalker::onFixedUpdate(float dt) {
@@ -103,7 +119,7 @@ void LabWalker::onFixedUpdate(float dt) {
     chooseClip();
 
     // The authority stands a knocked-down character back up.
-    if (m_downLeft > 0.0f && isAuthority(net().role())) {
+    if (m_downLeft > 0.0f && isAuthority()) {
         m_downLeft -= dt;
         Ragdoll* ragdoll = tryGet<Ragdoll>();
         if (m_downLeft <= 0.0f && ragdoll) ragdoll->active = false;
@@ -169,7 +185,7 @@ void LabWalker::onFixedUpdate(float dt) {
 }
 
 void LabWalker::knockDown(const glm::vec3& momentum, const glm::vec3& at) {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     Ragdoll* ragdoll = tryGet<Ragdoll>();
     if (!ragdoll || ragdoll->active || ragdoll->bones.empty()) return;
     ragdoll->active = true;
@@ -196,7 +212,7 @@ void LabWalker::knockDown(const glm::vec3& momentum, const glm::vec3& at) {
 }
 
 void LabWalker::use() {
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     const Transform* body = tryGet<Transform>();
     if (!body) return;
 
@@ -204,14 +220,14 @@ void LabWalker::use() {
     LabSwitch* nearest = nullptr;
     EntityId   nearestEntity{};
     float      best    = 0.0f;
-    scene().forEach<ScriptComponent, Transform>([&](EntityId id, ScriptComponent&, Transform& at) {
-        LabSwitch* button = findBehavior<LabSwitch>(id);
-        if (!button) return;
-        const glm::vec3 where  = resolvedWorldPosition(scene(), id, at) - body->position;
+    forEachBehavior<LabSwitch>([&](EntityId id, LabSwitch& button) {
+        const Transform* at = scene().tryGet<Transform>(id);
+        if (!at) return;
+        const glm::vec3 where  = resolvedWorldPosition(scene(), id, *at) - body->position;
         const float     across = glm::length(glm::vec2(where.x, where.z));
-        if (across > button->reach) return;
+        if (across > button.reach) return;
         if (nearest && (across > best || (across == best && id.slot() > nearestEntity.slot()))) return;
-        nearest       = button;
+        nearest       = &button;
         nearestEntity = id;
         best          = across;
     });

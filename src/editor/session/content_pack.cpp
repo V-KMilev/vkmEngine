@@ -14,9 +14,11 @@ std::filesystem::path shipped(const std::string& name) {
 
 std::vector<std::string> prefabsIn(const std::filesystem::path& pack, const std::string& folder) {
     std::vector<std::string> files;
+    // Stepped by hand: a range-for's step throws, out of the menu that asked.
     std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(pack / "prefabs" / folder, ec)) {
-        if (entry.path().extension() == ".json") files.push_back(entry.path().filename().string());
+    const std::filesystem::path dir = pack / "prefabs" / folder;
+    for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->path().extension() == ".json") files.push_back(it->path().filename().string());
     }
     std::sort(files.begin(), files.end());
     return files;
@@ -30,8 +32,10 @@ int bringInto(const std::filesystem::path& pack, const std::filesystem::path& pr
         return -1;
     }
     int copied = 0;
+    // Stepped by hand: a range-for's step throws, out of the menu that asked.
     std::error_code walked;
-    for (const fs::directory_entry& entry : fs::recursive_directory_iterator(pack, walked)) {
+    for (fs::recursive_directory_iterator it(pack, walked), end; !walked && it != end; it.increment(walked)) {
+        const fs::directory_entry& entry = *it;
         if (!entry.is_regular_file(ec)) continue;
         const fs::path target = project / fs::relative(entry.path(), pack, ec);
         if (fs::exists(target, ec)) continue;

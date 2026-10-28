@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include "ecs/entity.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "system/audio/audio_device.h"
 
@@ -19,7 +20,11 @@ namespace Vkm::Engine {
  */
 struct PlaySoundEvent {
     AudioClipHandle clip;
-    VoiceParams     params;
+    VoiceParams     params;  ///< Its `occlusion` and `reverb` are AudioSystem's to set.
+    /// Whether the world's colliders shape it, as AudioSource::acoustics: false cuts through.
+    bool            acoustics = true;
+    /// The entity it sounds from, whose own body does not muffle it; none for no entity's.
+    EntityId        from{};
 
     /**
      * @brief A request to hear @p clip once, from @p position.

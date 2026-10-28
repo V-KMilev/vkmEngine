@@ -2,9 +2,9 @@
   "name": "lab:ice",
   "source": {
     "albedo": [
-      0.6200000047683716,
-      0.8600000143051147,
-      0.9599999785423279,
+      0.62,
+      0.86,
+      0.96,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -23,7 +23,7 @@
     "attenuationDistance": 1.0,
     "boxMapping": 0.0,
     "clearcoat": 1.0,
-    "clearcoatRoughness": 0.019999999552965164,
+    "clearcoatRoughness": 0.02,
     "doubleSided": false,
     "emission": [
       0.0,
@@ -31,21 +31,23 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.03999999910593033,
+    "rippleScale": 0.5,
+    "roughness": 0.04,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
-    "subsurface": 0.30000001192092896,
+    "sheenRoughness": 0.3,
+    "subsurface": 0.3,
     "subsurfaceColor": [
-      0.6000000238418579,
-      0.8999999761581421,
+      0.6,
+      0.9,
       1.0
     ],
     "thicknessFactor": 0.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

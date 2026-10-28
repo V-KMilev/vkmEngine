@@ -27,12 +27,12 @@ enum class EmitShape : uint8_t {
 };
 
 /**
- * @brief How a particle's colour reaches the frame.
+ * @brief How a particle's color reaches the frame.
  */
 enum class ParticleBlend : uint8_t {
-    Additive,    ///< It emits its colour - sparks, fire, glows - and feeds bloom past 1.
-    Alpha,       ///< Its colour is an albedo, lit by the scene's lights and shadows - smoke, dust.
-    Distortion,  ///< It bends the scene behind it - heat haze, shockwaves - and adds no colour.
+    Additive,    ///< It emits its color - sparks, fire, glows - and feeds bloom past 1.
+    Alpha,       ///< Its color is an albedo, lit by the scene's lights and shadows - smoke, dust.
+    Distortion,  ///< It bends the scene behind it - heat haze, shockwaves - and adds no color.
     Count        ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
@@ -61,7 +61,7 @@ enum class ParticleEvent : uint8_t {
  * @brief CPU-simulated particle emitter: fire, smoke, sparks, impacts, trails, heat haze.
  *
  * Each particle is born on the emitter's `shape`, in its frame, with what its ranges draw; its
- * size and colour then follow their curves over its life, forces move it, and it may strike the
+ * size and color then follow their curves over its life, forces move it, and it may strike the
  * physics world. It draws as `render` says, blended as `blend` says, as a soft disc or a frame of
  * its `texture` read as a sheet. Authored data, `burst` too, which the system spends: live
  * particles are ParticleSystem's (LiveParticles).
@@ -104,28 +104,28 @@ struct ParticleEmitter {
     Math::FloatRange size{0.25f, 0.25f};    ///< Half the card's width, metres, drawn at birth.
     Math::Curve      sizeOverLife{{{0.0f, 1.0f}, {1.0f, 0.08f}}};  ///< Multiplies the drawn size.
     Math::Gradient   color{{{0.0f, {1.0f, 0.8f, 0.4f, 1.0f}}, {1.0f, {1.0f, 0.2f, 0.0f, 0.0f}}}};
-    float            intensity = 1.0f;      ///< Multiplies the colour: past 1, an emitting one blooms.
+    float            intensity = 1.0f;      ///< Multiplies the color: past 1, an emitting one blooms.
     Math::FloatRange rotation{0.0f, 0.0f};  ///< Radians it is born turned by, about the view.
     Math::FloatRange spin{0.0f, 0.0f};      ///< Radians a second it turns.
     float            softness = 1.0f;       ///< The disc's edge, 1 soft to 0 hard. Unread with a texture.
 
     ParticleBlend blend      = ParticleBlend::Additive;
-    float         emission   = 0.0f;   ///< Alpha: the share of its colour it gives off - fire in smoke.
+    float         emission   = 0.0f;   ///< Alpha: the share of its color it gives off - fire in smoke.
     float         distortion = 0.03f;  ///< Distortion: how far it bends what is behind, in view heights.
 
     /// A point light its live particles give off together, at their middle: this much intensity for
-    /// each one at full alpha, summed by its colour's alpha, so it fades and dies as they do - a
+    /// each one at full alpha, summed by its color's alpha, so it fades and dies as they do - a
     /// fireball's flash, a fire's glow. 0 gives none. It casts no shadow, and no capture bakes it: a
     /// fire the probes should see is a flickering Light.
     float     lightIntensity = 0.0f;
-    glm::vec3 lightColor{1.0f, 0.6f, 0.3f};  ///< The light's colour.
+    glm::vec3 lightColor{1.0f, 0.6f, 0.3f};  ///< The light's color.
     float     lightRadius = 8.0f;            ///< Metres the light reaches.
 
     ParticleRender render      = ParticleRender::Billboard;
     float          stretch     = 0.05f;  ///< Stretched: seconds of its travel the card spans.
     float          trailLength = 0.3f;   ///< Trail: seconds of where it was the strip spans.
 
-    /// What each particle shows, tinted by its colour; none draws the soft disc. A Distortion
+    /// What each particle shows, tinted by its color; none draws the soft disc. A Distortion
     /// particle reads it as a normal map, so import it with TextureUsage::Normal.
     TextureHandle texture;
 
@@ -133,7 +133,8 @@ struct ParticleEmitter {
     /// rather than as a ball.
     TextureHandle normalMap;
 
-    /// The texture as a sheet of frames, columns by rows, read left to right from the top.
+    /// The texture as a sheet of frames, columns by rows, read left to right from the top; each
+    /// read as 1..PARTICLE_SHEET_SIDE_MAX (sheetSide).
     uint32_t sheetColumns = 1;
     uint32_t sheetRows    = 1;
     float    sheetFps     = 0.0f;   ///< Frames a second, looping; 0 plays the sheet once over a life.
@@ -167,14 +168,27 @@ struct ParticleTrigger {
     uint32_t      count = 4;
 };
 
+/// The most columns, or rows, a particle sheet is read as having.
+inline constexpr uint32_t PARTICLE_SHEET_SIDE_MAX = 64;
+
 /**
- * @brief How many frames @p emitter's sheet holds: its columns by its rows, each at least one.
+ * @brief A sheet's columns or rows as they are read: a scene file can say any count.
+ *
+ * @param side sheetColumns or sheetRows.
+ * @return It, within 1..PARTICLE_SHEET_SIDE_MAX.
+ */
+inline uint32_t sheetSide(uint32_t side) {
+    return std::clamp(side, 1u, PARTICLE_SHEET_SIDE_MAX);
+}
+
+/**
+ * @brief How many frames @p emitter's sheet holds: its columns by its rows, as sheetSide reads them.
  *
  * @param emitter The emitter.
  * @return The frame count, at least 1.
  */
 inline uint32_t sheetFrames(const ParticleEmitter& emitter) {
-    return std::max(emitter.sheetColumns, 1u) * std::max(emitter.sheetRows, 1u);
+    return sheetSide(emitter.sheetColumns) * sheetSide(emitter.sheetRows);
 }
 
 /**

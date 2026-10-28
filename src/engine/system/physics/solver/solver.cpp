@@ -14,9 +14,6 @@ namespace Vkm::Engine {
 
 namespace {
 
-/// Below this approach speed a contact does not bounce, however elastic it is.
-constexpr float RESTITUTION_THRESHOLD = 1.0f;
-
 /**
  * @brief How stiff a contact is, as a spring frequency in hertz.
  *

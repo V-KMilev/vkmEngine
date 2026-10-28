@@ -2,9 +2,9 @@
   "name": "lab:paint_navy",
   "source": {
     "albedo": [
-      0.05999999865889549,
-      0.09000000357627869,
-      0.2199999988079071,
+      0.06,
+      0.09,
+      0.22,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -23,7 +23,7 @@
     "attenuationDistance": 1.0,
     "boxMapping": 0.0,
     "clearcoat": 0.5,
-    "clearcoatRoughness": 0.15000000596046448,
+    "clearcoatRoughness": 0.15,
     "doubleSided": false,
     "emission": [
       0.0,
@@ -31,17 +31,19 @@
       0.0
     ],
     "emissiveStrength": 1.0,
+    "flowSpeed": 0.0,
     "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.44999998807907104,
+    "rippleScale": 0.5,
+    "roughness": 0.45,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -59,6 +61,7 @@
       1.0,
       1.0
     ],
-    "waves": false
+    "water": "None",
+    "waterDepth": 10.0
   }
 }

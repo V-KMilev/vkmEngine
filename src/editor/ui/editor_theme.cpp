@@ -75,7 +75,7 @@ void applyEditorTheme(float scale) {
     c[ImGuiCol_FrameBg]               = ImVec4(0.088f, 0.093f, 0.112f, 1.00f);
     c[ImGuiCol_FrameBgHovered]        = ImVec4(0.175f, 0.195f, 0.235f, 1.00f);
     c[ImGuiCol_FrameBgActive]         = ImVec4(0.225f, 0.250f, 0.305f, 1.00f);
-    // A dock's tab bar uses the title colours: one step darker than the panel, the shade
+    // A dock's tab bar uses the title colors: one step darker than the panel, the shade
     // of the gaps between panels, so the strip reads as frame and the panel below as page.
     // Focus shows as the selected tab's overline.
     c[ImGuiCol_TitleBg]               = c[ImGuiCol_WindowBg];
@@ -101,7 +101,7 @@ void applyEditorTheme(float scale) {
     // shows, and the selected one is the panel's own shade, open into the page below it.
     c[ImGuiCol_Tab]                   = c[ImGuiCol_WindowBg];
     c[ImGuiCol_TabDimmed]             = c[ImGuiCol_Tab];
-    // Hover is a neutral lift: an accent-coloured hover would outshine the selected tab.
+    // Hover is a neutral lift: an accent-colored hover would outshine the selected tab.
     c[ImGuiCol_TabHovered]            = ImVec4(0.150f, 0.158f, 0.182f, 1.00f);
     c[ImGuiCol_TabSelected]           = c[ImGuiCol_ChildBg];
     c[ImGuiCol_TabDimmedSelected]     = c[ImGuiCol_TabSelected];

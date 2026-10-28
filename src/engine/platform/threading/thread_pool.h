@@ -25,9 +25,9 @@ class ThreadPool {
         /**
          * @brief A run of tasks addressed by index, queued as one entry.
          *
-         * The task is borrowed, not copied, so a batch of any size allocates nothing. The batch
-         * and its task must outlive the matching waitForBatch(). Queued again once waited for, a
-         * batch is a member made once, never one rebuilt each frame.
+         * The task is borrowed, not copied, so a batch of any size allocates nothing, made on the
+         * stack or kept as a member. The batch and its task must outlive the matching
+         * waitForBatch(); once waited for it may be queued again.
          */
         class Batch {
             public:
@@ -82,6 +82,14 @@ class ThreadPool {
          * @return The single pool.
          */
         static ThreadPool& get();
+
+        /**
+         * @brief How many workers get() starts the pool with, from the CPUs the process may run on
+         *        now: one fewer than their physical cores, and one at least.
+         *
+         * @return The count.
+         */
+        static size_t defaultThreadCount();
 
         /**
          * @brief Enqueue a single task and wake one worker.
@@ -247,6 +255,21 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
 }
 
 /**
+ * @brief The grain parallelFor splits @p count items by once it splits them: CHUNKS_PER_THREAD
+ *        chunks for each worker and the calling thread, each chunk one claim on the pool's lock.
+ *
+ * For a caller that decides by its own measure of the work whether to split at all.
+ *
+ * @param count Number of items.
+ * @return Items a chunk, at least one.
+ */
+inline size_t parallelGrain(size_t count) {
+    constexpr size_t CHUNKS_PER_THREAD = 8;
+    // The +1 is the calling thread, which runs chunks too.
+    return std::max<size_t>(count / ((ThreadPool::get().threadCount() + 1) * CHUNKS_PER_THREAD), 1);
+}
+
+/**
  * @brief parallelFor with an auto-chosen grain, inline below MIN_PARALLEL items.
  *
  * Larger ranges split into CHUNKS_PER_THREAD chunks for each worker and the calling thread, so a
@@ -259,21 +282,11 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
  */
 template<class Function>
 void parallelFor(size_t count, Function&& function) {
-    auto& pool = ThreadPool::get();
-
     // Below this the dispatch cost (mutex, notify_all, done-CV round trip) dwarfs the work;
     // grain == count sweeps serially.
     constexpr size_t MIN_PARALLEL = 2048;
 
-    // Each chunk is one claim on the pool's lock.
-    constexpr size_t CHUNKS_PER_THREAD = 8;
-
-    // The +1 is the calling thread, which runs chunks too.
-    const size_t grain = (count < MIN_PARALLEL)
-        ? count
-        : std::max<size_t>(count / ((pool.threadCount() + 1) * CHUNKS_PER_THREAD), 1);
-
-    parallelFor(count, grain, function);
+    parallelFor(count, count < MIN_PARALLEL ? count : parallelGrain(count), function);
 }
 
 } // namespace Vkm::Engine

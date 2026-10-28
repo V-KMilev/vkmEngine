@@ -3,7 +3,6 @@
 #include "import/model_source.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -27,7 +26,7 @@
 
 #include "logger.h"
 #include "debug/profiler.h"
-#include "cook/cook_key.h"
+#include "import/import_formats.h"
 #include "io/asset/asset_cook.h"
 
 namespace Vkm::Engine {
@@ -79,6 +78,23 @@ SkinVertex quantiseInfluences(std::vector<VertexInfluence>& influences) {
     quantised[0] = std::clamp(quantised[0] + (255 - sum), 0, 255);
     for (int k = 0; k < 4; ++k) skin.weights[k] = static_cast<uint8_t>(quantised[k]);
     return skin;
+}
+
+/**
+ * @brief Give each triangle's corners its face's normal, the way it winds.
+ *
+ * @param corners A triangle list, three corners a triangle; one of no area keeps the normals it had.
+ */
+void flattenNormals(std::vector<Vertex>& corners) {
+    for (size_t t = 0; t + 2 < corners.size(); t += 3) {
+        const glm::vec3 across = glm::cross(
+            corners[t + 1].position - corners[t].position,
+            corners[t + 2].position - corners[t].position
+        );
+        const float area = glm::length(across);
+        if (!(area > 0.0f)) continue;
+        for (size_t c = 0; c < 3; ++c) corners[t + c].normal = across / area;
+    }
 }
 
 /**
@@ -339,8 +355,8 @@ class GltfReader {
             mapTexture(out, material->emissive_texture, &MaterialAsset::emissionTexture, TextureUsage::Color);
             if (material->normal_texture.texture) v.normalScale = material->normal_texture.scale;
 
-            // KHR_texture_transform: the material reads every map at one uv, so the base colour's
-            // transform stands for all of them - the normal map's, with no base colour; a rotation
+            // KHR_texture_transform: the material reads every map at one uv, so the base color's
+            // transform stands for all of them - the normal map's, with no base color; a rotation
             // or a texCoord override is not carried. Its offset is glTF's, along a V that runs down
             // the image, so it is turned for the flipped V the mesh is read with.
             const cgltf_texture_view& base =
@@ -376,7 +392,7 @@ class GltfReader {
             if (std::any_of(std::begin(views), std::end(views), differs)) {
                 LOG_WARNING(
                     "%s: a map's texture transform rotates, overrides its texCoord or differs from the "
-                    "base colour's, which stands for all of them",
+                    "base color's, which stands for all of them",
                     named
                 );
             }
@@ -721,6 +737,11 @@ class GltfReader {
                 // An index past the vertices shifts every later triangle, so none is kept.
                 LOG_ERROR("%s: an index names a vertex the primitive does not have", label.c_str());
                 return out;
+            }
+            // Without normals the faces are flat, as glTF says, and tangents it carries are not read.
+            if (!normals || normals->count != vertexCount) {
+                flattenNormals(corners.vertices);
+                corners.hasTangents = false;
             }
             out.geometry = weldCorners(std::move(corners), label);
             return out;
@@ -1260,7 +1281,8 @@ class UfbxReader {
         std::vector<std::pair<uint32_t, const ufbx_node*>>          m_meshNodes;  ///< In walk order.
 };
 
-std::unique_ptr<SourceModel> parseUfbx(const std::string& path, const std::string& ref) {
+// What every ufbx read of a file is told, so listing what a parse reads (filesReadBy) opens what it does.
+ufbx_load_opts ufbxOptions() {
     ufbx_load_opts options{};
     options.target_axes                 = ufbx_axes_right_handed_y_up;
     options.target_unit_meters          = 1.0f;
@@ -1274,7 +1296,11 @@ std::unique_ptr<SourceModel> parseUfbx(const std::string& path, const std::strin
     options.load_external_files           = true;
     options.ignore_missing_external_files = true;
     options.obj_search_mtl_by_filename    = true;
+    return options;
+}
 
+std::unique_ptr<SourceModel> parseUfbx(const std::string& path, const std::string& ref) {
+    const ufbx_load_opts options = ufbxOptions();
     ufbx_error error{};
     ufbx_scene* scene = ufbx_load_file(path.c_str(), &options, &error);
     if (!scene) {
@@ -1293,15 +1319,65 @@ std::unique_ptr<SourceModel> parseUfbx(const std::string& path, const std::strin
 
 std::unique_ptr<SourceModel> parseModel(const std::string& path, const std::string& ref) {
     PROFILE_SCOPE("ModelParse");
-    std::string extension = std::filesystem::path(path).extension().string();
-    std::transform(
-        extension.begin(),
-        extension.end(),
-        extension.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-    );
+    const std::string extension = lowercaseExtension(path);
     if (extension == ".gltf" || extension == ".glb") return parseGltf(path, ref);
     return parseUfbx(path, ref);
+}
+
+namespace {
+
+// A ufbx open that hands @p user, a callable, each path it is asked for before opening it.
+template<typename Note>
+bool openNoting(
+    void* user,
+    ufbx_stream* stream,
+    const char* path,
+    size_t length,
+    const ufbx_open_file_info* info
+) {
+    (*static_cast<Note*>(user))(std::filesystem::path(std::string(path, length)));
+    return ufbx_open_file(stream, path, length, nullptr, nullptr);
+}
+
+} // namespace
+
+std::vector<std::filesystem::path> filesReadBy(const std::filesystem::path& path) {
+    std::vector<std::filesystem::path> files{path};
+    auto add = [&](const std::filesystem::path& file) {
+        const std::filesystem::path normal = file.lexically_normal();
+        if (std::find(files.begin(), files.end(), normal) == files.end()) files.push_back(normal);
+    };
+    const std::string extension = lowercaseExtension(path);
+    if (extension == ".glb") return files;
+
+    if (extension == ".gltf") {
+        // The buffers it keeps in files beside it, as cgltf_load_buffers finds them.
+        cgltf_options options{};
+        cgltf_data*   data = nullptr;
+        if (cgltf_parse_file(&options, path.string().c_str(), &data) == cgltf_result_success) {
+            for (cgltf_size b = 0; b < data->buffers_count; ++b) {
+                const char* uri = data->buffers[b].uri;
+                if (!uri || !*uri || std::strncmp(uri, "data:", 5) == 0) continue;
+                std::string decoded(uri);
+                decoded.resize(cgltf_decode_uri(decoded.data()));
+                add(path.parent_path() / decoded);
+            }
+        }
+        cgltf_free(data);
+        return files;
+    }
+
+    // What ufbx tries to open beside it under the options a parse takes - an OBJ's material
+    // libraries, one it names and cannot find too, so its arrival moves a key - with nothing past
+    // the file's references read.
+    ufbx_load_opts options    = ufbxOptions();
+    options.ignore_geometry   = true;
+    options.ignore_animation  = true;
+    options.ignore_embedded   = true;
+    options.open_file_cb.user = &add;
+    options.open_file_cb.fn   = &openNoting<decltype(add)>;
+    ufbx_free_scene(ufbx_load_file(path.string().c_str(), &options, nullptr));
+    return files;
 }
 
 namespace {
@@ -1397,7 +1473,7 @@ class ModelCache {
 
             // Stamped before the parse, so a write during it leaves a stale stamp, not a fresh one
             // over old bytes.
-            const std::vector<std::filesystem::path> files = AssetCooker::sourceFilesAt(path);
+            const std::vector<std::filesystem::path> files = filesReadBy(path);
             std::vector<FileStamp> stamps = stampFiles(files);
             ParsedModel model;
             try {

@@ -156,13 +156,14 @@ class TransformGizmo {
         static constexpr float LINE_THICKNESS      = 2.9f;
         static constexpr float HIGHLIGHT_THICKNESS = 4.0f;
 
-        static constexpr ImU32 COLOR_X           = EditorStyle::AXIS_X_U32;
-        static constexpr ImU32 COLOR_Y           = EditorStyle::AXIS_Y_U32;
-        static constexpr ImU32 COLOR_Z           = EditorStyle::AXIS_Z_U32;
-        static constexpr ImU32 COLOR_HIGHLIGHTED = EditorStyle::HIGHLIGHT_U32;
-        static constexpr ImU32 COLOR_PLANE_X     = EditorStyle::AXIS_X_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Y     = EditorStyle::AXIS_Y_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Z     = EditorStyle::AXIS_Z_FILL_U32;
+        static constexpr ImU32 COLOR_X                 = EditorStyle::AXIS_X_U32;
+        static constexpr ImU32 COLOR_Y                 = EditorStyle::AXIS_Y_U32;
+        static constexpr ImU32 COLOR_Z                 = EditorStyle::AXIS_Z_U32;
+        static constexpr ImU32 COLOR_HIGHLIGHTED       = EditorStyle::HIGHLIGHT_U32;
+        static constexpr ImU32 COLOR_PLANE_X           = EditorStyle::AXIS_X_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Y           = EditorStyle::AXIS_Y_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Z           = EditorStyle::AXIS_Z_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_HIGHLIGHTED = EditorStyle::HIGHLIGHT_FILL_U32;
 
     private:
         /**

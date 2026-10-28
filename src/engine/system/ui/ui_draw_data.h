@@ -25,7 +25,7 @@ struct UIVertex {
     glm::vec4 color;
     /// Quad width and height (screen px), corner radius (UI_TEXT_MARK on a glyph), border width.
     glm::vec4 shape;
-    glm::vec4 border;  ///< Solid only: the border's colour.
+    glm::vec4 border;  ///< Solid only: the border's color.
     float     image;   ///< Solid only: 1 when tinted by its run's image, 0 when flat.
 };
 

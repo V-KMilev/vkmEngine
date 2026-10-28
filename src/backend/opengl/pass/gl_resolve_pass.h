@@ -9,18 +9,18 @@ namespace Vkm::Engine {
 /**
  * @brief Resolves the multisample scene target into the single-sample sceneHDR for sampling.
  *
- * Geometry scope runs after the prepass; Colour after lighting, re-resolving depth when
+ * Geometry scope runs after the prepass; Color after lighting, re-resolving depth when
  * alpha-masked geometry wrote it. A no-op when MSAA is off.
  *
  * A fullscreen draw, not a blit, which averages: depth and G-buffer take one sample (an average
- * of two surfaces is neither); colour averages through a tonemap so a bright sample cannot
+ * of two surfaces is neither); color averages through a tonemap so a bright sample cannot
  * dominate. One draw also writes every image of a scope.
  */
 class GLResolvePass : public GLPass {
     public:
         enum class Scope {
             Geometry,  ///< Depth + G-buffer, for the screen-space passes.
-            Color,     ///< The lit HDR colour and the reflection inputs, for the post chain.
+            Color,     ///< The lit HDR color and the reflection inputs, for the post chain.
         };
 
         explicit GLResolvePass(Scope scope);

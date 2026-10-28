@@ -4,7 +4,6 @@
 #include <vector>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
 
 #include "core/system.h"
 #include "system/visibility/visibility.h"
@@ -12,6 +11,7 @@
 namespace Vkm::Engine {
 
 struct Camera;
+struct CameraView;
 
 /**
  * @brief Builds the per-frame Visibility result (every scene mesh, and which of them the camera sees).
@@ -101,16 +101,14 @@ class VisibilitySystem : public System {
         /**
          * @brief Write one camera's matrices, position and depth of field into m_result.
          *
-         * @param camera         Projection and depth-of-field parameters.
-         * @param position       Eye, world space.
-         * @param rotation       Eye, world space.
+         * @param camera         Depth-of-field and viewmodel parameters.
+         * @param seen           What it sees (viewThrough).
          * @param viewportAspect Used while camera.aspect <= 0.
          * @param entity         The scene camera, or empty for a free view.
          */
         void publishCamera(
             const Camera& camera,
-            const glm::vec3& position,
-            const glm::quat& rotation,
+            const CameraView& seen,
             float viewportAspect,
             EntityId entity
         );

@@ -13,15 +13,16 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
-      {
-        "name": "assets/textures/rough_wood_arm.jpg"
-      },
       {
         "name": "assets/textures/rough_wood_diff.jpg"
       },
       {
         "name": "assets/textures/rough_wood_nor_gl.jpg"
+      },
+      {
+        "name": "assets/textures/rough_wood_arm.jpg"
       }
     ]
   },
@@ -59,7 +60,7 @@
           "value": "Thrown Crate"
         },
         "Rigidbody": {
-          "angularDamping": 0.05000000074505806,
+          "angularDamping": 0.05,
           "angularVelocity": [
             0.0,
             0.0,
@@ -68,10 +69,10 @@
           "canSleep": true,
           "collidesWith": -1,
           "freezeRotation": false,
-          "friction": 0.6000000238418579,
+          "friction": 0.6,
           "gravityScale": 1.0,
           "layer": 1,
-          "linearDamping": 0.009999999776482582,
+          "linearDamping": 0.01,
           "linearVelocity": [
             0.0,
             0.0,
@@ -79,7 +80,7 @@
           ],
           "mass": 2.0,
           "motion": "Dynamic",
-          "restitution": 0.20000000298023224
+          "restitution": 0.2
         },
         "Script": {
           "behaviors": [

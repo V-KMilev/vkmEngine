@@ -6,6 +6,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/math/rotation.h"
 #include "ecs/component/core/transform.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -78,18 +79,13 @@ void adjustBone(Transform& local, const BoneAdjust& adjust, const glm::mat4* par
         return;
     }
 
-    const glm::mat3 parentAxes(*parentGlobal);
-    const glm::mat3 parentBasis(
-        glm::normalize(parentAxes[0]),
-        glm::normalize(parentAxes[1]),
-        glm::normalize(parentAxes[2])
-    );
-    const glm::quat parentRotation = glm::normalize(glm::quat_cast(parentBasis));
-
+    const glm::quat parentRotation = Math::worldRotationOf(*parentGlobal);
     local.rotation = adjust.absolute
         ? glm::inverse(parentRotation) * adjust.rotation
         : glm::inverse(parentRotation) * adjust.rotation * parentRotation * local.rotation;
-    local.position += glm::inverse(parentAxes) * adjust.offset;
+    // A parent scaled to nothing holds its children at its origin, whatever the offset.
+    const glm::mat3 parentAxes(*parentGlobal);
+    if (glm::determinant(parentAxes) != 0.0f) local.position += glm::inverse(parentAxes) * adjust.offset;
 }
 
 } // namespace

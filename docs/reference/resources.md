@@ -93,9 +93,10 @@ under `resource/asset/`.
 
 ### MeshAsset
 
-Vertices, indices, bounds, and for a skinned mesh a parallel `skin` stream of
-four bone indices and unorm8 weights. The cooked file bulk-writes both streams,
-so `Vertex` and `SkinVertex` carry size asserts (`AssetCook::writeMesh`,
+Vertices, indices, bounds, for a skinned mesh a parallel `skin` stream of four
+bone indices and unorm8 weights, and for a mesh the cook unwrapped a parallel
+stream of lightmap coordinates. The cooked file bulk-writes every stream, so
+`Vertex` and `SkinVertex` carry size asserts (`AssetCook::writeMesh`,
 `resource/asset/mesh_asset.h`): a layout change is a `COOKER_VERSION` bump.
 
 - **A mesh is skinned iff `skin` is non-empty**; why the skin is a stream of its
@@ -103,11 +104,15 @@ so `Vertex` and `SkinVertex` carry size asserts (`AssetCook::writeMesh`,
 - **`skinRadius` is owed by whoever fills `skin`**, through
   `computeAndSetSkinRadius(skeleton)`, as the bounds are owed through
   `computeAndSetBounds()` by whoever fills `vertices`. A posed character is
-  bounded by its bone origins inflated by this radius ([Visibility](visibility.md#posed-bounds)),
-  so left at zero it culls the character.
+  bounded by its bone origins inflated by this radius
+  ([Visibility](visibility.md#posed-bounds)), so left at zero it culls the
+  character.
 - **`skeleton` is a name, not a handle**: a compatibility tag. A mesh posed by
   a rig of another name is reported, and still deforms - its bone indices then
   address the wrong joints.
+- **`lightmapUVs` is a second unwrap**, parallel to the vertices or empty, that
+  a baked lightmap is read by; the cook's `unwrapLightmap` makes it and says
+  which meshes it leaves out.
 
 ### TextureAsset
 
@@ -118,9 +123,10 @@ them to cook from. An asset with no pixels has not therefore failed.
 
 What the texels mean is its `TextureUsage`: `Color` (sRGB, filtered as light),
 `Data` (linear numbers: roughness, masks) or `Normal` (a tangent-space
-direction, two channels - `RG8`, or BC5 once cooked; the shader rebuilds z). Nothing in an image file says
-which, so the import states it and the recipe records it; once decoded,
-`internalFormat` is the only record, read back by `isSrgb()` and `usage()`.
+direction, two channels - `RG8`, or BC5 once cooked; the shader rebuilds z).
+Nothing in an image file says which, so the import states it and the recipe
+records it; once decoded, `internalFormat` is the only record, read back by
+`isSrgb()` and `usage()`.
 
 `filterOverride` is `None` (the default: `RenderSettings::textureFiltering`
 decides) or `Nearest`, for content that is wrong blended at any quality - pixel
@@ -136,8 +142,8 @@ per-texture import panel:
 
 The cooker (`AssetCooker::bakeTexture`, `src/tools/cook/texture_bake.cpp`)
 builds what the GPU samples, once, so the runtime only uploads: the mip chain a
-recipe asks for, filtered so colour, cut-out coverage, normals and roughness
-hold up at range, and block-compressed to a format that needs no shader change,
+recipe asks for, filtered so color, cut-out coverage, normals and roughness hold
+up at range, and block-compressed to a format that needs no shader change,
 unless it is smaller than a block, `Nearest` or not 8-bit;
 `src/tools/cook/texture_bake.h` states the rules. GL builds a chain at upload
 only for a texture that asks for one and carries a single uncompressed level
@@ -154,23 +160,22 @@ in what order, is [Rendering](rendering.md#the-passes-fixed-order)'s. A mesh's
 maps are read at `uv * uvScale + uvOffset` (`materialUV` in
 `shaders/material.glsl`), so a ground texture repeats across a field - its
 texture's recipe needs `"wrap": "repeat"`, as a file's clamps by default; a
-glTF's `KHR_texture_transform` on its base colour (else its normal map) imports
+glTF's `KHR_texture_transform` on its base color (else its normal map) imports
 as these, without its rotation. A decal and an ocean's surface lay their maps
 their own way. `boxMapping` reads the uv off the object's own box instead
 (`boxUV`): where a point lies in its frame at the size it is drawn, on the face
 its normal most nearly turns to, so a cube stretched into a beam keeps its
-texture square and the texture moves with it. It suits boxes and faceted
-meshes; a smooth one shows seams.
+texture square and the texture moves with it. It suits boxes and faceted meshes;
+a smooth one shows seams.
 
 A **layered** material (`MaterialAsset::layers`) draws up to four other
 materials in its place, blended by `layerWeights`' R, G, B and A at the mesh's
 uv, each layer's albedo, normal and AO/roughness/metallic maps read at its own
-tiling of that uv. Where a layer's colour would repeat densely on screen it is
+tiling of that uv. Where a layer's color would repeat densely on screen it is
 read again at a far larger scale and blended in, so a far slope shows no grid of
-one tile. It is derived, never saved: a terrain makes the one it draws
-with. The backend copies the layers' maps into an array texture apiece
-(`GLLayerMaps`) and draws with a program built for it
-(`shaders/forward/pbr_layered`).
+one tile. It is derived, never saved: a terrain makes the one it draws with. The
+backend copies the layers' maps into an array texture apiece (`GLLayerMaps`) and
+draws with a program built for it (`shaders/forward/pbr_layered`).
 
 ### FontAsset
 
@@ -206,8 +211,9 @@ bones, bound **at cook time**, so nothing resolves a bone name at runtime.
 
 **Markers** are instants the clip announces - a footstep, the frame a swing
 connects. They live on the clip, so every character playing it gets them, and
-crossing one publishes an `AnimationEvent` ([Animation](animation.md#animation-events)).
-Neither glTF nor FBX carries them, so they are authored in the clip's recipe:
+crossing one publishes an `AnimationEvent`
+([Animation](animation.md#animation-events)). Neither glTF nor FBX carries
+them, so they are authored in the clip's recipe:
 
 ```json
 { "kind": "model", "path": "assets/hero.glb", "clip": 2,
@@ -245,10 +251,10 @@ them, and what a host without them reads, is
   and the cooker in `cook/`, plus `registerRecipeAssetFactories`.
 
 The procedural generators (`src/engine/resource/generate/`) are engine code,
-because the engine builds with them - a default scene, the solid colours a
-recipe names. `createGeneratedMesh` and `createGeneratedTexture` rebuild an
-asset from the JSON descriptor its generator stamped - `{"kind": "generator",
-"type": "cube"}`, or a `solid` colour.
+because the engine builds with them - a default scene, the solid colors a recipe
+names. `createGeneratedMesh` and `createGeneratedTexture` rebuild an asset from
+the JSON descriptor its generator stamped -
+`{"kind": "generator", "type": "cube"}`, or a `solid` color.
 
 ### Importing a model
 

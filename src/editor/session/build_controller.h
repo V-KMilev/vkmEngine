@@ -12,7 +12,7 @@ struct EditorState;
 
 /**
  * @brief The editor's way to vkm: it runs `vkm new`, `vkm build` and `vkm package` and shows
- *        what they print in the Build window.
+ *        what they print in the Console's Build view.
  *
  * vkm is the one implementation of each; the editor does none of them itself. A build
  * changes the module on disk, which EditorSystem's watch then reloads. A project opened
@@ -54,9 +54,9 @@ class BuildController {
         void update(EditorState& state, const std::filesystem::path& modulePath);
 
         /**
-         * @brief The Build window's contents: what ran, how it ended, and its output.
+         * @brief The Console's Build view: what ran, how it ended, and its output.
          *
-         * @param state Asked to run a build or a package from the window's buttons.
+         * @param state Asked to run a build or a package from the view's buttons.
          */
         void draw(EditorState& state);
 
@@ -67,8 +67,14 @@ class BuildController {
          */
         bool idle() const { return m_status == Status::Idle; }
 
+        /// Whether the last run failed.
+        bool failed() const { return m_status == Status::Failed; }
+
+        /// Whether a run is under way.
+        bool running() const { return m_status == Status::Running; }
+
         /**
-         * @brief Whether the Build window should come to the front this frame.
+         * @brief Whether the Console should come forward on its Build view this frame.
          *
          * @return True once per run, as it starts.
          */

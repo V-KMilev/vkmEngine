@@ -25,7 +25,7 @@ struct UIButton {
     glm::vec4 pressedColor  = {0.12f, 0.14f, 0.18f, 0.95f};
     glm::vec4 disabledColor = {0.15f, 0.15f, 0.17f, 0.60f};
 
-    UIShape     shape;                  ///< Corners, edge and fade of the quad, whatever state colours it.
+    UIShape     shape;                  ///< Corners, edge and fade of the quad, whatever state colors it.
     std::string eventId;                ///< Identifier carried by the UIClickEvent this button fires.
     bool        interactable = true;    ///< When false: drawn Disabled, ignores the pointer.
 
@@ -41,7 +41,7 @@ struct UIButton {
     /**
      * @brief The background tint for the current state.
      *
-     * @return The colour for `state`.
+     * @return The color for `state`.
      */
     const glm::vec4& colorForState() const {
         // No default, so a new state is a build warning rather than a silent Normal.

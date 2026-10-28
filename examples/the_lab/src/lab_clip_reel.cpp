@@ -3,14 +3,13 @@
 #include <iterator>
 
 #include "ecs/component/animation/animator.h"
-#include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
 
 namespace Lab {
 
 void LabClipReel::onStart() {
-    m_animator = HierarchyOperations::findInSelfOrDescendants<Animator>(scene(), entity());
+    m_animator = findPartWith<Animator>();
 }
 
 void LabClipReel::onUpdate(float dt) {
