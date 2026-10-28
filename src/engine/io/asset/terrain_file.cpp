@@ -6,10 +6,10 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <system_error>
 
 #include "logger.h"
 
+#include "io/whole_file.h"
 #include "resource/resource_manager.h"
 
 namespace Vkm::Engine::TerrainFile {
@@ -98,10 +98,23 @@ class Reader {
         size_t         m_left;
 };
 
-/// @p handle's asset's name, or none for a hidden or unnamed one, which is warned of.
+/**
+ * @brief The name the file keeps for @p handle's asset.
+ *
+ * @param handle     The asset; none for one whose name resolved to nothing.
+ * @param unresolved What the file named that resolved to nothing; returned for no handle.
+ * @param resources  Holds the asset.
+ * @param what       What the asset is to the terrain, for the warning.
+ * @return Its name, or none for a hidden or unnamed one, which is warned of.
+ */
 template<typename Asset>
-std::string nameOf(const Handle<Asset>& handle, const ResourceManager& resources, const char* what) {
-    if (!handle) return {};
+std::string nameOf(
+    const Handle<Asset>& handle,
+    const std::string& unresolved,
+    const ResourceManager& resources,
+    const char* what
+) {
+    if (!handle) return unresolved;
     const Asset* asset = resources.tryGet(handle);
     if (!asset || asset->isHidden() || asset->name().empty()) {
         LOG_WARNING("Terrain: a %s it names has no name to keep, so is dropped", what);
@@ -117,7 +130,9 @@ std::vector<uint8_t> encode(const TerrainAsset& terrain, const ResourceManager& 
     Writer w(out);
     w.raw(terrain.resolution);
     w.raw(terrain.size);
-    for (const MaterialHandle& layer : terrain.layers) w.name(nameOf(layer, resources, "layer material"));
+    for (size_t i = 0; i < terrain.layers.size(); ++i) {
+        w.name(nameOf(terrain.layers[i], terrain.unresolvedLayers[i], resources, "layer material"));
+    }
     for (const float tiling : terrain.layerTiling) w.raw(tiling);
     w.bulk(terrain.heights);
     w.bulk(terrain.weights);
@@ -125,8 +140,8 @@ std::vector<uint8_t> encode(const TerrainAsset& terrain, const ResourceManager& 
     for (const TerrainFoliage& layer : terrain.foliage) {
         w.raw(static_cast<uint32_t>(layer.parts.size()));
         for (const TerrainPlantPart& part : layer.parts) {
-            w.name(nameOf(part.mesh, resources, "plant mesh"));
-            w.name(nameOf(part.material, resources, "plant material"));
+            w.name(nameOf(part.mesh, part.unresolvedMesh, resources, "plant mesh"));
+            w.name(nameOf(part.material, part.unresolvedMaterial, resources, "plant material"));
             w.raw(part.local);
         }
         w.raw(layer.perSquareMetre);
@@ -135,7 +150,12 @@ std::vector<uint8_t> encode(const TerrainAsset& terrain, const ResourceManager& 
         w.raw(layer.maxDistance);
         w.raw(layer.seed);
         w.raw(static_cast<uint8_t>(layer.castShadows ? 1 : 0));
-        w.bulk(layer.density);
+        // A layer not yet painted holds no map; the file holds one regardless, of none.
+        if (layer.density.empty()) {
+            w.bulk(std::vector<uint8_t>(static_cast<size_t>(terrain.resolution) * terrain.resolution, 0));
+        } else {
+            w.bulk(layer.density);
+        }
     }
     return out;
 }
@@ -248,51 +268,34 @@ void resolve(TerrainAsset& terrain, const Names& names, const ResourceManager& r
     };
     const auto material = [&](const std::string& n) { return resources.findByName<MaterialAsset>(n); };
     const auto mesh     = [&](const std::string& n) { return resources.findByName<MeshAsset>(n); };
+    // A name that finds nothing is kept beside the empty handle, for a save to write back.
+    const auto keep = [](const auto& handle, const std::string& name) {
+        return handle ? std::string() : name;
+    };
     for (size_t i = 0; i < terrain.layers.size(); ++i) {
-        terrain.layers[i] = find(material, names.layers[i], "layer material");
+        terrain.layers[i]           = find(material, names.layers[i], "layer material");
+        terrain.unresolvedLayers[i] = keep(terrain.layers[i], names.layers[i]);
     }
     for (size_t f = 0; f < terrain.foliage.size() && f < names.plants.size(); ++f) {
         std::vector<TerrainPlantPart>& parts = terrain.foliage[f].parts;
         for (size_t p = 0; p < parts.size() && p < names.plants[f].size(); ++p) {
-            parts[p].mesh     = find(mesh, names.plants[f][p].first, "plant mesh");
-            parts[p].material = find(material, names.plants[f][p].second, "plant material");
+            parts[p].mesh               = find(mesh, names.plants[f][p].first, "plant mesh");
+            parts[p].material           = find(material, names.plants[f][p].second, "plant material");
+            parts[p].unresolvedMesh     = keep(parts[p].mesh, names.plants[f][p].first);
+            parts[p].unresolvedMaterial = keep(parts[p].material, names.plants[f][p].second);
         }
     }
 }
 
 bool write(const std::filesystem::path& path, const TerrainAsset& terrain, const ResourceManager& resources) {
     const std::vector<uint8_t> body = encode(terrain, resources);
-    std::error_code ec;
-    if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);
-    const std::filesystem::path tmp = std::filesystem::path(path).concat(".tmp");
-    {
-        std::ofstream out(tmp, std::ios::binary);
-        if (!out) {
-            LOG_ERROR("Terrain: cannot open '%s' for writing", tmp.string().c_str());
-            return false;
-        }
-        out.write(MAGIC, sizeof(MAGIC));
-        out.write(reinterpret_cast<const char*>(&VERSION), sizeof(VERSION));
-        out.write(reinterpret_cast<const char*>(body.data()), static_cast<std::streamsize>(body.size()));
-        out.close();
-        if (!out) {
-            LOG_ERROR("Terrain: write to '%s' failed", tmp.string().c_str());
-            std::filesystem::remove(tmp, ec);
-            return false;
-        }
-    }
-    std::filesystem::rename(tmp, path, ec);
-    if (ec) {
-        LOG_ERROR(
-            "Terrain: rename '%s' -> '%s' failed: %s",
-            tmp.string().c_str(),
-            path.string().c_str(),
-            ec.message().c_str()
-        );
-        std::filesystem::remove(tmp, ec);
-        return false;
-    }
-    return true;
+    WholeFileWrite file(path, std::ios::binary, "Terrain");
+    if (!file) return false;
+    std::ofstream& out = file.stream();
+    out.write(MAGIC, sizeof(MAGIC));
+    out.write(reinterpret_cast<const char*>(&VERSION), sizeof(VERSION));
+    out.write(reinterpret_cast<const char*>(body.data()), static_cast<std::streamsize>(body.size()));
+    return file.commit();
 }
 
 bool readBody(const std::filesystem::path& path, std::vector<uint8_t>& body, std::string& error) {

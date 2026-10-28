@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "debug/engine_error_log.h"
 #include "resource/asset_source_kind.h"
 #include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
@@ -112,11 +113,15 @@ void testAFailedDecodeStopsLoadingWithoutCommitting() {
     const TextureHandle handle = loadingTexture(resources, "async:failed");
     const uint64_t version = resources.get(handle).version();
 
+    EngineErrorLog errors;
+    setErrorSink(&errors);
     AsyncLoadQueue::get().pushTexture({handle, resources.get(handle).uid(), TextureAsset{}});
     finalizeAsyncLoads(resources);
+    setErrorSink(nullptr);
 
     const TextureAsset& asset = resources.get(handle);
     check("the asset is left empty", asset.pixelData.empty());
+    check("  and says so as an error", errors.totalPushed() == 1);
     check("  it stops reporting itself as loading, so nothing waits on it forever", !asset.loading);
     check("  and the version stands, so no re-upload is asked for", asset.version() == version);
 }
@@ -138,7 +143,7 @@ void testACompletionKeepsItsOwnFormat() {
         "the decode's format is taken as it stands",
         asset.params.internalFormat == TextureInternalFormat::SRGBA8
     );
-    check("  and the colour space is read back off it rather than guessed", asset.isSrgb());
+    check("  and the color space is read back off it rather than guessed", asset.isSrgb());
 }
 
 void testAMeshCompletionCarriesEveryFieldItTook() {

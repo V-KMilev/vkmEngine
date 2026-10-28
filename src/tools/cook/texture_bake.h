@@ -9,8 +9,8 @@ namespace Vkm::Engine::AssetCooker {
  *        block-compressed where the content allows.
  *
  * Each level is filtered from the one above in linear floats (sRGB decoded, alpha-weighted so
- * transparent colour does not bleed), wrap mode as the edge rule, rounded to bytes once. A
- * colour texture with alpha keeps its coverage above 0.5 per level, so a cut-out does not thin.
+ * transparent color does not bleed), wrap mode as the edge rule, rounded to bytes once. A
+ * color texture with alpha keeps its coverage above 0.5 per level, so a cut-out does not thin.
  * A normal map (RG8) is filtered as a direction and renormalised. A metallic-roughness map
  * given its paired normal map has each level's roughness (G) raised by the normal detail its
  * texels average away (Toksvig, as von Mises-Fisher), so a glossy bumpy surface at range is as

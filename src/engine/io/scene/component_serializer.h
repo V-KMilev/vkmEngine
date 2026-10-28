@@ -16,6 +16,7 @@
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
+#include "ecs/component/physics/buoyancy.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
@@ -69,6 +70,7 @@ class ResourceManager;
     P(Rigidbody,           "Rigidbody")           \
     R(Collider,            "Collider")            \
     P(CharacterController, "CharacterController") \
+    P(Buoyancy,            "Buoyancy")            \
     E(Joint,               "Joint")               \
     E(Ragdoll,             "Ragdoll")             \
     R(Mesh,                "Mesh")                \
@@ -115,7 +117,7 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Name&);
 
     /**
-     * @brief The scene-global Environment (sky, night sky and fog).
+     * @brief The scene-global Environment: sky, night sky, fog and acoustics.
      *
      * Missing keys keep the current values.
      */
@@ -156,6 +158,10 @@ namespace ComponentSerializer {
      */
     nlohmann::json save(const CharacterController&);
     void load(const nlohmann::json&, CharacterController&);
+
+    /// Buoyancy: the reflected fields.
+    nlohmann::json save(const Buoyancy&);
+    void load(const nlohmann::json&, Buoyancy&);
 
     /**
      * @brief Joint: the reflected fields, and `connected` as the carrier's name for it.

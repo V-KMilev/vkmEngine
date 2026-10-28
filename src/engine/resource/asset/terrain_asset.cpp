@@ -5,12 +5,13 @@
 #include <cmath>
 #include <iterator>
 
+#include <glm/ext/scalar_integer.hpp>
+
 namespace Vkm::Engine {
 
 bool TerrainAsset::validResolution(uint32_t resolution) {
     if (resolution < MIN_RESOLUTION || resolution > MAX_RESOLUTION) return false;
-    const uint32_t cells = resolution - 1;
-    return (cells & (cells - 1)) == 0;
+    return glm::isPowerOfTwo(resolution - 1);
 }
 
 float TerrainAsset::heightAt(float x, float z) const {

@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "resource/asset/skeleton_asset.h"
+
 namespace Vkm::Engine {
 
 namespace {
@@ -41,6 +43,10 @@ std::string findClipFault(const AnimationClipAsset& clip) {
             + " is outside its " + std::to_string(clip.duration) + " seconds";
     }
     return {};
+}
+
+bool clipFitsRig(const AnimationClipAsset& clip, const SkeletonAsset& skeleton) {
+    return clip.skeleton == skeleton.name() && clip.bones.size() == skeleton.bones.size();
 }
 
 } // namespace Vkm::Engine

@@ -18,7 +18,7 @@ class ResourceManager;
  *
  * @param color RGBA color (0-1 range).
  * @param resourceManager Resource manager to add the texture to.
- * @param usage sRGB colour, linear data, or a normal's x and y.
+ * @param usage sRGB color, linear data, or a normal's x and y.
  * @return Handle to the generated texture.
  */
 TextureHandle createSolidColorTexture(

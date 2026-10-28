@@ -14,6 +14,7 @@
 
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
+#include "import/import_formats.h"
 #include "import/texture_loaders.h"
 
 namespace Vkm::Engine {
@@ -52,13 +53,12 @@ bool nameMatchesPattern(const std::string& filename, const std::string& pattern)
     return false;
 }
 
-// The file matching the earliest of @p patterns with one of @p extensions. Patterns outermost and
+// The image (IMAGE_EXTENSIONS) matching the earliest of @p patterns. Patterns outermost and
 // candidates sorted, so the answer (frozen into the cooked recipe) never follows
 // directory_iterator's unspecified order.
 std::optional<std::string> findTexture(
     const std::string& folderPath,
-    const std::vector<std::string>& patterns,
-    const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
+    const std::vector<std::string>& patterns
 ) {
     namespace fs = std::filesystem;
     const fs::path folder = ProjectPaths::resolveProjectPath(folderPath);
@@ -74,12 +74,9 @@ std::optional<std::string> findTexture(
         // Not the walk's error_code: one unstattable entry would end the scan early.
         std::error_code entryEc;
         if (!entry.is_regular_file(entryEc)) continue;
-        const std::string extensionLower = toLower(entry.path().extension().string());
-        for (const auto& ext : extensions) {
-            if (extensionLower != toLower(ext)) continue;
-            candidates.push_back(entry.path());
-            break;
-        }
+        const std::string extension = lowercaseExtension(entry.path());
+        const auto        named     = std::find(IMAGE_EXTENSIONS.begin(), IMAGE_EXTENSIONS.end(), extension);
+        if (named != IMAGE_EXTENSIONS.end()) candidates.push_back(entry.path());
     }
     std::sort(candidates.begin(), candidates.end());
 

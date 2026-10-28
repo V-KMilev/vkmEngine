@@ -27,7 +27,9 @@ enum class TextureInternalFormat : uint8_t {
     BC4R,       ///< One linear channel, 8 bytes a block (RGTC1).
     BC5RG,      ///< Two linear channels, 16 bytes a block (RGTC2).
     BC7RGBA,    ///< Linear RGBA, 16 bytes a block (BPTC).
-    BC7SRGBA    ///< sRGB colour with linear alpha, 16 bytes a block (BPTC).
+    BC7SRGBA,   ///< sRGB color with linear alpha, 16 bytes a block (BPTC).
+
+    Count
 };
 
 /**
@@ -109,7 +111,7 @@ enum class TextureUsage : uint8_t {
 /**
  * @brief How many channels an image file holding @p fileChannels is stored as.
  *
- * Grey+alpha widens to four (RG storage would sample no alpha), as does grey colour (no one-channel
+ * Grey+alpha widens to four (RG storage would sample no alpha), as does grey color (no one-channel
  * sRGB format); grey data stays one, read as grey in every channel. A normal keeps x and y only:
  * z is rebuilt, and a two-channel block format holds better than a three-channel one.
  *
@@ -126,7 +128,7 @@ inline int decodeChannels(int fileChannels, TextureUsage usage) {
 /**
  * @brief Infer the GPU storage format from a stored channel count and a usage.
  *
- * Unexpected counts fall back to (S)RGBA8. Each usage gets formats no other takes - colour the
+ * Unexpected counts fall back to (S)RGBA8. Each usage gets formats no other takes - color the
  * sRGB ones, a normal RG8, data the rest - so textureUsageOf can read it back.
  *
  * @param channels Channels stored per texel, as decodeChannels settled them.
@@ -146,7 +148,7 @@ inline TextureInternalFormat inferInternalFormat(int channels, TextureUsage usag
 }
 
 /**
- * @brief Whether @p format stores colour in sRGB.
+ * @brief Whether @p format stores color in sRGB.
  *
  * @param format The GPU storage format.
  * @return True for the three sRGB formats.
@@ -189,7 +191,8 @@ inline uint64_t blockBytes(TextureInternalFormat format) {
         case TextureInternalFormat::SRGB8:
         case TextureInternalFormat::SRGBA8:
         case TextureInternalFormat::RGBA16F:
-        case TextureInternalFormat::RGBA32F:  return 0;
+        case TextureInternalFormat::RGBA32F:
+        case TextureInternalFormat::Count:    return 0;
     }
     return 0;
 }
@@ -245,7 +248,7 @@ inline uint64_t bytesPerTexel(TexturePixelFormat format, TexturePixelType type) 
  * @param height Level-0 height.
  * @return The level count including level 0; 0 for an empty image.
  */
-inline uint32_t mipChainLength(uint32_t width, uint32_t height) {
+constexpr uint32_t mipChainLength(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) return 0;
     uint32_t extent = std::max(width, height);
     uint32_t levels = 1;
@@ -263,7 +266,7 @@ inline uint32_t mipChainLength(uint32_t width, uint32_t height) {
  * @param level  Mip level, 0 being the image itself.
  * @return The side at that level, never below 1.
  */
-inline uint32_t mipExtent(uint32_t extent, uint32_t level) {
+constexpr uint32_t mipExtent(uint32_t extent, uint32_t level) {
     return (level >= 32) ? 1u : std::max(extent >> level, 1u);
 }
 

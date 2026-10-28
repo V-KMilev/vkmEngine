@@ -88,13 +88,14 @@ nlohmann::json fileTextureRecipe(
 bool decodeTextureFromMemory(const unsigned char* bytes, size_t size, TextureUsage usage, TextureAsset& out);
 
 /**
- * @brief Load a texture from a file.
+ * @brief Load a texture from a file, or return the one already loaded from it (findLoadedTexture)
+ *        as it was loaded: its usage, mips, filter and wrap.
  *
  * Decoded with stb_image: PNG, JPG, TGA, BMP and the rest of its formats.
  *
  * @param filePath Path to the image file.
  * @param resourceManager Resource manager to add the texture to.
- * @param usage What the texels mean - colour, data or a normal - which decides
+ * @param usage What the texels mean - color, data or a normal - which decides
  *        how the file's channels are decoded and stored (decodeChannels).
  * @param generateMipmaps Whether to generate mipmaps.
  * @param filterOverride The texture's own say over its sampling; None leaves it
@@ -113,6 +114,24 @@ TextureHandle loadTexture(
 );
 
 /**
+ * @brief The texture already loaded from @p filePath, if any.
+ *
+ * A texture's identity is its path: one asked for as another usage is returned as it was
+ * loaded, and the ask reported, since decoding it again would change it under everything
+ * that uses it.
+ *
+ * @param filePath Path to the image file, or the texture's name.
+ * @param resourceManager Where it would be loaded.
+ * @param usage How the asker means to read it.
+ * @return Its handle, or an invalid one when it is not loaded.
+ */
+TextureHandle findLoadedTexture(
+    const std::string& filePath,
+    const ResourceManager& resourceManager,
+    TextureUsage usage
+);
+
+/**
  * @brief Import a texture without blocking, finalised on a later frame.
  *
  * Returns immediately with a valid handle; the asset starts in a `loading`
@@ -127,7 +146,7 @@ TextureHandle loadTexture(
  *
  * @param filePath Path to the image file to import.
  * @param resourceManager Resource manager the stub texture is added to.
- * @param usage What the texels mean - colour, data or a normal - which decides
+ * @param usage What the texels mean - color, data or a normal - which decides
  *        how the file's channels are decoded and stored (decodeChannels).
  * @param generateMipmaps Whether to generate mipmaps once the pixels are decoded.
  * @param filterOverride The texture's own say over its sampling; None leaves it

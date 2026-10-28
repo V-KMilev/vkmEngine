@@ -23,7 +23,7 @@
 #include "platform/threading/thread_pool.h"
 #include "io/asset/asset_cook.h"
 #include "io/project_paths.h"
-#include "loader/image_loaders.h"
+#include "cook/mesh_processing.h"
 #include "import/model_part_names.h"
 #include "import/model_source.h"
 #include "import/texture_loaders.h"
@@ -86,6 +86,7 @@ std::shared_ptr<const SourceModel> modelFor(const std::string& ref) {
 struct Rig {
     SkeletonAsset skeleton;
     int32_t       rootNode = -1;
+    std::unordered_map<uint32_t, uint16_t> boneOfNode;  ///< File node -> its bone in the skeleton.
 };
 
 /**
@@ -161,6 +162,7 @@ Rig buildRig(const SourceModel& model, const std::string& path) {
         const SourceNode& source = model.nodes[node];
         const glm::mat4 global = parentGlobal * Transform::computeModelMatrix(source.local);
         const auto index = static_cast<int32_t>(skeleton.bones.size());
+        out.boneOfNode[node] = static_cast<uint16_t>(index);
         skeleton.bones.push_back({source.name, parent});
         skeleton.bindPose.push_back(source.local);
         const auto offset = offsets.find(node);
@@ -181,6 +183,16 @@ Rig buildRig(const SourceModel& model, const std::string& path) {
             AssetCook::MAX_SKELETON_BONES
         );
         return {};
+    }
+    // A clip binds by name, so of two bones named alike it moves the first.
+    std::unordered_set<std::string> named;
+    for (const Bone& bone : skeleton.bones) {
+        if (named.insert(bone.name).second) continue;
+        LOG_WARNING(
+            "Model '%s': two bones are named '%s'; a clip moves only the first",
+            path.c_str(),
+            bone.name.c_str()
+        );
     }
     skeleton.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::MODEL}, {AssetSourceKey::PATH, path}};
     out.rootNode = static_cast<int32_t>(rigRoot);
@@ -352,8 +364,9 @@ MeshAsset buildMesh(const SourceModel& model, const std::string& path, int meshI
             std::vector<uint16_t> toRig;
             toRig.reserve(source.bones.size());
             for (const SourceBone& bone : source.bones) {
-                // Every joint a mesh names is in the rig: the rig is their union.
-                toRig.push_back(static_cast<uint16_t>(rig.skeleton.indexOf(model.nodes[bone.node].name)));
+                // Every joint a mesh names is in the rig, the rig being their union; by node, so
+                // two joints named alike are still two.
+                toRig.push_back(rig.boneOfNode.at(bone.node));
             }
             out.skin = source.geometry.skin;
             for (SkinVertex& skin : out.skin) {
@@ -371,6 +384,9 @@ MeshAsset buildMesh(const SourceModel& model, const std::string& path, int meshI
             out.computeAndSetSkinRadius(rig.skeleton);
         }
     }
+
+    // What does not move is unwrapped for a lightmap.
+    if (out.skin.empty()) unwrapLightmap(out, meshName(path, meshIdx));
 
     out.sourceJson() = modelMeshRecipe(path, meshIdx);
     out.computeAndSetBounds();
@@ -429,7 +445,6 @@ TextureHandle textureFor(
     if (image.ref.empty() || (image.embedded.empty() && image.ref.front() == '*')) return {};
     const std::string key = image.ref + usageSuffix(usage);
     if (auto it = cache.find(key); it != cache.end()) return it->second;
-    decodeImagesBottomUp();
 
     if (!image.embedded.empty()) {
         const TextureHandle h = decodeEmbedded(image, res, embeddedName(modelPath, key), modelPath, usage);
@@ -445,10 +460,6 @@ TextureHandle textureFor(
 
     // Named by the reference, so one image two models reference is one asset.
     const std::string fileRef = ProjectPaths::toProjectRelative(abs);
-    if (TextureHandle existing = res.findByName<TextureAsset>(fileRef)) {
-        cache[key] = existing;
-        return existing;
-    }
 
     // Through the file-texture loader its recipe reloads by, so import and later loads decode alike.
     const bool generateMipmaps = true;
@@ -599,7 +610,6 @@ TextureHandle loadModelEmbeddedTexture(
         return {};
     }
     const std::string name = embeddedName(modelRef, ref + usageSuffix(usage));
-    decodeImagesBottomUp();
     return decodeEmbedded(*image, resources, name, modelRef, usage);
 }
 

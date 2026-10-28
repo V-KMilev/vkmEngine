@@ -2,6 +2,7 @@
 
 #include "cook/recipe_registration.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -12,6 +13,7 @@
 #include "logger.h"
 
 #include "io/asset/asset_factory.h"
+#include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "system/async/async_loader_system.h"
@@ -37,11 +39,24 @@ Handle<Asset> refuseKind(const char* what, const nlohmann::json& source) {
     return {};
 }
 
+// The bases this thread's decimate imports are loading: a level whose chain of bases comes back to
+// one of them names itself, and loading that base again would never return.
+thread_local std::vector<std::string> t_basesInProgress;
+
 MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value(AssetSourceKey::KIND, std::string{});
 
-    // Synchronous: generators are cheap, no benefit to async.
-    if (kind == AssetSourceKind::GENERATOR) return createGeneratedMesh(source, resources);
+    // Synchronous, as a generator reads no file. Unwrapped here, as an imported mesh is: the
+    // engine's generators run in the runtime, which carries no unwrapper.
+    if (kind == AssetSourceKind::GENERATOR) {
+        const MeshHandle handle = createGeneratedMesh(source, resources);
+        if (handle) {
+            MeshAsset mesh = resources.get(handle);
+            unwrapLightmap(mesh, mesh.name());
+            resources.swapValue(handle, mesh);
+        }
+        return handle;
+    }
 
     // Async: parsing a model file is the slow path.
     if (kind == AssetSourceKind::MODEL) {
@@ -52,22 +67,33 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
         );
     }
 
-    // The base must come earlier in the meshes block, or the level is dropped.
+    // A level the scene names without its base, as a terrain's scattered plants are, brings the base.
     if (kind == AssetSourceKind::DECIMATE) {
         const std::string baseName = source.value(AssetSourceKey::BASE, std::string{});
         const float ratio          = decimateRatioFromRecipe(source);
+        if (!baseName.empty() && !resources.findByName<MeshAsset>(baseName)) {
+            const auto inProgress = std::find(t_basesInProgress.begin(), t_basesInProgress.end(), baseName);
+            if (inProgress != t_basesInProgress.end()) {
+                LOG_ERROR(
+                    "decimate: base mesh '%s' is a base of itself (LOD level dropped)",
+                    baseName.c_str()
+                );
+                return {};
+            }
+            t_basesInProgress.push_back(baseName);
+            AssetSerializer::loadNamed(AssetType::Mesh, baseName, resources);
+            t_basesInProgress.pop_back();
+        }
         const MeshHandle baseH = baseName.empty() ? MeshHandle{} : resources.findByName<MeshAsset>(baseName);
         if (!baseH) {
             LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
             return {};
         }
         // Resident is not landed: the base decodes on the ThreadPool and no frame has finalised it
-        // inside a scene load. Decimating a stub yields nothing.
-        if (!awaitAsyncLoads(resources)) {
-            LOG_ERROR(
-                "decimate: base mesh '%s' never finished loading (LOD level dropped)",
-                baseName.c_str()
-            );
+        // inside a scene load. Decimating a stub yields nothing. Its own landing is what counts here.
+        awaitAsyncLoads(resources);
+        if (resources.get(baseH).loading || resources.get(baseH).vertices.empty()) {
+            LOG_ERROR("decimate: base mesh '%s' did not load (LOD level dropped)", baseName.c_str());
             return {};
         }
         MeshAsset dec = decimateMesh(resources.get(baseH), ratio);

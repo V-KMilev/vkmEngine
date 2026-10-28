@@ -44,6 +44,18 @@ enum class Bake {
 bool cookAllAssets(ResourceManager& resources, Bake bake = Bake::Now);
 
 /**
+ * @brief Cook only the loaded assets the library has no record of, baking in the background.
+ *
+ * Makes a new import's name resolve while leaving every recorded asset as it is on disk, however
+ * it has changed in memory: for a copy of unsaved changes, which must not save a material's
+ * values into the library for the author.
+ *
+ * @param resources Resource manager whose unrecorded assets are cooked.
+ * @return False when any of them failed to cook or the manifest failed to save.
+ */
+bool recordNewAssets(ResourceManager& resources);
+
+/**
  * @brief Re-bake every manifest entry whose cooked file no longer matches what it
  *        was baked from.
  *

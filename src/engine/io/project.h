@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 #include "core/engine_config.h"
+#include "system/loading/loading_screen.h"
 #include "system/render/render_settings.h"
 
 namespace Vkm::Engine {
@@ -18,6 +20,11 @@ namespace Vkm::Engine {
 struct SplashEntry {
     std::string image;            ///< Image to show, relative to the project root.
     float       seconds = 1.5f;   ///< Time held at full opacity.
+
+    bool operator==(const SplashEntry& other) const {
+        return image == other.image && seconds == other.seconds;
+    }
+    bool operator!=(const SplashEntry& other) const { return !(*this == other); }
 };
 
 /**
@@ -26,6 +33,9 @@ struct SplashEntry {
 struct FontEntry {
     std::string name;  ///< The FontAsset's name, as UIText::font names it.
     std::string file;  ///< The .ttf, relative to the project root.
+
+    bool operator==(const FontEntry& other) const { return name == other.name && file == other.file; }
+    bool operator!=(const FontEntry& other) const { return !(*this == other); }
 };
 
 /**
@@ -35,6 +45,9 @@ struct FontEntry {
  * compared against the running engine so a mismatch is reported up front.
  */
 struct Project {
+    /// The most physics layers: one per bit of a Rigidbody's layer and collidesWith.
+    static constexpr size_t MAX_PHYSICS_LAYERS = 32;
+
     std::string name;                       ///< Display name; titles the window. See loadProject.
     std::string description;                ///< One line on what it is, for the editor's start screen.
     std::string version;                    ///< The game's own, which its packages are named by.
@@ -60,8 +73,19 @@ struct Project {
     /// Logos shown after the engine's own, in the order listed. Usually empty.
     std::vector<SplashEntry> splash;
 
+    /// What the project adds to the loading screen: tips, its own screen, whether the water shows.
+    LoadingScreen loading;
+
     /// Fonts of the game's own, baked as the runtime starts and as the editor opens it. Usually empty.
     std::vector<FontEntry> fonts;
+
+    /**
+     * @brief What the author calls each physics layer: entry i names the layer of bit i.
+     *
+     * Names only, for the editor to show; bodies hold the bits. An empty or missing
+     * entry is shown by its number. At most MAX_PHYSICS_LAYERS.
+     */
+    std::vector<std::string> physicsLayers;
 
     /**
      * @brief What the game looks like, as the author left it.
@@ -88,15 +112,41 @@ bool loadProject(const std::filesystem::path& projectRoot, Project& out);
 /**
  * @brief Write @p project back to the project.json at @p projectRoot.
  *
- * Read-modify-write: keys this struct does not describe are left as they were.
- * splash and fonts are not written, since loadProject drops entries naming nothing and
- * writing the list back would delete them; an edit to it is not saved.
+ * Read-modify-write: keys this struct does not describe are left as they were, and a file that
+ * does not parse is refused rather than replaced.
+ * splash and fonts are written only when they differ from what the file reads as, so a list
+ * left alone keeps the entries loadProject skips.
  *
  * @param projectRoot Directory holding project.json; it is created if missing.
  * @param project     What to record.
  * @return True when the file was written.
  */
 [[nodiscard]] bool saveProject(const std::filesystem::path& projectRoot, const Project& project);
+
+/**
+ * @brief Write @p render alone into the project.json at @p projectRoot, as saveProject writes it;
+ *        every other key is left as it was.
+ *
+ * @param projectRoot Directory holding project.json.
+ * @param render      The project's render settings.
+ * @return True when the file was written; false, writing nothing, when it does not parse.
+ */
+[[nodiscard]] bool saveProjectRender(const std::filesystem::path& projectRoot, const RenderSettings& render);
+
+/**
+ * @brief Name this engine as the one @p projectRoot's project is made for: its engineVersion
+ *        alone, every other key of its project.json left as it was.
+ *
+ * @param projectRoot Directory holding project.json.
+ * @return True when the file was written; false, writing nothing, when it does not parse.
+ */
+[[nodiscard]] bool saveProjectEngine(const std::filesystem::path& projectRoot);
+
+/// Whether @p directory holds a project.json: is a project's root.
+bool isProjectRoot(const std::filesystem::path& directory);
+
+/// Whether @p a and @p b write the same render block into project.json (the shipped fields).
+bool sameProjectRender(const RenderSettings& a, const RenderSettings& b);
 
 /**
  * @brief Whether a project made for @p engineVersion opens and builds on this engine.

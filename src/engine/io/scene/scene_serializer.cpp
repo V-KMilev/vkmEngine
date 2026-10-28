@@ -192,7 +192,9 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 }
 
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
-    auto bySlot = sceneSlotName;
+    // Only while the entity lives: a deleted one's slot goes to the next entity made, which would
+    // take over the reference when the file is read.
+    auto bySlot = [&s](EntityId e) { return s.isAlive(e) ? sceneSlotName(e) : 0u; };
     const EntityNamer name(bySlot);
     saveComponents(s, id, c, r, name);
 }
@@ -683,7 +685,7 @@ std::string saveToString(const Scene& scene, const ResourceManager& resources) {
     PROFILE_SCOPE("SceneSerializer::saveToString");
     // As writeJsonFile does: a non-finite number would come back as a null the load refuses.
     json doc = buildSceneJson(scene, resources);
-    detail::writeNonFiniteAsZero(doc, "Scene");
+    detail::tidyNumbers(doc, "Scene");
     return doc.dump();
 }
 

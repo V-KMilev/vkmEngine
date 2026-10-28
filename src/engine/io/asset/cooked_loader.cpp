@@ -5,7 +5,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "debug/engine_error_log.h"
 #include "io/asset/asset_cook.h"
+#include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/terrain_file.h"
 #include "platform/threading/thread_pool.h"
@@ -24,8 +26,33 @@ std::filesystem::path currentCookedFile(const std::string& name) {
     constexpr AssetType TYPE = ASSET_TYPE<Asset>;
     const AssetRecord* record = AssetLibrary::get().find(TYPE, name);
     if (!record) return {};
+    // A recipe edited since its cook names something else, which a host that can import it does
+    // instead; one that cannot is better served by the file than by nothing.
+    if (recipeImport<Asset>()) {
+        nlohmann::json recipe;
+        const bool read = AssetLibrary::readRecipe(TYPE, name, recipe);
+        if (read && AssetRecord::documentHashOf(recipe) != record->documentHash) return {};
+    }
     std::filesystem::path path = AssetLibrary::cookedPath(TYPE, name, record->recipeHash);
     return AssetCook::isCookedCurrent(TYPE, path) ? path : std::filesystem::path{};
+}
+
+// A cooked file whose header passed but whose body the reader refused: gone where the host can
+// import its recipe, so the next cook bakes it again instead of taking it as current. A host
+// without that import keeps what it was given.
+template<typename Asset>
+void dropUnreadable(const std::filesystem::path& path) {
+    if (!recipeImport<Asset>()) return;
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+// A file read now that the reader refused: left out (dropUnreadable), and said, as an async
+// completion says it.
+template<typename Asset>
+void refuseNow(const std::filesystem::path& path, const std::string& name) {
+    dropUnreadable<Asset>(path);
+    reportError("Asset", name, "its file could not be read - it is left out");
 }
 
 // What a cache-served asset carries for a source: the cooker reads it as "nothing to re-cook".
@@ -61,7 +88,10 @@ Handle<Asset> loadNow(
     if (path.empty()) return {};
 
     Asset decoded;
-    if (!read(path, decoded)) return {};
+    if (!read(path, decoded)) {
+        refuseNow<Asset>(path, name);
+        return {};
+    }
     decoded.sourceJson() = cookedSource();
     return resources.add(std::move(decoded), name);
 }
@@ -74,7 +104,10 @@ MeshHandle loadCookedMesh(const std::string& name, ResourceManager& resources) {
         resources,
         [](MeshHandle handle, uint64_t uid, const std::filesystem::path& path) {
             MeshAsset decoded;
-            if (!AssetCook::readMesh(path, decoded)) decoded = MeshAsset{};
+            if (!AssetCook::readMesh(path, decoded)) {
+                decoded = MeshAsset{};
+                dropUnreadable<MeshAsset>(path);
+            }
             AsyncLoadQueue::get().pushMesh({handle, uid, std::move(decoded)});
         }
     );
@@ -86,7 +119,10 @@ TextureHandle loadCookedTexture(const std::string& name, ResourceManager& resour
         resources,
         [](TextureHandle handle, uint64_t uid, const std::filesystem::path& path) {
             TextureAsset decoded;
-            if (!AssetCook::readTexture(path, decoded)) decoded = TextureAsset{};
+            if (!AssetCook::readTexture(path, decoded)) {
+                decoded = TextureAsset{};
+                dropUnreadable<TextureAsset>(path);
+            }
             AsyncLoadQueue::get().pushTexture({handle, uid, std::move(decoded)});
         }
     );
@@ -111,7 +147,10 @@ TerrainHandle loadCookedTerrain(const std::string& name, ResourceManager& resour
 
     TerrainAsset       decoded;
     TerrainFile::Names names;
-    if (!AssetCook::readTerrain(path, decoded, names)) return {};
+    if (!AssetCook::readTerrain(path, decoded, names)) {
+        refuseNow<TerrainAsset>(path, name);
+        return {};
+    }
     TerrainFile::resolve(decoded, names, resources);
     decoded.sourceJson() = cookedSource();
     return resources.add(std::move(decoded), name);

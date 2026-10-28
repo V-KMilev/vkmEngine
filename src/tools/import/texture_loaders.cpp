@@ -190,6 +190,7 @@ TextureHandle loadTexture(
     // Named by the reference: an absolute name would bake this machine's tree into every scene.
     const std::string ref      = ProjectPaths::toProjectRelative(filePath);
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
+    if (const TextureHandle existing = findLoadedTexture(ref, resourceManager, usage)) return existing;
 
     decodeImagesBottomUp();
 
@@ -223,6 +224,27 @@ TextureHandle loadTexture(
     return resourceManager.add(std::move(texture), ref);
 }
 
+TextureHandle findLoadedTexture(
+    const std::string& filePath,
+    const ResourceManager& resourceManager,
+    TextureUsage usage
+) {
+    const std::string   ref      = ProjectPaths::toProjectRelative(filePath);
+    const TextureHandle existing = resourceManager.findByName<TextureAsset>(ref);
+    if (!existing) return existing;
+    const TextureUsage loaded = resourceManager.get(existing).usage();
+    if (loaded != usage) {
+        LOG_WARNING(
+            "'%s' is already loaded as %s and is being asked for as %s; "
+            "the loaded one is returned unchanged",
+            ref.c_str(),
+            Reflect::enumName(loaded),
+            Reflect::enumName(usage)
+        );
+    }
+    return existing;
+}
+
 TextureHandle requestTextureAsync(
     const std::string& filePath,
     ResourceManager& resourceManager,
@@ -234,21 +256,7 @@ TextureHandle requestTextureAsync(
     // Relativised first, or two spellings of one file become two assets.
     const std::string ref      = ProjectPaths::toProjectRelative(filePath);
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
-    if (auto existing = resourceManager.findByName<TextureAsset>(ref)) {
-        // Identity is the path, so a second caller gets the first's settings; a disagreeing usage
-        // changes the pixels, so it is reported.
-        const TextureUsage loaded = resourceManager.get(existing).usage();
-        if (loaded != usage) {
-            LOG_WARNING(
-                "'%s' is already loaded as %s and is being asked for as %s; "
-                "the loaded one is returned unchanged",
-                ref.c_str(),
-                Reflect::enumName(loaded),
-                Reflect::enumName(usage)
-            );
-        }
-        return existing;
-    }
+    if (const TextureHandle existing = findLoadedTexture(ref, resourceManager, usage)) return existing;
 
     // Until the pixels arrive the format is the usage's four-channel one; the decode keeps the rest.
     TextureAsset stub;

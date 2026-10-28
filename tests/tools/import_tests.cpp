@@ -8,12 +8,16 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "import/audio_loaders.h"
+#include "import/import_formats.h"
+#include "import/model_loaders.h"
 #include "import/model_part_names.h"
 #include "import/model_source.h"
 #include "resource/resource_manager.h"
+#include "system/async/async_loader_system.h"
 
 namespace {
 
@@ -128,6 +132,95 @@ void testAGltfQuadArrivesWithItsMapsUpright() {
         "  with the bitangent the way V grows, where a baked map's green points",
         bitangentsAlongV(quad) == 1.0f
     );
+}
+
+// A primitive with no normals is flat-shaded, as glTF has it: each face facing the way it winds.
+void testAGltfWithoutNormalsIsFlat() {
+    std::printf("A glTF quad without normals:\n");
+    const ScratchProject project("vkm_import_flat");
+    writeGltfQuad(project.root(), 1.0f);
+    std::ifstream in(project.root() / "quad.gltf");
+    std::string gltf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    const std::string named = R"("NORMAL": 1, )";
+    gltf.erase(gltf.find(named), named.size());
+    write(project.root() / "quad.gltf", gltf);
+
+    const std::unique_ptr<SourceModel> model =
+        parseModel((project.root() / "quad.gltf").string(), "quad.gltf");
+    check("it parses", model && model->meshes.size() == 1);
+    if (!model || model->meshes.size() != 1) return;
+    const MeshAsset& quad = model->meshes[0].geometry;
+    const glm::vec3 wound(0.0f, 0.0f, 1.0f);
+    const auto alongWinding = [&](const Vertex& v) { return glm::dot(v.normal, wound) > 0.999f; };
+    const bool facing = !quad.vertices.empty()
+        && std::all_of(quad.vertices.begin(), quad.vertices.end(), alongWinding);
+    check("  its corners facing the way the quad winds", facing);
+}
+
+// A skin names its joints by node: two of them named alike are still two, and a vertex bound to the
+// second rides the second.
+void testASkinBindsItsJointsByNodeNotName() {
+    std::printf("A skinned glTF whose two joints share a name:\n");
+    const ScratchProject project("vkm_import_twins");
+
+    const float positions[] = {0, 0, 0,  1, 0, 0,  0, 1, 0};
+    const uint8_t joints[]  = {1, 0, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0};
+    const float weights[]   = {1, 0, 0, 0,  1, 0, 0, 0,  1, 0, 0, 0};
+    float inverseBinds[32]  = {};
+    for (int m = 0; m < 2; ++m) {
+        for (int d = 0; d < 4; ++d) inverseBinds[m * 16 + d * 5] = 1.0f;
+    }
+    const uint16_t indices[] = {0, 1, 2, 0};
+    std::vector<unsigned char> bin;
+    const std::initializer_list<std::pair<const void*, size_t>> parts = {
+        {positions, sizeof(positions)},
+        {joints, sizeof(joints)},
+        {weights, sizeof(weights)},
+        {inverseBinds, sizeof(inverseBinds)},
+        {indices, sizeof(indices)}
+    };
+    for (const auto& [data, size] : parts) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        bin.insert(bin.end(), bytes, bytes + size);
+    }
+    write(project.root() / "twins.bin", bin.data(), bin.size());
+    const char* gltf = R"({
+        "asset": {"version": "2.0"},
+        "buffers": [{"uri": "twins.bin", "byteLength": 232}],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0,   "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36,  "byteLength": 12},
+            {"buffer": 0, "byteOffset": 48,  "byteLength": 48},
+            {"buffer": 0, "byteOffset": 96,  "byteLength": 128},
+            {"buffer": 0, "byteOffset": 224, "byteLength": 8}],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+            {"bufferView": 1, "componentType": 5121, "count": 3, "type": "VEC4"},
+            {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+            {"bufferView": 3, "componentType": 5126, "count": 2, "type": "MAT4"},
+            {"bufferView": 4, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2},
+                                    "indices": 4}]}],
+        "skins": [{"joints": [1, 2], "inverseBindMatrices": 3}],
+        "nodes": [
+            {"name": "root", "children": [1, 3]},
+            {"name": "bone", "children": [2]},
+            {"name": "bone"},
+            {"name": "body", "mesh": 0, "skin": 0}],
+        "scenes": [{"nodes": [0]}]
+    })";
+    write(project.root() / "twins.gltf", gltf);
+
+    ResourceManager resources;
+    const MeshHandle body = requestModelMeshAsync("twins.gltf", 0, resources);
+    const bool landed = body && awaitAsyncLoads(resources);
+    check("it imports", landed && !resources.get(body).skin.empty());
+    if (!landed || resources.get(body).skin.empty()) return;
+    const std::vector<SkinVertex>& skin = resources.get(body).skin;
+    const auto rides = [](const SkinVertex& v) { return v.bones[0] == 1; };
+    const bool second = std::all_of(skin.begin(), skin.end(), rides);
+    check("  each vertex riding the second joint, not the first of that name", second);
 }
 
 // cgltf returns zeros for data it does not decode, which would cook as the model:
@@ -481,10 +574,31 @@ void testAWavsLoopIsTheClipsLoopStart() {
     check("and a wav with neither loops whole", loopOf("plain.wav") == 0);
 }
 
+// A file is read by its extension whatever its case, and the lists a picker offers are spelled as
+// the importers compare them.
+void testAnExtensionIsReadWhateverItsCase() {
+    std::printf("A source file's extension:\n");
+
+    check("read lowercased", lowercaseExtension("Maps/Rock.PNG") == ".png");
+    check("  and none is none", lowercaseExtension("Maps/README").empty());
+    bool spelled = true;
+    const auto spelledAlike = [&](const auto& extensions) {
+        for (const std::string_view extension : extensions) {
+            spelled = spelled && lowercaseExtension("file" + std::string(extension)) == extension;
+        }
+    };
+    spelledAlike(IMAGE_EXTENSIONS);
+    spelledAlike(MODEL_EXTENSIONS);
+    spelledAlike(AUDIO_EXTENSIONS);
+    check("every listed extension is spelled as it is read", spelled);
+}
+
 } // namespace
 
 void runImportTests() {
     testAGltfQuadArrivesWithItsMapsUpright();
+    testAGltfWithoutNormalsIsFlat();
+    testASkinBindsItsJointsByNodeNotName();
     testAnObjQuadArrivesWithItsMapsUpright();
     testACentimetreFbxArrivesInMetres();
     testAnFbxSkinFindsAJointTheWalkReachesLater();
@@ -492,4 +606,5 @@ void runImportTests() {
     testAGltfThisImporterCannotDecodeIsRefused();
     testTwoModelsWithOneStemAreTwoModels();
     testAWavsLoopIsTheClipsLoopStart();
+    testAnExtensionIsReadWhateverItsCase();
 }

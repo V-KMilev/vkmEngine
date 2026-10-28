@@ -1,7 +1,12 @@
 #include "support.h"
 
+#include <algorithm>
+#include <clocale>
+#include <fstream>
 #include <limits>
+#include <string>
 
+#include "io/asset/asset_serializer.h"
 #include "io/json_file.h"
 
 #include "ecs/component/core/missing_assets.h"
@@ -17,13 +22,16 @@
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/entity_mapping.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/project.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/prefab.h"
 #include "io/scene/scene_serializer.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/physics/authoring/ragdoll_build.h"
+#include "system/script/reflected_behavior.h"
 #include "system/script/script_component.h"
 #include "io/reflect_json.h"
 
@@ -56,6 +64,18 @@ VKM_REFLECT_BEGIN(::ReflectJsonTest::Settings)
     VKM_F(quality)
     VKM_F(tint)
     VKM_F(keys)
+VKM_REFLECT_END()
+
+// A behavior whose module is loaded, beside held ones whose module is not.
+namespace HeldOrderTest {
+class Built : public ReflectedBehavior<Built> {
+    public:
+        int step = 0;
+};
+} // namespace HeldOrderTest
+
+VKM_REFLECT_BEGIN(::HeldOrderTest::Built)
+    VKM_F(step)
 VKM_REFLECT_END()
 
 namespace {
@@ -178,6 +198,34 @@ void testAFileTheEngineWritesIsOneItCanReadBack() {
     check("  as is an integer",                 back["untouched"].get<int>() == 7);
 
     std::filesystem::remove_all(path.parent_path(), ec);
+}
+
+// A host may set a locale that writes a decimal comma - a file dialog, a library - and a number
+// tidied for the file must read back as the number it was, whatever the locale says.
+void testANumberIsTidiedAlikeUnderADecimalComma() {
+    std::printf("A number tidied under a locale with a decimal comma:\n");
+
+    const std::string held = std::setlocale(LC_NUMERIC, nullptr);
+    bool comma = false;
+    for (const char* name : {"bg_BG.UTF-8", "bg_BG.utf8", "de_DE.UTF-8", "de_DE.utf8", "bg-BG", "de-DE"}) {
+        if (std::setlocale(LC_NUMERIC, name)) {
+            comma = true;
+            break;
+        }
+    }
+    if (!comma) {
+        std::printf("      no locale with a decimal comma here; skipped\n");
+        return;
+    }
+    const std::filesystem::path path = runScratch() / "vkm_locale_numbers.json";
+    nlohmann::json doc = {{"x", static_cast<double>(0.1f)}};
+    const bool written = writeOwnFile(path, doc);
+    std::setlocale(LC_NUMERIC, held.c_str());
+    nlohmann::json back;
+    std::ifstream(path) >> back;
+    check("it is written as the number it was", written && back["x"].get<double>() == 0.1);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
 }
 
 // A scene is written to its file and to the play snapshot Stop restores; a
@@ -529,11 +577,10 @@ void testUnknownBehaviorsSurviveASave() {
     const nlohmann::json again = ComponentSerializer::save(sc);
     check("  and saving writes it back unchanged", again == authored);
 
-    // List order is run order, so a held entry remembers its position. Appending
-    // round-trips while all are unknown, and reorders once one is registered.
+    // List order is run order, so a held entry remembers how many constructed ones were listed ahead of it.
     check(
         "  remembering where each one sat",
-        sc.unknown.size() == 2 && sc.unknown[0].index == 0 && sc.unknown[1].index == 1
+        sc.unknown.size() == 2 && sc.unknown[0].constructedBefore == 0 && sc.unknown[1].constructedBefore == 0
     );
 
     // The save must also read the position back. A wholly held list round-trips in
@@ -549,10 +596,51 @@ void testUnknownBehaviorsSurviveASave() {
             && emitted["behaviors"][1]["type"] == "Second"
     );
 
+    // Behind more constructed ones than the list holds, they go at its end, in order, none lost.
+    ScriptComponent gapped;
+    gapped.unknown.push_back({"Kept", "{}", 1});
+    gapped.unknown.push_back({"AlsoKept", "{}", 2});
+    const nlohmann::json closed = ComponentSerializer::save(gapped);
+    check(
+        "  and one whose place before it emptied is kept, in order",
+        closed["behaviors"].size() == 2
+            && closed["behaviors"][0]["type"] == "Kept"
+            && closed["behaviors"][1]["type"] == "AlsoKept"
+    );
+
     // Open, save, open again: some losses only show on the second pass.
     ScriptComponent reloaded;
     ComponentSerializer::load(again, reloaded);
     check("  through any number of saves", ComponentSerializer::save(reloaded) == authored);
+}
+
+// A held behavior keeps its place among the constructed ones: one removed ahead of it does not
+// carry it past the one behind it.
+void testAHeldBehaviorKeepsItsPlaceWhenOneAheadGoes() {
+    std::printf("A behavior whose module is missing, between two that run:\n");
+
+    BehaviorRegistry::get().registerBehaviors<HeldOrderTest::Built>();
+    const nlohmann::json behaviors = nlohmann::json::array({
+        {{"type", "Built"}, {"properties", {{"step", 0}}}},
+        {{"type", "Missing"}, {"properties", nlohmann::json::object()}},
+        {{"type", "Built"}, {"properties", {{"step", 2}}}},
+    });
+    const nlohmann::json authored = {{"behaviors", behaviors}};
+    ScriptComponent sc;
+    ComponentSerializer::load(authored, sc);
+    check("the two that run are built", sc.behaviors.size() == 2);
+    check("  and the missing one held", sc.unknown.size() == 1);
+
+    removeBehavior(sc, 0);
+    const nlohmann::json saved = ComponentSerializer::save(sc)["behaviors"];
+    check(
+        "with the first removed, the held one still runs ahead of the last",
+        saved.size() == 2
+            && saved[0]["type"] == "Missing"
+            && saved[1]["type"] == "Built"
+            && saved[1]["properties"]["step"] == 2
+    );
+    BehaviorRegistry::get().clear();
 }
 
 void testAProjectSurvivesBeingWritten() {
@@ -563,8 +651,8 @@ void testAProjectSurvivesBeingWritten() {
     std::error_code ec;
     std::filesystem::create_directories(root, ec);
 
-    // Hand-authored, with a key this build does not know and a splash list loadProject
-    // reads but saveProject deliberately does not write.
+    // Hand-authored, with a key this build does not know and splash and font lists holding
+    // entries loadProject skips.
     {
         std::ofstream out(root / "project.json");
         out << R"({
@@ -574,8 +662,10 @@ void testAProjectSurvivesBeingWritten() {
     "tickRate": 90,
     "maxPlayers": 3,
     "netPort": 27888,
-    "splash": [{"image": "logo.png", "seconds": 2.0}],
-    "fonts": [{"name": "game:display", "file": "fonts/display.ttf"}, {"name": "game:nameless"}],
+    "physicsLayers": ["Default", "Ragdoll", 2, "Water"],
+    "splash": ["not an entry", {"image": 7}, {"image": "logo.png", "seconds": 2.0}],
+    "fonts": [3, {"name": "game:display", "file": "fonts/display.ttf"}, {"name": "game:nameless"}],
+    "loading": {"tips": ["Jump with Space", 3, "", "Duck"], "screen": "prefabs/load.json", "water": false},
     "somethingThisBuildDoesNotKnow": {"kept": true}
 })";
     }
@@ -584,13 +674,25 @@ void testAProjectSurvivesBeingWritten() {
     check("a hand-authored project reads", loadProject(root, project));
     check("with the seats it names", project.maxPlayers == 3);
     check("and the port", project.netPort == 27888);
+    check(
+        "and the names of its physics layers, by bit, one that is no name left unnamed in its place",
+        project.physicsLayers.size() == 4 && project.physicsLayers[1] == "Ragdoll"
+            && project.physicsLayers[2].empty() && project.physicsLayers[3] == "Water"
+    );
     const bool oneFont = project.fonts.size() == 1;
     check(
         "and the fonts that name a file, by name",
         oneFont && project.fonts[0].name == "game:display" && project.fonts[0].file == "fonts/display.ttf"
     );
+    check("  past entries read wrong", project.splash.size() == 1 && project.splash[0].image == "logo.png");
+    check(
+        "and its loading screen, past tips that are none",
+        project.loading.tips == std::vector<std::string>({"Jump with Space", "Duck"})
+            && project.loading.screen == "prefabs/load.json" && !project.loading.water
+    );
 
     project.maxPlayers = 8;
+    project.physicsLayers.push_back("");  // a trailing blank, as an editor's emptied row leaves
     check("and writes back", saveProject(root, project));
 
     Project reread;
@@ -602,9 +704,11 @@ void testAProjectSurvivesBeingWritten() {
             && reread.entryScene == "scenes/start.json"
             && reread.tickRate == 90
             && reread.netPort == 27888
+            && reread.physicsLayers == std::vector<std::string>({"Default", "Ragdoll", "", "Water"})
     );
 
-    // What the writer must not lose: an unmodelled key, and a list it reads but never writes.
+    // What the writer must not lose: an unmodelled key, and a list left alone, entries the read
+    // skipped and all.
     nlohmann::json doc;
     {
         std::ifstream in(root / "project.json");
@@ -612,10 +716,27 @@ void testAProjectSurvivesBeingWritten() {
     }
     check("a key this build does not model is still there", doc.contains("somethingThisBuildDoesNotKnow"));
     check(
-        "and the splash list it never writes",
-        doc.contains("splash") && doc["splash"].is_array() && doc["splash"].size() == 1
+        "and the splash list it did not edit",
+        doc.contains("splash") && doc["splash"].is_array() && doc["splash"].size() == 3
     );
-    check("and the font list, as it was", doc.contains("fonts") && doc["fonts"].size() == 2);
+    check("and the font list, as it was", doc.contains("fonts") && doc["fonts"].size() == 3);
+    check("and the loading screen's tips", doc.contains("loading") && doc["loading"]["tips"].size() == 4);
+
+    // An edited list is written as the editor holds it.
+    Project fonted = reread;
+    fonted.fonts.push_back({"game:title", "fonts/title.ttf"});
+    fonted.splash.clear();
+    fonted.loading = LoadingScreen{};
+    check("an added font writes", saveProject(root, fonted));
+    Project withFont;
+    check("  and reads again", loadProject(root, withFont) && withFont.fonts == fonted.fonts);
+    check("  a cleared splash list too", withFont.splash.empty());
+    {
+        std::ifstream in(root / "project.json");
+        nlohmann::json cleared;
+        in >> cleared;
+        check("  and a loading screen back to the engine's leaves no block", !cleared.contains("loading"));
+    }
 
     // A project.json with no render block (as above) opens with the engine's defaults,
     // not everything switched off.
@@ -689,6 +810,81 @@ void testAMistypedRenderSettingCostsOneSetting() {
     check("  and so does the rest of the file", loaded.splash.size() == 1);
 }
 
+// A reference to an entity since deleted names nothing: its slot goes to the next entity made,
+// which would otherwise take it over when the scene is read back.
+void testAReferenceToADeletedEntityNamesNothing() {
+    std::printf("A joint whose other end was deleted, its slot taken again:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    const EntityId beam = scene.createEntity();
+    scene.add<Transform>(beam, Transform{});
+    const EntityId weight = scene.createEntity();
+    scene.add<Transform>(weight, Transform{});
+    scene.add(weight, makeName("Weight"));
+    Joint rope;
+    rope.connected = beam;
+    scene.add<Joint>(weight, std::move(rope));
+
+    scene.destroyEntity(beam);
+    const EntityId newcomer = scene.createEntity();
+    scene.add<Transform>(newcomer, Transform{});
+    scene.add(newcomer, makeName("Newcomer"));
+    check("the newcomer takes the deleted end's slot", newcomer.slot() == beam.slot());
+
+    Scene back;
+    const std::string written = SceneSerializer::saveToString(scene, resources);
+    const bool        loaded  = SceneSerializer::loadFromString(written, back, resources);
+    check("  the scene reads back", loaded);
+    EntityId loadedWeight{};
+    back.forEach<Name>([&](EntityId id, Name& n) {
+        if (std::string(n.value) == "Weight") loadedWeight = id;
+    });
+    check("  and the joint names nothing", loadedWeight && !back.get<Joint>(loadedWeight).connected);
+}
+
+// A top-level key of the wrong type costs that key alone: the read goes on to the rest, which a
+// tool saving the file after would otherwise write over with defaults. A file that does not parse
+// is not written over at all.
+void testAMistypedProjectKeyCostsOneKey() {
+    std::printf("A project.json with a top-level key of the wrong type:\n");
+
+    const ScratchProject project("vkm_project_mistyped_key");
+    const std::filesystem::path file = project.root() / "project.json";
+    {
+        std::ofstream out(file);
+        out << R"({
+    "name": "Mistyped Key",
+    "version": 1,
+    "entryScene": "scenes/start.json",
+    "tickRate": 90,
+    "fonts": [{"name": "game:display", "file": "fonts/display.ttf"}]
+})";
+    }
+    Project loaded;
+    check("the project still reads", loadProject(project.root(), loaded));
+    check("  the mistyped key keeps its default", loaded.version.empty());
+    const bool rest = loaded.entryScene == "scenes/start.json" && loaded.tickRate == 90;
+    check("  and every key after it is read", rest);
+
+    RenderSettings tuned;
+    tuned.exposure = 2.5f;
+    check("its render settings write alone", saveProjectRender(project.root(), tuned));
+    Project again;
+    check("  and read back", loadProject(project.root(), again) && nearly(again.render.exposure, 2.5f));
+    check("  leaving the rest as it was", again.entryScene == "scenes/start.json" && again.fonts.size() == 1);
+
+    {
+        std::ofstream out(file, std::ios::trunc);
+        out << "{ \"name\": \"Broken\", ";
+    }
+    check("a file that does not parse is not saved over", !saveProject(project.root(), again));
+    check("  nor its render settings", !saveProjectRender(project.root(), tuned));
+    std::ifstream in(file);
+    const std::string kept((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    check("  and it is left as it was", kept == "{ \"name\": \"Broken\", ");
+}
+
 // Values the renderer divides by, read from a typed file. Zero GTAO radius and phase
 // asymmetry of one are each 0/0 on the GPU - NaN that bloom spreads across the screen;
 // an MSAA count the scene target lacks is passed to the driver as is.
@@ -741,7 +937,7 @@ void testWhatIsAndIsNotAProject() {
         out << R"({"name":"Probe"})";
     }
 
-    check("a directory holding project.json is one", !findProjectRoot(root).empty());
+    check("a directory holding project.json is one", !findProjectRoot(root).empty() && isProjectRoot(root));
     // Paths inside count, so an author can drop a scene file on the editor and have it
     // find its project.
     check("  and so is anything inside it", !findProjectRoot(root / "scenes").empty());
@@ -749,6 +945,13 @@ void testWhatIsAndIsNotAProject() {
         "  which resolves to the directory itself, not the child",
         findProjectRoot(root / "scenes") == findProjectRoot(root)
     );
+
+    // Moved to this engine, it names it, and keeps every other key it held.
+    check("it moves to this engine", saveProjectEngine(root));
+    Project moved;
+    loadProject(root, moved);
+    const bool named = !moved.engineVersion.empty() && compatibleEngine(moved.engineVersion);
+    check("  naming it, and keeping the rest", named && moved.name == "Probe");
 
     std::filesystem::remove_all(root, ec);
 }
@@ -805,6 +1008,10 @@ void testTheSceneOfRecordStillOpens() {
     // so; unresolved references are kept, so these errors are the format working.
     std::printf("      (the unresolved-asset errors below are expected: no factories here)\n");
 
+    // Its project's root, so the prefabs it places are built as an author's load builds them.
+    const std::filesystem::path previousRoot = ProjectPaths::projectRoot();
+    ProjectPaths::setProjectRoot(scene.parent_path().parent_path());
+
     Scene world;
     ResourceManager resources;
     check("the scene of record loads", SceneSerializer::load(world, resources, scene.string()));
@@ -836,6 +1043,28 @@ void testTheSceneOfRecordStillOpens() {
         runScratch() / "vkm_scene_of_record.json";
     check("  and saves back out", SceneSerializer::save(world, resources, echoed.string()));
 
+    // engine.md 5.1: the file is in the form the writer produces, so the save says what it read.
+    // The assets block is the exception here: with no cooked asset or project module loaded to
+    // resolve a name, it holds only the names a field gives, each one the file's.
+    nlohmann::json authored;
+    nlohmann::json written;
+    const bool bothRead = detail::readJsonFile(scene, authored, "Scene")
+        && detail::readJsonFile(echoed, written, "Scene");
+    check("  and both files read as JSON", bothRead);
+    if (bothRead) {
+        bool namesKnown = written["assets"].is_object();
+        for (const auto& [kind, entries] : written["assets"].items()) {
+            const nlohmann::json listed = authored["assets"].value(kind, nlohmann::json::array());
+            for (const nlohmann::json& entry : entries) {
+                if (std::find(listed.begin(), listed.end(), entry) == listed.end()) namesKnown = false;
+            }
+        }
+        authored.erase("assets");
+        written.erase("assets");
+        check("  saying back exactly what the file says", written == authored);
+        check("  and naming no asset the file does not", namesKnown);
+    }
+
     Scene reread;
     ResourceManager rereadResources;
     check("  and what it wrote loads again", SceneSerializer::load(reread, rereadResources, echoed.string()));
@@ -848,6 +1077,122 @@ void testTheSceneOfRecordStillOpens() {
     check("  and the same entity count", reread.entityCount() == world.entityCount());
 
     std::filesystem::remove(echoed, ec);
+    ProjectPaths::setProjectRoot(previousRoot);
+}
+
+// Each example names this engine exactly: a bump that leaves one behind names an older engine,
+// and one of another release opens as made for another engine.
+void testEveryExampleNamesThisEngine() {
+    std::printf("Every example's project.json, against this engine:\n");
+
+    std::error_code ec;
+    const std::filesystem::path examples(VKM_EXAMPLES_DIR);
+    if (!std::filesystem::is_directory(examples, ec)) {
+        std::printf("      (no examples in this build - skipped)\n");
+        return;
+    }
+    // What this engine writes as its name, read back from a scratch project it was written into.
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "vkm_engine_name";
+    std::filesystem::remove_all(scratch, ec);
+    std::filesystem::create_directories(scratch, ec);
+    std::ofstream(scratch / "project.json") << R"({"name": "Probe"})";
+    Project written;
+    const bool wrote = saveProjectEngine(scratch) && loadProject(scratch, written);
+    std::filesystem::remove_all(scratch, ec);
+
+    std::vector<std::string> behind;
+    int seen = 0;
+    std::filesystem::directory_iterator example(examples, ec), end;
+    for (; !ec && example != end; example.increment(ec)) {
+        Project project;
+        if (!loadProject(example->path(), project)) continue;
+        ++seen;
+        if (project.engineVersion != written.engineVersion) behind.push_back(project.name);
+    }
+    for (const std::string& name : behind) std::printf("      %s names another engine\n", name.c_str());
+    check("this engine's name is read back", wrote && !written.engineVersion.empty());
+    check("  and every example names it", seen > 0 && behind.empty());
+}
+
+// The shipped prefabs are in the writer's form too (engine.md 5.1): each is built and saved over
+// itself, as the editor's Save as Prefab on an instance does, and the save must say what it read.
+// A copy is what gets saved over, so its nextUid seeds the writer as the file's own would.
+void testEveryShippedPrefabIsInTheWritersForm() {
+    std::printf("Every shipped prefab, built and saved back over itself:\n");
+
+    // Each with the project that holds it, so what it names resolves as in that project.
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> prefabs;
+    const std::filesystem::path shipped[] = {
+        std::filesystem::path(VKM_EXAMPLES_DIR),
+        std::filesystem::path(VKM_ENGINE_DIR) / "content"
+    };
+    for (const std::filesystem::path& projects : shipped) {
+        // One error per walk: a folder with no prefabs/ sets it, and must not end the walk above.
+        std::error_code ec;
+        if (!std::filesystem::is_directory(projects, ec)) continue;
+        std::filesystem::directory_iterator project(projects, ec), end;
+        for (; !ec && project != end; project.increment(ec)) {
+            std::error_code inner;
+            const std::filesystem::path folder = project->path() / "prefabs";
+            if (!std::filesystem::is_directory(folder, inner)) continue;
+            std::filesystem::recursive_directory_iterator it(folder, inner), stop;
+            for (; !inner && it != stop; it.increment(inner)) {
+                if (it->is_regular_file() && it->path().extension() == ".json") {
+                    prefabs.emplace_back(project->path(), it->path());
+                }
+            }
+        }
+    }
+    if (prefabs.empty()) {
+        // A packaged SDK ships no examples/ or content/.
+        std::printf("      (no shipped prefabs in this build - skipped)\n");
+        return;
+    }
+    std::sort(prefabs.begin(), prefabs.end());
+    std::printf("      (the unresolved-asset errors below are expected: no factories here)\n");
+
+    const std::filesystem::path previousRoot = ProjectPaths::projectRoot();
+    const std::filesystem::path echoed       = runScratch() / "vkm_shipped_prefab.json";
+    std::vector<std::string> differing;
+    std::error_code ec;
+    for (const auto& [project, prefab] : prefabs) {
+        ProjectPaths::setProjectRoot(project);
+        std::filesystem::copy_file(prefab, echoed, std::filesystem::copy_options::overwrite_existing, ec);
+
+        Scene world;
+        ResourceManager resources;
+        const EntityId root = Prefab::instantiate(world, resources, echoed.string());
+        nlohmann::json authored;
+        nlohmann::json written;
+        const bool echoes = !ec && world.isAlive(root)
+            && Prefab::save(world, root, echoed.string(), resources)
+            && detail::readJsonFile(prefab, authored, "Prefab")
+            && detail::readJsonFile(echoed, written, "Prefab");
+
+        // The assets block names only what a field gives, each one the file's, as for the scene.
+        bool same = echoes && written["assets"].is_object();
+        if (same) {
+            const nlohmann::json named = authored.value("assets", nlohmann::json::object());
+            for (const auto& [kind, entries] : written["assets"].items()) {
+                const nlohmann::json listed = named.value(kind, nlohmann::json::array());
+                for (const nlohmann::json& entry : entries) {
+                    if (std::find(listed.begin(), listed.end(), entry) == listed.end()) same = false;
+                }
+            }
+            authored.erase("assets");
+            written.erase("assets");
+            same = same && written == authored;
+        }
+        if (!same) differing.push_back(prefab.lexically_relative(project.parent_path()).generic_string());
+    }
+    std::filesystem::remove(echoed, ec);
+    ProjectPaths::setProjectRoot(previousRoot);
+
+    std::printf("      %zu prefab(s)\n", prefabs.size());
+    for (const std::string& one : differing) {
+        std::printf("      %s\n", one.c_str());
+    }
+    check("each one's save says back exactly what its file says", differing.empty());
 }
 
 // A component naming assets goes through the same reflection driver, which carries
@@ -1125,24 +1470,67 @@ void testTheRenderTuningSurvivesASave() {
     check("  keeping how far the fog reaches", nearly(back.environment().fog.maxDistance, 650.0f));
 }
 
+// "Uses a material" is one rule wherever an editor asks: a material an entity's component names,
+// by handle or by name, and one the terrain it places holds in a layer or a plant.
+void testWhatDrawsAMaterialIsOneRule() {
+    std::printf("Which entities draw a material:\n");
+    Scene           scene;
+    ResourceManager resources;
+    const MaterialHandle stone = resources.add(MaterialAsset{}, "test:stone");
+    const MaterialHandle grass = resources.add(MaterialAsset{}, "test:grass");
+    TerrainAsset ground;
+    ground.layers[1] = stone;
+    TerrainFoliage meadow;
+    meadow.parts.push_back({MeshHandle{}, grass, glm::mat4(1.0f), {}, {}});
+    ground.foliage.push_back(meadow);
+    const TerrainHandle terrain = resources.add(std::move(ground), "test:ground");
+
+    const EntityId placed = scene.createEntity();
+    scene.add(placed, Transform{});
+    scene.add(placed, Terrain{terrain});
+    const EntityId drawn = scene.createEntity();
+    scene.add(drawn, Transform{});
+    Mesh mesh;
+    mesh.material = grass;
+    scene.add(drawn, std::move(mesh));
+
+    const auto draws = [&](EntityId id, MaterialHandle material) {
+        AssetSerializer::EntityAssetRefs refs;
+        AssetSerializer::collectAssetRefs(scene, id, resources, refs);
+        bool       found = false;
+        const auto match = [&](MaterialHandle m) { found = found || m == material; };
+        AssetSerializer::forEachMaterialOf(refs, resources, match);
+        return found;
+    };
+    check("a mesh draws its material", draws(drawn, grass) && !draws(drawn, stone));
+    check("  and a terrain its layers' and its plants'", draws(placed, stone) && draws(placed, grass));
+}
+
 } // namespace
 
 void runSceneTests() {
+    testWhatDrawsAMaterialIsOneRule();
     testAFileTheEngineWritesIsOneItCanReadBack();
     testAProjectsOwnFileRoundTrips();
     testAMistypedSceneFieldFailsTheLoad();
     testASceneWithANonFiniteNumberStillRoundTrips();
+    testANumberIsTidiedAlikeUnderADecimalComma();
     testImportedHierarchy();
     testComponentRoundTrip();
     testAnEmitterRoundTrips();
     testSceneRoundTripKeepsReferences();
+    testAReferenceToADeletedEntityNamesNothing();
     testUnknownBehaviorsSurviveASave();
+    testAHeldBehaviorKeepsItsPlaceWhenOneAheadGoes();
     testAProjectSurvivesBeingWritten();
     testAMistypedRenderSettingCostsOneSetting();
+    testAMistypedProjectKeyCostsOneKey();
     testAuthoredValuesTheRendererDividesByAreBounded();
     testWhatIsAndIsNotAProject();
     testAProjectIsNamedByItsFileOrItsFolder();
     testTheSceneOfRecordStillOpens();
+    testEveryShippedPrefabIsInTheWritersForm();
+    testEveryExampleNamesThisEngine();
     testAssetHandlesSurviveARoundTrip();
     testAnUnresolvedArrayElementIsKept();
     testAKeptNameSurvivesAFillThatIsTakenBack();

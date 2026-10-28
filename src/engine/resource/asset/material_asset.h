@@ -59,6 +59,21 @@ enum class MaterialType : uint8_t {
     Count
 };
 
+/**
+ * @brief The water a material's surface is.
+ *
+ * Shaded as water either way: the scene's ripples on it, roughened by what a pixel spans, scattering
+ * subsurfaceColor; and found by gameplay as water to float on (WaterSystem).
+ */
+enum class WaterKind : uint8_t {
+    None,  ///< Not water.
+    Body,  ///< A lake, a river, a pool: its own surface, still or running at flowSpeed; no swell.
+    /// The sea: rides the scene's Ocean's waves, its crests whiten with its foam, and it casts no
+    /// shadow. With no ocean in the scene it draws, and casts, as an ordinary surface.
+    Sea,
+    Count
+};
+
 struct MaterialAsset;
 using MaterialHandle = Handle<MaterialAsset>;
 
@@ -121,7 +136,7 @@ struct MaterialAsset : public Resource {
 
     /// A mesh's maps are read at uv * uvScale + uvOffset: how many times they repeat across its UVs
     /// on each axis, and how far they slide - 200 lays a texture two hundred times along a field. A
-    /// decal, which lays its maps over its box, and an ocean's surface (waves) read neither.
+    /// decal, which lays its maps over its box, and the sea's surface (WaterKind::Sea) read neither.
     glm::vec2 uvScale  = {1.0f, 1.0f};
     glm::vec2 uvOffset = {0.0f, 0.0f};
 
@@ -132,10 +147,16 @@ struct MaterialAsset : public Resource {
     /// seam where its normal turns from one face to the next. Unskinned meshes; a skinned one keeps
     /// its UVs.
     float boxMapping = 0.0f;
-    /// Moved by the scene's Ocean: the surface rides its waves, the maps lie over the water by its
-    /// detailScale, crests whiten with its foam, and it casts no shadow (see rendering.md, "The
-    /// ocean"). With no ocean in the scene it draws, and casts, as an ordinary surface.
-    bool waves = false;
+    /// What water the surface is, if any (WaterKind; rendering.md, "The ocean" and "Water").
+    WaterKind water = WaterKind::None;
+    /// Metres a second Body water runs along the mesh's +U (its tangent): a river follows its strip's
+    /// UVs, and carries what floats on it. 0 is still.
+    float flowSpeed = 0.0f;
+    /// How much of the scene's ripples Body water shows: 1 open water, toward 0 a sheltered pool.
+    float rippleScale = 0.5f;
+    /// Metres Body water reaches below its surface: a point deeper is under the body, not in it - a
+    /// pool on a deck keeps what is under the deck dry (WaterData::at).
+    float waterDepth = 10.0f;
 
 #define VKM_MATERIAL_MAP_MEMBER(key, member, slot, doc) TextureHandle member;
     VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_MEMBER)
@@ -167,6 +188,7 @@ struct MaterialAsset : public Resource {
 } // namespace Vkm::Engine
 
 VKM_ENUM_NAMES(::Vkm::Engine::MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
+VKM_ENUM_NAMES(::Vkm::Engine::WaterKind, "None", "Body", "Sea")
 
 // Non-texture fields; texture handles serialize separately as name refs.
 VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
@@ -197,5 +219,8 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(uvScale)
     VKM_F(uvOffset)
     VKM_F(boxMapping)
-    VKM_F(waves)
+    VKM_F(water)
+    VKM_F(flowSpeed)
+    VKM_F(rippleScale)
+    VKM_F(waterDepth)
 VKM_REFLECT_END()

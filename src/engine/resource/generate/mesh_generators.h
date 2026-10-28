@@ -17,6 +17,8 @@ class ResourceManager;
  * so identical calls share one asset. A plain add() would replace it: a fresh
  * uid dropping in-flight decodes and a needless re-upload. Nothing edits a
  * generated mesh; a variant is different parameters, so a different name.
+ * Where a host installed a mesh import (recipeImport), that import builds it
+ * from its recipe.
  *
  * @param resources Asset graph to look the name up in and add to.
  * @param mesh A mesh straight from one of the generators below, descriptor and all.

@@ -72,7 +72,8 @@ int cook(int argc, char** argv) {
         // The entry scene need not live in scenes/, and if it does it is
         // already above - so add it only when the sweep did not find it.
         if (!project.entryScene.empty()) {
-            const std::filesystem::path entry = root / project.entryScene;
+            const std::filesystem::path entry =
+                Vkm::Engine::ProjectPaths::resolveProjectPath(project.entryScene);
             const auto isEntry = [&](const std::filesystem::path& p) {
                 std::error_code cmpEc;
                 return std::filesystem::equivalent(p, entry, cmpEc);

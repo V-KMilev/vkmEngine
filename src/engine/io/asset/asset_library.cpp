@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <system_error>
 #include <unordered_set>
@@ -24,7 +25,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-constexpr uint32_t MANIFEST_VERSION = 2;
+constexpr uint32_t MANIFEST_VERSION = 3;
 
 // Directory an asset type keeps its files in, under both library() and cooked(); from the kind list, so
 // the directory and the kind are one row.
@@ -33,6 +34,13 @@ constexpr const char* TYPE_DIRS[] = { VKM_ASSET_KINDS(VKM_ASSET_DIR) };
 #undef VKM_ASSET_DIR
 
 } // namespace
+
+uint64_t AssetRecord::documentHashOf(const nlohmann::json& recipe) {
+    // As writeRecipe writes it, so the recipe in memory and the one read back hash alike.
+    nlohmann::json written = recipe;
+    detail::tidyNumbers(written, "Asset library recipe");
+    return fnv1a64(written.dump());
+}
 
 AssetLibrary& AssetLibrary::get() {
     static AssetLibrary s_instance;
@@ -84,10 +92,22 @@ bool AssetLibrary::writeRecipe(AssetType type, const std::string& name, const nl
     nlohmann::json doc;
     doc["name"]   = name;
     doc["source"] = source;
-    return detail::writeJsonFile(recipePath(type, name), doc, "Asset library recipe");
+    detail::tidyNumbers(doc, "Asset library recipe");
+
+    // A record that already says this is left as written - a re-cook rewrites nothing an author
+    // reads. Compared as text: a 1 equals a 1.0 as a value, but not in the hash of the file.
+    const std::filesystem::path path = recipePath(type, name);
+    std::error_code ec;
+    nlohmann::json written;
+    if (std::filesystem::exists(path, ec) && detail::readJsonFile(path, written, "Asset library recipe")
+        && written.dump() == doc.dump()) {
+        return true;
+    }
+    return detail::writeJsonFile(path, doc, "Asset library recipe");
 }
 
 void AssetLibrary::load(Truth truth) {
+    ++m_revision;
     m_records.clear();
     loadManifest();
     if (truth == Truth::Recipes) dropRowsWithoutRecipes();
@@ -147,9 +167,10 @@ void AssetLibrary::loadManifest() {
                 LOG_WARNING("Asset library: entry with unknown type '%s', skipping", typeStr.c_str());
                 continue;
             }
-            r.name       = entry.value("name", std::string{});
-            r.recipeHash = entry.value("hash", uint64_t{0});
-            r.sources    = entry.value("sources", std::vector<std::string>{});
+            r.name         = entry.value("name", std::string{});
+            r.recipeHash   = entry.value("hash", uint64_t{0});
+            r.sources      = entry.value("sources", std::vector<std::string>{});
+            r.documentHash = entry.value("document", uint64_t{0});
             if (r.name.empty()) {
                 LOG_WARNING("Asset library: entry with empty name, skipping");
                 continue;
@@ -218,10 +239,11 @@ std::vector<std::string> AssetLibrary::namesOf(AssetType type) const {
 void AssetLibrary::upsert(AssetRecord record) {
     const std::string k = key(record.type, record.name);
     m_records[k] = std::move(record);
+    ++m_revision;
 }
 
 void AssetLibrary::remove(AssetType type, const std::string& name) {
-    m_records.erase(key(type, name));
+    if (m_records.erase(key(type, name)) > 0) ++m_revision;
 }
 
 size_t AssetLibrary::removeUnrecordedCooked() const {
@@ -274,6 +296,7 @@ bool AssetLibrary::save() const {
         entry["type"] = Reflect::enumName(r.type);
         entry["hash"] = r.recipeHash;
         if (!r.sources.empty()) entry["sources"] = r.sources;
+        entry["document"] = r.documentHash;
         assets.push_back(std::move(entry));
     }
     doc["assets"] = std::move(assets);

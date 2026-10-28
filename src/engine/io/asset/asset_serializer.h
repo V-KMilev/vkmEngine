@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,6 +16,7 @@ namespace Vkm::Engine {
 
 class ResourceManager;
 class Scene;
+struct TerrainAsset;
 
 /**
  * @brief Serialize / deserialize the asset graph referenced by a Scene.
@@ -53,6 +55,28 @@ namespace AssetSerializer {
         EntityId id,
         const ResourceManager& resources,
         EntityAssetRefs& refs
+    );
+
+    /**
+     * @brief Each material @p terrain holds: its layers' and its plants' parts'.
+     *
+     * @param terrain The terrain.
+     * @param visit   Called with each, a repeat included.
+     */
+    void forEachMaterialOf(const TerrainAsset& terrain, const std::function<void(MaterialHandle)>& visit);
+
+    /**
+     * @brief Each material the entities @p refs were walked from draw with: those they name, by
+     *        handle or by name, and those the terrains they name hold.
+     *
+     * @param refs      collectAssetRefs's answer.
+     * @param resources Resolves a name, and a terrain to its materials.
+     * @param visit     Called with each, a repeat included.
+     */
+    void forEachMaterialOf(
+        const EntityAssetRefs& refs,
+        const ResourceManager& resources,
+        const std::function<void(MaterialHandle)>& visit
     );
 
     /**
@@ -96,6 +120,17 @@ namespace AssetSerializer {
     nlohmann::json saveAllAssets(const ResourceManager& resources);
 
     /**
+     * @brief Every asset an assets block names, by the section it is under and its name.
+     *
+     * Reads whatever sections the block has rather than a list of them, so a new asset kind is
+     * counted the day saveAssetsForScene writes it. A name is unique only within its section.
+     *
+     * @param block A block as saveAssetsForScene or saveAllAssets writes one.
+     * @return In the block's order; an entry with no name is skipped.
+     */
+    std::vector<std::pair<std::string, std::string>> namesIn(const nlohmann::json& block);
+
+    /**
      * @brief What loadAssets does about a name @p resources already holds.
      */
     enum class LoadMode {
@@ -131,6 +166,16 @@ namespace AssetSerializer {
         ResourceManager& resources,
         LoadMode mode = LoadMode::Create
     );
+
+    /**
+     * @brief Load one asset of the library by name, as an assets block naming it alone would.
+     *
+     * @param type      Its kind.
+     * @param name      Its name in the library.
+     * @param resources The asset graph to build into; one it already holds is left alone.
+     * @return Whether @p resources now holds it.
+     */
+    bool loadNamed(AssetType type, const std::string& name, ResourceManager& resources);
 
     /**
      * @brief Drop every asset in @p resources that @p assetsJson does not name.

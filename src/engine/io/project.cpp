@@ -3,18 +3,26 @@
 #include "io/project.h"
 
 #include <algorithm>
+#include <climits>
 #include <fstream>
+#include <stdexcept>
 #include <type_traits>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
 
+#include "ecs/component/physics/rigidbody.h"
 #include "io/json_file.h"
 #include "logger.h"
 
 namespace fs = std::filesystem;
 
 namespace Vkm::Engine {
+
+static_assert(
+    Project::MAX_PHYSICS_LAYERS == sizeof(Rigidbody::layer) * CHAR_BIT,
+    "a physics layer for each bit of a Rigidbody's layer"
+);
 
 namespace {
 
@@ -29,6 +37,92 @@ fs::path normalDirectory(const fs::path& dir) {
     if (ec) normal = dir.lexically_normal();
     if (!normal.has_filename()) normal = normal.parent_path();
     return normal;
+}
+
+/**
+ * @brief Read each entry of @p doc's array @p list with @p readEntry; one it throws on is skipped,
+ *        with a warning when @p report, as a wrong scalar is: the rest still reads.
+ *
+ * @param doc       A project.json.
+ * @param list      The array's key.
+ * @param report    Whether a skipped entry is warned of.
+ * @param readEntry Called with each entry; throws to skip it.
+ */
+template<typename ReadEntry>
+void eachEntry(const nlohmann::json& doc, const char* list, bool report, const ReadEntry& readEntry) {
+    if (!doc.contains(list) || !doc[list].is_array()) return;
+    for (const nlohmann::json& entry : doc[list]) {
+        try {
+            if (!entry.is_object()) throw std::invalid_argument("not an object");
+            readEntry(entry);
+        } catch (const std::exception& e) {
+            if (report) LOG_WARNING("A %s entry %s is skipped: %s", list, entry.dump().c_str(), e.what());
+        }
+    }
+}
+
+/// The fonts @p doc lists, as loadProject reads them; @p report warns of each one skipped.
+std::vector<FontEntry> fontsIn(const nlohmann::json& doc, bool report) {
+    std::vector<FontEntry> fonts;
+    eachEntry(doc, "fonts", report, [&](const nlohmann::json& entry) {
+        FontEntry font;
+        font.name = entry.value("name", std::string{});
+        font.file = entry.value("file", std::string{});
+        if (font.name.empty() || font.file.empty()) {
+            throw std::invalid_argument("a font wants a name and a file");
+        }
+        fonts.push_back(std::move(font));
+    });
+    return fonts;
+}
+
+/**
+ * @brief The logos @p doc lists, as loadProject reads them: one with no image is skipped rather
+ *        than shown as a black pause.
+ */
+std::vector<SplashEntry> splashIn(const nlohmann::json& doc, bool report) {
+    std::vector<SplashEntry> splash;
+    eachEntry(doc, "splash", report, [&](const nlohmann::json& entry) {
+        SplashEntry logo;
+        logo.image   = entry.value("image", std::string{});
+        logo.seconds = entry.value("seconds", logo.seconds);
+        if (!logo.image.empty()) splash.push_back(std::move(logo));
+    });
+    return splash;
+}
+
+/// The loading screen @p doc gives, as loadProject reads it; @p report warns of what it skips.
+LoadingScreen loadingIn(const nlohmann::json& doc, bool report) {
+    LoadingScreen loading;
+    const auto found = doc.find("loading");
+    if (found == doc.end()) return loading;
+    if (!found->is_object()) {
+        if (report) LOG_WARNING("project.json loading is not an object; ignored");
+        return loading;
+    }
+    const nlohmann::json& in = *found;
+    if (in.contains("tips") && in["tips"].is_array()) {
+        for (const nlohmann::json& tip : in["tips"]) {
+            if (tip.is_string() && !tip.get<std::string>().empty()) {
+                loading.tips.push_back(tip.get<std::string>());
+            } else if (!tip.is_string() && report) {
+                LOG_WARNING("project.json loading.tips holds %s, not text; skipped", tip.dump().c_str());
+            }
+        }
+    } else if (in.contains("tips") && report) {
+        LOG_WARNING("project.json loading.tips is not a list; ignored");
+    }
+    if (in.contains("screen") && in["screen"].is_string()) {
+        loading.screen = in["screen"].get<std::string>();
+    } else if (in.contains("screen") && report) {
+        LOG_WARNING("project.json loading.screen is not a path; ignored");
+    }
+    if (in.contains("water") && in["water"].is_boolean()) {
+        loading.water = in["water"].get<bool>();
+    } else if (in.contains("water") && report) {
+        LOG_WARNING("project.json loading.water is not true or false; ignored");
+    }
+    return loading;
 }
 
 } // namespace
@@ -54,25 +148,61 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
     nlohmann::json doc;
     try {
         in >> doc;
-        out.description   = doc.value("description",   out.description);
-        out.version       = doc.value("version",       out.version);
-        out.engineVersion = doc.value("engineVersion", out.engineVersion);
-        out.entryScene    = doc.value("entryScene",    out.entryScene);
-        const std::string named = doc.value("name", std::string{});
+        // Each key on its own: one of the wrong type keeps its default without abandoning the rest,
+        // which a tool saving the file afterwards would write over.
+        const auto read = [&doc](const char* key, auto& field) {
+            if (!doc.contains(key)) return;
+            try {
+                field = doc[key].get<std::decay_t<decltype(field)>>();
+            } catch (const nlohmann::json::exception&) {
+                const std::string held = doc[key].dump();
+                LOG_WARNING("project.json %s is '%s', not a value of its type; ignored", key, held.c_str());
+            }
+        };
+        read("description",   out.description);
+        read("version",       out.version);
+        read("engineVersion", out.engineVersion);
+        read("entryScene",    out.entryScene);
+        std::string named;
+        read("name", named);
         if (!named.empty()) out.name = named;
         // Clamped here, not at each reader: the clock would not honour an unclamped value.
-        const uint32_t askedTick = doc.value("tickRate", out.tickRate);
+        uint32_t askedTick = out.tickRate;
+        read("tickRate", askedTick);
         out.tickRate = Config::clampTickRate(askedTick);
         if (out.tickRate != askedTick) {
             LOG_WARNING("Project asks for %u ticks a second; running at %u", askedTick, out.tickRate);
         }
         // Clamped here rather than at each reader, as tickRate is.
-        const uint32_t askedSeats = doc.value("maxPlayers", out.maxPlayers);
+        uint32_t askedSeats = out.maxPlayers;
+        read("maxPlayers", askedSeats);
         out.maxPlayers = Config::clampSeats(askedSeats);
         if (out.maxPlayers != askedSeats) {
             LOG_WARNING("Project asks for %u seats; serving %u", askedSeats, out.maxPlayers);
         }
-        out.netPort = doc.value("netPort", out.netPort);
+        read("netPort", out.netPort);
+        // Read a name at a time: a layer is its place in the list, so one that is no name stays,
+        // unnamed, rather than moving every layer after it onto another bit.
+        if (doc.contains("physicsLayers") && doc["physicsLayers"].is_array()) {
+            out.physicsLayers.clear();
+            for (const nlohmann::json& entry : doc["physicsLayers"]) {
+                if (!entry.is_string()) {
+                    const std::string held = entry.dump();
+                    LOG_WARNING("project.json physicsLayers holds '%s', not a name: unnamed", held.c_str());
+                }
+                out.physicsLayers.push_back(entry.is_string() ? entry.get<std::string>() : std::string());
+            }
+        } else {
+            read("physicsLayers", out.physicsLayers);
+        }
+        if (out.physicsLayers.size() > Project::MAX_PHYSICS_LAYERS) {
+            LOG_WARNING(
+                "project.json names %zu physics layers; a body has %zu bits, so the rest are dropped",
+                out.physicsLayers.size(),
+                Project::MAX_PHYSICS_LAYERS
+            );
+            out.physicsLayers.resize(Project::MAX_PHYSICS_LAYERS);
+        }
 
         // Absent fields keep their defaults.
         if (doc.contains("render") && doc["render"].is_object()) {
@@ -155,27 +285,9 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
             }
         }
 
-        if (doc.contains("fonts") && doc["fonts"].is_array()) {
-            for (const nlohmann::json& entry : doc["fonts"]) {
-                FontEntry font;
-                font.name = entry.value("name", std::string{});
-                font.file = entry.value("file", std::string{});
-                if (font.name.empty() || font.file.empty()) {
-                    LOG_WARNING("A font wants a name and a file; %s is skipped", entry.dump().c_str());
-                    continue;
-                }
-                out.fonts.push_back(std::move(font));
-            }
-        }
-        // An entry with no image is skipped rather than shown as a black pause.
-        if (doc.contains("splash") && doc["splash"].is_array()) {
-            for (const nlohmann::json& entry : doc["splash"]) {
-                SplashEntry splash;
-                splash.image   = entry.value("image", std::string{});
-                splash.seconds = entry.value("seconds", splash.seconds);
-                if (!splash.image.empty()) out.splash.push_back(std::move(splash));
-            }
-        }
+        out.fonts   = fontsIn(doc, true);
+        out.splash  = splashIn(doc, true);
+        out.loading = loadingIn(doc, true);
     } catch (const std::exception& e) {
         LOG_ERROR("Malformed '%s': %s", file.string().c_str(), e.what());
         return false;
@@ -195,15 +307,40 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
     return true;
 }
 
+namespace {
+
+// The render block as project.json holds it: the shipped fields, an enum by its name.
+nlohmann::json renderJson(const RenderSettings& settings) {
+    nlohmann::json render = nlohmann::json::object();
+    visitShippedRenderFields(settings, [&](const char* key, auto& field) {
+        using Field = std::decay_t<decltype(field)>;
+        if constexpr (std::is_enum_v<Field>) {
+            static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
+            render[key] = Reflect::enumName(field);
+        } else {
+            render[key] = field;
+        }
+    });
+    return render;
+}
+
+// project.json as it is, for a write to keep what it does not set: empty when there is none yet,
+// and false when one is there that does not parse, which a write would wipe.
+bool readForWrite(const fs::path& file, nlohmann::json& doc) {
+    std::error_code ec;
+    doc = nlohmann::json::object();
+    if (!fs::exists(file, ec)) return true;
+    if (detail::readJsonFile(file, doc, "project") && doc.is_object()) return true;
+    LOG_ERROR("'%s' does not parse; not written over, so mend it by hand", file.string().c_str());
+    return false;
+}
+
+} // namespace
+
 bool saveProject(const fs::path& projectRoot, const Project& project) {
     const fs::path file = projectRoot / PROJECT_FILE;
-
-    // Read first so unknown keys survive. A missing or malformed file starts empty.
-    std::error_code ec;
-    nlohmann::json  doc = nlohmann::json::object();
-    if (fs::exists(file, ec) && (!detail::readJsonFile(file, doc, "project") || !doc.is_object())) {
-        doc = nlohmann::json::object();
-    }
+    nlohmann::json doc;
+    if (!readForWrite(file, doc)) return false;
 
     doc["name"]          = project.name;
     doc["description"]   = project.description;
@@ -213,20 +350,68 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     doc["tickRate"]      = project.tickRate;
     doc["maxPlayers"]    = project.maxPlayers;
     doc["netPort"]       = project.netPort;
+    // Written only when named, so a project that never named one keeps a lean file.
+    std::vector<std::string> layers = project.physicsLayers;
+    while (!layers.empty() && layers.back().empty()) layers.pop_back();
+    if (layers.empty()) doc.erase("physicsLayers");
+    else                doc["physicsLayers"] = layers;
 
-    nlohmann::json render = nlohmann::json::object();
-    visitShippedRenderFields(project.render, [&](const char* key, auto& field) {
-        using Field = std::decay_t<decltype(field)>;
-        if constexpr (std::is_enum_v<Field>) {
-            static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
-            render[key] = Reflect::enumName(field);
-        } else {
-            render[key] = field;
+    doc["render"] = renderJson(project.render);
+
+    // A list as the file already reads is left as written, entries loadProject skips and all.
+    if (fontsIn(doc, false) != project.fonts) {
+        nlohmann::json fonts = nlohmann::json::array();
+        for (const FontEntry& font : project.fonts) {
+            fonts.push_back({{"name", font.name}, {"file", font.file}});
         }
-    });
-    doc["render"] = std::move(render);
+        doc["fonts"] = std::move(fonts);
+        if (project.fonts.empty()) doc.erase("fonts");
+    }
+    if (splashIn(doc, false) != project.splash) {
+        nlohmann::json splash = nlohmann::json::array();
+        for (const SplashEntry& logo : project.splash) {
+            splash.push_back({{"image", logo.image}, {"seconds", logo.seconds}});
+        }
+        doc["splash"] = std::move(splash);
+        if (project.splash.empty()) doc.erase("splash");
+    }
+    // Left as written while the file reads the same, as the lists are; else only what is off the
+    // defaults, and no block when nothing is.
+    if (loadingIn(doc, false) != project.loading) {
+        nlohmann::json loading = nlohmann::json::object();
+        if (!project.loading.tips.empty()) loading["tips"] = project.loading.tips;
+        if (!project.loading.screen.empty()) loading["screen"] = project.loading.screen;
+        if (!project.loading.water) loading["water"] = false;
+        doc["loading"] = std::move(loading);
+        if (project.loading == LoadingScreen{}) doc.erase("loading");
+    }
 
     return detail::writeJsonFile(file, doc, "project");
+}
+
+bool saveProjectRender(const fs::path& projectRoot, const RenderSettings& render) {
+    const fs::path file = projectRoot / PROJECT_FILE;
+    nlohmann::json doc;
+    if (!readForWrite(file, doc)) return false;
+    doc["render"] = renderJson(render);
+    return detail::writeJsonFile(file, doc, "project");
+}
+
+bool saveProjectEngine(const fs::path& projectRoot) {
+    const fs::path file = projectRoot / PROJECT_FILE;
+    nlohmann::json doc;
+    if (!readForWrite(file, doc)) return false;
+    doc["engineVersion"] = APP_VERSION;
+    return detail::writeJsonFile(file, doc, "project");
+}
+
+bool isProjectRoot(const fs::path& directory) {
+    std::error_code ec;
+    return fs::exists(directory / PROJECT_FILE, ec);
+}
+
+bool sameProjectRender(const RenderSettings& a, const RenderSettings& b) {
+    return renderJson(a) == renderJson(b);
 }
 
 bool compatibleEngine(const std::string& engineVersion) {
@@ -245,7 +430,7 @@ fs::path findProjectRoot(const fs::path& start) {
     fs::path dir = normalDirectory(fs::is_directory(start, ec) ? start : start.parent_path());
 
     while (!dir.empty()) {
-        if (fs::exists(dir / PROJECT_FILE, ec)) return dir;
+        if (isProjectRoot(dir)) return dir;
         const fs::path parent = dir.parent_path();
         if (parent == dir) break;  // reached the filesystem root
         dir = parent;

@@ -10,12 +10,13 @@ namespace Vkm::Engine {
 /**
  * @brief The asset kinds, once, as (tag, C++ type, serialized name, library directory).
  *
- * The directory name is also the scene assets block's section key. A new kind
- * also needs a case in `cookedKind` (asset_cook.cpp), a place in
- * ASSET_DEPENDENCY_ORDER below, a loader in io/asset/cooked_loader.h and an
- * AssetFactory slot filled in tools/cook/recipe_registration.cpp. Nothing on disk
+ * The directory name is also the scene assets block's section key. Nothing on disk
  * stores the numeric value, so rows may be reordered; the name and directory are
- * the format.
+ * the format. A new row fails the build until it has its place in ASSET_DEPENDENCY_ORDER below,
+ * its branches of `loadCooked` and `recipeImport`, and the cooker's `writeCooked` and `hasContent`
+ * overloads. The build does not ask for its case in `cookedKind` (io/asset/asset_cook.cpp, a
+ * warning), its import filled in tools/cook/recipe_registration.cpp, or its list in
+ * ComponentSerializer::AssetRefs, which `saveAssetsForEntities` walks.
  */
 #define VKM_ASSET_KINDS(X)                                              \
     X(Mesh,          MeshAsset,          "mesh",          "meshes")     \

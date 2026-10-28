@@ -27,6 +27,7 @@
 #include "cook/cook_key.h"
 #include "cook/lod_generator.h"
 #include "cook/mesh_processing.h"
+#include "cook/recipe_registration.h"
 #include "cook/texture_bake.h"
 #include "import/model_source.h"
 #include "import/texture_loaders.h"
@@ -44,11 +45,15 @@
 #include "resource/asset/terrain_asset.h"
 #include "resource/asset_source_kind.h"
 #include "resource/generate/mesh_generators.h"
+#include "system/async/async_loader_system.h"
 
 namespace {
 
 // A shipped game reads the cooked format; a developer's machine always has source art
 // to fall back on, so a defect here is invisible until it is on somebody else's disk.
+
+// Where a cooked file's body begins; mirrors HEADER_BYTES in asset_cook.cpp.
+constexpr std::streamoff COOKED_HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t);
 
 std::filesystem::path scratch(const char* name) {
     return runScratch() / name;
@@ -120,12 +125,17 @@ void testAnUnskinnedMeshCarriesNoSkin() {
     MeshAsset written = aSkinnedMesh();
     written.skin.clear();
     written.skeleton.clear();
+    written.lightmapUVs = {{0.1f, 0.2f}, {0.9f, 0.2f}, {0.1f, 0.8f}};
     check("it writes", AssetCook::writeMesh(path, written));
 
     MeshAsset read;
     check("and reads", AssetCook::readMesh(path, read));
     check("  with its geometry", read.vertices.size() == 3 && read.indices.size() == 3);
     check("  and no skin invented for it", read.skin.empty() && read.skeleton.empty());
+    check("  but its lightmap coordinates", read.lightmapUVs == written.lightmapUVs);
+
+    written.lightmapUVs.pop_back();
+    check("a lightmap stream short of a vertex is refused", !AssetCook::writeMesh(path, written));
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
@@ -220,7 +230,7 @@ void testATextureAndASoundSurviveTheRoundTrip() {
         "  and the two things a decode cannot re-derive",
         readTex.params.internalFormat == TextureInternalFormat::SRGBA8 && readTex.params.generateMipmaps
     );
-    check("  with the colour space read off the format it is stored in", readTex.isSrgb());
+    check("  with the color space read off the format it is stored in", readTex.isSrgb());
 
     const std::filesystem::path wav = scratch("vkm_cook_audio.vkmc");
     AudioClipAsset audio;
@@ -338,7 +348,7 @@ void testACompressedTextureSurvivesTheRoundTrip() {
     TextureAsset source = aDecodedTexture(64, 32, TextureInternalFormat::SRGBA8);
     source.params.generateMipmaps = true;
     TextureAsset baked;
-    check("an sRGB colour texture bakes", AssetCooker::bakeTexture(source, baked));
+    check("an sRGB color texture bakes", AssetCooker::bakeTexture(source, baked));
     check(
         "  into sRGB BC7",
         baked.params.internalFormat == TextureInternalFormat::BC7SRGBA && baked.isSrgb()
@@ -389,7 +399,7 @@ void testACompressedTextureSurvivesTheRoundTrip() {
 
     TextureAsset linear;
     check(
-        "a linear colour texture bakes",
+        "a linear color texture bakes",
         AssetCooker::bakeTexture(aDecodedTexture(8, 8, TextureInternalFormat::RGBA8), linear)
     );
     check(
@@ -788,7 +798,7 @@ void testACutOutKeepsItsCoverageAtRange() {
 
     TextureAsset baked;
     check(
-        "a colour texture with a cut-out alpha bakes",
+        "a color texture with a cut-out alpha bakes",
         AssetCooker::bakeTexture(blades, baked) && baked.params.mipLevels == 6
     );
     size_t offset = 0;
@@ -959,6 +969,173 @@ void testASaveRecordsNowAndBakesInTheBackground() {
     );
 
     AssetLibrary::get().remove(AssetType::Texture, name);
+}
+
+// The probe that calls a cooked file current reads its header and size, not its body. A body the
+// reader refuses must not stay current for good: the load says so as an error, which a cook counts,
+// and a host that can import it drops the file, so the next cook bakes it again from its recipe.
+void testACookedBodyTheReaderRefusesIsBakedAgain() {
+    std::printf("A cooked texture whose header is whole and whose body is not:\n");
+
+    const ScratchProject project("vkm_cook_corrupt_body");
+    const std::string name = "tex:corrupt";
+
+    ResourceManager editor;
+    TextureAsset albedo = aDecodedTexture(8, 8, TextureInternalFormat::RGBA8);
+    albedo.sourceJson() = fileTextureRecipe(
+        "assets/corrupt.png",
+        TextureUsage::Color,
+        false,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
+    editor.add(std::move(albedo), name);
+    check("the cook succeeds", AssetCooker::cookAllAssets(editor, AssetCooker::Bake::Now));
+    const AssetRecord* record = AssetLibrary::get().find(AssetType::Texture, name);
+    const std::filesystem::path cooked = record
+        ? AssetLibrary::cookedPath(AssetType::Texture, name, record->recipeHash)
+        : std::filesystem::path{};
+    check("  and its file is current", AssetCook::isCookedCurrent(AssetType::Texture, cooked));
+
+    // A width of zero: the size still matches the header, and no texture has no levels.
+    {
+        std::fstream file(cooked, std::ios::binary | std::ios::in | std::ios::out);
+        const uint32_t zero = 0;
+        file.seekp(COOKED_HEADER_BYTES);
+        file.write(reinterpret_cast<const char*>(&zero), sizeof(zero));
+    }
+    check("the probe still calls it current", AssetCook::isCookedCurrent(AssetType::Texture, cooked));
+
+    // A shipped game, with no import to bake it again from, keeps what it was given.
+    const auto previousFactory   = assetFactory().createTexture;
+    assetFactory().createTexture = nullptr;
+    ResourceManager game;
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const TextureHandle handle = loadCookedTexture(name, game);
+    const bool landed = awaitAsyncLoads(game);
+    setErrorSink(nullptr);
+    check("a load of it is asked for", static_cast<bool>(handle));
+    check("  and comes out empty, which the wait reports", !landed && game.get(handle).pixelData.empty());
+    check("  as an error", errors.totalPushed() >= 1);
+    std::error_code ec;
+    check("  and a game that cannot cook keeps the file", std::filesystem::exists(cooked, ec));
+
+    assetFactory().createTexture = [](const nlohmann::json&, ResourceManager&) { return TextureHandle{}; };
+    ResourceManager importing;
+    loadCookedTexture(name, importing);
+    awaitAsyncLoads(importing);
+    check("a host that imports drops it, for its next cook to bake", !std::filesystem::exists(cooked, ec));
+
+    assetFactory().createTexture = previousFactory;
+    AssetLibrary::get().remove(AssetType::Texture, name);
+}
+
+// A recipe edited by hand, or pulled from a teammate, names something its old cook is not. A host
+// that can import the recipe does so rather than serve the old file; one that cannot keeps the file.
+void testAnEditedRecipeIsNotServedFromItsOldCook() {
+    std::printf("A recipe edited since its cook:\n");
+
+    const ScratchProject project("vkm_cook_edited_recipe");
+    const std::string name = "tex:edited";
+
+    ResourceManager editor;
+    TextureAsset albedo = aDecodedTexture(8, 8, TextureInternalFormat::RGBA8);
+    albedo.sourceJson() = fileTextureRecipe(
+        "assets/edited.png",
+        TextureUsage::Color,
+        false,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
+    editor.add(std::move(albedo), name);
+    check("the cook succeeds", AssetCooker::cookAllAssets(editor, AssetCooker::Bake::Now));
+
+    const auto previousFactory = assetFactory().createTexture;
+    assetFactory().createTexture = [](const nlohmann::json&, ResourceManager&) { return TextureHandle{}; };
+    {
+        ResourceManager fresh;
+        check("as cooked, a host that imports is served the file", bool(loadCookedTexture(name, fresh)));
+    }
+
+    nlohmann::json recipe;
+    check("its recipe reads", AssetLibrary::readRecipe(AssetType::Texture, name, recipe));
+    recipe["filter"] = "nearest";
+    check("  and is edited by hand", AssetLibrary::writeRecipe(AssetType::Texture, name, recipe));
+    {
+        ResourceManager fresh;
+        check("then a host that imports is not served the old file", !loadCookedTexture(name, fresh));
+    }
+    assetFactory().createTexture = nullptr;
+    {
+        ResourceManager fresh;
+        check("  while one that cannot still is", bool(loadCookedTexture(name, fresh)));
+    }
+
+    assetFactory().createTexture = previousFactory;
+    AssetLibrary::get().remove(AssetType::Texture, name);
+}
+
+// A decimated level - a terrain's scattered rocks - may be the only thing a scene names of its base,
+// and a host importing its recipe has not loaded that base: the import brings it.
+void testALevelImportedWithoutItsBaseBringsIt() {
+    std::printf("A decimated level whose base nothing else names:\n");
+
+    const ScratchProject project("vkm_cook_level_alone");
+    const AssetFactory previous = assetFactory();
+    registerRecipeAssetFactories();
+
+    const nlohmann::json base = {{"kind", "generator"}, {"type", "sphere"}};
+    const nlohmann::json level = {{"kind", "decimate"}, {"base", "rock:base"}, {"ratio", 0.5}};
+    check("its base's recipe writes", AssetLibrary::writeRecipe(AssetType::Mesh, "rock:base", base));
+    check("  and its own", AssetLibrary::writeRecipe(AssetType::Mesh, "rock:scatter", level));
+    AssetLibrary::get().upsert({AssetType::Mesh, "rock:base", 1u, {}});
+    AssetLibrary::get().upsert({AssetType::Mesh, "rock:scatter", 2u, {}});
+
+    ResourceManager resources;
+    AssetSerializer::loadAssets({{"meshes", nlohmann::json::array({{{"name", "rock:scatter"}}})}}, resources);
+    const MeshHandle scatter = resources.findByName<MeshAsset>("rock:scatter");
+    check("the level loads, with triangles", scatter && !resources.get(scatter).indices.empty());
+
+    assetFactory() = previous;
+    AssetLibrary::get().remove(AssetType::Mesh, "rock:base");
+    AssetLibrary::get().remove(AssetType::Mesh, "rock:scatter");
+}
+
+// A level is not in the graph until its import returns, so a level naming itself as its base, or
+// two naming each other, would load each other until the stack ran out.
+void testALevelWhoseBasesComeBackToItIsDropped() {
+    std::printf("A decimated level whose chain of bases comes back to itself:\n");
+
+    const ScratchProject project("vkm_cook_level_cycle");
+    const AssetFactory previous = assetFactory();
+    registerRecipeAssetFactories();
+
+    const nlohmann::json self = {{"kind", "decimate"}, {"base", "rock:self"}, {"ratio", 0.5}};
+    const nlohmann::json first = {{"kind", "decimate"}, {"base", "rock:second"}, {"ratio", 0.5}};
+    const nlohmann::json second = {{"kind", "decimate"}, {"base", "rock:first"}, {"ratio", 0.5}};
+    check("the recipes write", AssetLibrary::writeRecipe(AssetType::Mesh, "rock:self", self));
+    check("  the pair's too", AssetLibrary::writeRecipe(AssetType::Mesh, "rock:first", first));
+    check("  both", AssetLibrary::writeRecipe(AssetType::Mesh, "rock:second", second));
+    AssetLibrary::get().upsert({AssetType::Mesh, "rock:self", 1u, {}});
+    AssetLibrary::get().upsert({AssetType::Mesh, "rock:first", 2u, {}});
+    AssetLibrary::get().upsert({AssetType::Mesh, "rock:second", 3u, {}});
+
+    ResourceManager resources;
+    check(
+        "a level naming itself is dropped",
+        !AssetSerializer::loadNamed(AssetType::Mesh, "rock:self", resources)
+    );
+    check(
+        "  and so is one of two naming each other",
+        !AssetSerializer::loadNamed(AssetType::Mesh, "rock:first", resources)
+    );
+    check("  leaving neither in the graph", !resources.findByName<MeshAsset>("rock:second"));
+
+    assetFactory() = previous;
+    AssetLibrary::get().remove(AssetType::Mesh, "rock:self");
+    AssetLibrary::get().remove(AssetType::Mesh, "rock:first");
+    AssetLibrary::get().remove(AssetType::Mesh, "rock:second");
 }
 
 // Each level's size follows from its sides and format, so the reader checks them all
@@ -1238,6 +1415,24 @@ void testTheCookedLoaderIsWhatAShippedGameReads() {
         !loadCookedSkeleton("rig:one", fresh)
     );
 
+    // Its header whole and its body not: refused and reported, and kept, as a game cannot cook it again.
+    AssetLibrary::get().upsert(record);
+    {
+        // The bone count, first after the header: more bones than the file could hold.
+        std::fstream damaged(cooked, std::ios::in | std::ios::out | std::ios::binary);
+        damaged.seekp(COOKED_HEADER_BYTES);
+        damaged.write("\xff\xff\xff\x7f", 4);
+    }
+    EngineErrorLog refusals;
+    setErrorSink(&refusals);
+    ResourceManager damagedFrom;
+    const bool refused = !loadCookedSkeleton("rig:one", damagedFrom);
+    setErrorSink(nullptr);
+    check("a file whose body is refused loads nothing", refused);
+    check("  is kept, as a game cannot cook it again", std::filesystem::exists(cooked, ec));
+    const bool reported = !refusals.entries().empty() && refusals.entries()[0].source == "rig:one";
+    check("  and is reported by name", reported);
+
     AssetLibrary::get().remove(AssetType::Skeleton, "rig:one");
     AssetLibrary::get().remove(AssetType::Skeleton, "rig:ghost");
     ProjectPaths::setProjectRoot(previousRoot);
@@ -1326,7 +1521,7 @@ void testAManifestThatDoesNotReadStartsTheLibraryEmpty() {
     check(
         "a hash written as text does not throw",
         loadFrom(
-            R"({"manifestVersion": 2, "assets": [)"
+            R"({"manifestVersion": 3, "assets": [)"
             R"({"type": "mesh", "name": "crate", "hash": "not a number"}]})"
         )
     );
@@ -1335,7 +1530,7 @@ void testAManifestThatDoesNotReadStartsTheLibraryEmpty() {
     check(
         "a source list written as text does not throw",
         loadFrom(
-            R"({"manifestVersion": 2, "assets": [)"
+            R"({"manifestVersion": 3, "assets": [)"
             R"({"type": "mesh", "name": "crate", "hash": 7, "sources": "hero.bin"}]})"
         )
     );
@@ -1351,8 +1546,8 @@ void testAManifestThatDoesNotReadStartsTheLibraryEmpty() {
     const nlohmann::json recipe = {{AssetSourceKey::KIND, AssetSourceKind::GENERATOR}, {"type", "cube"}};
     check("a recipe for it is on disk", AssetLibrary::writeRecipe(AssetType::Mesh, "crate", recipe));
     const bool loaded = loadFrom(
-        R"({"manifestVersion": 2, "assets": [)"
-        R"({"type": "mesh", "name": "crate", "hash": 7, "sources": ["assets/crate.glb"]},)"
+        R"({"manifestVersion": 3, "assets": [)"
+        R"({"type": "mesh", "name": "crate", "hash": 7, "document": 5, "sources": ["assets/crate.glb"]},)"
         R"({"type": "mesh", "name": "renamed", "hash": 9, "sources": []}]})"
     );
     const AssetRecord* crate = AssetLibrary::get().find(AssetType::Mesh, "crate");
@@ -1700,7 +1895,7 @@ void testTheExplicitCookLeavesOnlyWhatARecordNames() {
 
     const std::filesystem::path olderCooker = artifact.parent_path()
         / "0123456789abcdef-feedface00000000.vkmc";
-    const std::filesystem::path interrupted = std::filesystem::path(artifact).concat(".tmp");
+    const std::filesystem::path interrupted = std::filesystem::path(artifact).concat(".0123abcd.0.tmp");
     std::ofstream(olderCooker) << "baked by a cooker this build is not";
     std::ofstream(interrupted) << "half a bake";
 
@@ -1818,6 +2013,37 @@ void testTheExplicitCookRebakesWhatChangedUnderTheCache() {
 
     assetFactory().createSkeleton = previousFactory;
     AssetLibrary::get().remove(AssetType::Skeleton, name);
+}
+
+// A recipe is what an author reads and commits: a cook that writes what it already says leaves
+// the file as it was, in its own field order, and a float is written as the author would.
+void testARecipeAlreadyWrittenIsLeftAlone() {
+    std::printf("A recipe written again unchanged:\n");
+
+    const ScratchProject project("vkm_recipe_kept");
+    const std::filesystem::path path = AssetLibrary::recipePath(AssetType::Material, "mat:authored");
+    std::filesystem::create_directories(path.parent_path());
+    const std::string authored =
+        "{\n  \"source\": {\"roughness\": 0.92, \"metallic\": 1.0},\n  \"name\": \"mat:authored\"\n}\n";
+    {
+        std::ofstream out(path);
+        out << authored;
+    }
+    // Read and closed: a write replaces the file, which Windows refuses while it is open.
+    const auto contents = [&path] {
+        std::ifstream in(path);
+        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    };
+    const nlohmann::json same = {{"metallic", 1.0f}, {"roughness", 0.92f}};
+    check("it writes", AssetLibrary::writeRecipe(AssetType::Material, "mat:authored", same));
+    check("  and the file is as the author wrote it", contents() == authored);
+
+    const nlohmann::json changed = {{"metallic", 1.0f}, {"roughness", 0.3f}};
+    check("a changed one writes", AssetLibrary::writeRecipe(AssetType::Material, "mat:authored", changed));
+    const std::string text = contents();
+    const bool shortest = text.find("0.3,") != std::string::npos || text.find("0.3\n") != std::string::npos;
+    check("  its floats as written by hand", shortest && text.find("0000") == std::string::npos);
+    AssetLibrary::get().remove(AssetType::Material, "mat:authored");
 }
 
 // Recipes are not derived; the manifest is. A recipe's path comes from the asset name
@@ -1986,11 +2212,11 @@ void testAMaterialBringsTheMapsItNames() {
 // is in every artifact's name, so a bump strands old artifacts and the next cook bakes
 // new ones; changing the bytes without a bump leaves every project serving the old
 // output under a name claiming otherwise.
-constexpr uint32_t PINNED_COOKER_VERSION = 13;
+constexpr uint32_t PINNED_COOKER_VERSION = 14;
 constexpr uint64_t PINNED_COOKER_OUTPUT  = 0x5bf5388222df3440ull;
 
 // Everything a cook decides itself, from fixed inputs: a scrambled mesh (vertex
-// orderer), two maps through BC4/BC5, a cut-out colour map through the mip filter,
+// orderer), two maps through BC4/BC5, a cut-out color map through the mip filter,
 // coverage scale and BC7, and a model through the import's weld and tangents. Integer
 // inputs and float code rounding alike in every build type (no FMA on the x86-64
 // baseline, no reassociation without -ffast-math), so the bytes match in every build.
@@ -2254,6 +2480,106 @@ void testDecimationKeepsTheShape() {
     check("  and span nearly all of them", glm::all(glm::greaterThanEqual(levelExtent, sourceExtent * 0.9f)));
 }
 
+// How many texels of an @p n by @p n grid the triangles of @p mesh's lightmap cover twice: a texel's sample
+// point is set off the grid's lines, so two triangles meeting along an edge do not both take it.
+int lightmapTexelsCoveredTwice(const MeshAsset& mesh, int n) {
+    std::vector<uint8_t> covered(static_cast<size_t>(n) * n, 0);
+    int twice = 0;
+    for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        const glm::vec2 a = mesh.lightmapUVs[mesh.indices[t]] * static_cast<float>(n);
+        const glm::vec2 b = mesh.lightmapUVs[mesh.indices[t + 1]] * static_cast<float>(n);
+        const glm::vec2 c = mesh.lightmapUVs[mesh.indices[t + 2]] * static_cast<float>(n);
+        const float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+        if (std::abs(area) < 1e-9f) continue;
+        const glm::ivec2 lo = glm::clamp(glm::ivec2(glm::floor(glm::min(a, glm::min(b, c)))), 0, n - 1);
+        const glm::ivec2 hi = glm::clamp(glm::ivec2(glm::ceil(glm::max(a, glm::max(b, c)))), 0, n - 1);
+        for (int y = lo.y; y <= hi.y; ++y) {
+            for (int x = lo.x; x <= hi.x; ++x) {
+                const glm::vec2 p(static_cast<float>(x) + 0.37f, static_cast<float>(y) + 0.61f);
+                const float u = ((b.x - p.x) * (c.y - p.y) - (c.x - p.x) * (b.y - p.y)) / area;
+                const float v = ((c.x - p.x) * (a.y - p.y) - (a.x - p.x) * (c.y - p.y)) / area;
+                if (u <= 0.0f || v <= 0.0f || u + v >= 1.0f) continue;
+                uint8_t& texel = covered[static_cast<size_t>(y) * n + x];
+                if (texel++ == 1) ++twice;
+            }
+        }
+    }
+    return twice;
+}
+
+// Whether every vertex of @p level, with its lightmap coordinates, is one of @p source's.
+bool keepsItsLightmapPairs(const MeshAsset& source, const MeshAsset& level) {
+    if (level.lightmapUVs.size() != level.vertices.size() || level.vertices.empty()) return false;
+    for (size_t i = 0; i < level.vertices.size(); ++i) {
+        bool found = false;
+        for (size_t j = 0; j < source.vertices.size() && !found; ++j) {
+            found = level.vertices[i].position == source.vertices[j].position
+                && level.lightmapUVs[i] == source.lightmapUVs[j];
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+// A generated mesh is one recipe however it was made - from a scene's recipe or from the editor's
+// Create menu - so it is built alike, unwrapped, and a cook writes the same file whichever came first.
+void testAGeneratedMeshIsBuiltAsItsRecipeIs() {
+    std::printf("A generated mesh made in code, where a host imports:\n");
+
+    const AssetFactory previous = assetFactory();
+    registerRecipeAssetFactories();
+    ResourceManager resources;
+    const MeshHandle made = addGeneratedMesh(resources, generateCube());
+    check("it is unwrapped for a lightmap, as its recipe is", !resources.get(made).lightmapUVs.empty());
+    check("  under the name its recipe gives", made == addGeneratedMesh(resources, generateCube()));
+    size_t meshes = 0;
+    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset&) { ++meshes; });
+    check("  leaving nothing else behind", meshes == 1);
+    assetFactory() = previous;
+}
+
+void testAMeshUnwrapsForALightmap() {
+    std::printf("A mesh unwrapped for a lightmap:\n");
+
+    const MeshAsset source = generateSphere();
+    MeshAsset mesh(source);
+    unwrapLightmap(mesh, "sphere");
+
+    check(
+        "every vertex has lightmap coordinates",
+        !mesh.lightmapUVs.empty() && mesh.lightmapUVs.size() == mesh.vertices.size()
+    );
+    bool inside = !mesh.lightmapUVs.empty();
+    for (const glm::vec2& uv : mesh.lightmapUVs) {
+        inside = inside && uv.x >= 0.0f && uv.y >= 0.0f && uv.x <= 1.0f && uv.y <= 1.0f;
+    }
+    check("  all inside the unit square", inside);
+    check("  no two triangles sharing a texel of it", lightmapTexelsCoveredTwice(mesh, 512) == 0);
+    check("it keeps every triangle", mesh.indices.size() == source.indices.size());
+
+    bool unmoved = !mesh.vertices.empty();
+    for (const Vertex& v : mesh.vertices) {
+        bool found = false;
+        for (const Vertex& original : source.vertices) {
+            found = found
+                || (v.position == original.position && v.normal == original.normal && v.uv == original.uv);
+        }
+        unmoved = unmoved && found;
+    }
+    check("  and every vertex is one of its own, a seam's split carrying it to both", unmoved);
+
+    MeshAsset reordered(mesh);
+    optimizeMeshForGpu(reordered);
+    check("reordered for the GPU, they move with their vertices", keepsItsLightmapPairs(mesh, reordered));
+
+    const MeshAsset level = decimateMesh(mesh, 0.5f);
+    check("a level simplified from it keeps its base's coordinates", keepsItsLightmapPairs(mesh, level));
+
+    MeshAsset skinned = aSkinnedMesh();
+    unwrapLightmap(skinned, "skinned");
+    check("a skinned mesh takes none", skinned.lightmapUVs.empty() && skinned.vertices.size() == 3);
+}
+
 // The decimate recipe reads back what it writes, and a recipe that does not say - no
 // ratio, an unknown `grid`, a non-numeric ratio - gets the default rather than failing;
 // the non-numeric ratio is reported.
@@ -2288,6 +2614,37 @@ void testTheDecimateRecipeReadsWhatItWrites() {
     check("  and is reported", errors.totalPushed() == 1);
 }
 
+// A cook records the recipe's hash, and a load checks the file against it. The file is tidied as it
+// is written - a float's shortest decimal - so the hash must be the tidied one's; and a 1 on disk,
+// equal in value to the 1.0 asked for, is still rewritten, or the two would never agree.
+void testARecipeHashesAsItReadsBack() {
+    std::printf("A recipe's hash against the file written:\n");
+    const ScratchProject project("vkm_recipe_tidy");
+    const std::string    name = "tidy:recipe";
+    nlohmann::json recipe;
+    recipe["type"]   = "solid";
+    recipe["weight"] = static_cast<double>(0.3f);
+    check("the recipe writes", AssetLibrary::writeRecipe(AssetType::Texture, name, recipe));
+    nlohmann::json read;
+    AssetLibrary::readRecipe(AssetType::Texture, name, read);
+    check(
+        "  and a float in it hashes as the file reads back",
+        AssetRecord::documentHashOf(read) == AssetRecord::documentHashOf(recipe)
+    );
+
+    recipe["weight"] = 1;
+    const bool asInteger = AssetLibrary::writeRecipe(AssetType::Texture, name, recipe);
+    recipe["weight"] = 1.0;
+    const bool asDouble = AssetLibrary::writeRecipe(AssetType::Texture, name, recipe);
+    check("it writes a 1, then a 1.0", asInteger && asDouble);
+    AssetLibrary::readRecipe(AssetType::Texture, name, read);
+    check(
+        "a 1 rewritten as 1.0 is written, not kept as the same value",
+        AssetRecord::documentHashOf(read) == AssetRecord::documentHashOf(recipe)
+    );
+    AssetLibrary::get().remove(AssetType::Texture, name);
+}
+
 // A texture's wrap and filter read back as written; a value the recipe misspells or mistypes
 // reads as the default and is reported, never thrown.
 void testATexturesWrapAndFilterReadWhatTheyWrite() {
@@ -2317,6 +2674,23 @@ void testATexturesWrapAndFilterReadWhatTheyWrite() {
     check("  and each is reported", errors.totalPushed() == 4);
 }
 
+// A texture's identity is its path: asked for as another usage, the one loaded comes back as
+// it is, so no slot decodes it again under every other material using it.
+void testATextureAskedForAnotherWayIsLeftAsLoaded() {
+    std::printf("A texture asked for as another usage than it was loaded as:\n");
+
+    ResourceManager resources;
+    TextureAsset    color;
+    color.params.internalFormat = inferInternalFormat(4, TextureUsage::Color);
+    const TextureHandle loaded  = resources.add(std::move(color), "assets/stone.png");
+
+    const TextureHandle asked = findLoadedTexture("assets/stone.png", resources, TextureUsage::Normal);
+    check("the one loaded comes back", asked == loaded);
+    check("  still read as color", resources.get(loaded).usage() == TextureUsage::Color);
+    const TextureHandle missing = findLoadedTexture("assets/moss.png", resources, TextureUsage::Color);
+    check("one not loaded is not found", !missing);
+}
+
 } // namespace
 
 void runCookTests() {
@@ -2337,6 +2711,10 @@ void runCookTests() {
     testACutOutKeepsItsCoverageAtRange();
     testTheCookWritesTheBakedTexture();
     testASaveRecordsNowAndBakesInTheBackground();
+    testACookedBodyTheReaderRefusesIsBakedAgain();
+    testAnEditedRecipeIsNotServedFromItsOldCook();
+    testALevelImportedWithoutItsBaseBringsIt();
+    testALevelWhoseBasesComeBackToItIsDropped();
     testTheReaderRefusesLevelsItsBytesDoNotHold();
     testADamagedFileIsRefusedRatherThanRead();
     testTheCookedLoaderIsWhatAShippedGameReads();
@@ -2354,11 +2732,16 @@ void runCookTests() {
     testAManifestThatDoesNotReadStartsTheLibraryEmpty();
     testTheExplicitCookRebakesWhatChangedUnderTheCache();
     testANameTheManifestLostStillLoadsFromItsRecipe();
+    testARecipeAlreadyWrittenIsLeftAlone();
+    testARecipeHashesAsItReadsBack();
     testAMistypedRecipeCostsItsAssetNotTheScene();
     testALoadNeverRenamesAnAssetThatWasAlreadyThere();
     testGeneratingLevelsOfDetail();
     testALevelHandsOverWhereItsErrorStopsShowing();
     testDecimationKeepsTheShape();
+    testAMeshUnwrapsForALightmap();
+    testAGeneratedMeshIsBuiltAsItsRecipeIs();
     testTheDecimateRecipeReadsWhatItWrites();
     testATexturesWrapAndFilterReadWhatTheyWrite();
+    testATextureAskedForAnotherWayIsLeftAsLoaded();
 }

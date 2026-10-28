@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "ecs/component/ui/ui_canvas.h"
 #include "io/project.h"
 #include "resource/asset/font_asset.h"
 
@@ -12,7 +13,7 @@ class ResourceManager;
 
 // The UI's fonts are baked at a height that scales with the display (a distance field magnifies
 // well but not forever); the cap keeps the worst case a 2048-square atlas.
-constexpr int   UI_FONT_REFERENCE_HEIGHT = 1080;
+constexpr float UI_FONT_REFERENCE_HEIGHT = UICanvas::REFERENCE_HEIGHT;
 constexpr float UI_FONT_BASE_PIXELS      = 64.0f;
 constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
 
@@ -29,7 +30,7 @@ float uiFontPixels(int displayHeight);
  *
  * Any number of times: each is baked again in place of what its name held, so a font whose file
  * changed between two opens of a project is the new one. One that will not read is reported
- * (reportError) - the editor shows it in its Errors panel - and its text draws nothing, or the
+ * (reportError) - the editor lists it in its Console's Errors - and its text draws nothing, or the
  * last bake its name held. A name
  * the project no longer lists keeps what it held until the host closes.
  *

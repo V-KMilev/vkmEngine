@@ -19,11 +19,12 @@
 #include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/missing_assets.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/resource_manager.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/cooked_loader.h"
-#include "io/json_vec.h"
+#include "io/reflect_json.h"
 #include "io/scene/component_serializer.h"
 #include "io/scene/scene_serializer.h"
 #include "system/script/behavior.h"
@@ -50,28 +51,12 @@ constexpr std::array<TexField, MATERIAL_MAP_COUNT> MATERIAL_TEXTURE_FIELDS = {{
 }};
 #undef VKM_MATERIAL_MAP_FIELD
 
-using ::Vkm::Engine::detail::vec2ToJson;
-using ::Vkm::Engine::detail::vec3ToJson;
-using ::Vkm::Engine::detail::vec4ToJson;
-using ::Vkm::Engine::detail::jsonToVec2;
-using ::Vkm::Engine::detail::jsonToVec3;
-using ::Vkm::Engine::detail::jsonToVec4;
-
 } // namespace
 
 nlohmann::json materialToRecipe(const MaterialAsset& m, const ResourceManager& resources) {
-    nlohmann::json src;
-
-    // Reflection drives scalar / vector / enum fields, so a new MaterialAsset field cannot fall out of the
+    // The reflection driver writes every field, so a new MaterialAsset field cannot fall out of the
     // round trip. Texture refs resolve by name, below.
-    Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
-        using V = std::decay_t<decltype(val)>;
-        if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
-        else if constexpr (std::is_same_v<V, glm::vec2>)    src[std::string(name)] = vec2ToJson(val);
-        else if constexpr (std::is_same_v<V, glm::vec3>)    src[std::string(name)] = vec3ToJson(val);
-        else if constexpr (std::is_same_v<V, glm::vec4>)    src[std::string(name)] = vec4ToJson(val);
-        else                                                src[std::string(name)] = val;
-    });
+    nlohmann::json src = ReflectJson::saveFields(m, ReflectJson::PlainData{});
 
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
@@ -100,30 +85,9 @@ nlohmann::json materialToRecipe(const MaterialAsset& m, const ResourceManager& r
 
 MaterialAsset materialFromRecipe(const nlohmann::json& src, const ResourceManager& resources) {
     // Mirror of materialToRecipe. A missing key, or an enum name this build lacks, reads as the default
-    // rather than as enumerator zero.
+    // rather than as enumerator zero; a value of the wrong type throws, for the caller to report.
     MaterialAsset m;
-    Reflect::forEachField(m, [&](std::string_view name, auto& val) {
-        using V = std::decay_t<decltype(val)>;
-        const std::string key(name);
-        if constexpr (std::is_same_v<V, MaterialType>) {
-            const std::string typeName = src.value(key, std::string{});
-            if (!typeName.empty() && !Reflect::enumFromNameChecked(typeName, val)) {
-                LOG_WARNING(
-                    "Material: no material type called '%s' in this build; it reads as %s",
-                    typeName.c_str(),
-                    Reflect::enumName(val)
-                );
-            }
-        } else if constexpr (std::is_same_v<V, glm::vec2>) {
-            val = jsonToVec2(src.value(key, nlohmann::json{}), val);
-        } else if constexpr (std::is_same_v<V, glm::vec3>) {
-            val = jsonToVec3(src.value(key, nlohmann::json{}), val);
-        } else if constexpr (std::is_same_v<V, glm::vec4>) {
-            val = jsonToVec4(src.value(key, nlohmann::json{}), val);
-        } else {
-            val = src.value(key, val);
-        }
-    });
+    ReflectJson::loadFields(src, m, ReflectJson::PlainData{});
 
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
@@ -221,6 +185,9 @@ class BehaviorAssetRefs : public BehaviorFieldVisitor {
             m_refs.emplace_back(type, assetName);
         }
 
+        // A prefab's own file names its assets; a scene's block does not list them.
+        void prefabField(const char* name, std::string& path) override {}
+
         bool beginStruct(const char* name) override { return true; }
         void endStruct() override {}
 
@@ -259,6 +226,32 @@ void collectAssetRefs(
             // unique_ptr still hands out a mutable referent.
             behavior->visitFields(behaviorRefs);
         }
+    }
+}
+
+void forEachMaterialOf(const TerrainAsset& terrain, const std::function<void(MaterialHandle)>& visit) {
+    for (const MaterialHandle& layer : terrain.layers) {
+        if (layer) visit(layer);
+    }
+    for (const TerrainFoliage& plant : terrain.foliage) {
+        for (const TerrainPlantPart& part : plant.parts) {
+            if (part.material) visit(part.material);
+        }
+    }
+}
+
+void forEachMaterialOf(
+    const EntityAssetRefs& refs,
+    const ResourceManager& resources,
+    const std::function<void(MaterialHandle)>& visit
+) {
+    for (const MaterialHandle& material : refs.handles.materials) visit(material);
+    for (const auto& [type, name] : refs.names) {
+        if (type != AssetType::Material) continue;
+        if (const MaterialHandle named = resources.findByName<MaterialAsset>(name)) visit(named);
+    }
+    for (const TerrainHandle& terrain : refs.handles.terrains) {
+        if (const TerrainAsset* held = resources.tryGet(terrain)) forEachMaterialOf(*held, visit);
     }
 }
 
@@ -393,6 +386,19 @@ size_t dropSectionExtras(const nlohmann::json& assetsJson, const char* key, Reso
 }
 
 } // namespace
+
+std::vector<std::pair<std::string, std::string>> namesIn(const nlohmann::json& block) {
+    std::vector<std::pair<std::string, std::string>> names;
+    if (!block.is_object()) return names;
+    for (auto section = block.begin(); section != block.end(); ++section) {
+        if (!section.value().is_array()) continue;
+        for (const nlohmann::json& entry : section.value()) {
+            const std::string name = entry.value("name", std::string{});
+            if (!name.empty()) names.emplace_back(section.key(), name);
+        }
+    }
+    return names;
+}
 
 nlohmann::json saveAllAssets(const ResourceManager& resources) {
     nlohmann::json out;
@@ -618,6 +624,24 @@ std::pair<size_t, size_t> loadSection(
 }
 
 } // namespace
+
+bool loadNamed(AssetType type, const std::string& name, ResourceManager& resources) {
+    nlohmann::json entry = nlohmann::json::object();
+    entry["name"] = name;
+    switch (type) {
+#define VKM_LOAD_NAMED(tag, Asset, kindName, dir)                                          \
+        case AssetType::tag: {                                                             \
+            nlohmann::json block = nlohmann::json::object();                               \
+            block[dir] = nlohmann::json::array({entry});                                   \
+            loadAssetSection<Asset>(block, dir, resources, LoadMode::Create);              \
+            return static_cast<bool>(resources.findByName<Asset>(name));                   \
+        }
+        VKM_ASSET_KINDS(VKM_LOAD_NAMED)
+#undef VKM_LOAD_NAMED
+        case AssetType::Count: break;
+    }
+    return false;
+}
 
 bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, LoadMode mode) {
     if (!assetsJson.is_object()) {

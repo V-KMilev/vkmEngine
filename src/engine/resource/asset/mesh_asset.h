@@ -49,6 +49,11 @@ static_assert(
  * @brief CPU-side geometry: indexed triangle mesh plus a cached local-space AABB.
  */
 struct MeshAsset : public Resource {
+    /// The side of the lightmap lightmapUVs' charts are packed for, in texels.
+    static constexpr uint32_t LIGHTMAP_PACK_TEXELS = 256;
+    /// The texels the packing holds between charts, at that side.
+    static constexpr uint32_t LIGHTMAP_PACK_PADDING = 4;
+
     std::vector<Vertex>   vertices = {};
     std::vector<uint32_t> indices  = {};
 
@@ -58,6 +63,15 @@ struct MeshAsset : public Resource {
      * A mesh is skinned iff this is non-empty.
      */
     std::vector<SkinVertex> skin = {};
+
+    /**
+     * @brief Per-vertex lightmap coordinates: empty, or exactly `vertices.size()` long.
+     *
+     * A second unwrap of the surface into [0, 1], no two triangles sharing a point and its charts
+     * held apart, so a baked lightmap can keep each point's own light. Filled by the cook
+     * (unwrapLightmap), which says which meshes it leaves out.
+     */
+    std::vector<glm::vec2> lightmapUVs = {};
 
     /**
      * @brief Name of the rig `skin`'s indices address; empty when unskinned.
