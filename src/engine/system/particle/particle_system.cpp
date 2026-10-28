@@ -7,6 +7,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/clock.h"
+#include "core/host_chrome.h"
 #include "core/math/rotation.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
@@ -103,6 +104,12 @@ glm::mat3 rotationOf(const glm::mat4& model) { return glm::mat3_cast(Math::world
 
 /// How far a struck particle is set off the surface, metres.
 constexpr float BACK_OFF = 1e-3f;
+
+/// The longest step a preview takes, seconds, so a hitch in the host does not jump an effect.
+constexpr float MAX_PREVIEW_STEP = 0.1f;
+
+/// Seconds a previewed effect lies finished before it starts over.
+constexpr float PREVIEW_REST = 0.6f;
 
 /// A rate as spawned: none for a negative or non-finite one, which would count no whole particles.
 float rateOf(float rate) { return std::isfinite(rate) ? std::max(rate, 0.0f) : 0.0f; }
@@ -208,9 +215,8 @@ void ParticleSystem::step(
         glm::vec3  reach(0.0f);
         Math::AABB around{pool.particles.front().position, pool.particles.front().position};
         for (const Particle& p : pool.particles) {
-            around.min = glm::min(around.min, p.position);
-            around.max = glm::max(around.max, p.position);
-            reach      = glm::max(reach, glm::abs(p.velocity));
+            around.expand(p.position);
+            reach = glm::max(reach, glm::abs(p.velocity));
         }
         const float     swirl = SWIRL_REACH * std::max(emitter.turbulence, 0.0f);
         const glm::vec3 pull  = glm::abs(emitter.acceleration) + swirl;
@@ -303,7 +309,32 @@ void ParticleSystem::update(FrameContext& ctx) {
         m_time = 0.0f;
     }
 
-    const float dt = ctx.clock.getSimDelta();
+    // A world standing still plays what an authoring host asks to see, on the frame's own time,
+    // and changes nothing of the scene doing so.
+    const HostChrome::EffectPreview& preview = ctx.chrome.effectPreview();
+    float      dt         = ctx.clock.getSimDelta();
+    const bool previewing = dt <= 0.0f && ctx.chrome.authoring() && preview.playing;
+    // The playbar's speed slows a preview too, for looking at an effect closely.
+    const float previewStep = ctx.clock.getDeltaTime() * ctx.clock.getHostScale();
+    if (previewing) dt = preview.paused ? 0.0f : std::min(previewStep, MAX_PREVIEW_STEP);
+    if (previewing != m_previewing || (previewing && preview.restarts != m_previewRestarts)) {
+        // Started, stopped or started over: from nothing live, and from the stream's start.
+        m_live.pools.clear();
+        m_rng.seed(SEED);
+        m_time            = 0.0f;
+        m_previewing      = previewing;
+        m_previewRestarts = preview.restarts;
+    }
+    const auto previewed = [&](EntityId id) {
+        if (preview.all) return true;
+        bool under = false;
+        HierarchyOperations::forSelfAndAncestors(scene, id, [&](EntityId at) {
+            under = std::find(preview.roots.begin(), preview.roots.end(), at) != preview.roots.end();
+            return !under;
+        });
+        return under;
+    };
+
     if (dt <= 0.0f) {
         // An emitter moved while nothing steps - dragged in a paused editor - has not travelled.
         for (auto& [slot, pool] : m_live.pools) pool.placed = false;
@@ -330,6 +361,7 @@ void ParticleSystem::update(FrameContext& ctx) {
     m_triggered.clear();
     scene.forEach<ParticleEmitter, Transform>(
         [&](EntityId id, ParticleEmitter& emitter, const Transform& transform) {
+            if (previewing && !previewed(id)) return;
             LiveParticles::Pool& pool = m_live.pools[id.slot()];
             if (pool.emitter != id) {
                 pool = LiveParticles::Pool{};
@@ -349,15 +381,18 @@ void ParticleSystem::update(FrameContext& ctx) {
 
             // A sub-emitter spawns only when its parent's particles trigger it, and never is spent.
             if (scene.has<ParticleTrigger>(id)) {
-                emitter.burst = 0;
+                if (!previewing) emitter.burst = 0;
                 return;
             }
 
             // Spent whole, as far as the cap allows: a burst is one moment, not a debt. Fired even
-            // when the cap lets none through, or a puff of no room would wait forever.
-            pool.fired = pool.fired || emitter.burst > 0;
-            for (uint32_t i = 0; i < emitter.burst && spawn(pool, emitter, origin, 0.0f); ++i) {}
-            emitter.burst = 0;
+            // when the cap lets none through, or a puff of no room would wait forever. A preview
+            // plays it once a run and leaves the authored burst as it is.
+            const uint32_t burst = previewing && pool.previewFired ? 0u : emitter.burst;
+            pool.fired        = pool.fired || burst > 0;
+            pool.previewFired = previewing;
+            for (uint32_t i = 0; i < burst && spawn(pool, emitter, origin, 0.0f); ++i) {}
+            if (!previewing) emitter.burst = 0;
 
             if (emitter.emitting) {
                 pool.spawnAccumulator += rateOf(emitter.rate) * dt;
@@ -381,7 +416,17 @@ void ParticleSystem::update(FrameContext& ctx) {
 
             // Never fired is not spent: an emitter waiting for gameplay's burst stays.
             const bool spent = pool.fired && !emitter.emitting && pool.particles.empty();
-            if (emitter.destroyWhenSpent && spent) m_spent.push_back(id);
+            if (previewing) {
+                // Finished, a preview starts it over after a breath, and destroys nothing.
+                pool.previewRest = spent ? pool.previewRest + dt : 0.0f;
+                if (pool.previewRest >= PREVIEW_REST) {
+                    pool.previewFired = false;
+                    pool.fired        = false;
+                    pool.previewRest  = 0.0f;
+                }
+            } else if (emitter.destroyWhenSpent && spent) {
+                m_spent.push_back(id);
+            }
         }
     );
 

@@ -1,5 +1,8 @@
 #include "physics/physics_support.h"
 
+#include <chrono>
+#include <thread>
+
 #include <glm/gtc/constants.hpp>
 
 #include "core/math/curve.h"
@@ -88,7 +91,7 @@ struct ParticleWorld {
         Visibility seen;
         seen.hasCamera = true;
         RenderView out;
-        out.build(scene, seen, nullptr, nullptr, nullptr, frame.ctx.particles, nullptr);
+        out.build(scene, seen, nullptr, nullptr, nullptr, nullptr, frame.ctx.particles, nullptr);
         return out;
     }
 };
@@ -755,6 +758,15 @@ void testASheetPlaysOnceOverALifeOrAtItsRate() {
 
     e.sheetFps = 10.0f;
     check("at a rate, looping", frameAt(0.25f, 0) == 2 && frameAt(0.45f, 0) == 0);
+
+    // Sides a hand-edited file says, whose product would wrap to nothing.
+    ParticleEmitter vast;
+    vast.sheetColumns = 65536;
+    vast.sheetRows    = 65536;
+    const uint32_t most = PARTICLE_SHEET_SIDE_MAX * PARTICLE_SHEET_SIDE_MAX;
+    check("a sheet said to be vast is read at the most it may be", sheetFrames(vast) == most);
+    check("  and a frame of it is one of those", sheetFrameAt(vast, 1.0f, 4.0f, 7).frame < most);
+
     e.sheetBlend = true;
     const SheetFrame wrap = sheetFrameAt(e, 0.35f, 4.0f, 0);
     const bool round = wrap.frame == 3 && wrap.next == 0 && std::abs(wrap.blend - 0.5f) < 1e-4f;
@@ -774,7 +786,7 @@ EntityId addEmitter(Scene& scene, LiveParticles& live, const ParticleEmitter& e,
 }
 
 // What the renderer is handed for a particle: its frame's rect, the top row first, its angle, its
-// size and colour at its age, its streak behind it, and its texture once however many show it.
+// size and color at its age, its streak behind it, and its texture once however many show it.
 void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     std::printf("A particle as the frame hands it to the renderer:\n");
 
@@ -815,7 +827,7 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     Visibility seen;
     seen.hasCamera = true;
     RenderView view;
-    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    view.build(scene, seen, nullptr, nullptr, nullptr, nullptr, &live, nullptr);
     check("one texture, listed once", view.particleTextures.size() == 1 && view.particleTextures[0] == sheet);
     const bool split = view.particlesAlpha.size() == 2 && view.particlesAdditive.size() == 1
         && view.particlesDistortion.size() == 1;
@@ -831,7 +843,7 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     check("a spark streaks behind it by its stretch", glm::vec3(spark.trail) == glm::vec3(-0.4f, 0.0f, 0.2f));
     check("  and a card not at all", glm::vec3(card.trail) == glm::vec3(0.0f));
     check("  its size by its curve at its age", spark.positionSize.w == 0.375f);
-    check("  its colour by its gradient, brightened", spark.color == glm::vec4(3.0f, 1.5f, 0.75f, 0.8f));
+    check("  its color by its gradient, brightened", spark.color == glm::vec4(3.0f, 1.5f, 0.75f, 0.8f));
     check("a haze particle carries how far it bends", view.particlesDistortion[0].trail.w == 0.05f);
 }
 
@@ -860,18 +872,18 @@ void testAnEmittersLightIsItsParticlesTogether() {
     Visibility seen;
     seen.hasCamera = true;
     RenderView view;
-    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    view.build(scene, seen, nullptr, nullptr, nullptr, nullptr, &live, nullptr);
     check("one light, the emitter's", view.lights.size() == 1);
     if (view.lights.size() != 1) return;
     const LightData& light = view.lights[0];
     // Alphas 1 and 0.25: 12.5 in all, its middle four fifths of the way to the young one.
     check("  as bright as its particles by their alpha", std::abs(light.intensity - 12.5f) < 1e-4f);
     check("  at their middle by the same", closeTo(light.position, {1.2f, 1.0f, 0.0f}));
-    check("  in its colour, as far as its radius", light.color == flash.lightColor && light.radius == 6.0f);
-    check("  a moment's: no shadow, no capture", light.transient && !light.castShadows);
+    check("  in its color, as far as its radius", light.color == flash.lightColor && light.radius == 6.0f);
+    check("  a moment's: no shadow, no capture", !light.inCaptures && !light.castShadows);
 
     live.pools[id.slot()].particles.clear();
-    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    view.build(scene, seen, nullptr, nullptr, nullptr, nullptr, &live, nullptr);
     check("gone with the last of them", view.lights.empty());
 }
 
@@ -897,13 +909,13 @@ void testAnEmitterIsSeenByAsAMeshIs() {
     eye.hasCamera    = true;
     eye.cameraEntity = scene.createEntity();
     RenderView view;
-    view.build(scene, eye, nullptr, nullptr, nullptr, &live, nullptr);
+    view.build(scene, eye, nullptr, nullptr, nullptr, nullptr, &live, nullptr);
     check("a scene camera draws nothing of one seen by all but the eye", view.particlesAdditive.size() == 2);
     check("  and the viewmodel's take its projection", viewmodels(view) == 1);
 
     Visibility freeView;
     freeView.hasCamera = true;
-    view.build(scene, freeView, nullptr, nullptr, nullptr, &live, nullptr);
+    view.build(scene, freeView, nullptr, nullptr, nullptr, nullptr, &live, nullptr);
     check("a host's free view draws them all", view.particlesAdditive.size() == 3);
     check("  where they are", viewmodels(view) == 0);
 }
@@ -933,6 +945,51 @@ void testParticlesAreBornOnFramesAndAnglesOfTheirOwn() {
     check("  and not all the same", frames && angles);
 }
 
+// Outside a play session the world stands still, and an editor asks for the selection's effects to
+// play anyway (HostChrome::EffectPreview). Played so, an effect changes nothing of the scene - its
+// burst is not spent, a spent emitter is not destroyed - and, finished, it starts over.
+void testAPreviewPlaysAnEffectAndLeavesTheSceneAsItWas() {
+    std::printf("An effect previewed while the world stands still:\n");
+
+    ParticleWorld w(0.0f, 64, 0.05f);
+    ParticleEmitter& puff = w.settings();
+    puff.emitting         = false;
+    puff.burst            = 8;
+    puff.destroyWhenSpent = true;
+
+    const auto frames = [&](int count) {
+        for (int i = 0; i < count; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            w.stand();
+        }
+    };
+    w.frame.chrome.setAuthoring(true);
+    frames(2);
+    check("standing still, nothing plays unasked", w.particles().empty());
+
+    w.frame.chrome.setEffectPreview({true, false, false, {w.emitter}, 0});
+    frames(1);
+    check("previewed, its burst plays", !w.particles().empty());
+    check("  and stays as authored", w.settings().burst == 8);
+
+    frames(10);
+    check("  finished, it is not destroyed", w.scene.isAlive(w.emitter) && w.particles().empty());
+    bool again = false;
+    for (int i = 0; i < 60 && !again; ++i) {
+        frames(1);
+        again = !w.particles().empty();
+    }
+    check("  and plays again", again);
+
+    w.frame.chrome.setEffectPreview({true, false, false, {}, 0});
+    frames(2);
+    check("an emitter outside the selection does not play", w.particles().empty());
+
+    w.frame.chrome.setEffectPreview({false, false, false, {w.emitter}, 0});
+    frames(1);
+    check("stopped, nothing is left", w.particles().empty());
+}
+
 } // namespace
 
 void runParticleTests() {
@@ -953,4 +1010,5 @@ void runParticleTests() {
     testAnEmitterIsSeenByAsAMeshIs();
     testAnEmittersLightIsItsParticlesTogether();
     testParticlesAreBornOnFramesAndAnglesOfTheirOwn();
+    testAPreviewPlaysAnEffectAndLeavesTheSceneAsItWas();
 }

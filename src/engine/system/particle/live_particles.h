@@ -51,6 +51,11 @@ struct LiveParticles {
         bool      fired  = false;           ///< Whether it has fired: spawned, or been handed a burst.
         uint64_t  seen   = 0;               ///< Last simulation step that found its emitter.
 
+        /// While an authoring host previews it (HostChrome::EffectPreview): its burst played, and
+        /// how long it has lain finished, before it starts over.
+        bool      previewFired = false;
+        float     previewRest  = 0.0f;
+
         /**
          * @brief The trail points of particle @p index, newest first.
          *
