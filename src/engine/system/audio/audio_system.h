@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -10,8 +11,10 @@
 #include "core/system.h"
 #include "ecs/entity.h"
 #include "resource/asset/audio_clip_asset.h"
+#include "system/audio/acoustics.h"
 #include "system/audio/audio_device.h"
 #include "system/audio/audio_events.h"
+#include "system/physics/query/query.h"
 
 namespace Vkm::Engine {
 
@@ -69,13 +72,35 @@ class AudioSystem : public System {
         VoiceId voiceOf(EntityId entity) const;
 
         /**
-         * @brief Stop every voice and forget them.
+         * @brief Stop every voice and forget them, the requests not yet started too.
          *
-         * For when the world goes before the asset graph is replaced (update() handles
-         * that case itself). Pending requests go too, since an old graph's handle can
-         * name a different clip in the new one.
+         * update() does this as the asset graph is replaced - an old graph's handle can name a
+         * different clip in the new one - and endWorld() as the world is, keeping what reached it
+         * from the new world; a host calls it to end them sooner (a script reload).
          */
         void stopEverything();
+
+    private:
+        /**
+         * @brief One entity's live voice.
+         *
+         * The whole entity is kept so a recycled slot is not handed the previous
+         * occupant's sound; the clip, so a re-pointed source is heard playing the new one.
+         */
+        struct ActiveVoice {
+            EntityId        entity;
+            AudioClipHandle clip;
+            VoiceId         voice       = 0;
+            uint64_t        seenOnFrame = 0;
+            float           blocked     = 0.0f;  ///< What the rays last said, 0..1.
+            float           occlusion   = 0.0f;  ///< Easing toward `blocked`, as heard.
+        };
+
+        /// A request as collected, and the world it reached this system in.
+        struct Asked {
+            PlaySoundEvent request;
+            uint64_t       world = 0;  ///< Scene::epoch as it was delivered
+        };
 
     private:
         /**
@@ -105,6 +130,46 @@ class AudioSystem : public System {
         );
 
         /**
+         * @brief Gather the static and kinematic colliders the acoustic rays strike, and re-measure the room.
+         *
+         * A few room rays a frame (Acoustics::ROOM_RAYS_PER_FRAME), so the estimate is a rolling
+         * window; the reverb eases toward what it says. With acoustics off, no ear or no device,
+         * the reverb fades out and no occlusion is asked.
+         *
+         * @param ctx Frame context supplying the scene and the clock.
+         */
+        void updateAcoustics(FrameContext& ctx);
+
+        /**
+         * @brief Draw the acoustics' rays while the host shows DebugCategory::Acoustics: the room's
+         *        window out from the ear and off what each struck, and each shaped source's rays from
+         *        the ear, stopped where something blocks them.
+         *
+         * @param ctx Frame context supplying the scene and the host's DebugDraw.
+         */
+        void drawAcoustics(FrameContext& ctx) const;
+
+        /**
+         * @brief The share of the rays from the ear to @p position the colliders updateAcoustics
+         *        gathered stop.
+         *
+         * @param position    Where the sound is.
+         * @param minDistance The source's near distance, which sets how far around it the side
+         *                    rays aim.
+         * @param body        The body the sound sits in, which does not block it; none for none.
+         * @return 0 heard straight, 1 behind a wall.
+         */
+        float blockedShare(const glm::vec3& position, float minDistance, EntityId body = {}) const;
+
+        /**
+         * @brief Stop every voice and forget the world's room and what it asked for: what a world
+         *        replaced takes along.
+         *
+         * A request that reached this system in the new world stays, its clip still the graph's.
+         */
+        void endWorld();
+
+        /**
          * @brief Start every PlaySoundEvent collected since the last frame.
          *
          * Voices are not recorded; reapFinishedVoices() releases them. A request out of
@@ -119,7 +184,7 @@ class AudioSystem : public System {
          * @brief Say once per world that a positioned sound has no ear to hear it.
          *
          * Said at voice start, not in the listener pass, so a project with no audio
-         * is not told; stopEverything resets it.
+         * is not told; endWorld resets it.
          *
          * @param spatial Whether the voice about to start is positioned; nothing is said for a flat one.
          */
@@ -137,20 +202,6 @@ class AudioSystem : public System {
         void warnIfStereoSpatial(const AudioClipAsset& asset, bool spatial);
 
     private:
-        /**
-         * @brief One entity's live voice.
-         *
-         * The whole entity is kept so a recycled slot is not handed the previous
-         * occupant's sound; the clip, so a re-pointed source is heard playing the new one.
-         */
-        struct ActiveVoice {
-            EntityId        entity;
-            AudioClipHandle clip;
-            VoiceId         voice = 0;
-            uint64_t        seenOnFrame = 0;
-        };
-
-    private:
         AudioDevice m_device;
         bool        m_silent = false;
 
@@ -158,10 +209,10 @@ class AudioSystem : public System {
         std::unordered_map<uint32_t, ActiveVoice> m_voices;
 
         /// Requests collected since the last update, drained at the end of it.
-        std::vector<PlaySoundEvent> m_pending;
+        std::vector<Asked> m_pending;
 
         /// Swapped out of m_pending to be walked; a member for its capacity.
-        std::vector<PlaySoundEvent> m_starting;
+        std::vector<Asked> m_starting;
 
         /// Kept because shutdown() takes no ctx; session-stable.
         EventBus* m_events = nullptr;
@@ -171,6 +222,9 @@ class AudioSystem : public System {
 
         /// Asset-graph identity; a change means every voice plays a clip from a gone world.
         uint64_t m_assetEpoch = 0;
+        /// The world's (Scene::epoch): a new one - a load, a restart, the editor's Stop - starts in
+        /// silence, its room measured afresh.
+        uint64_t m_worldEpoch = 0;
 
         /// Frame counter used to spot voices whose source stopped existing.
         uint64_t m_frame = 0;
@@ -185,6 +239,21 @@ class AudioSystem : public System {
 
         /// Clips already reported as multi-channel on a positioned voice, by name.
         std::unordered_set<std::string> m_warnedStereoClips;
+
+        /// Whether the scene's acoustics are on, with an ear and an open device, this frame.
+        bool m_acoustics = false;
+        /// The reverb the scene asks for, the scene's AcousticsSettings::reverb.
+        float m_reverbStrength = 1.0f;
+        /// Seconds since the last frame, for the easing.
+        float m_frameSeconds = 0.0f;
+        /// The static and kinematic colliders round the ear and its sounds, gathered a frame for every ray.
+        QueryParts m_world;
+        /// The room rays the estimate is taken over, a window refilled a few a frame.
+        std::array<Acoustics::RoomRay, Acoustics::ROOM_WINDOW> m_roomRays{};
+        size_t m_roomNext   = 0;
+        size_t m_roomFilled = 0;
+        /// The room's reverb as heard, easing toward what the rays measure.
+        Acoustics::Reverb m_reverb;
 };
 
 } // namespace Vkm::Engine
