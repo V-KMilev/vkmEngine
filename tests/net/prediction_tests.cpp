@@ -958,6 +958,74 @@ void testAPlayerIsNotDraggedBackwardsByTheirOwnConnection() {
     server.close();
 }
 
+// A character's state carries from tick to tick as its pose does, so a prediction that stands keeps
+// its own: the snapshot's describes a tick the client has passed.
+void testAPredictionThatStandsKeepsItsCharactersState() {
+    std::printf("A character's state across a prediction that stands:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+
+    Scene serverWorld;
+    const EntityId walker = addWalker(serverWorld);
+    serverWorld.add(walker, CharacterController{});
+    NetSession server;
+    server.onSpawn(
+        [walker](Scene&, ResourceManager&, PlayerId) { return walker; },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    server.host(0, 2, TEST_TICK_RATE);
+
+    Scene clientWorld;
+    const EntityId clientWalker = addWalker(clientWorld);
+    clientWorld.add(clientWalker, CharacterController{});
+    NetSession client;
+    client.setWorld(0, clientWorld);
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+
+    // One rule at both ends: crouched as the command says, which changes every tick.
+    const auto step = [](Scene& scene, NetSession& net, EntityId entity) {
+        if (!net.isPlaying() || !scene.isAlive(entity)) return;
+        scene.get<CharacterController>(entity).crouched = net.commandFor(entity).axis[1] > 0.0f;
+    };
+
+    uint32_t tick = 0;
+    int      lost = 0;
+    const auto frame = [&]() {
+        const bool predicted = clientWorld.get<CharacterController>(clientWalker).crouched;
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        const bool replays = !client.replayCommands().empty();
+        client.endReplay(clientWorld);
+        if (!replays && clientWorld.get<CharacterController>(clientWalker).crouched != predicted) ++lost;
+
+        ++tick;
+        InputCommand command;
+        command.sequence = tick;
+        command.tick     = tick;
+        command.axis[1]  = static_cast<float>(tick % 2);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, command, 3, TEST_ACTION_NAMES);
+        step(serverWorld, server, walker);
+        step(clientWorld, client, clientWalker);
+        client.endTick(clientWorld, tick);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+
+    check("the client joins", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+    for (int i = 0; i < 20; ++i) frame();
+    lost = 0;
+    for (int i = 0; i < 60; ++i) frame();
+    std::printf("      %d of 60 frames lost the predicted state\n", lost);
+    check("the state it predicted is kept, not the snapshot's older one", lost == 0);
+
+    client.close();
+    server.close();
+}
+
 // Pacing is steered by a number the server sends, so it must hold whatever it says: a
 // server reporting an always-empty or bottomless queue bends ticks by the bound only.
 void testPacingIsBoundedWhateverTheServerSays() {
@@ -1254,6 +1322,7 @@ void runNetPredictionTests() {
     testAPredictionThatWasWrongIsRunAgainRatherThanArguedWith();
     testAShotIsJudgedAgainstWhatTheShooterCouldSee();
     testAPlayerIsNotDraggedBackwardsByTheirOwnConnection();
+    testAPredictionThatStandsKeepsItsCharactersState();
     testPacingIsBoundedWhateverTheServerSays();
     testAClientPacesItsTicksToTheServersQueue();
     testASessionRefusesARateItsQueueCannotHold();

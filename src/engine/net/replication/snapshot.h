@@ -32,7 +32,7 @@ class NetBaseline {
         /// One component of one entity, as this connection last confirmed it.
         struct Confirmed {
             std::vector<uint8_t> bytes;
-            uint16_t             sequence = 0;      ///< Which snapshot established it.
+            uint64_t             order    = 0;      ///< Which snapshot established it (Pending::order).
             bool                 held     = false;  ///< The receiver holds the component.
             bool                 folded   = false;  ///< A change, a removal included, is confirmed.
         };
@@ -48,6 +48,9 @@ class NetBaseline {
             };
 
             uint16_t              sequence = 0;
+            /// Its place among this baseline's snapshots: unlike the sequence, it never wraps, so a
+            /// confirmation long held is never taken for a newer one.
+            uint64_t              order    = 0;
             std::vector<Change>   changes;
             std::vector<EntityId> forgotten;  ///< Occupants reported as gone.
         };
@@ -77,6 +80,16 @@ class NetBaseline {
 
         /// Hold what a snapshot said until it is confirmed or given up on.
         void hold(Pending && pending);
+
+        /**
+         * @brief Take @p entity as one the connection holds already, as the world it loaded does.
+         *
+         * Nothing of it is confirmed, so it is described as ever; but its going is reported, which a
+         * joiner's copy of the scene file learns of no other way.
+         *
+         * @param entity An entity of the world as loaded.
+         */
+        void seed(EntityId entity) { m_entities.try_emplace(entity.slot(), EntityRecord{entity, 0, {}}); }
 
         /**
          * @brief Fold the snapshot @p sequence said into what is confirmed.
@@ -117,21 +130,28 @@ class NetBaseline {
          */
         void clear() {
             m_entities.clear();
+            m_vacated.clear();
             m_pending.clear();
         }
+
+        /// The order (Pending::order) the next snapshot held takes.
+        uint64_t nextOrder() const { return m_held + 1; }
 
         size_t knownEntities() const { return m_entities.size(); }
         size_t pendingSnapshots() const { return m_pending.size(); }
 
     private:
         struct EntityRecord {
-            EntityId               entity;  ///< Which occupant these describe.
+            EntityId               entity;     ///< Which occupant these describe.
+            uint64_t               seated = 0; ///< The snapshot that first confirmed it (Pending::order).
             std::vector<Confirmed> components;
         };
 
     private:
         std::unordered_map<uint32_t, EntityRecord> m_entities;
+        std::unordered_map<uint32_t, uint64_t>     m_vacated;  ///< Slots confirmed empty, by when.
         std::vector<Pending>                       m_pending;
+        uint64_t                                   m_held = 0;  ///< Snapshots held so far.
 };
 
 /**
@@ -169,6 +189,9 @@ struct NetSnapshotStats {
     uint32_t entitiesDeferred   = 0;  ///< Left out for want of budget; first in line next snapshot.
     uint32_t entitiesLost       = 0;  ///< Announced as gone: the receiver holds them, the scene does not.
     uint32_t bytesWritten       = 0;  ///< The body's size, headers excluded.
+    /// The receiver's own entity is larger than a snapshot can carry, so was left out (and counted
+    /// deferred) for the rest to go.
+    bool     ownerTooLarge      = false;
 };
 
 /**

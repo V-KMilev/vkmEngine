@@ -2,6 +2,8 @@
 #include "net/net_support.h"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 #include "ecs/component/core/net_local.h"
 #include "ecs/hierarchy_operations.h"
@@ -117,6 +119,139 @@ void testAnAcknowledgementOutOfOrderDoesNotUndoANewerOne() {
 
     const NetSnapshotStats after = writeSnapshotTo(server, schema, 12, budget, baseline, body);
     check("the older acknowledgement does not overwrite the newer", after.entitiesWritten == 0);
+}
+
+// A late acknowledgement of a slot's old occupant, after the new one is confirmed.
+void testALateWordOfAnOldOccupantIsMoot() {
+    std::printf("A late acknowledgement of what a slot held before:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const std::vector<EntityId> crates = buildCrates(server, 2);
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+    Scene client;
+    NetNames clientNames;
+
+    writeSnapshotTo(server, schema, 1, budget, baseline, body);
+    readSnapshotFrom(client, schema, body, clientNames);
+
+    server.destroyEntity(crates[1]);
+    const EntityId marker = server.createEntity();
+    server.add(marker, Transform{});
+    writeSnapshotTo(server, schema, 2, budget, baseline, body);
+    readSnapshotFrom(client, schema, body, clientNames);
+
+    // Newest first: the old crate's word comes after the marker's.
+    baseline.confirm(2);
+    baseline.confirm(1);
+
+    const NetSnapshotStats after = writeSnapshotTo(server, schema, 3, budget, baseline, body);
+    readSnapshotFrom(client, schema, body, clientNames);
+    check("the old occupant is not reported gone again", after.entitiesLost == 0);
+    check("  nor the new one said again", after.entitiesWritten == 0);
+    check("  and the client keeps the new one", client.isAlive(client.entityAt(marker.slot())));
+}
+
+// A late acknowledgement of an occupant whose leaving was already confirmed.
+void testALateWordOfAnEmptiedSlotIsMoot() {
+    std::printf("A late acknowledgement of what has since been confirmed gone:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const std::vector<EntityId> crates = buildCrates(server, 2);
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+
+    writeSnapshotTo(server, schema, 1, budget, baseline, body);
+    baseline.confirm(1);
+    server.get<Transform>(crates[1]).position = {3.0f, 0.0f, 0.0f};
+    writeSnapshotTo(server, schema, 2, budget, baseline, body);
+
+    server.destroyEntity(crates[1]);
+    const NetSnapshotStats told = writeSnapshotTo(server, schema, 3, budget, baseline, body);
+    check("the crate is reported gone", told.entitiesLost == 1);
+
+    baseline.confirm(3);
+    baseline.confirm(2);
+
+    // Reported again by slot, it would take whatever the slot holds next on the client.
+    const NetSnapshotStats after = writeSnapshotTo(server, schema, 4, budget, baseline, body);
+    check("the late word does not bring the crate back to be reported", after.entitiesLost == 0);
+}
+
+// A component confirmed long ago, then changed and changed back: the sequence wraps every 65536
+// snapshots, and a confirmation must still be taken as newer than one a whole turn older, or the
+// server would believe the client holds the first value and never say the return to it.
+void testAConfirmationAWholeTurnLaterIsStillNewer() {
+    std::printf("A value confirmed a whole turn of the sequence ago:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const EntityId crate = buildCrates(server, 1).front();
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+
+    writeSnapshotTo(server, schema, 100, budget, baseline, body);
+    baseline.confirm(100);
+
+    // Idle until the sequence has come round to just short of where the value was confirmed.
+    uint16_t sequence = 89;
+    server.get<Transform>(crate).position.x += 2.0f;
+    writeSnapshotTo(server, schema, ++sequence, budget, baseline, body);
+    baseline.confirm(sequence);
+
+    server.get<Transform>(crate).position.x -= 2.0f;
+    const NetSnapshotStats back = writeSnapshotTo(server, schema, ++sequence, budget, baseline, body);
+    check("the move back is said", back.entitiesWritten == 1);
+}
+
+// The receiver's own entity goes in every snapshot whatever else is left out; one too large for a
+// snapshot even alone would leave every snapshot unsent, and the client timed out. It is left out
+// instead, and the rest of the world still goes.
+void testAnOwnerTooLargeForASnapshotLeavesTheRest() {
+    std::printf("A player's own entity too large for a snapshot:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const std::vector<EntityId> crates = buildCrates(server, 2);
+
+    NetBaseline baseline;
+    NetBudget budget;
+    budget.owner = crates[0];
+    std::vector<uint8_t> body;
+
+    NetBudget probe;
+    const NetSnapshotStats whole = writeSnapshotTo(server, schema, 1, probe, baseline, body);
+    check("both crates fit an ordinary snapshot", whole.entitiesWritten == 2);
+
+    // The owner's spawn is described in full, which costs more than a whole crate.
+    NetSpawn spawn;
+    spawn.prefab = "prefabs/crate.json";
+    server.add(crates[0], std::move(spawn));
+
+    // Room for the lost list, the end of the entries and two plain crates: the other crate, not the owner.
+    budget.bytes = whole.bytesWritten;
+    NetBaseline fresh;
+    NetSilenceMap silence;
+    silence.build(server);
+    // Into a datagram exactly the budget's size, as a server writes one.
+    BitWriter writer(body, budget.bytes);
+    const NetSnapshotStats tight = writeSnapshot(server, schema, silence, 1, budget, fresh, writer);
+    writer.finish();
+    check("the owner too large is left out, and says so", tight.ownerTooLarge);
+    check("  while the other crate is written", tight.entitiesWritten == 1);
+    check("  and the snapshot fits, to be sent", !writer.overflowed() && fresh.pendingSnapshots() == 1);
 }
 
 void testABurstIsDeferredRatherThanDropped() {
@@ -480,7 +615,7 @@ void testASpawnRefusesWhatItCannotMean() {
     // A path the length field cannot describe: written whole, the length would wrap
     // and every later byte be read at the wrong offset.
     NetSpawn tooLong = spawn;
-    tooLong.prefab.assign(NET_PREFAB_PATH_MAX + 1, 'x');
+    tooLong.prefab.assign(NET_PROJECT_PATH_MAX + 1, 'x');
     check("a path longer than the wire can name cannot be said", !isSayable(tooLong));
     check("  and is written as a refusal the reader stays in step past", roundTrip(tooLong, back));
     check("  which builds nothing", back.prefab.empty());
@@ -1129,6 +1264,11 @@ void testAClientsOwnEntityIsNeverWrittenOver() {
         match.clientWorld().isAlive(own) && !match.clientWorld().has<PrefabInstance>(own)
             && std::string_view(match.clientWorld().get<Name>(own).value) == "Menu"
     );
+    check(
+        "the spawn runs on the server, the client's own here",
+        !match.client().simulates(match.clientWorld(), match.mirrorOf(spawned))
+            && match.client().simulates(match.clientWorld(), own)
+    );
 
     match.serverWorld().get<Transform>(spawned).position = {4.0f, 0.0f, 0.0f};
     const auto moved = [&]() {
@@ -1146,6 +1286,386 @@ void testAClientsOwnEntityIsNeverWrittenOver() {
         pumpUntil(frame, [&]() { return !match.clientWorld().isAlive(mirror); }, 80)
     );
     check("  and the client's own stays", match.clientWorld().isAlive(own));
+}
+
+// A joiner loads the scene file, which still holds what the server destroyed of it before the
+// joiner came: told of nothing, the joiner would keep a crate no one else sees.
+void testAJoinerLosesWhatTheWorldLostBeforeItCame() {
+    std::printf("A player joining after part of the scene was destroyed:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(3);
+    match.frame();  // the server takes the world as loaded
+
+    // The joiner's copy of the scene, slot for slot.
+    const std::vector<EntityId> loaded = buildCrates(match.clientWorld(), 3);
+    match.serverWorld().destroyEntity(match.serverWorld().entityAt(loaded[1].slot()));
+    check("the client joins", match.join());
+
+    const auto frame = [&]() { match.frame(); };
+    check(
+        "the crate destroyed before it came goes from it too",
+        pumpUntil(frame, [&]() { return !match.clientWorld().isAlive(loaded[1]); }, 80)
+    );
+    check(
+        "  and the rest of the scene stays",
+        match.clientWorld().isAlive(loaded[0]) && match.clientWorld().isAlive(loaded[2])
+    );
+}
+
+// A server that loads another scene mid-session takes its players along: each is spawned again in
+// it, told which scene to load, and - once it has loaded the same - plays on in it as the player it
+// was, with nothing of the old world read into the new.
+void testAServerTakesItsPlayersToTheNextScene() {
+    std::printf("A server moving its session to another scene:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+    const PlayerId player = match.client().localPlayer();
+
+    // The next scene, as both ends load it: three crates.
+    Scene next;
+    buildCrates(next, 3);
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+
+    const auto frame = [&]() { match.frame(); };
+    std::string asked;
+    const auto told = [&]() {
+        asked = match.client().takeSceneToLoad();
+        return !asked.empty();
+    };
+    check("the client is told which scene to load", pumpUntil(frame, told, 80));
+    check("  the one the server moved to", asked == "scenes/next.json");
+    // Gone from the new scene before the client has said what it holds of it.
+    const uint32_t gone = match.serverWorld().entityAt(2).slot();
+    match.serverWorld().destroyEntity(match.serverWorld().entityAt(gone));
+
+    Scene loaded;
+    buildCrates(loaded, 3);
+    match.clientWorld().swap(loaded);
+    match.client().setWorld(0x5EED, match.clientWorld(), asked);
+
+    const EntityId crate = match.serverWorld().entityAt(3);
+    match.serverWorld().get<Transform>(crate).position.x = 9.0f;
+    const auto arrived = [&]() {
+        const EntityId mirror = match.clientWorld().entityAt(3);
+        return match.clientWorld().isAlive(mirror)
+            && std::abs(match.clientWorld().get<Transform>(mirror).position.x - 9.0f) < 0.01f;
+    };
+    check("it plays on in the new scene, the server's word reaching it", pumpUntil(frame, arrived, 120));
+    check("  as the player it was", match.client().isPlaying() && match.client().localPlayer() == player);
+    check(
+        "  driving the entity the server spawned it in the new world",
+        match.clientWorld().isAlive(match.client().localEntity())
+    );
+    const auto ghost = [&]() { return !match.clientWorld().isAlive(match.clientWorld().entityAt(gone)); };
+    check("  and what the server took from that scene goes from it too", pumpUntil(frame, ghost, 80));
+}
+
+// A server runs a player's commands on the entity it spawned that player in the world they were
+// made for: none queued when it moves on, nor any sent from the old world while the next loads.
+void testAServerRunsNoCommandMadeForTheWorldBefore() {
+    std::printf("A player's commands across a change of scene:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    EntityId spawned{};
+    match.server().onSpawn(
+        [&spawned](Scene& scene, ResourceManager&, PlayerId) { return spawned = scene.createEntity(); },
+        [](Scene& scene, ResourceManager&, PlayerId, EntityId e) { scene.destroyEntity(e); }
+    );
+    buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+
+    uint32_t tick     = 1000;
+    uint32_t sequence = 1000;
+    const auto walk = [&]() {
+        InputCommand walking;
+        walking.sequence = ++sequence;
+        walking.tick     = ++tick;
+        walking.axis[0]  = 1.0f;
+        match.client().beginTick(tick, walking, 3, TEST_ACTION_NAMES);
+        match.client().send(match.clientWorld(), tick);
+        match.client().advance(1.0f / 60.0f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
+    // The server's step: what arrived, then the tick its players' commands run on.
+    const auto step = [&]() {
+        match.server().receive(match.serverWorld(), match.resources());
+        match.server().beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        const float ran = match.server().commandFor(spawned).axis[0];
+        match.server().send(match.serverWorld(), tick);
+        match.server().advance(1.0f / 60.0f);
+        match.client().receive(match.clientWorld(), match.resources());
+        return ran;
+    };
+
+    for (int i = 0; i < 4; ++i) walk();
+    match.server().receive(match.serverWorld(), match.resources());  // queued, not yet run
+    Scene next;
+    buildCrates(next, 3);
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    float walked = step();
+    check("the next scene's player is spawned", match.serverWorld().isAlive(spawned));
+    for (int i = 0; i < 20; ++i) {
+        walk();
+        walked = std::max(walked, step());
+    }
+    check("  and runs nothing the old world's player was told to do", walked == 0.0f);
+}
+
+// A scene change spawns every player again, and the old world's entities went with it: in the next,
+// no one drives anything until its spawn says so, which is how a spawn finds what is free.
+void testASpawnSeesWhoDrivesWhatInTheNextScene() {
+    std::printf("Who drives what, as a scene change spawns its players:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    NetSession& server = match.server();
+    int declined = 0;
+    server.onSpawn(
+        [&](Scene& scene, ResourceManager&, PlayerId) {
+            const EntityId first = scene.entityAt(1);
+            if (!server.isDriven(first)) return first;
+            ++declined;
+            return EntityId{};
+        },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+    check("the crate it was seated at is driven", server.isDriven(match.serverWorld().entityAt(1)));
+    check("  and the other is not", !server.isDriven(match.serverWorld().entityAt(2)));
+    check("  which only the server is asked", !match.client().isDriven(match.client().localEntity()));
+
+    Scene next;
+    buildCrates(next, 2);
+    match.serverWorld().swap(next);
+    server.setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    match.frame();
+    check("in the next scene, the first crate is free for it again", declined == 0);
+    check("  and driven once it is seated there", server.isDriven(match.serverWorld().entityAt(1)));
+}
+
+// A player joining after the server moved on holds the scene it entered, not the server's: the
+// entity it is given is in the server's, so it drives nothing until it has loaded that.
+void testALateJoinerDrivesNothingInTheSceneItLeaves() {
+    std::printf("A player joining a session that moved to another scene:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    match.frame();  // the server takes its first world as loaded
+    Scene next;
+    buildCrates(next, 3);
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    match.frame();
+
+    buildCrates(match.clientWorld(), 2);
+    match.client().setWorld(0xE7, match.clientWorld(), "scenes/entry.json");
+    match.client().connect(NetAddress{0x7F000001u, match.server().localAddress().port}, TEST_TICK_RATE);
+    const auto frame = [&]() { match.frame(); };
+    check("it is seated", pumpUntil(frame, [&]() { return match.client().isPlaying(); }));
+    check("  driving nothing in the scene it entered", !match.client().localEntity());
+
+    std::string asked;
+    const auto told = [&]() {
+        asked = match.client().takeSceneToLoad();
+        return !asked.empty();
+    };
+    check("it is told which scene to load", pumpUntil(frame, told, 80));
+    Scene loaded;
+    buildCrates(loaded, 3);
+    match.clientWorld().swap(loaded);
+    match.client().setWorld(0x5EED, match.clientWorld(), asked);
+    const auto driving = [&]() { return match.clientWorld().isAlive(match.client().localEntity()); };
+    check("  and drives its entity there once loaded", pumpUntil(frame, driving, 80));
+}
+
+// The session's world number is a byte: past its last value it must not read as the first world,
+// which refuses a joiner whose entry scene is not the server's.
+void testASessionThatMovedOnOftenStillSeatsALateJoiner() {
+    std::printf("A player joining after the session changed scene a byte's worth of times:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    match.frame();  // the server takes its first world as loaded
+    for (int change = 0; change < 256; ++change) {
+        Scene next;
+        buildCrates(next, 1);
+        match.serverWorld().swap(next);
+        match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+        match.frame();
+    }
+
+    buildCrates(match.clientWorld(), 2);
+    match.client().setWorld(0xE7, match.clientWorld(), "scenes/entry.json");
+    match.client().connect(NetAddress{0x7F000001u, match.server().localAddress().port}, TEST_TICK_RATE);
+    const auto frame = [&]() { match.frame(); };
+    check("it is seated", pumpUntil(frame, [&]() { return match.client().isPlaying(); }));
+}
+
+// A load can hold a client's frames, and every packet it would send with them: a player loading
+// the scene the server moved to is given longer than a silent one.
+void testAPlayerLoadingTheNextSceneIsWaitedFor() {
+    std::printf("A player silent while it loads the next scene:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+    // Only the server's frames: the client is held in its load.
+    const auto silence = [&](float seconds) {
+        for (float waited = 0.0f; waited < seconds; waited += NetConnection::MAX_SILENCE_A_FRAME) {
+            match.server().receive(match.serverWorld(), match.resources());
+            match.server().send(match.serverWorld(), 1);
+            match.server().advance(NetConnection::MAX_SILENCE_A_FRAME);
+        }
+    };
+
+    Scene next;
+    buildCrates(next, 3);
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    silence(NetConnection::TIMEOUT_SECONDS + 3.0f);
+    check("past the timeout, it is still seated", match.server().playerCount() == 1);
+
+    std::string asked;
+    const auto frame = [&]() { match.frame(); };
+    const auto told  = [&]() {
+        asked = match.client().takeSceneToLoad();
+        return !asked.empty();
+    };
+    check("it is told which scene to load", pumpUntil(frame, told, 80));
+    Scene loaded;
+    buildCrates(loaded, 3);
+    match.clientWorld().swap(loaded);
+    match.client().setWorld(0x5EED, match.clientWorld(), asked);
+    const auto driving = [&]() { return match.clientWorld().isAlive(match.client().localEntity()); };
+    check("  and plays on once it has loaded it", pumpUntil(frame, driving, 80));
+    silence(NetConnection::TIMEOUT_SECONDS + 3.0f);
+    check("silent as long once it holds the scene, it is let go", match.server().playerCount() == 0);
+}
+
+// The next scene's entities can carry the old one's ids, so every player is unseated before any is
+// spawned again: the first spawn sees nothing driven, not the other player's place in the old world.
+void testEveryPlayerIsUnseatedBeforeTheNextSceneSpawnsAny() {
+    std::printf("Two players taken to the next scene:\n");
+
+    const ScopedEngineSchema wire;
+    const ScratchProject     project("vkm_net_reseat");
+    ResourceManager          resources;
+    Scene                    serverWorld;
+    buildCrates(serverWorld, 2);
+    NetSession server;
+    int  spawns    = 0;
+    bool sawDriven = false;
+    server.onSpawn(
+        [&](Scene& scene, ResourceManager&, PlayerId) {
+            if (spawns++ == 0) {
+                sawDriven = server.isDriven(scene.entityAt(1)) || server.isDriven(scene.entityAt(2));
+            }
+            for (const uint32_t slot : {1u, 2u}) {
+                if (!server.isDriven(scene.entityAt(slot))) return scene.entityAt(slot);
+            }
+            return EntityId{};
+        },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    server.host(0, 4, TEST_TICK_RATE);
+
+    Scene      worlds[2];
+    NetSession clients[2];
+    for (int c = 0; c < 2; ++c) {
+        buildCrates(worlds[c], 2);
+        clients[c].setWorld(0, worlds[c]);
+        clients[c].connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+    }
+    uint32_t tick = 0;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        for (int c = 0; c < 2; ++c) clients[c].receive(worlds[c], resources);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        for (int c = 0; c < 2; ++c) clients[c].beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        for (int c = 0; c < 2; ++c) clients[c].send(worlds[c], tick);
+        server.advance(1.0f / 60.0f);
+        for (int c = 0; c < 2; ++c) clients[c].advance(1.0f / 60.0f);
+    };
+    const auto seated = [&]() { return clients[0].isPlaying() && clients[1].isPlaying(); };
+    const auto bothDriven = [&]() {
+        return server.isDriven(serverWorld.entityAt(1)) && server.isDriven(serverWorld.entityAt(2));
+    };
+    check("both join", pumpUntil(frame, seated));
+    check("  each on a crate of its own", bothDriven());
+
+    Scene next;
+    buildCrates(next, 2);
+    serverWorld.swap(next);
+    server.setWorld(0x5EED, serverWorld, "scenes/next.json");
+    spawns = 0;
+    frame();
+    check("the next scene's first spawn sees nothing driven", spawns == 2 && !sawDriven);
+    check("  and both are seated there", bothDriven());
+
+    for (NetSession& client : clients) client.close();
+    server.close();
+}
+
+// A world replaced in the frame is described only once the session has taken it in: sent before,
+// it would go out under the old world's number, into the old world at every client.
+void testAWorldReplacedThisFrameIsNotSentAsTheOld() {
+    std::printf("A server sending in the frame it replaced its world:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    const std::vector<EntityId> held = buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+
+    Scene next;
+    const std::vector<EntityId> crates = buildCrates(next, 2);
+    next.get<Transform>(crates[0]).position.x = 50.0f;
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    match.server().advance(1.0f);
+    match.server().send(match.serverWorld(), 1000);
+
+    for (int i = 0; i < 20; ++i) {
+        match.client().receive(match.clientWorld(), match.resources());
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const EntityId mine = match.clientWorld().entityAt(held[0].slot());
+    const bool kept = match.clientWorld().isAlive(mine)
+        && match.clientWorld().get<Transform>(mine).position.x < 10.0f;
+    check("the client's world is not written with the next one's", kept);
+}
+
+// A world the server moves to that does not load here: the client cannot play on in the world it
+// left, so it leaves, and says why.
+void testAClientThatCannotLoadTheNextWorldLeaves() {
+    std::printf("A client the server moves to a world it cannot load:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    buildCrates(match.clientWorld(), 2);
+    check("the client joins", match.join());
+
+    Scene next;
+    buildCrates(next, 3);
+    match.serverWorld().swap(next);
+    match.server().setWorld(0x5EED, match.serverWorld(), "scenes/next.json");
+    const auto frame = [&]() { match.frame(); };
+    const auto told  = [&]() { return !match.client().takeSceneToLoad().empty(); };
+    check("the client is told which scene to load", pumpUntil(frame, told, 80));
+
+    match.client().worldFailed();
+    check("failing to load it, it leaves", !match.client().isPlaying());
+    check("  saying why", !match.client().lastError().empty());
 }
 
 // A component the server takes away goes from every client too, and one put back comes back.
@@ -1252,6 +1772,10 @@ void runNetReplicationTests() {
     testTheFirstSnapshotIsTheWholeWorld();
     testALostSnapshotIsSaidAgain();
     testAnAcknowledgementOutOfOrderDoesNotUndoANewerOne();
+    testAConfirmationAWholeTurnLaterIsStillNewer();
+    testAnOwnerTooLargeForASnapshotLeavesTheRest();
+    testALateWordOfAnOldOccupantIsMoot();
+    testALateWordOfAnEmptiedSlotIsMoot();
     testABurstIsDeferredRatherThanDropped();
     testAnEntityThatLeavesTheWorldLeavesEveryClient();
     testASlotReusedBetweenTwoSnapshotsStillReportsWhatLeft();
@@ -1267,6 +1791,16 @@ void runNetReplicationTests() {
     testWhatEachEndRunsItselfIsNeverSent();
     testASlotSpawnedIntoAgainBuildsTheNewThing();
     testAClientsOwnEntityIsNeverWrittenOver();
+    testAJoinerLosesWhatTheWorldLostBeforeItCame();
+    testAServerTakesItsPlayersToTheNextScene();
+    testAServerRunsNoCommandMadeForTheWorldBefore();
+    testASpawnSeesWhoDrivesWhatInTheNextScene();
+    testEveryPlayerIsUnseatedBeforeTheNextSceneSpawnsAny();
+    testALateJoinerDrivesNothingInTheSceneItLeaves();
+    testASessionThatMovedOnOftenStillSeatsALateJoiner();
+    testAPlayerLoadingTheNextSceneIsWaitedFor();
+    testAClientThatCannotLoadTheNextWorldLeaves();
+    testAWorldReplacedThisFrameIsNotSentAsTheOld();
     testAComponentTakenAwayIsTakenAwayEverywhere();
     testALateAcknowledgementDoesNotBringARemovalBack();
     testAnAuthoredPoseIsKeptExactOnJoin();

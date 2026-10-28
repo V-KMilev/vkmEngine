@@ -97,6 +97,9 @@ void NetClient::close() {
     m_prediction.clear();
     m_interpolation.clear();
     m_outbox.clear();
+    // A world it was told to load is the session's, and a later one's first move would be taken
+    // for it.
+    m_world = WorldToLoad{};
 }
 
 bool NetClient::sendMessage(const uint8_t* bytes, size_t size) {
@@ -166,9 +169,12 @@ void NetClient::forgetWorld() {
     m_names.clear();
 }
 
-void NetClient::lease(const std::vector<EntityId>& entities) {
+void NetClient::lease(const Scene& scene, const std::vector<EntityId>& entities) {
     for (EntityId entity : entities) {
         if (!entity || entity == m_localEntity) continue;
+        // What this end runs already: leased, a replay would run it again.
+        if (!m_names.names(scene, entity)) continue;
+        if (HierarchyOperations::findInSelfOrAncestors<NetLocal>(scene, entity)) continue;
 
         const auto found = std::find_if(
             m_prediction.leases.begin(),
@@ -193,8 +199,14 @@ void NetClient::restoreHeld(Scene& scene) {
         Transform* at = scene.tryGet<Transform>(held.entity);
         if (!at) continue;
         *at = held.transform;
-        if (!held.hasBody) continue;
-        if (Rigidbody* body = scene.tryGet<Rigidbody>(held.entity)) *body = held.body;
+        if (held.hasBody) {
+            if (Rigidbody* body = scene.tryGet<Rigidbody>(held.entity)) *body = held.body;
+        }
+        if (held.hasController) {
+            if (CharacterController* controller = scene.tryGet<CharacterController>(held.entity)) {
+                *controller = held.controller;
+            }
+        }
     }
 }
 
@@ -329,7 +341,8 @@ void NetClient::interpolate(Scene& scene, float deltaTime) {
         before.push_back(at ? at->position + drawOffsetFor(entity) : glm::vec3(0.0f));
     }
 
-    m_interpolation.apply(scene, deltaTime, static_cast<float>(m_core.tickRate), NET_SNAPSHOT_RATE);
+    const auto ticks = static_cast<float>(m_core.tickRate);
+    m_interpolation.apply(scene, deltaTime, ticks, snapshotRate(m_core.tickRate));
 
     for (size_t i = 0; i < m_prediction.released.size(); ++i) {
         const EntityId entity = m_prediction.released[i];
@@ -385,6 +398,7 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
             case NetMessage::Refuse:   open = onRefuse(reader);         break;
             case NetMessage::Goodbye:  open = onGoodbye();              break;
             case NetMessage::Snapshot: onSnapshot(scene, reader);       break;
+            case NetMessage::World:    open = onWorld(reader);          break;
             default: break;
         }
         if (!open) return false;
@@ -402,8 +416,11 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
 }
 
 bool NetClient::onWelcome(Scene& scene, BitReader& reader) {
-    const PlayerId player = static_cast<PlayerId>(reader.u16());
-    const uint32_t slot   = reader.u32();
+    const PlayerId player     = static_cast<PlayerId>(reader.u16());
+    const uint32_t slot       = reader.u32();
+    // Whether the world it loaded is the one the server holds; if not, which to load comes next.
+    const uint8_t  generation = static_cast<uint8_t>(reader.u8());
+    const bool     current    = reader.boolean();
 
     // Else this end would report itself playing with no entity to play.
     if (reader.failed() || player == NO_PLAYER) {
@@ -411,20 +428,75 @@ bool NetClient::onWelcome(Scene& scene, BitReader& reader) {
         LOG_ERROR("Welcome ended early or named no player; not joining");
         return false;
     }
+    m_core.worldGeneration = current ? generation : static_cast<uint8_t>(generation - 1);
 
     m_localPlayer = player;
-    m_localEntity = m_names.claim(scene, slot);
-    if (!m_localEntity) {
-        m_core.lastError = "the server named an entity this world cannot hold";
+    // The slot names an entity of the server's world: until this end has loaded it (completeWorld),
+    // it drives nothing.
+    if (!current) {
+        LOG_INFO("Joined as player %u; loading the server's world", m_localPlayer);
+        return true;
+    }
+    if (!claimLocalEntity(scene, slot)) return false;
+    LOG_INFO("Joined as player %u, driving entity %u", m_localPlayer, slot);
+    return true;
+}
+
+bool NetClient::onWorld(BitReader& reader) {
+    const uint8_t  generation  = static_cast<uint8_t>(reader.u8());
+    const uint64_t fingerprint = reader.u64();
+    const uint32_t slot        = reader.u32();
+    std::string    path        = readProjectPath(reader);
+    if (reader.failed()) return true;
+    if (generation == m_core.worldGeneration) return true;  // held already, or the news is late
+
+    // Opened on the server's say-so: only a scene inside the project.
+    if (!isProjectJsonPath(path)) {
+        m_core.lastError = "the server named a world this end will not open";
+        LOG_ERROR("The server moved to '%s', which is no scene inside the project; leaving", path.c_str());
+        return false;
+    }
+    if (m_world.named && m_world.generation == generation) return true;
+    m_world = WorldToLoad{std::move(path), fingerprint, slot, generation, true, false};
+    LOG_INFO("The server moved to '%s'; loading it", m_world.path.c_str());
+    return true;
+}
+
+std::string NetClient::takeSceneToLoad() {
+    if (!m_world.named || m_world.taken) return {};
+    m_world.taken = true;
+    return m_world.path;
+}
+
+bool NetClient::completeWorld(Scene& scene) {
+    const WorldToLoad world = m_world;
+    m_world = WorldToLoad{};
+    if (world.fingerprint != 0 && m_core.world != 0 && world.fingerprint != m_core.world) {
+        m_core.lastError = "the world this end loaded is not the server's";
         LOG_ERROR(
-            "Welcome named slot %u; the wire may name up to %u",
-            slot,
-            SlotAllocator::MAX_CLAIMED_INDEX
+            "Loaded '%s', but not as the server has it (%016llx here, %016llx there); leaving",
+            world.path.c_str(),
+            static_cast<unsigned long long>(m_core.world),
+            static_cast<unsigned long long>(world.fingerprint)
         );
         return false;
     }
-    LOG_INFO("Joined as player %u, driving entity %u", m_localPlayer, slot);
+    if (!claimLocalEntity(scene, world.slot)) return false;
+    m_core.worldGeneration = world.generation;
+    LOG_INFO("Playing on in '%s', driving entity %u", world.path.c_str(), world.slot);
     return true;
+}
+
+bool NetClient::claimLocalEntity(Scene& scene, uint32_t slot) {
+    m_localEntity = m_names.claim(scene, slot);
+    if (m_localEntity) return true;
+    m_core.lastError = "the server named an entity this world cannot hold";
+    LOG_ERROR(
+        "The server named slot %u for this end; the wire may name up to %u",
+        slot,
+        SlotAllocator::MAX_CLAIMED_INDEX
+    );
+    return false;
 }
 
 bool NetClient::onRefuse(BitReader& reader) {
@@ -459,6 +531,10 @@ void NetClient::holdPredicted(Scene& scene, std::vector<DrawnFrom>& takenFrom) {
         if (const Rigidbody* body = scene.tryGet<Rigidbody>(entity)) {
             held.hasBody = true;
             held.body    = *body;
+        }
+        if (const CharacterController* controller = scene.tryGet<CharacterController>(entity)) {
+            held.hasController = true;
+            held.controller    = *controller;
         }
         m_prediction.held.push_back(held);
     };
@@ -502,6 +578,9 @@ bool NetClient::adoptServerTick(uint32_t serverTick) {
 }
 
 void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
+    // Of a world this end does not hold - the last, or the next before it is loaded.
+    const uint8_t worldGeneration = static_cast<uint8_t>(reader.u8());
+    if (!reader.failed() && worldGeneration != m_core.worldGeneration) return;
     const uint32_t serverTick    = reader.u32();
     const uint32_t confirmedTick = reader.u32();
     const uint32_t heard         = reader.u32();
@@ -588,12 +667,14 @@ void NetClient::send() {
         writer.u64(m_core.world);
         writer.u16(static_cast<uint16_t>(m_core.tickRate));
     } else {
+        // Which world this end holds, which the server waits on after a change.
+        writer.u8(m_core.worldGeneration);
         // The server tick being drawn, before the commands so it reads without any.
         const double   drawn = m_interpolation.renderTick();
         const uint32_t whole = drawn > 0.0 ? static_cast<uint32_t>(drawn) : 0u;
         writer.u32(whole);
         const double   past  = drawn - static_cast<double>(whole);
-        writer.bits(static_cast<uint32_t>(past * 255.0), NET_DRAWN_FRACTION_BITS);
+        writer.bits(static_cast<uint32_t>(past * NET_DRAWN_FRACTION_MAX), NET_DRAWN_FRACTION_BITS);
 
         const size_t first   = firstCommandToSend(
             m_prediction.unacknowledged,

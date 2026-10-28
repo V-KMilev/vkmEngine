@@ -15,6 +15,20 @@ namespace Vkm::Engine {
 
 namespace {
 
+thread_local std::vector<uint8_t> t_scratch[2];
+
+} // namespace
+
+namespace detail {
+
+std::vector<uint8_t>& wireScratch(bool second) {
+    return t_scratch[second ? 1 : 0];
+}
+
+} // namespace detail
+
+namespace {
+
 /**
  * @brief Fold in the constants a codec's bits are laid out by.
  *

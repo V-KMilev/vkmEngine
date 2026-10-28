@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <string>
 
 #include "core/fnv1a.h"
 #include "net/wire/quantize.h"
@@ -539,6 +540,31 @@ void testAnAddressIsReadTheWayAPlayerTypesIt() {
     check("  and nothing at all", !NetAddress::parsePort("", port));
 }
 
+// A path no client may open travels as none: a length that wrapped at the field's width would
+// misalign whatever follows it.
+void testAProjectPathTravelsWholeOrNotAtAll() {
+    std::printf("A project path on the wire:\n");
+
+    const std::string scene = "levels/harbour.json";
+    const std::string tooLong = std::string(300, 'a') + ".json";
+
+    std::vector<uint8_t> bytes;
+    {
+        BitWriter out(bytes, 64 + 2 * NET_PROJECT_PATH_MAX);
+        writeProjectPath(scene, out);
+        writeProjectPath(tooLong, out);
+        writeProjectPath("../outside.json", out);
+        out.u8(0xA5);
+        out.finish();
+    }
+
+    BitReader in(bytes.data(), bytes.size());
+    check("a scene inside the project comes back", readProjectPath(in) == scene);
+    check("  one longer than the wire says goes as none", readProjectPath(in).empty());
+    check("  and so does one outside the project", readProjectPath(in).empty());
+    check("  with what follows still in step", in.u8() == 0xA5u && !in.failed());
+}
+
 } // namespace
 
 void runNetWireTests() {
@@ -550,4 +576,5 @@ void runNetWireTests() {
     testTheSchemaCarriesComponentsThroughAScene();
     testTwoEndsRefuseToPlayDifferentGames();
     testAnAddressIsReadTheWayAPlayerTypesIt();
+    testAProjectPathTravelsWholeOrNotAtAll();
 }

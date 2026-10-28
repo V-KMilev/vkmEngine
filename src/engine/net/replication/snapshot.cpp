@@ -87,13 +87,12 @@ static_assert(
  *
  * @param scene     The authoritative world.
  * @param schema    What replicates.
- * @param sequence  The snapshot being written, to age what was confirmed against.
  * @param entity    The entity to encode.
  * @param owner     Whether it is the receiver's own, which is resent unchanged.
  * @param silenced  Whether its state stays off the wire; only its NetSpawn is
  *                  then considered.
  * @param spawnType NetSpawn's index in @p schema, or -1 when it has none.
- * @param baseline  What this receiver has confirmed.
+ * @param baseline  What this receiver has confirmed, and how long ago.
  * @param scratch   Reused encode buffer, so an unchanged component costs no
  *                  allocation.
  * @param out       Filled with what differs.
@@ -102,7 +101,6 @@ static_assert(
 bool buildCandidate(
     const Scene& scene,
     const NetSchema& schema,
-    uint16_t sequence,
     EntityId entity,
     bool owner,
     bool silenced,
@@ -150,7 +148,8 @@ bool buildCandidate(
         const bool resent = owner && !isSpawn;
         if (!resent && confirmed && confirmed->bytes == scratch) continue;
 
-        const uint32_t age = confirmed ? static_cast<uint16_t>(sequence - confirmed->sequence) : UINT16_MAX;
+        const uint64_t since = confirmed ? baseline.nextOrder() - confirmed->order : UINT16_MAX;
+        const uint32_t age   = static_cast<uint32_t>(std::min<uint64_t>(since, UINT16_MAX));
         oldest = std::max(oldest, age);
 
         out.mask |= 1u << type;
@@ -186,7 +185,8 @@ thread_local SnapshotScratch t_scratch;
  *
  * The write decides who really fits, since an id's gap is unknown until the
  * order is; here each costs its smallest, so the packet is not left part
- * empty. The owner is taken whatever is left.
+ * empty. The owner is taken whatever is left, unless it would not fit a snapshot even first: then
+ * it cannot go at all, and taking it would leave the whole snapshot unsent.
  *
  * @param candidates Every entity that differs, in priority order.
  * @param budgetBits The ceiling for the body.
@@ -203,6 +203,12 @@ void chooseWithinBudget(
 ) {
     for (Candidate& candidate : candidates) {
         const uint32_t cost = candidate.bits + gapBits(1) + 1;
+        // Its gap is from the entry before it, so never wider than its own slot.
+        if (candidate.owner && usedBits + candidate.bits + gapBits(candidate.slot) + 1 > budgetBits) {
+            ++stats.entitiesDeferred;
+            stats.ownerTooLarge = true;
+            continue;
+        }
         if (usedBits + cost > budgetBits && !candidate.owner) {
             ++stats.entitiesDeferred;
             continue;
@@ -283,6 +289,7 @@ const NetBaseline::Confirmed* NetBaseline::find(EntityId entity, uint32_t type) 
 }
 
 void NetBaseline::hold(Pending && pending) {
+    pending.order = ++m_held;
     m_pending.push_back(std::move(pending));
 }
 
@@ -294,30 +301,42 @@ void NetBaseline::confirm(uint16_t sequence) {
     );
     if (found == m_pending.end()) return;
 
+    // Acknowledgements arrive newest first: what an older one says of a slot that has since
+    // been emptied or taken is moot.
+    const auto isNewer = [&found](uint64_t said) { return said > found->order; };
+
     for (Pending::Change& change : found->changes) {
+        const auto vacated = m_vacated.find(change.slot);
+        if (vacated != m_vacated.end() && isNewer(vacated->second)) continue;
+
         EntityRecord& record = m_entities[change.slot];
 
-        // The occupant changed since: nothing confirmed is true of the new one.
-        if (record.entity != change.entity) record = EntityRecord{change.entity, {}};
+        // Another occupant: nothing confirmed of one is true of the other.
+        if (record.entity != change.entity) {
+            if (record.entity && isNewer(record.seated)) continue;
+            record = EntityRecord{change.entity, found->order, {}};
+        }
         if (record.components.size() <= change.type) record.components.resize(change.type + 1);
 
         Confirmed& confirmed = record.components[change.type];
 
-        // A bounded distance, not plain newer-than: a component idle past half
-        // the sequence space would invert it and be resent forever. A removal is
-        // a change like any: a late older one must not bring the component back.
-        const uint16_t heldIsNewerBy = static_cast<uint16_t>(confirmed.sequence - found->sequence);
-        if (confirmed.folded && heldIsNewerBy != 0 && heldIsNewerBy <= ACK_WINDOW) continue;
+        // By the baseline's own count, which never wraps: a component idle for a whole turn of the
+        // sequence is still older. A removal is a change like any: a late older one must not bring
+        // the component back.
+        if (confirmed.folded && isNewer(confirmed.order)) continue;
 
         confirmed.bytes    = std::move(change.bytes);
-        confirmed.sequence = found->sequence;
+        confirmed.order    = found->order;
         confirmed.held     = !change.removed;
         confirmed.folded   = true;
     }
     // Only the reported occupant: whatever took the slot since may be confirmed.
     for (EntityId gone : found->forgotten) {
         const auto record = m_entities.find(gone.slot());
-        if (record != m_entities.end() && record->second.entity == gone) m_entities.erase(record);
+        if (record != m_entities.end() && record->second.entity == gone) {
+            m_entities.erase(record);
+            m_vacated[gone.slot()] = found->order;
+        }
     }
 
     m_pending.erase(found);
@@ -330,6 +349,13 @@ void NetBaseline::expire(uint16_t sequence) {
         [sequence](const Pending& p) { return static_cast<uint16_t>(sequence - p.sequence) > ACK_WINDOW; }
     );
     m_pending.erase(expired, m_pending.end());
+
+    // Kept while a snapshot older than the emptying can still be confirmed.
+    uint64_t oldest = UINT64_MAX;
+    for (const Pending& p : m_pending) oldest = std::min(oldest, p.order);
+    for (auto it = m_vacated.begin(); it != m_vacated.end();) {
+        it = it->second < oldest ? m_vacated.erase(it) : std::next(it);
+    }
 }
 
 void NetBaseline::gatherLost(const Scene& scene, std::vector<EntityId>& out) const {
@@ -394,7 +420,6 @@ NetSnapshotStats writeSnapshot(
         if (buildCandidate(
             scene,
             schema,
-            sequence,
             entity,
             entity.slot() == ownerSlot,
             silenced,

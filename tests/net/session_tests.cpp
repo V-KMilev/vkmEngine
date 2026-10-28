@@ -1,13 +1,15 @@
 #include "physics/physics_support.h"
 #include "net/net_support.h"
 
+#include <algorithm>
 #include <chrono>
+#include <fstream>
 #include <set>
 #include <thread>
 
-#include "project_boot.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
+#include "io/scene/scene_fingerprint.h"
 #include "net/player_message.h"
 #include "core/math/random.h"
 #include "system/physics/character/character_controller_system.h"
@@ -355,6 +357,57 @@ void testAClientDrawsByTheServersTime() {
         "  it draws the server's, as far behind as it draws others",
         behind >= 0.0 && std::abs(behind - client.renderDelay() * step) < 4.0 * step
     );
+
+    client.close();
+    server.close();
+}
+
+// A project ticking slower than snapshots go out sends one a tick: the client's delay is counted in
+// those, two of them, not in snapshots the server never sends.
+void testASlowTickingClientWaitsForTheSnapshotsItGets() {
+    std::printf("A client of a server ticking twenty times a second:\n");
+
+    constexpr uint32_t SLOW = 20;
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+    Scene serverWorld, clientWorld;
+    Clock serverClock, clientClock;
+    serverClock.setTickRate(SLOW);
+    clientClock.setTickRate(SLOW);
+
+    NetSession server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    check("the server binds a port", server.host(0, 2, SLOW));
+    NetSession client;
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, SLOW);
+
+    const float frameSeconds = 1.0f / static_cast<float>(SLOW);
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        client.interpolate(clientWorld, frameSeconds);
+        serverClock.requestStep();
+        clientClock.requestStep();
+        serverClock.consumeFixedStep();
+        clientClock.consumeFixedStep();
+        server.beginTick(serverClock.getTick(), InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(clientClock.getTick(), InputCommand{}, 1, TEST_ACTION_NAMES);
+        server.send(serverWorld, serverClock.getTick());
+        client.send(clientWorld, clientClock.getTick());
+        server.advance(frameSeconds);
+        client.advance(frameSeconds);
+    };
+    check("the client is welcomed", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+    float least = 1e9f;
+    for (int i = 0; i < 90; ++i) {
+        frame();
+        if (i >= 60) least = std::min(least, client.renderDelay());
+    }
+    std::printf("      drawn at least %.2f ticks behind\n", least);
+    check("  it is never drawn at the newest snapshot, waiting for none", least > 0.5f);
 
     client.close();
     server.close();
@@ -1402,6 +1455,62 @@ void testAJoinWhoseFirstFrameStallsIsStillSeated() {
     server.close();
 }
 
+// A Welcome cut short reads its missing fields as zeros: believed, the client would hold a world
+// generation nobody sends and drive nothing.
+void testAWelcomeCutShortEndsTheJoin() {
+    std::printf("A Welcome that ends after naming the player and the slot:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+
+    Scene serverWorld;
+    const EntityId walker = addWalker(serverWorld);
+    NetSession server;
+    server.onSpawn(
+        [walker](Scene&, ResourceManager&, PlayerId) { return walker; },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    check("the server binds", server.host(0, 2, TEST_TICK_RATE));
+
+    DelayedLink link(server.localAddress().port, 0);
+    check("the link opens", link.isOpen());
+    // The message header (12 bytes), the player and the slot; the world generation is cut.
+    constexpr size_t MESSAGE_AT = NetConnection::HEADER_BYTES + 3;
+    constexpr size_t CUT_AT     = NetConnection::HEADER_BYTES + 12 + 2 + 4;
+    link.rewriteToClient([](std::vector<uint8_t>& bytes) {
+        if (bytes.size() > CUT_AT && bytes[MESSAGE_AT] == static_cast<uint8_t>(NetMessage::Welcome)) {
+            bytes.resize(CUT_AT);
+        }
+    });
+
+    Scene clientWorld;
+    addWalker(clientWorld);
+    NetSession client;
+    client.connect(link.front(), TEST_TICK_RATE);
+
+    uint32_t tick = 0;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        link.pump();
+        server.advance(1.0f / 60.0f);
+        client.advance(1.0f / 60.0f);
+    };
+    check("the join ends", pumpUntil(frame, [&]() { return client.isDisconnected(); }, 80));
+    check(
+        "  saying why",
+        client.lastError() == std::string("the server's welcome did not say who this end is")
+    );
+
+    client.close();
+    server.close();
+}
+
 // A snapshot header cut short reads as zeros, and server tick zero is the one value
 // that disables the guard against unreachable ticks. Believed, the next snapshot can
 // claim any tick, sending the draw clock where no real sample reaches.
@@ -1476,9 +1585,11 @@ void testASnapshotCutShortIsNotBelieved() {
     std::vector<uint8_t> ahead = real;
     renumber(ahead, static_cast<uint16_t>(sequence + 2));
     uint32_t claimed = 0;
-    for (int i = 0; i < 4; ++i) claimed |= static_cast<uint32_t>(ahead[payload + 12 + i]) << (8 * i);
+    // Past the message header (12 bytes) and the world it describes (one).
+    const size_t tickAt = payload + 13;
+    for (int i = 0; i < 4; ++i) claimed |= static_cast<uint32_t>(ahead[tickAt + i]) << (8 * i);
     claimed += NET_MAX_TICK_JUMP * 2;
-    for (int i = 0; i < 4; ++i) ahead[payload + 12 + i] = static_cast<uint8_t>(claimed >> (8 * i));
+    for (int i = 0; i < 4; ++i) ahead[tickAt + i] = static_cast<uint8_t>(claimed >> (8 * i));
     link.forgeToClient(ahead);
 
     // The world must still be drawn as it moves.
@@ -2079,6 +2190,7 @@ void runNetSessionTests() {
     testAJoinAcrossAWindowsTurnIsStillSeated();
     testAJoinWhoseFirstFrameStallsIsStillSeated();
     testASnapshotCutShortIsNotBelieved();
+    testAWelcomeCutShortEndsTheJoin();
     testAServerThatHasBeenUpAWhileStillTakesAJoin();
     testStandingIsToldRatherThanGuessed();
     testAClientDoesNotMoveWhatItDoesNotOwn();
@@ -2086,6 +2198,7 @@ void runNetSessionTests() {
     testAWorldConvergesThroughALossyLink();
     testAPlayersMessagesReachTheServerOnceInOrder();
     testAClientDrawsByTheServersTime();
+    testASlowTickingClientWaitsForTheSnapshotsItGets();
     testAClientForgetsWhatTheServerDestroyed();
     testATickIsAtItsOwnTime();
 }

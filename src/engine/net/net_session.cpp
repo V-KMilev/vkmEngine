@@ -165,6 +165,10 @@ bool NetSession::isMine(EntityId entity) const {
     return entity && entity == m_client.localEntity();
 }
 
+bool NetSession::isDriven(EntityId entity) const {
+    return m_role == NetRole::Server && entity && m_server.commandFor(entity);
+}
+
 const InputCommand& NetSession::commandFor(EntityId entity) const {
     if (entity && entity == m_client.localEntity()) return m_currentCommand;
 
@@ -215,11 +219,14 @@ void NetSession::endTick(Scene& scene, uint32_t tick) {
 NetSession::Drawn::Drawn(NetSession& session, Scene& scene, float deltaTime)
     : m_session(session)
     , m_scene(scene)
+    , m_epoch(scene.epoch())
 {
     if (m_session.m_role == NetRole::Client) m_session.m_client.applyDrawCorrection(m_scene, deltaTime);
 }
 
 NetSession::Drawn::~Drawn() {
+    // A world replaced in the scope never had the correction: its entities only share the old ids.
+    if (m_scene.epoch() != m_epoch) return;
     if (m_session.m_role == NetRole::Client) m_session.m_client.removeDrawCorrection(m_scene);
 }
 
@@ -258,18 +265,28 @@ void NetSession::receive(Scene& scene, ResourceManager& resources) {
     // Offline too, so the next session starts from the world as it is now; and the first time
     // too, for a host that never said which world it opened.
     if (scene.epoch() != m_worldEpoch) {
-        if (m_worldEpoch != NO_WORLD) {
-            if (m_role != NetRole::Offline) {
-                LOG_WARNING(
-                    "The world was replaced while a session was live; "
-                    "what this end remembered about it is dropped"
-                );
-            }
-            forgetWorld();
-        }
+        const bool replaced = m_worldEpoch != NO_WORLD;
         // The world is the one both ends share, slot for slot.
+        if (replaced) forgetWorld();
         m_client.adoptWorld(scene);
+        m_server.adoptWorld(scene);
         m_worldEpoch = scene.epoch();
+
+        // The session's next world: the server's players are spawned again in it, and a client
+        // that loaded the one it was told to plays on.
+        if (replaced && m_role == NetRole::Server) {
+            m_server.changeWorld(scene, resources);
+        } else if (replaced && m_role == NetRole::Client && m_client.awaitingWorld()) {
+            if (!m_client.completeWorld(scene)) {
+                disconnect();
+                return;
+            }
+        } else if (replaced && m_role != NetRole::Offline) {
+            LOG_WARNING(
+                "The world was replaced while a session was live, and not by the server; "
+                "what this end remembered about it is dropped"
+            );
+        }
     }
 
     if (m_role == NetRole::Offline) return;
@@ -287,9 +304,22 @@ EntityId NetSession::entityFor(const Scene& scene, uint32_t slot) const {
     return scene.isAliveAtIndex(slot) ? scene.entityAt(slot) : EntityId{};
 }
 
-void NetSession::setWorld(uint64_t fingerprint, const Scene& scene) {
-    m_core.world = fingerprint;
+void NetSession::setWorld(uint64_t fingerprint, const Scene& scene, const std::string& path) {
+    m_core.world     = fingerprint;
+    m_core.worldPath = path;
     m_client.adoptWorld(scene);
+    m_server.adoptWorld(scene);
+}
+
+std::string NetSession::takeSceneToLoad() {
+    return m_role == NetRole::Client ? m_client.takeSceneToLoad() : std::string{};
+}
+
+void NetSession::worldFailed() {
+    if (m_role != NetRole::Client || !m_client.awaitingWorld()) return;
+    disconnect();
+    m_core.lastError = "the world the server moved to did not load here";
+    LOG_ERROR("The world the server moved to did not load here; leaving");
 }
 
 void NetSession::deliver(EventBus& events) {
@@ -299,9 +329,12 @@ void NetSession::deliver(EventBus& events) {
 
 void NetSession::send(Scene& scene, uint32_t tick) {
     if (m_role == NetRole::Offline) return;
+    // A world replaced this frame is not the one the session holds until the next receive takes it
+    // in: described now, it would go out under the old world's number.
+    if (m_worldEpoch != NO_WORLD && scene.epoch() != m_worldEpoch) return;
     PROFILE_SCOPE("NetSession::send");
 
-    const float rate = m_role == NetRole::Server ? NET_SNAPSHOT_RATE : NET_COMMAND_RATE;
+    const float rate = m_role == NetRole::Server ? snapshotRate(m_core.tickRate) : NET_COMMAND_RATE;
     const float interval = 1.0f / rate;
     if (m_sendAccumulator < interval) return;
 
@@ -332,7 +365,7 @@ EntityId NetSession::spawn(
                 "most %zu characters inside the project, and a finite pose with a "
                 "rotation and a scale within %.0f",
             prefab.c_str(),
-            NET_PREFAB_PATH_MAX,
+            NET_PROJECT_PATH_MAX,
             static_cast<double>(NET_MAX_SCALE)
         );
         return EntityId{};

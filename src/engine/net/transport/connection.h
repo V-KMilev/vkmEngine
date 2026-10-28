@@ -111,7 +111,12 @@ class NetConnection {
         /// much up to MAX_SILENCE_A_FRAME.
         void advance(float seconds);
 
-        bool timedOut() const { return m_silent > TIMEOUT_SECONDS; }
+        /**
+         * @brief Whether the peer has been silent longer than @p after seconds.
+         *
+         * @param after Silence allowed, in seconds: TIMEOUT_SECONDS unless the caller knows it is busy.
+         */
+        bool timedOut(float after = TIMEOUT_SECONDS) const { return m_silent > after; }
 
         /**
          * @brief What frame() will stamp on the next packet.

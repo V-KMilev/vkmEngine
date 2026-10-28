@@ -11,7 +11,7 @@ namespace Vkm::Engine {
 constexpr uint16_t NET_PROTOCOL_TAG = 0x564B;
 
 /// Which version of it. Both ends run the same build, so a mismatch is refused.
-constexpr uint8_t NET_PROTOCOL_VERSION = 12;
+constexpr uint8_t NET_PROTOCOL_VERSION = 14;
 
 /**
  * @brief What a datagram is, read from the header every payload starts with.
@@ -28,6 +28,7 @@ enum class NetMessage : uint8_t {
     Snapshot  = 5,  ///< Server -> client: the world, against what you last confirmed.
     Command   = 6,  ///< Client -> server: what I did, on the ticks I did it.
     Challenge = 7,  ///< Server -> client: say Hello again with this token, to show you hear me.
+    World     = 8,  ///< Server -> client: the world is now this scene; load it, and drive slot S.
     Count
 };
 

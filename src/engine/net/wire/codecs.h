@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <string_view>
 
 #include <glm/glm.hpp>
 
@@ -15,11 +17,11 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Longest prefab path a NetSpawn carries.
+ * @brief Longest project path the wire carries: a NetSpawn's prefab, a World message's scene.
  *
  * Bounded because it arrives from the network and opens a file; see isSayable.
  */
-constexpr size_t NET_PREFAB_PATH_MAX = 200;
+constexpr size_t NET_PROJECT_PATH_MAX = 200;
 
 /**
  * @brief Most entities below a spawned root whose slots a NetSpawn names.
@@ -29,13 +31,17 @@ constexpr size_t NET_PREFAB_PATH_MAX = 200;
  */
 constexpr size_t NET_SPAWN_MAX_SLOTS = 32;
 
+/// Bits for how many slots a spawn names, and for one slot.
+constexpr uint32_t NET_SPAWN_SLOT_COUNT_BITS = 6;
+constexpr uint32_t NET_SPAWN_SLOT_BITS       = 23;
+
 /**
  * @brief Most bytes a NetSpawn encodes to: the path's length, the longest path,
  *        the ten floats of the pose, then the slot count and NET_SPAWN_MAX_SLOTS
- *        entries of a 32-bit uid and a 23-bit slot, rounded up.
+ *        entries of a 32-bit uid and a slot, rounded up.
  */
-constexpr size_t NET_SPAWN_MAX_BYTES = 1 + NET_PREFAB_PATH_MAX + 10 * sizeof(float)
-    + (6 + NET_SPAWN_MAX_SLOTS * (32 + 23) + 7) / 8;
+constexpr size_t NET_SPAWN_MAX_BYTES = 1 + NET_PROJECT_PATH_MAX + 10 * sizeof(float)
+    + (NET_SPAWN_SLOT_COUNT_BITS + NET_SPAWN_MAX_SLOTS * (32 + NET_SPAWN_SLOT_BITS) + 7) / 8;
 
 /**
  * @brief NetSpawn's name in the schema.
@@ -86,9 +92,9 @@ void netEncode(const Rigidbody& value, BitWriter& out);
 void netDecode(Rigidbody& value, BitReader& in);
 
 /**
- * @brief Whether the character is standing on something, and whether crouched; nothing else.
+ * @brief Whether the character is standing on something, thrown off it, or crouched; nothing else.
  *
- * A non-simulating end cannot work either out: it applies no gravity, and the
+ * A non-simulating end cannot work these out: it applies no gravity, and the
  * wire's position precision is coarser than the contact; it never decides a
  * crouch, and shapes the capsule by this one. The rest is derived locally;
  * sending it would overwrite an owner's prediction with old news.
@@ -107,13 +113,45 @@ void netEncode(const Ragdoll& value, BitWriter& out);
 void netDecode(Ragdoll& value, BitReader& in);
 
 /**
+ * @brief Whether @p path can only name a JSON file inside the project.
+ *
+ * Relative, ".json", at most NET_PROJECT_PATH_MAX, no ".." component, backslash, colon,
+ * control character or Windows device name - judged on characters, not std::filesystem, so
+ * platforms agree: Linux would read \\host\share as relative. What a client opens on a
+ * server's say-so - a spawned prefab, a world to load - must be such a path.
+ *
+ * @param path The path to judge.
+ * @return True when it can name nothing outside the project.
+ */
+bool isProjectJsonPath(std::string_view path);
+
+/**
+ * @brief A project path as the wire carries it: its length, then its bytes.
+ *
+ * What isProjectJsonPath refuses goes as an empty path: a length that wrapped would misalign
+ * everything after it.
+ *
+ * @param path The path to write.
+ * @param out  The stream to write it to.
+ */
+void writeProjectPath(std::string_view path, BitWriter& out);
+
+/**
+ * @brief A path writeProjectPath wrote, every byte read so the stream stays in step.
+ *
+ * Unjudged: whoever opens it asks isProjectJsonPath.
+ *
+ * @param in The stream to read it from.
+ * @return The path; empty or partial when the stream ran out (in.failed()).
+ */
+std::string readProjectPath(BitReader& in);
+
+/**
  * @brief Whether @p spawn can be said on the wire and believed at the other end.
  *
  * A client opens the path on a server's say-so, so it must be a prefab inside
- * the project: relative, ".json", at most NET_PREFAB_PATH_MAX, no ".."
- * component, backslash, colon, control character or Windows device name -
- * judged on characters, so platforms agree. The pose must be finite, with a
- * rotation of some length and a scale within NET_MAX_SCALE either way.
+ * the project (isProjectJsonPath). The pose must be finite, with a rotation of
+ * some length and a scale within NET_MAX_SCALE either way.
  *
  * @param spawn The prefab path and pose to judge.
  * @return True when both can travel and be believed.

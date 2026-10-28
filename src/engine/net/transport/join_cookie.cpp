@@ -2,6 +2,8 @@
 
 #include <random>
 
+#include "core/little_endian.h"
+
 namespace Vkm::Engine {
 
 namespace {
@@ -27,13 +29,6 @@ void sipRound(uint64_t& v0, uint64_t& v1, uint64_t& v2, uint64_t& v3) {
     v2 = rotateLeft(v2, 32);
 }
 
-/// Eight bytes as SipHash reads them, least significant first on every machine.
-uint64_t readLittleEndian(const uint8_t* bytes) {
-    uint64_t value = 0;
-    for (int i = 0; i < 8; ++i) value |= static_cast<uint64_t>(bytes[i]) << (8 * i);
-    return value;
-}
-
 uint64_t drawFromSystem() {
     std::random_device device;
     return (static_cast<uint64_t>(device()) << 32) | static_cast<uint64_t>(device());
@@ -49,7 +44,7 @@ uint64_t sipHash24(uint64_t k0, uint64_t k1, const uint8_t* data, size_t size) {
 
     const size_t whole = size - size % 8;
     for (size_t at = 0; at < whole; at += 8) {
-        const uint64_t word = readLittleEndian(data + at);
+        const uint64_t word = readLittleEndian<uint64_t>(data + at);
         v3 ^= word;
         sipRound(v0, v1, v2, v3);
         sipRound(v0, v1, v2, v3);
@@ -89,9 +84,9 @@ bool NetJoinCookie::accepts(const NetAddress& from, uint64_t token, double now) 
 uint64_t NetJoinCookie::forWindow(const NetAddress& address, uint64_t window) const {
     // Byte by byte, so every machine hashes the same.
     uint8_t message[14];
-    for (int i = 0; i < 4; ++i) message[i]     = static_cast<uint8_t>(address.ipv4 >> (8 * i));
-    for (int i = 0; i < 2; ++i) message[4 + i] = static_cast<uint8_t>(address.port >> (8 * i));
-    for (int i = 0; i < 8; ++i) message[6 + i] = static_cast<uint8_t>(window >> (8 * i));
+    writeLittleEndian(&message[0], address.ipv4);
+    writeLittleEndian(&message[4], address.port);
+    writeLittleEndian(&message[6], window);
     return sipHash24(m_k0, m_k1, message, sizeof(message));
 }
 

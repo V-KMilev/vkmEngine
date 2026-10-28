@@ -41,10 +41,13 @@ constexpr uint32_t NET_COMMAND_MEMORY = 64;
 /**
  * @brief Bits of a command packet's share of a tick past the server tick it draws.
  *
- * The packet opens with that tick, whole, and then this, in 255ths: when the client saw what it
- * aimed at, for the server's rewind.
+ * The packet opens with that tick, whole, and then this, in parts of NET_DRAWN_FRACTION_MAX: when
+ * the client saw what it aimed at, for the server's rewind.
  */
 constexpr uint32_t NET_DRAWN_FRACTION_BITS = 8;
+
+/// The largest fraction NET_DRAWN_FRACTION_BITS say, and the parts a tick is said in.
+constexpr uint32_t NET_DRAWN_FRACTION_MAX = (1u << NET_DRAWN_FRACTION_BITS) - 1;
 
 /// The drawn tick a command packet opens with, whole and its fraction.
 constexpr uint32_t NET_DRAWN_TICK_BITS = 32 + NET_DRAWN_FRACTION_BITS;
