@@ -3,14 +3,16 @@
 # the same steps. All four archives are a release (release.yml), so a person picks the
 # compiler. Called by ci.yml when run by hand and by release.yml on every version tag.
 #
-# Two stages, a job each, so a run says which one failed and reruns only that:
+# Three stages, a job each, so a run says which one failed and reruns only that:
 #   Build       - each compiler and platform builds, tests and packages the SDK;
+#   GPU suite   - the renderer's tests on the runner's software renderer, each compiler's,
+#                 split across machines, as on one it would outlast the rest of the run;
 #   Use the SDK - each archive, on a machine that never saw the source, installed by the
 #                 installers people run, its tools fetched as a person's are, then a
 #                 project and every example made and packaged with it: nothing it needs
 #                 is missing, and the examples ship as games (the GCC ones, which
 #                 release.yml publishes).
-# Plan says once what both run on.
+# Plan says once what every job runs on.
 name: Build
 
 on:
@@ -21,27 +23,42 @@ on:
         type: string
         default: ""
 
+# What a Linux machine needs to build the engine: the window system's headers.
+env:
+  LINUX_HEADERS: >-
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
+    libwayland-dev libxkbcommon-dev wayland-protocols
+    libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+
 jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
     outputs:
       builds: ${{ steps.plan.outputs.builds }}
+      linux: ${{ steps.plan.outputs.linux }}
+      gpu: ${{ steps.plan.outputs.gpu }}
     steps:
       # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
       - id: plan
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'PLAN'
           import json
+          linux = "ubuntu-22.04"
           platforms = [
-              {"platform": "linux-x64", "runner": "ubuntu-22.04", "python": "python3",
+              {"platform": "linux-x64", "runner": linux, "python": "python3",
                "archive": "tar.xz", "game": "tar.gz"},
               {"platform": "windows-x64", "runner": "windows-2022", "python": "python",
                "archive": "zip", "game": "zip"},
           ]
           compilers = [{"compiler": "gcc", "label": "GCC"}, {"compiler": "clang", "label": "Clang"}]
           builds = [{**compiler, **platform} for platform in platforms for compiler in compilers]
+          shards = 4
+          gpu = [{**compiler, "shard": shard, "shards": shards}
+                 for compiler in compilers for shard in range(1, shards + 1)]
           print("builds=" + json.dumps({"include": builds}))
+          print("linux=" + linux)
+          print("gpu=" + json.dumps({"include": gpu}))
           PLAN
 
   build:
@@ -72,10 +89,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+          sudo apt-get install -y --no-install-recommends $LINUX_HEADERS
 
       # CMake, Ninja and Python, as every SDK user gets them; the configures below fetch
       # the pinned compiler VKM_COMPILER names (cmake/pinned_toolchain.cmake).
@@ -94,8 +108,9 @@ jobs:
             -DVKM_PYTHON:PATH="$(${{ matrix.python }} tools/vkm.py toolchain python --dir)"
           cmake --build build
 
+      # All but the GPU suite, which jobs of their own run.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --exclude-regex '^render$'
 
       - name: Package
         run: cmake --build build --target package
@@ -105,6 +120,41 @@ jobs:
           name: sdk-${{ matrix.compiler }}-${{ matrix.platform }}
           path: build/vkmEngine-*.${{ matrix.archive }}
           if-no-files-found: error
+
+  gpu:
+    name: GPU suite, ${{ matrix.label }} ${{ matrix.shard }}/${{ matrix.shards }}
+    needs: plan
+    runs-on: ${{ needs.plan.outputs.linux }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.gpu) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - name: Install the window system's headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $LINUX_HEADERS
+
+      - name: Fetch the pinned tools
+        run: python3 tools/vkm.py toolchain cmake ninja python --path >> "$GITHUB_PATH"
+
+      - name: Build the GPU suite
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVKM_COMPILER=${{ matrix.compiler }}
+          cmake --build build --target vkm_render_tests
+
+      # Every n-th check from this one: the runs together are the whole suite.
+      - name: Test
+        env:
+          VKM_GPU_REQUIRED: 1
+        run: build/bin/vkm_render_tests --shard ${{ matrix.shard }}/${{ matrix.shards }}
 
   use-sdk:
     name: Use the SDK, ${{ matrix.label }} (${{ matrix.platform }})
@@ -133,10 +183,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+          sudo apt-get install -y --no-install-recommends $LINUX_HEADERS
 
       - uses: actions/download-artifact@v8
         with:
