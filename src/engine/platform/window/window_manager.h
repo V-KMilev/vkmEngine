@@ -168,6 +168,12 @@ class WindowManager {
         void updateInput();
 
         /**
+         * @brief Answer the desktop's events, with no frame: for a long stretch before the first,
+         *        so the window is not marked as hung.
+         */
+        void pumpEvents();
+
+        /**
          * @brief Start the frame limiter's clock for the next frame.
          *
          * @return False once a close has been requested.
@@ -243,6 +249,21 @@ class WindowManager {
          */
         InputHandle& getInputHandle() { return m_inputHandle; }
         const InputHandle& getInputHandle() const { return m_inputHandle; }
+
+        /**
+         * @brief Keep the files dropped on the window for takeDroppedFiles(); off until a host that
+         *        takes them asks, so one that never does keeps none.
+         *
+         * @param keep Whether to keep them.
+         */
+        void keepDroppedFiles(bool keep) { m_keepDropped = keep; }
+
+        /**
+         * @brief The files dropped on the window since the last call, as the system named them.
+         *
+         * @return Their paths, oldest drop first; taken, so a second call answers none.
+         */
+        std::vector<std::string> takeDroppedFiles() { return std::exchange(m_dropped, {}); }
 
         /**
          * @brief Get the framebuffer width in pixels.
@@ -326,6 +347,8 @@ class WindowManager {
         WindowMode m_windowMode = WindowMode::Windowed;
         bool       m_vsync      = false;
         std::string m_screenshotPath;  ///< Pending until RenderSystem takes it.
+        std::vector<std::string> m_dropped;              ///< Until takeDroppedFiles().
+        bool                     m_keepDropped = false;  ///< Whether a host takes them.
 };
 
 } // namespace Vkm::Engine

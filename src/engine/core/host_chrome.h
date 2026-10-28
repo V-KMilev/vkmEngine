@@ -1,6 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
+
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
@@ -10,8 +14,9 @@ class WindowManager;
  * @brief What an authoring host tells the engine about the frame it draws over.
  *
  * The host frames the engine's output: panels around a scene rect, taking the
- * pointer over them. Readers take it off the frame context; unset, it is the
- * whole window with nothing captured.
+ * pointer over them; whether the world is open to edit; the effects it previews
+ * while the world stands still. Readers take it off the frame context; unset, it
+ * is the whole window with nothing captured.
  *
  * Written in the Editor stage, so earlier stages see the previous frame's rect.
  */
@@ -25,6 +30,17 @@ class HostChrome {
             uint32_t y      = 0;
             uint32_t width  = 0;
             uint32_t height = 0;
+        };
+
+        /**
+         * @brief What of the world's effects an authoring host plays while the world stands still.
+         */
+        struct EffectPreview {
+            bool                  playing  = false;  ///< Whether to play them at all.
+            bool                  paused   = false;  ///< Held where they are, still drawn.
+            bool                  all      = false;  ///< Every emitter, not only those under `roots`.
+            std::vector<EntityId> roots;             ///< Whose subtrees play: an editor's selection.
+            uint64_t              restarts = 0;      ///< Moved to start them over from nothing.
         };
 
     public:
@@ -107,11 +123,46 @@ class HostChrome {
          */
         bool authoring() const { return m_authoring; }
 
+        /**
+         * @brief Ask for the world's particle effects to play while the world itself stands still.
+         *
+         * Read only while authoring(). An effect played so changes nothing of the scene: a burst is
+         * not spent, a spent emitter is not destroyed, and one that has finished starts over.
+         *
+         * @param preview What plays.
+         */
+        void setEffectPreview(EffectPreview preview) { m_effects = std::move(preview); }
+
+        /**
+         * @brief What the host asked to play while it authors.
+         *
+         * @return The last setEffectPreview(); nothing plays in a host that never sets it.
+         */
+        const EffectPreview& effectPreview() const { return m_effects; }
+
+        /**
+         * @brief Ask for the next world to arrive to be covered by the loading screen until it is
+         *        ready, though the host authors it: a project or scene it opens, not a world it
+         *        puts back.
+         *
+         * Asked before the load; a load that fails takes it back (takeCoverNextWorld).
+         */
+        void coverNextWorld() { m_coverNext = true; }
+
+        /**
+         * @brief Whether coverNextWorld() was asked since this was last called; clears it.
+         *
+         * @return The request.
+         */
+        bool takeCoverNextWorld() { return std::exchange(m_coverNext, false); }
+
     private:
+        EffectPreview m_effects;
         ViewportRect m_viewport;
         bool m_capturePointer  = false;
         bool m_captureKeyboard = false;
         bool m_authoring       = false;
+        bool m_coverNext       = false;  ///< coverNextWorld() asked.
 };
 
 } // namespace Vkm::Engine

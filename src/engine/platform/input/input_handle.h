@@ -50,6 +50,17 @@ class InputHandle {
         bool wasKeyStruck(int key) const;
 
         /**
+         * @brief Whether the key was let go and struck again since the last clearStrikes().
+         *
+         * Held at that clearStrikes() and struck since: a release and a press one sample
+         * heard neither of, the level being down at both.
+         *
+         * @param key The GLFW key code to query.
+         * @return True if it was struck again; false for out-of-range keys.
+         */
+        bool wasKeyRestruck(int key) const;
+
+        /**
          * @brief Whether the key went down or auto-repeated since the last clearStrikes().
          *
          * @param key The GLFW key code to query.
@@ -95,6 +106,16 @@ class InputHandle {
         void moveTo(double x, double y);
 
         /**
+         * @brief Put the cursor at @p x, @p y without a step: it was moved, not by the user.
+         *
+         * The next moveTo() measures from here.
+         *
+         * @param x Cursor X in window pixels, from the left.
+         * @param y Cursor Y in window pixels, from the top.
+         */
+        void warpTo(double x, double y);
+
+        /**
          * @brief Record a mouse button's held state.
          *
          * A button going down is also recorded as struck, as for a key.
@@ -122,7 +143,17 @@ class InputHandle {
         bool wasButtonStruck(int button) const;
 
         /**
+         * @brief Whether the button was let go and struck again since the last clearStrikes().
+         *
+         * @param button The GLFW mouse button code.
+         * @return True if it was struck again; false for out-of-range buttons.
+         */
+        bool wasButtonRestruck(int button) const;
+
+        /**
          * @brief Forget every key and button press, repeat and character recorded so far.
+         *
+         * What is held now is kept, for wasKeyRestruck() and wasButtonRestruck().
          */
         void clearStrikes();
 
@@ -181,11 +212,13 @@ class InputHandle {
         bool m_keyState[MAX_KEY + 1]  = {};
         bool m_keyStruck[MAX_KEY + 1] = {};  ///< Went down since the last clearStrikes().
         bool m_keyTyped[MAX_KEY + 1]  = {};  ///< Went down or repeated since then.
+        bool m_keyHeld[MAX_KEY + 1]   = {};  ///< Down at the last clearStrikes().
 
         std::u32string m_text;  ///< Capacity reused.
 
         bool m_buttonState[MAX_MOUSE_BUTTON + 1]  = {};
         bool m_buttonStruck[MAX_MOUSE_BUTTON + 1] = {};  ///< Went down since the last clearStrikes().
+        bool m_buttonHeld[MAX_MOUSE_BUTTON + 1]   = {};  ///< Down at the last clearStrikes().
 
         double m_x = 0.0;
         double m_y = 0.0;

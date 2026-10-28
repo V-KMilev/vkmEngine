@@ -27,7 +27,7 @@ inline const glm::vec3 WORLD_UP      = {0.0f, 1.0f,  0.0f};  ///< Up is +Y.
 inline const glm::vec3 WORLD_FORWARD = {0.0f, 0.0f, -1.0f};  ///< Forward is -Z.
 inline const glm::vec3 WORLD_RIGHT   = {1.0f, 0.0f,  0.0f};  ///< Screen-right is +X.
 
-/// An axis's colour as the display shows it: 8-bit sRGB.
+/// An axis's color as the display shows it: 8-bit sRGB.
 struct AxisColor {
     uint8_t r;
     uint8_t g;
@@ -38,7 +38,7 @@ struct AxisColor {
  * @brief X red, Y green, Z blue: the one palette every view of an axis draws with.
  *
  * The editor's gizmos, view cube and vector fields take it through EditorStyle, and the
- * grid pass hands it to its shader, which draws after the tonemap so the colours land as
+ * grid pass hands it to its shader, which draws after the tonemap so the colors land as
  * written.
  */
 inline constexpr AxisColor AXIS_COLORS[3] = {

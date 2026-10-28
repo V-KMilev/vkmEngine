@@ -44,6 +44,23 @@ inline glm::vec3 computeRight(const glm::quat& rotation) {
 }
 
 /**
+ * @brief The rotation that carries @p from onto @p to, the shorter way round, as an axis scaled by
+ *        its angle in radians (world space).
+ *
+ * @param from Orientation turned from.
+ * @param to   Orientation turned to.
+ * @return Axis times angle; divided by a time, the spin that turns one into the other in it.
+ */
+inline glm::vec3 rotationBetween(const glm::quat& from, const glm::quat& to) {
+    glm::quat delta = to * glm::conjugate(from);
+    if (delta.w < 0.0f) delta = -delta;
+    const glm::vec3 axis(delta.x, delta.y, delta.z);
+    const float sine = glm::length(axis);
+    if (sine <= glm::epsilon<float>()) return axis * 2.0f;
+    return axis * (2.0f * std::atan2(sine, delta.w) / sine);
+}
+
+/**
  * @brief The rotation a model matrix was composed with, whatever its scale.
  *
  * Transform::fromModelMatrix uses it, so the two agree. A mirror is taken as a
@@ -98,6 +115,21 @@ inline glm::quat lookRotation(const glm::vec3& direction, const glm::vec3& up = 
  */
 inline glm::quat fromYawPitch(float yaw, float pitch) {
     return glm::angleAxis(yaw, WORLD_AXIS_Y) * glm::angleAxis(pitch, WORLD_AXIS_X);
+}
+
+/**
+ * @brief Two unit vectors spanning the plane square to a unit @p dir, square to each other.
+ *
+ * Built off world up, or world right when @p dir is nearly vertical.
+ *
+ * @param dir       The plane's unit normal.
+ * @param[out] outT First of the two.
+ * @param[out] outB Second: outT cross dir.
+ */
+inline void orthoBasis(const glm::vec3& dir, glm::vec3& outT, glm::vec3& outB) {
+    const glm::vec3 ref = std::abs(dir.y) < 0.99f ? WORLD_AXIS_Y : WORLD_AXIS_X;
+    outT = glm::normalize(glm::cross(dir, ref));
+    outB = glm::normalize(glm::cross(outT, dir));
 }
 
 /**

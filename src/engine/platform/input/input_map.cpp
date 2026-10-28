@@ -94,7 +94,7 @@ InputMap::InputMap() {
 }
 
 void InputMap::defineEngineActions() {
-    define(InputActions::UI_CLICK, { InputBinding{InputSource::MouseButton, GLFW_MOUSE_BUTTON_LEFT, 1.0f} });
+    define(InputActions::UI_CLICK, { InputBinding::mouse(GLFW_MOUSE_BUTTON_LEFT) });
 }
 
 void InputMap::assignSlot(Action& entry, std::string_view action) {
@@ -110,6 +110,11 @@ void InputMap::assignSlot(Action& entry, std::string_view action) {
         return;
     }
     entry.slot = static_cast<int>(m_nextSlot++);
+    // Slots are only appended, so the fingerprint folds each name in as it is slotted. A separator
+    // after each, so "ab","c" and "a","bc" differ.
+    const char separator = '\0';
+    m_fingerprint = fnv1a64(action, m_fingerprint);
+    m_fingerprint = fnv1a64Bytes(&separator, 1, m_fingerprint);
 }
 
 void InputMap::define(std::string_view action, std::vector<InputBinding> bindings) {
@@ -209,22 +214,6 @@ InputMap::Action& InputMap::mutableAction(std::string_view action) {
     return it->second;
 }
 
-uint64_t InputMap::actionFingerprint() const {
-    std::vector<std::string_view> bySlot(m_nextSlot);
-    for (const auto& [name, action] : m_actions) {
-        if (action.slot >= 0) bySlot[static_cast<size_t>(action.slot)] = name;
-    }
-
-    // A separator after each name, so "ab","c" and "a","bc" differ.
-    uint64_t hash = FNV1A_OFFSET_BASIS;
-    const char separator = '\0';
-    for (std::string_view name : bySlot) {
-        hash = fnv1a64(name, hash);
-        hash = fnv1a64Bytes(&separator, 1, hash);
-    }
-    return hash;
-}
-
 int InputMap::indexOf(std::string_view action) const {
     const Action* entry = find(action);
     return entry ? entry->slot : -1;
@@ -286,6 +275,8 @@ void InputMap::update(InputHandle& input, const HostChrome& chrome) {
     m_heldPresses.erase(ended, m_heldPresses.end());
 
     m_pointer = {static_cast<float>(input.getX()), static_cast<float>(input.getY())};
+    // Over the UI as last laid out, but where the pointer is now.
+    if (m_blockersKnown) m_pointerOverUI = pointerInBlockers();
     m_pointerDelta = pointerOurs
         ? glm::vec2(static_cast<float>(input.getDeltaX()), static_cast<float>(input.getDeltaY()))
         : glm::vec2(0.0f);
@@ -299,11 +290,11 @@ void InputMap::update(InputHandle& input, const HostChrome& chrome) {
         m_text = input.text();
         for (int key = 0; key <= MAX_KEY; ++key) {
             m_typed[static_cast<size_t>(key)] = input.wasKeyTyped(key);
-            if (!m_struck && input.wasKeyStruck(key)) m_struck = InputBinding{InputSource::Key, key, 1.0f};
+            if (!m_struck && input.wasKeyStruck(key)) m_struck = InputBinding::key(key);
         }
     }
     for (int button = 0; button <= MAX_MOUSE_BUTTON && pointerOurs && !m_struck; ++button) {
-        if (input.wasButtonStruck(button)) m_struck = InputBinding{InputSource::MouseButton, button, 1.0f};
+        if (input.wasButtonStruck(button)) m_struck = InputBinding::mouse(button);
     }
 
     // The UI takes presses of its click's buttons, only while over a blocking element.
@@ -318,35 +309,48 @@ void InputMap::update(InputHandle& input, const HostChrome& chrome) {
 
     for (auto& [_, action] : m_actions) {
         const bool forUI = &action == uiClick;
-        float value = 0.0f;
+        float value    = 0.0f;
+        bool  restruck = false;
+        bool  stayed   = false;
         for (const InputBinding& binding : action.bindings) {
-            bool down = false;
-            bool ours = false;
+            bool down   = false;
+            bool struck = false;
+            bool again  = false;
+            bool ours   = false;
             switch (binding.source) {
                 case InputSource::Key:
-                    down = input.isKeyPressed(binding.code) || input.wasKeyStruck(binding.code);
-                    ours = keyboardOurs;
+                    struck = input.wasKeyStruck(binding.code);
+                    down   = input.isKeyPressed(binding.code) || struck;
+                    again  = input.wasKeyRestruck(binding.code);
+                    ours   = keyboardOurs;
                     break;
                 case InputSource::MouseButton:
-                    down = input.isButtonPressed(binding.code) || input.wasButtonStruck(binding.code);
-                    ours = pointerOurs;
+                    struck = input.wasButtonStruck(binding.code);
+                    down   = input.isButtonPressed(binding.code) || struck;
+                    again  = input.wasButtonRestruck(binding.code);
+                    ours   = pointerOurs;
                     break;
                 case InputSource::Count:
                     break;
             }
             if (heldElsewhere(binding, down, !ours, clicksUI(binding), forUI)) continue;
             if (down) value += binding.scale;
+            restruck = restruck || again;
+            stayed   = stayed || (down && !struck);
         }
 
         action.value     = glm::clamp(value, -1.0f, 1.0f);
         action.wasActive = action.active;
         action.active    = std::abs(action.value) >= ACTIVE_THRESHOLD;
+        // Down at both samples, it was let go and struck between: both edges, or a quick second
+        // click in a long frame is lost. Not while another binding held it down throughout.
+        action.restruck  = action.wasActive && restruck && !stayed;
 
         // Latched here, not at tick time: an edge on a frame no tick follows would be lost.
         if (action.slot < 0) continue;
         const uint32_t bit = uint32_t(1) << action.slot;
-        if (action.active && !action.wasActive) m_pendingPressed  |= bit;
-        if (!action.active && action.wasActive) m_pendingReleased |= bit;
+        if (action.active && (!action.wasActive || action.restruck)) m_pendingPressed  |= bit;
+        if (action.wasActive && (!action.active || action.restruck)) m_pendingReleased |= bit;
     }
 
     // After every action has read them: two actions can share a key.
@@ -360,7 +364,10 @@ void InputMap::discardPendingEdges() {
 
 void InputMap::reset() {
     m_actions.clear();
-    m_nextSlot = 0;
+    m_blockers.clear();
+    m_blockersKnown = false;
+    m_nextSlot      = 0;
+    m_fingerprint   = FNV1A_OFFSET_BASIS;
     discardPendingEdges();
 
     m_pointerDelta = glm::vec2(0.0f);
@@ -411,12 +418,12 @@ bool InputMap::held(std::string_view action) const {
 
 bool InputMap::pressed(std::string_view action) const {
     const Action* entry = find(action);
-    return entry && entry->active && !entry->wasActive;
+    return entry && entry->active && (!entry->wasActive || entry->restruck);
 }
 
 bool InputMap::released(std::string_view action) const {
     const Action* entry = find(action);
-    return entry && !entry->active && entry->wasActive;
+    return entry && entry->wasActive && (!entry->active || entry->restruck);
 }
 
 float InputMap::axis(std::string_view action) const {
@@ -446,6 +453,14 @@ float InputMap::axis(const InputCommand& command, std::string_view action) const
 const InputMap::Action* InputMap::find(std::string_view action) const {
     auto it = m_actions.find(action);
     return it == m_actions.end() ? nullptr : &it->second;
+}
+
+bool InputMap::pointerInBlockers() const {
+    const auto under = [&](const glm::vec4& area) {
+        return m_pointer.x >= area.x && m_pointer.y >= area.y
+            && m_pointer.x < area.x + area.z && m_pointer.y < area.y + area.w;
+    };
+    return std::any_of(m_blockers.begin(), m_blockers.end(), under);
 }
 
 } // namespace Vkm::Engine

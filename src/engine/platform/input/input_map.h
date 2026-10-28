@@ -12,6 +12,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include "core/fnv1a.h"
 #include "core/reflect.h"
 
 #include "platform/input/input_command.h"
@@ -57,6 +58,14 @@ struct InputBinding {
     InputSource source = InputSource::Key;
     int         code   = 0;     ///< GLFW key or mouse-button code.
     float       scale  = 1.0f;  ///< Contribution to axis(); sign gives direction.
+
+    /// A keyboard key, `GLFW_KEY_*`, adding @p scale to its action's axis().
+    static InputBinding key(int code, float scale = 1.0f) { return {InputSource::Key, code, scale}; }
+
+    /// A mouse button, `GLFW_MOUSE_BUTTON_*`, adding @p scale to its action's axis().
+    static InputBinding mouse(int code, float scale = 1.0f) {
+        return {InputSource::MouseButton, code, scale};
+    }
 };
 
 /**
@@ -163,13 +172,19 @@ class InputMap {
         void update(InputHandle& input, const HostChrome& chrome);
 
         /**
-         * @brief Say whether the pointer is over a blocking element of the game's UI.
+         * @brief Give where the game's UI blocks the pointer, as last laid out, in window pixels.
          *
-         * Read by the next update(): one frame of lag, as the host's chrome has.
+         * The pointer is over the UI (pointerOverUI) while it is inside one, asked now and at each
+         * update() of where it is then, not where the layout saw it: a click the frame the pointer
+         * crosses a panel's edge goes to whoever is under it.
          *
-         * @param over Whether a blocking element is under the pointer.
+         * @param areas Each blocking element's visible rect: x, y, width, height.
          */
-        void setPointerOverUI(bool over) { m_pointerOverUI = over; }
+        void setPointerBlockers(const std::vector<glm::vec4>& areas) {
+            m_blockers.assign(areas.begin(), areas.end());
+            m_blockersKnown = true;
+            m_pointerOverUI = pointerInBlockers();
+        }
 
         /**
          * @brief Drop the edges latched since the last command.
@@ -240,7 +255,7 @@ class InputMap {
          *
          * @return A hash of the slotted names in slot order.
          */
-        uint64_t actionFingerprint() const;
+        uint64_t actionFingerprint() const { return m_fingerprint; }
 
         /**
          * @brief Is the action active this frame?
@@ -256,7 +271,8 @@ class InputMap {
          * @brief Did it become active this frame?
          *
          * @param action Action name.
-         * @return Whether it is active now and was not the previous frame.
+         * @return Whether it is active now and was not the previous frame, or was let go and
+         *         pressed again since.
          */
         bool pressed(std::string_view action) const;
 
@@ -264,7 +280,8 @@ class InputMap {
          * @brief Did it stop being active this frame?
          *
          * @param action Action name.
-         * @return Whether it was active the previous frame and is not now.
+         * @return Whether it was active the previous frame and is not now, or was let go and
+         *         pressed again since.
          */
         bool released(std::string_view action) const;
 
@@ -319,9 +336,9 @@ class InputMap {
         /**
          * @brief Whether the pointer was over a blocking element of the game's UI.
          *
-         * As of the last UI layout; e.g. for hiding a crosshair over a panel.
+         * Inside an area setPointerBlockers gave; e.g. for hiding a crosshair over a panel.
          *
-         * @return What UISystem last set through setPointerOverUI.
+         * @return Whether it was, at the last update() or blockers given.
          */
         bool pointerOverUI() const { return m_pointerOverUI; }
 
@@ -419,6 +436,7 @@ class InputMap {
             float value     = 0.0f;   ///< This frame's axis value.
             bool  active    = false;  ///< |value| past the threshold.
             bool  wasActive = false;  ///< Previous frame's, for the edges.
+            bool  restruck  = false;  ///< Let go and pressed again between the two.
             int   slot      = -1;     ///< Index in an InputCommand, or -1 past the cap.
         };
 
@@ -489,6 +507,9 @@ class InputMap {
          */
         bool heldElsewhere(const InputBinding& binding, bool down, bool hostHas, bool uiHas, bool forUI);
 
+        /// Whether the pointer, where update() last saw it, is inside one of m_blockers.
+        bool pointerInBlockers() const;
+
     private:
         /**
          * @brief Every defined action, by name.
@@ -516,8 +537,11 @@ class InputMap {
         uint32_t     m_pendingReleased = 0;
         uint32_t     m_nextSequence    = 1;  ///< 0 is the zeroed pre-first-tick command.
         uint32_t     m_nextSlot        = 0;
+        uint64_t     m_fingerprint     = FNV1A_OFFSET_BASIS;  ///< See actionFingerprint.
 
-        bool m_pointerOverUI = false;  ///< From the last UI layout.
+        bool                   m_pointerOverUI = false;  ///< See pointerOverUI.
+        std::vector<glm::vec4> m_blockers;               ///< See setPointerBlockers.
+        bool                   m_blockersKnown = false;  ///< Whether a UI has given them.
 
         /**
          * @brief Every key and button down, with whose press it is, until released.

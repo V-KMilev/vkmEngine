@@ -112,7 +112,7 @@ class SlotAllocator {
          *
          * For a loader whose entities keep their saved slot indices. Gaps grown
          * across go onto the free list. A claimed slot still in the free list
-         * is skipped when popped, not erased (a linear find per call).
+         * is skipped when popped, not erased.
          *
          * @param index Slot to claim; must be free.
          * @return The new handle, or null for slot 0, an index past

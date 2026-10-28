@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -14,25 +15,39 @@
 #include <vector>
 
 #if defined(__linux__)
+#include <sched.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
 
 #include "stb_image.h"
-#include "stb_image_write.h"
 
 #include "core/math/bounds.h"
 #include "core/math/easing.h"
+#include "core/math/grid.h"
+#include "debug/engine_error_log.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
+#include "ecs/component/ui/ui_image.h"
+#include "ecs/hierarchy_operations.h"
 #include "io/json_file.h"
+#include "io/scene/prefab.h"
 #include "io/project_paths.h"
 #include "platform/window/window_manager.h"
 #include "platform/process/child_process.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/frame_limiter.h"
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/texture_asset.h"
+#include "system/async/async_loader_system.h"
+#include "system/loading/loading_events.h"
+#include "system/loading/loading_system.h"
 #include "system/render/exposure.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_settings.h"
 #include "system/render/render_system.h"
+#include "system/splash/splash_system.h"
 #include "system/visibility/visibility.h"
 
 namespace {
@@ -190,6 +205,14 @@ void testARayFindsTheLevelItPointsAt() {
     const float twice = 1.0f - (1.0f - damp(4.0f, 0.05f)) * (1.0f - damp(4.0f, 0.05f));
     check("damp closes as far in two short frames as in one long one", std::abs(once - twice) < 1e-5f);
     check("  and none of the way in no time", damp(4.0f, 0.0f) == 0.0f);
+
+    // A clock run a year: in float its quarter-second would be lost.
+    const double year = 365.0 * 24.0 * 3600.0;
+    check(
+        "cycle keeps a share exact however long the clock ran",
+        std::abs(cycle(year + 0.25, 1.0) - 0.25f) < 1e-6f
+    );
+    check("  and holds at the start with no period", cycle(year, 0.0) == 0.0f);
 }
 
 // Auto-exposure's histogram, read: the stops that bring what is lit to the key, the shade and
@@ -358,6 +381,102 @@ void testAStillWorldIsStillWhicheverWayItWasStopped() {
         c.setPaused(true);
         c.requestStep(1);
     }));
+    check("a held one does not, even asked for a step", stillAfterAFrame([](Clock& c) {
+        c.setHeld(true);
+        c.requestStep(1);
+    }));
+
+    Clock held;
+    held.setHeld(true);
+    held.requestStep(1);
+    held.beginFrame();
+    const bool stepped = held.consumeFixedStep();
+    held.setHeld(false);
+    check("  and the step asked waits for its release", !stepped && held.consumeFixedStep());
+
+    // Held after the frame opened, as Engine::run holds an arriving world: that frame's time is
+    // dropped, not banked for the release.
+    Clock arrived;
+    arrived.beginFrame();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    arrived.beginFrame();
+    arrived.setHeld(true);
+    const bool still = arrived.isSimulationStill();
+    arrived.setHeld(false);
+    check("a hold taken mid-frame stills that frame", still);
+    check("  and its release owes no step", !arrived.consumeFixedStep());
+}
+
+// A world arriving runs no tick while a mesh of it decodes - a floor made of one is not there yet -
+// though a texture decoding stops none; and a mesh streamed in once it runs stops nothing.
+void testAnArrivingWorldWaitsForItsMeshes() {
+    std::printf("A world arriving, and its meshes:\n");
+    Scene           scene;
+    ResourceManager resources;
+    const auto decoding = [&] {
+        MeshAsset stub;
+        stub.loading = true;
+        return resources.add(std::move(stub));
+    };
+    const auto land = [&](MeshHandle handle) {
+        MeshAsset landed;
+        resources.swapValue(handle, landed);
+    };
+
+    ArrivalHold arrival;
+    const MeshHandle floor = decoding();
+    check("the first world waits while its floor decodes", arrival.holds(scene, resources));
+    check("  frame after frame", arrival.holds(scene, resources));
+    land(floor);
+    check("  and runs once it lands", !arrival.holds(scene, resources));
+    const MeshHandle streamed = decoding();
+    check("a mesh streamed in once it runs stops nothing", !arrival.holds(scene, resources));
+
+    scene.clear();
+    check("the next world to arrive waits again", arrival.holds(scene, resources));
+    land(streamed);
+    check("  until nothing decodes", !arrival.holds(scene, resources));
+    TextureAsset picture;
+    picture.loading = true;
+    resources.add(std::move(picture));
+    scene.clear();
+    check("a texture still decoding holds no tick", !arrival.holds(scene, resources));
+
+    ArrivalHold impatient(std::chrono::milliseconds(20));
+    decoding();
+    scene.clear();
+    const bool waited = impatient.holds(scene, resources);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    check("a decode that never lands is given up on", waited && !impatient.holds(scene, resources));
+
+    // Each check that must still hold has a wide margin, for a sleep that overshoots on a busy machine.
+    ArrivalHold patient(std::chrono::milliseconds(300));
+    scene.clear();
+    const bool first = patient.holds(scene, resources);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    decoding();
+    const bool risen = patient.holds(scene, resources);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    check(
+        "  and one more starting to decode buys it no time",
+        first && risen && !patient.holds(scene, resources)
+    );
+
+    // Its own resources, so the decodes left above do not count.
+    ResourceManager  two;
+    MeshAsset        stub;
+    stub.loading = true;
+    const MeshHandle early = two.add(MeshAsset(stub));
+    two.add(MeshAsset(stub));
+    ArrivalHold landing(std::chrono::milliseconds(300));
+    scene.clear();
+    const bool waiting = landing.holds(scene, two);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    MeshAsset landed;
+    two.swapValue(early, landed);
+    const bool afterLanding = landing.holds(scene, two);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    check("a landing restarts the patience", waiting && afterLanding && landing.holds(scene, two));
 }
 
 void testACommandedStepIsDeliveredWhole() {
@@ -413,6 +532,24 @@ void testACommandedStepIsDeliveredWhole() {
     ran = 0;
     while (counted.consumeFixedStep()) ++ran;
     check("a queued step outlives a pause toggle", ran == 2);
+}
+
+// The editor plays a session slow or fast without writing the game's own time scale,
+// which a game's slow motion owns.
+void testTheHostsSpeedMultipliesTheGamesTimeScale() {
+    std::printf("Playing a session slow:\n");
+
+    Clock clock;
+    clock.setTimeScale(0.5f);
+    clock.setHostScale(0.25f);
+    clock.beginFrame();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    clock.beginFrame();
+    check(
+        "the frame buys the product of the two",
+        std::abs(clock.getSimDelta() - clock.getDeltaTime() * 0.125f) < 1e-6f
+    );
+    check("  and the game's scale reads as the game set it", clock.getTimeScale() == 0.5f);
 }
 
 // A networked client runs ticks a few per cent fast or slow, so the server's queue of
@@ -562,13 +699,56 @@ void testAKeypressReachesAnAction() {
     );
     check("  and the wheel carries the notches turned", nearly(map.wheel(), 2.0f));
 
+    // A cursor put back where it was on leaving a captured mode moved, but not by the user.
+    device.warpTo(600.0, 300.0);
+    device.moveTo(604.0, 300.0);
+    map.update(device, host);
+    check("a warped cursor's next step starts where it was put", nearly(map.pointerDelta().x, 4.0f));
+
     // Over a blocking element of the game's UI the wheel is the UI's, as a click would
     // be, so a list scrolling is not also a weapon switch.
-    map.setPointerOverUI(true);
+    map.setPointerBlockers({glm::vec4(0.0f, 0.0f, 2000.0f, 2000.0f)});
     map.update(device, host);
     check("over the game's UI, gameplay's wheel turns nothing", nearly(map.wheel(), 0.0f));
     check("  and the UI's carries every notch", nearly(map.uiWheel(), 2.0f));
-    map.setPointerOverUI(false);
+    map.setPointerBlockers({});
+}
+
+// A binding let go and struck again inside a frame is both edges, unless another binding held
+// the action down throughout: then nothing changed, and the command must not say otherwise.
+void testARestrikeUnderAnotherHeldBindingIsNoEdge() {
+    std::printf("A key struck again while another binding holds its action:\n");
+
+    InputHandle device;
+    InputMap    map;
+    const HostChrome host;
+    constexpr int W = 87, UP = 265;   // GLFW_KEY_W, GLFW_KEY_UP
+    map.define(
+        "Ahead",
+        { InputBinding{InputSource::Key, W, 1.0f}, InputBinding{InputSource::Key, UP, 1.0f} }
+    );
+
+    device.onKeyEvent(UP, true);
+    map.update(device, host);
+    device.onKeyEvent(UP, false);
+    device.onKeyEvent(UP, true);
+    map.update(device, host);
+    check("alone, a key let go and struck in a frame is a release", map.released("Ahead"));
+    check("  and a press", map.pressed("Ahead"));
+
+    device.onKeyEvent(W, true);
+    map.update(device, host);
+    map.beginTick(1);
+    device.onKeyEvent(UP, false);
+    device.onKeyEvent(UP, true);
+    map.update(device, host);
+    check("with the other key held, it is no release", !map.released("Ahead"));
+    check("  and no press", !map.pressed("Ahead"));
+    map.beginTick(2);
+    check(
+        "  nor does the next command carry either edge",
+        !map.pressed(map.command(), "Ahead") && !map.released(map.command(), "Ahead")
+    );
 }
 
 // A text field reads characters and editing keys in order, with Backspace repeating
@@ -866,6 +1046,42 @@ void testATapInsideOneFrameIsStillSeen() {
     check("a repeat of a held key is not another press", !map.pressed("Jump"));
 }
 
+// A held button let go and pressed again inside one poll is down at both samples; the level
+// alone would lose the second click of a quick pair in a long frame.
+void testAPressAgainInsideOneFrameIsStillSeen() {
+    std::printf("A held button let go and pressed again inside a frame:\n");
+
+    InputHandle device;
+    InputMap    map;
+    const HostChrome host;
+    map.define("Fire", { InputBinding{InputSource::MouseButton, 0, 1.0f} });
+    const InputBinding w{InputSource::Key, 87, 1.0f};
+    const InputBinding up{InputSource::Key, 265, 1.0f};
+    map.define("Ahead", { w, up });
+
+    device.setButton(0, true);
+    device.onKeyEvent(87, true);
+    map.update(device, host);
+    map.beginTick(1);
+
+    device.setButton(0, false);
+    device.setButton(0, true);
+    map.update(device, host);
+    check("the second press reads as pressed", map.pressed("Fire") && map.held("Fire"));
+    check("  and the let-go between as released", map.released("Fire"));
+    map.beginTick(2);
+    check("the tick sees both", map.pressed(map.command(), "Fire") && map.released(map.command(), "Fire"));
+
+    map.update(device, host);
+    check("held on, it is pressed no more", !map.pressed("Fire") && !map.released("Fire"));
+
+    // A second key of the same action, tapped while the first holds it, changes nothing.
+    device.onKeyEvent(265, true);
+    device.onKeyEvent(265, false);
+    map.update(device, host);
+    check("another key of a held action is no new press", !map.pressed("Ahead") && !map.released("Ahead"));
+}
+
 // A controls screen rebinds an action and the settings file keeps it: only what the player
 // changed, so a key left alone follows the game's default when that changes; loaded before the
 // game defines its actions, a saved binding waits for the action to be defined.
@@ -1106,6 +1322,38 @@ void testAThrowFromAnyChunkReachesTheCaller() {
     check("  and the pool runs the next call whole", ran.load() == COUNT);
 }
 
+#if defined(__linux__)
+// A process allowed fewer CPUs - a container, `taskset` - gets fewer workers: fewer than the CPUs
+// it may run on, the caller running work too, and one at least.
+void testThePoolFitsTheCpusItMayRunOn() {
+    std::printf("The pool's workers:\n");
+    cpu_set_t allowed;
+    CPU_ZERO(&allowed);
+    const bool   masked  = sched_getaffinity(0, sizeof(allowed), &allowed) == 0;
+    const auto   anyCpu  = static_cast<int>(std::thread::hardware_concurrency());
+    const size_t cpus    = static_cast<size_t>(masked ? CPU_COUNT(&allowed) : anyCpu);
+    const size_t workers = ThreadPool::get().threadCount();
+    std::printf("      %zu worker(s) for %zu CPU(s) it may run on\n", workers, cpus);
+    const bool fits = workers >= 1 && workers < std::max<size_t>(cpus, 2);
+    check("fewer than the CPUs the process may run on, and one at least", fits);
+
+    // The pool is made once, so a process held to one CPU is a child asked what it would start with.
+    int first = 0;
+    while (masked && first < CPU_SETSIZE - 1 && !CPU_ISSET(first, &allowed)) ++first;
+    const pid_t child = fork();
+    if (child == 0) {
+        cpu_set_t one;
+        CPU_ZERO(&one);
+        CPU_SET(first, &one);
+        if (sched_setaffinity(0, sizeof(one), &one) != 0) _exit(255);
+        _exit(static_cast<int>(std::min<size_t>(ThreadPool::defaultThreadCount(), 254)));
+    }
+    int status = 0;
+    const bool waited = child > 0 && waitpid(child, &status, 0) == child && WIFEXITED(status);
+    check("held to one CPU, a process starts one worker", waited && WEXITSTATUS(status) == 1);
+}
+#endif
+
 // With every worker busy elsewhere, the caller runs its queued chunks itself rather
 // than sleeping until one frees.
 void testTheCallerRunsWhatNoWorkerHasTaken() {
@@ -1164,6 +1412,7 @@ struct NullBackend : RenderBackend {
     uint32_t maxAnisotropy() const override { return 1; }
     bool holdsPixels(const Handle<TextureAsset>& texture, uint64_t version) const override { return false; }
     EditorRenderHooks* editorHooks() override { return nullptr; }
+    RenderReadiness readiness() const override { return {}; }
 };
 
 // A backend that reads back a made-up frame - a red top row over blue - all the
@@ -1177,6 +1426,441 @@ struct ReadBackBackend : NullBackend {
         return true;
     }
 };
+
+// A backend owing as many of a world's first bakes as a test says.
+struct BakingBackend : NullBackend {
+    RenderReadiness owed;
+    RenderReadiness readiness() const override { return owed; }
+};
+
+// An ident is an image entry whose reveal the backend draws from its time: it shows its logo marked
+// for the reveal, and carries the time into its entry, which the reveal is timed by.
+void testAnIdentIsRevealed() {
+    std::printf("An ident on the splash:\n");
+    Scene     scene;
+    TestFrame frame(scene);
+    SplashSystem splash;
+    splash.setFade(0.5f);
+    const std::string logo = std::string(VKM_ENGINE_DIR) + "/assets/logo/vkm_engine_logo_mono.png";
+    splash.addIdent(logo);
+    frame.clock.beginFrame();
+    splash.update(frame.ctx);
+    const SplashFrame first = *frame.ctx.splash;
+    check("it shows its logo, to be revealed", first.isShowing() && first.reveal && first.key == logo);
+    frame.clock.beginFrame();
+    splash.update(frame.ctx);
+    check("  its time running on", frame.ctx.splash->time >= first.time && frame.ctx.splash->reveal);
+
+    // A slow frame - the driver compiling on every core - keeps the clock's time; one stall cannot
+    // spend the fade in a step.
+    const auto stepAfter = [&](int milliseconds) {
+        const float before = frame.ctx.splash->time;
+        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+        frame.clock.beginFrame();
+        splash.update(frame.ctx);
+        return frame.ctx.splash->time - before;
+    };
+    check("  a slow frame advances it in full", stepAfter(150) >= 0.14f);
+    check("  a stalled one by a step at most", stepAfter(600) <= 0.3f);
+
+    // A fade longer than half an ident is cut to half, so the ident still lasts IDENT_SECONDS: it
+    // rises over that half, not over the fade asked.
+    SplashSystem slow;
+    slow.setFade(IDENT_SECONDS);
+    slow.addIdent(logo);
+    frame.clock.beginFrame();
+    slow.update(frame.ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    frame.clock.beginFrame();
+    slow.update(frame.ctx);
+    const float risen = frame.ctx.splash->time / (0.5f * IDENT_SECONDS);
+    const float eased = risen * risen * (3.0f - 2.0f * risen);
+    check(
+        "  a fade longer than half of it is cut to half",
+        risen > 0.0f && std::abs(frame.ctx.splash->opacity - eased) <= 0.01f * eased
+    );
+}
+
+// What the renderer is told of a world still arriving, a frame at a time.
+struct ArrivalBackend : NullBackend {
+    bool arriving = false;
+    void render(const RenderView& view, const ResourceManager&) override { arriving = view.worldArriving; }
+};
+
+// An arriving world's bakes wait for its textures as well as its meshes: one taken over a texture
+// still decoding would hold its stand-in for good. The ticks wait for the meshes alone.
+void testABakeWaitsForTexturesToo() {
+    std::printf("A world whose textures are still decoding:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    RenderSystem render;
+    auto made = std::make_unique<ArrivalBackend>();
+    ArrivalBackend& backend = *made;
+    render.setBackend(std::move(made), frame.window);
+    // The cull's product, which a frame renders from.
+    Visibility visibility;
+    frame.ctx.visibility = &visibility;
+
+    TextureAsset decoding;
+    decoding.loading = true;
+    const TextureHandle texture = frame.resources.add(std::move(decoding), "test:decoding");
+    frame.clock.beginFrame();
+    render.update(frame.ctx);
+    check("while it decodes the world is arriving, for the bakes", backend.arriving);
+
+    frame.resources.edit(texture).loading = false;
+    frame.clock.beginFrame();
+    render.update(frame.ctx);
+    check("  and once it lands, the bakes may begin", !backend.arriving);
+
+    TextureAsset streamed;
+    streamed.loading = true;
+    frame.resources.add(std::move(streamed), "test:streamed");
+    frame.clock.beginFrame();
+    render.update(frame.ctx);
+    check("one streamed in once the world has run holds nothing", !backend.arriving);
+}
+
+// A world arriving is covered until its assets have landed and the renderer owes none of its
+// first bakes. The bar fills by the steps done and never goes back; then the cover fades.
+void testALoadingScreenCoversAWorldUntilItIsReady() {
+    std::printf("A loading screen:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    RenderSystem render;
+    auto made = std::make_unique<BakingBackend>();
+    BakingBackend& baking = *made;
+    render.setBackend(std::move(made), frame.window);
+    LoadingSystem loading;
+    loading.init(frame.ctx);
+    // A frame in stage order, its products gone as a new context's are: the screen reads what the
+    // renderer left at the end of the last frame, in the host's keeping.
+    const auto frameOf = [&] {
+        frame.clock.beginFrame();
+        frame.ctx.loading = nullptr;
+        loading.update(frame.ctx);
+        render.update(frame.ctx);
+        return *frame.ctx.loading;
+    };
+    // One frame for the renderer to see what is owed, the next for the screen to show it.
+    const auto step = [&] {
+        frameOf();
+        return frameOf();
+    };
+
+    baking.owed = {0, 10};
+    const LoadingFrame arrived = step();
+    check(
+        "a world arriving is covered at once, waiting on its light",
+        arrived.opacity == 1.0f && arrived.status == "Lighting the world 0 / 10" && arrived.progress == 0.0f
+    );
+    baking.owed = {5, 10};
+    const float half = step().progress;
+    check("the bar fills as the bakes come", std::abs(half - 0.5f) < 1e-4f);
+    baking.owed = {9, 10};
+    const float most = step().progress;
+    baking.owed = {0, 3};  // another bake starting: three of the ten seen owed are left again
+    check("  and never goes back", half < most && step().progress >= most);
+
+    baking.owed = {2, 2};
+    const LoadingFrame ready = step();
+    check("ready, it stops waiting, the bar full", !loading.loading() && ready.progress == 1.0f);
+    float opacity = ready.opacity;
+    bool  falling = true;
+    for (int i = 0; i < 100 && opacity > 0.0f; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        const float now = step().opacity;
+        falling = falling && now < opacity;
+        opacity = now;
+    }
+    check("  then it fades away", falling && opacity == 0.0f);
+
+    baking.owed = {0, 3};
+    scene.clear();
+    check("another world is covered again", step().opacity == 1.0f && loading.loading());
+    frame.chrome.setAuthoring(true);
+    check("  but not while a host authors it", step().opacity == 0.0f);
+    frame.chrome.coverNextWorld();
+    scene.clear();
+    check("  unless the host asked for the world it opens covered", step().opacity == 1.0f);
+    frame.chrome.coverNextWorld();
+    step();
+    scene.clear();
+    check("    and not a later one for an open that brought none", step().opacity == 0.0f);
+    frame.chrome.setAuthoring(false);
+
+    // A load is asked for every frame it waits, so these go a frame at a time; one no longer
+    // asked for - it failed, or went - lets the cover go.
+    baking.owed = {};
+    for (uint32_t i = 0; i < LoadingSystem::MIN_FRAMES; ++i) step();
+    const auto expect = [&] {
+        frame.events.enqueue(LoadExpected{});
+        frame.events.flush();
+    };
+    expect();
+    frameOf();
+    expect();
+    const LoadingFrame covered = frameOf();
+    check("a load asked for is covered for", covered.covering && covered.opacity == 1.0f);
+    const LoadingFrame dropped = frameOf();
+    check("  and one no longer asked for lets the cover go", !dropped.covering);
+    check("    its bar too, with no world loading", dropped.progress >= 1.0f);
+
+    // A world whose steps stop coming is shown as it is rather than covered for good.
+    loading.setPatience(0.05f);
+    baking.owed = {0, 3};
+    scene.clear();
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        step();
+    }
+    check("a world that stops getting ready is not waited on for good", !loading.loading());
+}
+
+// The renderer's startup programs come before the world's light: the screen names the step and
+// how far it is, counts the programs in its bar, and stays while they compile however long that
+// takes - with them compiling the renderer has no world to show.
+void testALoadingScreenWaitsOnTheRenderersPrograms() {
+    std::printf("A loading screen over a renderer still compiling:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    RenderSystem render;
+    auto made = std::make_unique<BakingBackend>();
+    BakingBackend& baking = *made;
+    render.setBackend(std::move(made), frame.window);
+    LoadingSystem loading;
+    loading.init(frame.ctx);
+    loading.setPatience(0.05f);
+    const auto step = [&] {
+        frame.clock.beginFrame();
+        frame.ctx.loading = nullptr;
+        render.update(frame.ctx);
+        loading.update(frame.ctx);
+        return *frame.ctx.loading;
+    };
+
+    baking.owed = {0, 0, 20, 80};
+    step();
+    const LoadingFrame compiling = step();
+    check("it names the step and how far it is", compiling.status == "Compiling shaders 20 / 80");
+    for (int i = 0; i < 6; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        step();
+    }
+    check("  and waits however long it takes", loading.loading() && step().opacity == 1.0f);
+    baking.owed = {0, 0, 60, 80};
+    const float most = step().progress;
+    baking.owed = {0, 4};
+    const LoadingFrame lighting = step();
+    check("  counting it in the bar", most > 0.0f && lighting.progress >= most);
+    check("then it lights the world", lighting.status == "Lighting the world 0 / 4");
+}
+
+// A splash is its own screen: the loading screen's bar, line and movement wait while it shows,
+// then come in once it has gone.
+void testALoadingScreenComesInAfterTheSplash() {
+    std::printf("A loading screen behind a splash:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    LoadingSystem loading;
+    loading.init(frame.ctx);
+    SplashFrame splash;
+    splash.key = "logo.png";
+    const auto step = [&] {
+        frame.clock.beginFrame();
+        frame.ctx.splash  = &splash;
+        frame.ctx.loading = nullptr;
+        loading.update(frame.ctx);
+        return frame.ctx.loading->content;
+    };
+    step();
+    check("while the splash shows, its content waits", step() == 0.0f);
+    splash.key.clear();
+    float content = 0.0f;
+    bool  rising  = true;
+    for (int i = 0; i < 200 && content < 1.0f; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        const float now = step();
+        rising  = rising && now > content;
+        content = now;
+    }
+    check("  then comes in, once it has gone", rising && content == 1.0f);
+}
+
+// A project's tips show from one drawn at random, fading in; its own screen is built from its prefab
+// as the screen shows, and again once the assets it was built against are swapped out.
+void testALoadingScreenShowsTheProjectsTipsAndScreen() {
+    std::printf("A project's own loading screen:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    Scene authored;
+    const EntityId canvas = authored.createEntity();
+    if (!authored.has<Transform>(canvas)) authored.add(canvas, Transform{});
+    authored.add(canvas, UICanvas{});
+    // A picture on it, which the screen waits for.
+    TextureAsset texels;
+    texels.params.width          = 1;
+    texels.params.height         = 1;
+    texels.params.internalFormat = TextureInternalFormat::RGBA8;
+    texels.pixelData             = {255, 255, 255, 255};
+    const TextureHandle picture  = frame.resources.add(std::move(texels), "test:loading_picture");
+    const EntityId      framed   = authored.createEntity();
+    authored.add(framed, UIElement{});
+    UIImage authoredImage;
+    authoredImage.texture             = picture;
+    authoredImage.color.a             = 0.8f;  // its own, which it shows with once it has decoded
+    authoredImage.shape.gradient      = true;  // down to a color of its own, held as the tint is
+    authoredImage.shape.bottomColor.a = 0.6f;
+    authored.add(framed, authoredImage);
+    HierarchyOperations::setParent(authored, framed, canvas);
+    // A caption the picture holds, which shows while the picture waits.
+    const EntityId caption = authored.createEntity();
+    authored.add(caption, UIElement{});
+    HierarchyOperations::setParent(authored, caption, framed);
+    const std::string path = (runScratch() / "vkm_loading_screen.json").string();
+    check("its screen saves as a prefab", Prefab::save(authored, canvas, path, frame.resources));
+
+    LoadingSystem loading;
+    loading.init(frame.ctx);
+    LoadingScreen own;
+    own.tips   = {"one", "two", "three"};
+    own.screen = path;
+    own.water  = false;
+    loading.setScreen(own);
+    const auto step = [&] {
+        frame.clock.beginFrame();
+        frame.ctx.loading = nullptr;
+        loading.update(frame.ctx);
+        return *frame.ctx.loading;
+    };
+
+    const LoadingFrame first = step();
+    const bool ownTip = std::find(own.tips.begin(), own.tips.end(), first.tip) != own.tips.end();
+    check("a tip of the project's shows", ownTip && first.tipShown == 0.0f);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const LoadingFrame second = step();
+    check("  fading in", second.tip == first.tip && second.tipShown > 0.0f && second.tipShown < 1.0f);
+
+    size_t canvases = 0;
+    if (first.screen) first.screen->forEach<UICanvas>([&](EntityId, const UICanvas&) { ++canvases; });
+    check("its screen is built", canvases == 1 && first.screenAssets == frame.resources.epoch());
+    // What a host opening another world reads, so it does not take the screen's pictures for strays.
+    const auto namesPicture = [&] {
+        const auto& names = loading.screenNames();
+        return std::any_of(names.begin(), names.end(), [](const std::pair<std::string, std::string>& key) {
+            return key.second == "test:loading_picture";
+        });
+    };
+    check("  what it names read off it", namesPicture());
+    check("  without the water", !first.water);
+    // The picture's element in the built screen: the only one with an image.
+    struct Picture {
+        float alpha   = -1.0f;  ///< Its tint's
+        float bottom  = -1.0f;  ///< Its gradient's bottom edge's
+        bool  visible = false;  ///< Its element's, which what it holds shows by
+    };
+    const auto pictureOf = [](const LoadingFrame& at) {
+        Picture seen;
+        const auto read = [&](EntityId, const UIImage& image, const UIElement& element) {
+            seen.alpha   = image.color.a;
+            seen.bottom  = image.shape.bottomColor.a;
+            seen.visible = element.visible;
+        };
+        if (at.screen) at.screen->forEach<UIImage, UIElement>(read);
+        return seen;
+    };
+    frame.resources.edit(picture).loading = true;
+    const LoadingFrame decoding = step();
+    const Picture      waiting  = pictureOf(decoding);
+    check("  shown while a picture of it decodes", decoding.screen != nullptr);
+    check("    with the picture clear", waiting.alpha == 0.0f && waiting.bottom == 0.0f);
+    check("    and what it holds still shown", waiting.visible);
+    frame.resources.edit(picture).loading = false;
+    const Picture landed = pictureOf(step());
+    check(
+        "    and shown once it lands, as authored",
+        std::abs(landed.alpha - 0.8f) < 1e-6f && std::abs(landed.bottom - 0.6f) < 1e-6f
+    );
+    // Removed under the built screen, as an editor's Stop drops what its session loaded, and loaded
+    // again: the screen holds the one there is, not the handle that died.
+    TextureAsset again;
+    again.params    = frame.resources.get(picture).params;
+    again.pixelData = {255, 255, 255, 255};
+    frame.resources.remove(picture);
+    const TextureHandle back = frame.resources.add(std::move(again), "test:loading_picture");
+    authored.get<UIImage>(framed).texture = back;  // for the saves below
+    TextureHandle shown;
+    if (const LoadingFrame rebuilt = step(); rebuilt.screen) {
+        rebuilt.screen->forEach<UIImage>([&](EntityId, const UIImage& image) { shown = image.texture; });
+    }
+    check("  built again once a picture of it is removed", shown == back && frame.resources.isAlive(shown));
+    // A second element saved into its file, for the screen built again to read.
+    const EntityId added = authored.createEntity();
+    authored.add(added, UIElement{});
+    HierarchyOperations::setParent(authored, added, canvas);
+    Prefab::save(authored, canvas, path, frame.resources);
+    loading.forgetBuiltScreen();
+    check("    and kept while it waits to be built again", !loading.builtScreen() && namesPicture());
+    const LoadingFrame forgotten = step();
+    size_t elements = 0;
+    const auto count = [&](EntityId, const UIElement&) { ++elements; };
+    if (forgotten.screen) forgotten.screen->forEach<UIElement>(count);
+    const bool sameTips = std::find(own.tips.begin(), own.tips.end(), forgotten.tip) != own.tips.end();
+    check("  and built again from its file once forgotten, the screen kept", elements == 3 && sameTips);
+    frame.resources.clear();
+    const LoadingFrame swapped = step();
+    check(
+        "  and built again once the assets are swapped out",
+        swapped.screen && swapped.screenAssets == frame.resources.epoch()
+    );
+
+    const std::vector<std::pair<std::string, std::string>> named = loading.screenNames();
+    loading.setScreen(LoadingScreen{});
+    const LoadingFrame plain = step();
+    check("with none, the engine's alone", !plain.screen && plain.tip.empty() && plain.water);
+    const bool kept = !named.empty() && loading.screenNames() == named;
+    check("  what the last named kept while its graph lives", kept);
+    frame.resources.clear();
+    step();
+    check("  and let go once that graph is swapped out", loading.screenNames().empty());
+
+    // A tip's whole turn, waited once for two screens, each held up by a program still compiling:
+    // one with a lone tip, which holds, and one with several, which turns to the next. An empty tip
+    // is never one turned to.
+    struct Held {
+        Scene         scene;
+        TestFrame     frame{scene};
+        LoadingSystem system;
+        LoadingFrame step() {
+            frame.clock.beginFrame();
+            frame.ctx.loading = nullptr;
+            system.update(frame.ctx);
+            return *frame.ctx.loading;
+        }
+    };
+    Held lone;
+    Held several;
+    for (Held* held : {&lone, &several}) {
+        held->frame.readiness.programs = 1;
+        held->system.init(held->frame.ctx);
+    }
+    LoadingScreen oneTip;
+    oneTip.tips = {"", "only"};
+    lone.system.setScreen(oneTip);
+    several.system.setScreen(own);
+    lone.step();
+    const LoadingFrame before = several.step();
+    std::this_thread::sleep_for(std::chrono::duration<float>(LoadingSystem::TIP_SECONDS + 0.1f));
+    const LoadingFrame held   = lone.step();
+    const LoadingFrame turned = several.step();
+    check("a lone tip holds, past a tip's turn", held.tip == "only" && held.tipShown == 1.0f);
+    check("  and of several, the next comes in", turned.tip != before.tip && turned.tipShown < 1.0f);
+}
 
 // A screenshot is asked of the window by gameplay and made by the render path from the
 // backend's frame: the window holds no image.
@@ -1199,10 +1883,6 @@ void testAScreenshotIsTheFrameTheBackendDrew() {
     render.update(frame.ctx);
     check("no request writes nothing", !std::filesystem::exists(png, ec));
 
-    // Another writer's setting, which a screenshot must neither use nor change.
-    const int otherLevel = stbi_write_png_compression_level;
-    stbi_write_png_compression_level = 7;
-
     frame.window.saveScreenshot(png.string());
     render.update(frame.ctx);
     check("a request writes the frame drawn after it", std::filesystem::exists(png, ec));
@@ -1216,8 +1896,6 @@ void testAScreenshotIsTheFrameTheBackendDrew() {
         image && image[0] == 255 && image[2] == 0 && image[(4 * 2) * 3] == 0 && image[(4 * 2) * 3 + 2] == 255
     );
     if (image) stbi_image_free(image);
-    check("  leaving the PNG writer's settings as it found them", stbi_write_png_compression_level == 7);
-    stbi_write_png_compression_level = otherLevel;
     check("  and using the request up", frame.window.takeScreenshotRequest().empty());
 
     std::filesystem::remove(png, ec);
@@ -1275,6 +1953,39 @@ void testACappedLoopKeepsItsRate() {
     check("the time between frames does not lengthen each one", seconds < FRAMES * 0.006);
 }
 
+// A grid asked for is held to its bounds per axis, then scaled alike under its cap, never past it and
+// never losing an axis it was asked to have.
+void testAGridIsFittedToItsBounds() {
+    std::printf("A grid fitted to its bounds:\n");
+    using Math::fitGrid;
+    check("one within them is as asked", fitGrid({4, 5, 6}, 1, 64, 1000.0) == glm::uvec3(4, 5, 6));
+    const glm::uvec3 held = fitGrid({0, 9, 200}, 2, 64, 1e9);
+    check("  each axis held between its fewest and most", held == glm::uvec3(2, 9, 64));
+    const glm::uvec3 capped = fitGrid({64, 64, 64}, 1, 64, 1000.0);
+    const bool under = capped.x * capped.y * capped.z <= 1000u && capped.x == capped.z;
+    check("  one past its cap scaled under it", under);
+    const glm::uvec3 thin = fitGrid({1, 64, 64}, 0, 64, 100.0);
+    check("  keeping an axis of one", thin.x == 1u && thin.y * thin.z <= 100u);
+    check("  and an empty axis empty, where it may be", fitGrid({0, 8, 8}, 0, 64, 10.0).x == 0u);
+}
+
+// An entry keeps its number while repeats bump it and older entries leave, so whatever names an
+// entry by it - the Console's error rows - names the same one throughout.
+void testAnErrorKeepsItsNumber() {
+    std::printf("The error log's entries:\n");
+
+    EngineErrorLog errors;
+    errors.push("A", "first", "said");
+    errors.push("B", "second", "said");
+    errors.push("B", "second", "said");
+    const std::vector<EngineErrorLog::Entry>& held = errors.entries();
+    check("each entry is numbered as it comes", held[0].number == 0 && held[1].number == 1);
+    check("  and a repeat keeps the number", held[1].repeatCount == 2 && held[1].number == 1);
+    for (size_t i = 0; i < EngineErrorLog::CAPACITY; ++i) errors.push("C", std::to_string(i), "said");
+    const EngineErrorLog::Entry& oldest = errors.entries().front();
+    check("  and keeps it as the oldest leave", oldest.number == 2 && oldest.source == "0");
+}
+
 // The editor builds through a child process: what it prints must arrive, its exit code
 // be told apart from success, and stop() must end it rather than wait it out.
 void testAChildProcessIsHeardAndCanBeStopped() {
@@ -1310,6 +2021,23 @@ void testAChildProcessIsHeardAndCanBeStopped() {
     std::printf("      stopped in %.2f s\n", seconds);
     check("  and stop() ends it, not waits for it", !child.running() && seconds < 5.0);
     check("  and reads as stopped, not as succeeded", child.exitCode() == -1);
+
+#if !defined(_WIN32)
+    // A program that leaves a daemon behind, out of its group and holding its output.
+    const std::vector<std::string> leaves = {"-c", "setsid sleep 30 & echo gone; exit 4"};
+    check("one that leaves something running starts", child.start(shell, leaves));
+    const auto left = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (child.running() && std::chrono::steady_clock::now() < left) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    check("  ends when it does", !child.running());
+    const bool told = child.takeOutput().find("gone") != std::string::npos && child.exitCode() == 4;
+    check("  with its output and exit code", told);
+    const auto stopping = std::chrono::steady_clock::now();
+    child.stop();
+    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - stopping).count();
+    check("  and stop() after it returns", took < 1.0);
+#endif
 }
 
 #if defined(__linux__)
@@ -1355,7 +2083,7 @@ void testAProgramEndsWhenItsHostDies() {
 #endif
 
 // A settings screen's render resolutions: of a monitor's video modes, those that fit on it, largest
-// first, each once. GLFW lists a size once per colour depth and refresh rate, depth first, so its
+// first, each once. GLFW lists a size once per color depth and refresh rate, depth first, so its
 // list repeats sizes and is not in size order; these modes do both, with two too large for the
 // monitor and an empty one.
 void testTheRenderResolutionsAreTheModesThatFit() {
@@ -1401,9 +2129,11 @@ void runCoreTests() {
     testAStillWorldIsStillWhicheverWayItWasStopped();
     testACommandedStepIsDeliveredWhole();
     testPacingBendsHowOftenATickIsOwedNotItsLength();
+    testTheHostsSpeedMultipliesTheGamesTimeScale();
     testAHitchIsCappedForEveryReaderOfTheFrame();
     testInputCommand();
     testAKeypressReachesAnAction();
+    testARestrikeUnderAnotherHeldBindingIsNoEdge();
     testTypingArrivesAsTextAndRepeats();
     testAPressIsHeardForRebinding();
     testARebindingIsSavedAndComesBack();
@@ -1412,16 +2142,29 @@ void runCoreTests() {
     testASessionLeavesTheMapAsItFoundIt();
     testATapBetweenTwoTicksStillReachesOne();
     testATapInsideOneFrameIsStillSeen();
+    testAPressAgainInsideOneFrameIsStillSeen();
     testParallelForRunsEveryIndexOnce();
     testAThrowFromAnyChunkReachesTheCaller();
+#if defined(__linux__)
+    testThePoolFitsTheCpusItMayRunOn();
+#endif
     testTheCallerRunsWhatNoWorkerHasTaken();
     testACommandIsReadByName();
     testCommandCarriesTheView();
     testACommandCarriesTheGamesBytes();
     testAScreenshotIsTheFrameTheBackendDrew();
+    testALoadingScreenCoversAWorldUntilItIsReady();
+    testABakeWaitsForTexturesToo();
+    testAnArrivingWorldWaitsForItsMeshes();
+    testALoadingScreenWaitsOnTheRenderersPrograms();
+    testALoadingScreenComesInAfterTheSplash();
+    testALoadingScreenShowsTheProjectsTipsAndScreen();
+    testAnIdentIsRevealed();
     testABackendThatFailsToInitStopsTheHost();
     testACappedLoopKeepsItsRate();
     testAChildProcessIsHeardAndCanBeStopped();
+    testAnErrorKeepsItsNumber();
+    testAGridIsFittedToItsBounds();
 #if defined(__linux__)
     testAProgramEndsWhenItsHostDies();
 #endif

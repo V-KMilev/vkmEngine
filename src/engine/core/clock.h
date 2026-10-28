@@ -67,6 +67,24 @@ class Clock {
         void setPaused(bool paused) { m_paused = paused; }
 
         /**
+         * @brief Hold or release simulation time for a world waiting to arrive whole.
+         *
+         * Engine::run's own, apart from the play state a host or game pauses: while held no
+         * time passes and no step is taken, a queued one included, which waits for the release.
+         * Taking hold drops the simulation time the frame and the accumulator already hold, so
+         * the release owes no burst of steps.
+         *
+         * @param held True freezes simulation time.
+         */
+        void setHeld(bool held) {
+            if (held && !m_held) {
+                m_simDelta    = 0.0f;
+                m_accumulator = 0.0f;
+            }
+            m_held = held;
+        }
+
+        /**
          * @brief Set the slow-motion / fast-forward multiplier applied while running.
          *
          * In the editor a scale lasts one play session; see
@@ -87,6 +105,16 @@ class Clock {
          * @param scale Negative is clamped to 0.
          */
         void setPacing(float scale) { m_pacing = scale < 0.0f ? 0.0f : scale; }
+
+        /**
+         * @brief Set the host's playback speed, multiplied with the game's own time scale.
+         *
+         * It runs a session slow or fast without touching what the game set; a runtime leaves it
+         * at one.
+         *
+         * @param scale Negative is clamped to 0.
+         */
+        void setHostScale(float scale) { m_hostScale = scale < 0.0f ? 0.0f : scale; }
 
         /**
          * @brief Queue fixed-step advances, whatever the play state.
@@ -128,6 +156,7 @@ class Clock {
         float getFrameTime() const { return m_smoothedDelta * 1000.0f; }
 
         bool isPaused() const { return m_paused; }
+        bool isHeld() const   { return m_held; }
 
         /**
          * @brief Whether the world stands still this frame.
@@ -139,6 +168,7 @@ class Clock {
 
         float getTimeScale() const { return m_timeScale; }
         float getPacing() const    { return m_pacing; }
+        float getHostScale() const { return m_hostScale; }
 
         /**
          * @brief Which fixed step is running, counting from one.
@@ -161,9 +191,11 @@ class Clock {
         float m_smoothedDelta = 0.0f;   ///< m_deltaTime through a half-second lag.
 
         bool  m_paused       = false;
+        bool  m_held         = false;  ///< See setHeld.
         int   m_pendingSteps = 0;
         float m_timeScale    = 1.0f;
         float m_pacing       = 1.0f;
+        float m_hostScale    = 1.0f;
 
         uint32_t m_tick = 0;
 };

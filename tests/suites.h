@@ -29,8 +29,9 @@
     X("play",        runPlayTests,           "the editor play/stop snapshot, and who has the input") \
     X("undo",        runUndoTests,           "the editor's undo history")                  \
     X("culling",     runCullingTests,        "frustum and box tests, fixed meshes, the shadowed sun") \
-    X("sky",         runSkyTests,            "the sun: where the key light points, its colour; flicker") \
+    X("sky",         runSkyTests,            "the sun: where the key light points, its color; flicker") \
     X("ocean",       runOceanTests,          "the sea: how high the wind raises it, and where its water is") \
+    X("water",       runWaterTests,          "lakes, rivers and pools: where their water is, what floats") \
     X("terrain",     runTerrainTests,        "terrains: their chunks, their brushes, the plants they grow") \
     X("animation",   runAnimationTests,      "AnimationTrack sampling and its boundaries") \
     X("particle",    runParticleTests,       "emitter spawn accounting")                   \
@@ -40,8 +41,9 @@
     X("prediction",  runNetPredictionTests,  "net prediction")                             \
     X("session",     runNetSessionTests,     "net session")                                \
     X("ui",          runUITests,             "UI layout, clipping, scrolling and text")    \
-    X("audio",       runAudioTests,          "the mixer, measured off the signal it makes")\
+    X("audio",       runAudioTests,          "the mixer by its signal, and the acoustics' rays") \
     X("script",      runScriptTests,         "behaviors: the lifecycle and the two timelines") \
+    X("debug",       runDebugTests,          "debug drawing: shapes, lifetimes, threads, the scene's views") \
     X("hostile",     runHostileTests,        "every reader of outside bytes, fed damaged copies") \
     X("docs",        runDocsTests,           "the claims the tree makes about itself")
 
