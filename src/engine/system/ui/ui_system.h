@@ -9,6 +9,7 @@
 #include "ecs/entity.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_shape.h"
+#include "ecs/component/ui/ui_text.h"
 #include "system/ui/ui_draw_data.h"
 
 namespace Vkm::Engine {
@@ -19,11 +20,21 @@ namespace Vkm::Engine {
  * Runs in the Transform stage, after BehaviorSystem writes UI components and before
  * RenderSystem draws the ctx.ui it publishes. Reads no WorldTransform. Canvases walk
  * in ascending sortOrder; a clip rect descends with the walk and bounds both drawing
- * and the pointer.
+ * and the pointer. With RenderSettings::showFrameRate on, the frame rate is read out at the
+ * viewport's top right, over every canvas, unless a host authors the world (HostChrome::authoring),
+ * which shows its own.
  */
 class UISystem : public System {
     public:
-        UISystem() = default;
+        /// Seconds between readings of the frame rate, so the digits hold still long enough to read.
+        static constexpr float FRAME_RATE_REFRESH = 0.25f;
+        /// Reference pixels it stands in from the corner.
+        static constexpr float FRAME_RATE_INSET   = 16.0f;
+        /// Its text height, in reference pixels.
+        static constexpr float FRAME_RATE_SIZE    = 26.0f;
+
+    public:
+        UISystem();
         ~UISystem() override = default;
 
         UISystem(const UISystem& other) = delete;
@@ -62,8 +73,15 @@ class UISystem : public System {
         };
 
     private:
-        /// Every visible canvas, in sort order, laid out over @p viewport and emitted.
-        void layOutCanvases(FrameContext& ctx, const UIRect& viewport);
+        /**
+         * @brief Every visible canvas of @p scene, in sort order, laid out over @p viewport and emitted.
+         *
+         * @param ctx      Frame context supplying the assets.
+         * @param scene    The world's, or the loading screen's own (LoadingFrame::screen).
+         * @param viewport The game's screen, in screen pixels.
+         * @param opacity  What every canvas is drawn at, before its own.
+         */
+        void layOutCanvases(FrameContext& ctx, Scene& scene, const UIRect& viewport, float opacity = 1.0f);
 
         /**
          * @brief Resolve @p entity's screen rect, emit its visuals, then recurse.
@@ -165,6 +183,48 @@ class UISystem : public System {
         );
 
         /**
+         * @brief Lay out @p text into glyph quads within @p rect, as one command run.
+         *
+         * @param ctx         The frame, whose resources hold the font.
+         * @param text        What is written, and how.
+         * @param rect        Where it is laid out, screen pixels.
+         * @param clip        What it is clipped to.
+         * @param canvasScale Reference pixels to screen pixels.
+         * @return As emitText.
+         */
+        glm::vec2 emitTextIn(
+            FrameContext& ctx,
+            const UIText& text,
+            const UIRect& rect,
+            const UIRect& clip,
+            float canvasScale
+        );
+
+        /// Forget what a walk gathered for the pointer: its buttons, blockers and scroll views.
+        void clearHits();
+
+        /// Whether the frame rate is read out: RenderSettings::showFrameRate, while no host authors.
+        static bool showsFrameRate(const FrameContext& ctx);
+
+        /// Age the frame-rate readout by the frame, and read the clock again once it is due: once a frame.
+        void refreshFrameRate(const FrameContext& ctx);
+
+        /// Read out the frame rate at @p viewport's top right (RenderSettings::showFrameRate).
+        void appendFrameRate(FrameContext& ctx, const UIRect& viewport);
+
+        /**
+         * @brief Lay the loading screen (ctx.loading) out into m_coverData, over @p viewport.
+         *
+         * The project's own screen (LoadingFrame::screen), then the line of its status above its bar
+         * and the project's tip under it, sized as a canvas at the reference height sizes them. Its
+         * backdrop and its bar are the backend's (the Loading and LoadingBar passes).
+         *
+         * @param ctx      Supplies the loading frame, the assets and the font.
+         * @param viewport The game's screen, in screen pixels.
+         */
+        void layOutCover(FrameContext& ctx, const UIRect& viewport);
+
+        /**
          * @brief Break @p text into the lines it draws as, into m_lines.
          *
          * When wrapping, breaks at the last space that fits, mid-word if one word does
@@ -202,7 +262,7 @@ class UISystem : public System {
          * @param bottom The fill at the bottom edge; equal to @p color for a flat quad.
          * @param shape  Corner radius and border width, in screen pixels; UI_TEXT_MARK's
          *               radius for a glyph.
-         * @param border The border's colour; unused where @p shape gives no border.
+         * @param border The border's color; unused where @p shape gives no border.
          * @param image  Whether the quad is tinted by its run's image (UIVertex::image).
          */
         void appendQuad(
@@ -218,7 +278,7 @@ class UISystem : public System {
         );
 
         /**
-         * @brief Colour the quad appendQuad wrote at @p first, top edge to bottom.
+         * @brief Color the quad appendQuad wrote at @p first, top edge to bottom.
          *
          * The one place that knows which of the six vertices lie on which edge.
          *
@@ -226,7 +286,7 @@ class UISystem : public System {
          * @param top    The fill at the top edge.
          * @param bottom The fill at the bottom edge; equal to @p top for a flat quad.
          */
-        void recolourQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom);
+        void recolorQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom);
 
         /**
          * @brief Append a solid quad over @p rect drawn the way @p shape says.
@@ -247,8 +307,10 @@ class UISystem : public System {
 
     private:
         UIDrawData m_drawData;            ///< Published through ctx.ui.
+        UIDrawData m_coverData;           ///< The loading screen, published through ctx.cover.
 
-        std::vector<CanvasRef> m_canvases;    ///< Visible canvases, sorted.
+        std::vector<CanvasRef> m_canvases;         ///< Visible canvases, sorted.
+        Scene*                 m_scene = nullptr;  ///< What the walk lays out: the world, or the cover's.
         /// Button candidates, painter order.
         std::vector<ButtonHit> m_buttonHits;
 
@@ -264,7 +326,14 @@ class UISystem : public System {
 
         /// Everything under the pointer that blocks it, buttons included, in painter order.
         std::vector<EntityId> m_pointerBlockers;
-        float m_opacity = 1.0f;  ///< The opacity the walk has inherited, where it is.
+        /// Where anything blocks the pointer, its visible rect in window pixels (InputMap's).
+        std::vector<glm::vec4> m_blockingAreas;
+        glm::vec2 m_viewportOrigin{0.0f};  ///< The viewport's corner in framebuffer pixels.
+        float     m_pointerScale = 1.0f;   ///< Framebuffer pixels to a window pixel.
+        float     m_opacity      = 1.0f;   ///< The opacity the walk has inherited, where it is.
+
+        UIText m_frameRate;            ///< The frame-rate readout.
+        float  m_frameRateAge = 0.0f;  ///< Seconds since it was last read.
 
         EntityId  m_pressedButton{};        ///< Button a press started over.
         glm::vec2 m_pointer{0.0f};          ///< Pointer in viewport-local pixels this frame.

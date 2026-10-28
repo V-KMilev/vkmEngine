@@ -16,6 +16,7 @@
 #include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
+#include "system/loading/loading_frame.h"
 #include "system/ui/ui_system.h"
 #include "system/ui/ui_events.h"
 #include "ecs/component/ui/ui_button.h"
@@ -64,6 +65,18 @@ void pointAt(UIFrame& ui, glm::vec2 at, float wheel = 0.0f, bool down = false) {
     device.moveTo(at.x, at.y);
     device.setButton(0, down);
     if (wheel != 0.0f) device.addScroll(wheel);
+    ui.frame.input.update(device, ui.frame.chrome);
+}
+
+// A frame that sees the button let go and pressed again, held at its end: a quick second click, its
+// release and press within one sample of the device.
+void restrikeAt(UIFrame& ui, glm::vec2 at) {
+    InputHandle device;
+    device.moveTo(at.x, at.y);
+    device.setButton(0, true);
+    device.clearStrikes();
+    device.setButton(0, false);
+    device.setButton(0, true);
     ui.frame.input.update(device, ui.frame.chrome);
 }
 
@@ -307,6 +320,29 @@ void testCanvasScaleAndVisibility() {
     );
 }
 
+// A canvas parented under another canvas's element is a canvas of its own: laid out once, by
+// its own sort order, not once more as an element of the outer tree.
+void testANestedCanvasIsLaidOutOnce() {
+    std::printf("A canvas inside another canvas's tree:\n");
+
+    Scene scene;
+    const EntityId outer = addCanvas(scene);
+    const EntityId panel = addBox(scene, outer, {10.0f, 10.0f}, {100.0f, 50.0f});
+    const EntityId inner = addCanvas(scene, 1);
+    scene.add(inner, UIElement{});
+    HierarchyOperations::setParent(scene, inner, panel);
+    const EntityId badge = addBox(scene, inner, {300.0f, 200.0f}, {20.0f, 20.0f});
+    scene.add(badge, UIImage{});
+
+    UIFrame ui(scene);
+    const UIDrawData& drawn = ui.run();
+    check("what is on it draws once", drawn.vertices.size() == 6);
+    check(
+        "  where its own canvas puts it",
+        sameRect(scene.get<UIElement>(badge).screenRect, {300.0f, 200.0f}, {20.0f, 20.0f})
+    );
+}
+
 void testCommandsMergeUntilTheStateChanges() {
     std::printf("How many draws a screen of panels costs:\n");
 
@@ -382,6 +418,28 @@ void testClippingBoundsPixelsAndPointer() {
     hit.get<UIElement>(over).position = {-100.0f, -100.0f};
     check("a blocker clipped away from the pointer is not", !hitUI.run().pointerTarget);
     check("  and the input map is told that too", !hitUI.frame.input.pointerOverUI());
+}
+
+// The layout runs after input, so who owns a press is decided against the panels as last laid
+// out - but at the pointer where it is now. Moved onto a panel and clicked in one frame, the click
+// is the panel's, not a weapon's.
+void testAClickAsThePointerArrivesIsTheUIs() {
+    std::printf("A click the frame the pointer arrives on a panel:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId panel  = addBox(scene, canvas, {100.0f, 100.0f}, {80.0f, 80.0f});
+    scene.add(panel, UIImage{});
+    UIFrame ui(scene);
+    ui.frame.input.define("Fire", {InputBinding{InputSource::MouseButton, 0, 1.0f}});
+
+    pointAt(ui, {10.0f, 10.0f});
+    ui.run();
+    check("away from the panel, the pointer is not over the UI", !ui.frame.input.pointerOverUI());
+
+    pointAt(ui, {140.0f, 140.0f}, 0.0f, PRESSED);
+    check("arrived and clicked, it is over the UI at once", ui.frame.input.pointerOverUI());
+    check("  and the click fires nothing of the game's", !ui.frame.input.pressed("Fire"));
 }
 
 void testScrollMeasuresClampsAndShifts() {
@@ -545,7 +603,7 @@ void testContentIsWhatWasDrawn() {
 }
 
 // A press and release over a button is one click, on the release frame. The button's
-// state must follow, since that recolours it.
+// state must follow, since that recolors it.
 void testAPressAndAReleaseIsOneClick() {
     std::printf("What a press and a release over a button do:\n");
 
@@ -592,6 +650,133 @@ void testAPressAndAReleaseIsOneClick() {
     ui.run();
     ui.frame.events.flush();
     check("a press dragged off the button fires nothing", clicks.size() == 1);
+
+    // A second click so quick its release and its press fall in one frame is two clicks still.
+    pointAt(ui, {20.0f, 20.0f}, 0.0f, PRESSED);
+    ui.run();
+    restrikeAt(ui, {20.0f, 20.0f});
+    ui.run();
+    pointAt(ui, {20.0f, 20.0f}, 0.0f, RELEASED);
+    ui.run();
+    ui.frame.events.flush();
+    check("a double click let go and pressed again in one frame is two clicks", clicks.size() == 3);
+}
+
+// The loading screen over the UI takes the pointer: under it nothing is hovered, pressed or
+// scrolled. Gone, it leaves the UI drawn at the UI's own opacity.
+void testTheLoadingScreenTakesThePointerAndLeavesTheUIWhole() {
+    std::printf("The UI under a loading screen:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId panel  = addBox(scene, canvas, {300.0f, 300.0f}, {50.0f, 50.0f});
+    scene.add(panel, UIImage{});
+    const EntityId button = addBox(scene, canvas, {0.0f, 0.0f}, {80.0f, 40.0f});
+    UIButton play;
+    play.eventId = "play";
+    scene.add(button, std::move(play));
+    const EntityId view = addBox(scene, canvas, {0.0f, 100.0f}, {100.0f, 100.0f});
+    scene.add(view, UIImage{});
+    scene.add(view, UIScroll{});
+    const EntityId content = addBox(scene, view, {0.0f, 0.0f}, {100.0f, 200.0f});
+    scene.add(content, UIImage{});
+
+    UIFrame ui(scene);
+    ui.frame.input.reset();
+    std::vector<std::string> clicks;
+    ui.frame.events.subscribe<UIClickEvent>([&](const UIClickEvent& e) { clicks.push_back(e.eventId); });
+    // A frame to measure the list by, as a view learns its content by walking it.
+    ui.run();
+
+    LoadingFrame loading;
+    loading.opacity      = 0.5f;
+    ui.frame.ctx.loading = &loading;
+    pointAt(ui, {20.0f, 20.0f});
+    ui.run();
+    check("a button under it is not hovered", scene.get<UIButton>(button).state == UIButton::State::Normal);
+    pointAt(ui, {20.0f, 20.0f}, 0.0f, PRESSED);
+    ui.run();
+    pointAt(ui, {20.0f, 20.0f}, 0.0f, RELEASED);
+    ui.run();
+    ui.frame.events.flush();
+    check("  nor clicked", clicks.empty());
+    pointAt(ui, {50.0f, 150.0f}, -1.0f);
+    ui.run();
+    check("a list under it is not scrolled", nearly(scene.get<UIScroll>(view).offset.y, 0.0f));
+
+    loading.opacity = 0.0f;
+    const UIDrawData& after = ui.run();
+    check(
+        "gone, the UI draws at its own opacity",
+        !after.vertices.empty() && nearly(after.vertices[0].color.a, 1.0f)
+    );
+}
+
+// A project's own loading screen is laid out into the cover's list, under the status line and the
+// tip, as a picture nothing presses. Built against assets since swapped out, it is not drawn.
+void testAProjectsLoadingScreenIsLaidOutUnderTheLineAndTheTip() {
+    std::printf("A project's own loading screen, laid out:\n");
+
+    Scene world;
+    Scene screen;
+    const EntityId canvas = addCanvas(screen);
+    const EntityId art    = addBox(screen, canvas, {10.0f, 20.0f}, {200.0f, 100.0f});
+    screen.add(art, UIImage{});
+    const EntityId button = addBox(screen, canvas, {300.0f, 300.0f}, {80.0f, 40.0f});
+    screen.add(button, UIButton{});
+
+    UIFrame ui(world);
+    const std::filesystem::path ttf =
+        std::filesystem::path(VKM_ENGINE_DIR) / "assets" / "fonts" / "Roboto-Medium.ttf";
+    const bool fonted = std::filesystem::exists(ttf)
+        && static_cast<bool>(bakeFontSDF(ui.frame.resources, ttf.string(), DEFAULT_UI_FONT, 32.0f));
+
+    LoadingFrame loading;
+    loading.opacity      = 1.0f;
+    loading.status       = "Loading";
+    loading.tip          = "A tip";
+    loading.screen       = &screen;
+    loading.screenAssets = ui.frame.resources.epoch();
+    ui.frame.ctx.loading = &loading;
+    pointAt(ui, {320.0f, 310.0f});
+    ui.run();
+    const UIDrawData& cover = *ui.frame.ctx.cover;
+    glm::vec2 corner(1e9f);
+    for (size_t i = 0; i < 6 && i < cover.vertices.size(); ++i) {
+        corner = glm::min(corner, cover.vertices[i].pos);
+    }
+    check(
+        "its picture is drawn first, where it is laid out",
+        nearly(corner.x, 10.0f) && nearly(corner.y, 20.0f)
+    );
+    check("  its button not hovered", screen.get<UIButton>(button).state == UIButton::State::Normal);
+    check("  and none of it in the world's list", ui.frame.ctx.ui->vertices.empty());
+
+    // A glyph under the bar is the tip's: the line sits above it.
+    const LoadingBarRect bar = loadingBar(VIEW_W, VIEW_H);
+    const auto tipGlyphs = [&](const UIDrawData& drawn) {
+        size_t count = 0;
+        for (const UIVertex& vertex : drawn.vertices) {
+            if (vertex.shape.z == UI_TEXT_MARK && vertex.pos.y > bar.y + bar.height) ++count;
+        }
+        return count;
+    };
+    if (fonted) {
+        check("the tip is written under the bar", tipGlyphs(cover) > 0);
+        loading.tip.clear();
+        ui.run();
+        check("  and with none, nothing is", tipGlyphs(*ui.frame.ctx.cover) == 0);
+    } else {
+        std::printf("  (no font beside the tests - the tip is not checked)\n");
+    }
+
+    ui.frame.resources.clear();
+    ui.run();
+    const std::vector<UIVertex>& later = ui.frame.ctx.cover->vertices;
+    check(
+        "built against assets since swapped out, it is not drawn",
+        later.empty() || !nearly(later[0].pos.y, 20.0f)
+    );
 }
 
 // The editor's chrome shares the pointer with the game's UI. A press let go over a
@@ -822,7 +1007,7 @@ void testASliderFollowsTheDrag() {
 }
 
 // A toggle flips on its click and says so, its knob crossing to the end that says
-// which, and rests in its own colour while on.
+// which, and rests in its own color while on.
 void testAToggleFlipsOnItsClick() {
     std::printf("A toggle:\n");
 
@@ -864,7 +1049,7 @@ void testAToggleFlipsOnItsClick() {
     const UIDrawData& resting = ui.run();
     check("the knob crosses to the right end", nearly(scene.get<UIElement>(knob).screenRect.pos.x, 30.0f));
     check(
-        "  and the toggle rests in its on colour",
+        "  and the toggle rests in its on color",
         !resting.vertices.empty() && resting.vertices[0].color == scene.get<UIToggle>(pill).onColor
     );
 
@@ -971,8 +1156,8 @@ void testALockedCursorPointsAtNothing() {
     check("  and hovers nothing", scene.get<UIButton>(panel).state == UIButton::State::Normal);
 }
 
-// A button's quad is recoloured after the walk, once its state is known; a gradient is
-// its two edges in two colours. Tinting all six vertices would flatten every gradient
+// A button's quad is recolored after the walk, once its state is known; a gradient is
+// its two edges in two colors. Tinting all six vertices would flatten every gradient
 // button on its first frame.
 void testAButtonKeepsItsFadeInEveryState() {
     std::printf("A button with a gradient:\n");
@@ -1001,14 +1186,14 @@ void testAButtonKeepsItsFadeInEveryState() {
     pointAt(ui, {400.0f, 400.0f});
     const UIDrawData& resting = ui.run();
     check(
-        "a resting button fades from its normal tint to its bottom colour",
+        "a resting button fades from its normal tint to its bottom color",
         drawn.state == UIButton::State::Normal && fadesFrom(resting, drawn.normalColor)
     );
 
     pointAt(ui, {20.0f, 20.0f});
     const UIDrawData& hovered = ui.run();
     check(
-        "  and a hovered one from its hover tint, to the same bottom colour",
+        "  and a hovered one from its hover tint, to the same bottom color",
         drawn.state == UIButton::State::Hover && fadesFrom(hovered, drawn.hoverColor)
     );
 }
@@ -1649,7 +1834,7 @@ void testUIComponentsRoundTrip() {
     }
     if (reloaded && loaded.has<UIToggle>(reloaded)) {
         const UIToggle& back = loaded.get<UIToggle>(reloaded);
-        check("the toggle came back on, in its colour", back.on && nearly(back.onColor.z, 0.3f));
+        check("the toggle came back on, in its color", back.on && nearly(back.onColor.z, 0.3f));
         check("  its knob the same entity", back.knob == named("Knob") && back.knob);
     } else {
         check("the toggle came back", false);
@@ -1794,13 +1979,17 @@ void runUITests() {
     testLayoutResolvesRects();
     testTheCommonCaseHasAName();
     testCanvasScaleAndVisibility();
+    testANestedCanvasIsLaidOutOnce();
     testOpacityFadesASubtree();
     testAnElementCanFillItsParent();
     testCommandsMergeUntilTheStateChanges();
     testClippingBoundsPixelsAndPointer();
+    testAClickAsThePointerArrivesIsTheUIs();
     testScrollMeasuresClampsAndShifts();
     testContentIsWhatWasDrawn();
     testAPressAndAReleaseIsOneClick();
+    testTheLoadingScreenTakesThePointerAndLeavesTheUIWhole();
+    testAProjectsLoadingScreenIsLaidOutUnderTheLineAndTheTip();
     testAReleaseTheChromeTakesDisarmsThePress();
     testAPressOnTheUIIsTheUIs();
     testAHeldButtonFollowsTheDrag();
