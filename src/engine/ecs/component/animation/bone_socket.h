@@ -25,10 +25,12 @@ struct BoneSocket {
     Transform   offset;  ///< Placement relative to that bone, in bone space.
 
     // Transient: what `bone` resolved to and against, so the linear name lookup runs only when the
-    // pairing changes.
-    SkeletonHandle resolvedRig;     ///< Rig `boneIndex` was resolved against.
-    std::string    resolvedName;    ///< Value of `bone` at that resolve.
-    int32_t        boneIndex = -1;  ///< Bone `bone` names, or -1 when the rig has none.
+    // pairing changes. The skeleton as asset and version, so one re-imported under its handle is
+    // looked in again.
+    uint64_t    resolvedUid     = 0;   ///< The skeleton's Resource::uid `boneIndex` was resolved against.
+    uint64_t    resolvedVersion = 0;   ///< Its version then.
+    std::string resolvedName;          ///< Value of `bone` at that resolve.
+    int32_t     boneIndex       = -1;  ///< Bone `bone` names, or -1 when the rig has none.
 };
 
 } // namespace Vkm::Engine

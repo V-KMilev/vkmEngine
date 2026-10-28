@@ -61,9 +61,9 @@ struct UIElement {
 
     /**
      * @brief How opaque this element and its whole subtree draw, 0 to 1: what a panel fades in
-     *        and out by, without touching each colour under it.
+     *        and out by, without touching each color under it.
      *
-     * It multiplies down the tree, onto every colour's alpha. At nothing, the subtree is
+     * It multiplies down the tree, onto every color's alpha. At nothing, the subtree is
      * skipped as when not visible, and takes no clicks.
      */
     float opacity = 1.0f;

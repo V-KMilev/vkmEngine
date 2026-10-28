@@ -7,6 +7,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/reflect.h"
+#include "ecs/component/core/transform.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -25,7 +26,8 @@ struct RagdollBone {
     glm::mat4 bodyFromBone = glm::mat4(1.0f);  ///< Bone space -> body space: the bone as the body sees it
 
     /**
-     * @brief Where the pose put the body last tick, world space; runtime, not serialized.
+     * @brief Where the pose put the body's centre of mass last tick, world space; runtime, not
+     *        serialized.
      *
      * This tick's pose against it is the velocity a driven body hands the solver when the ragdoll takes
      * over. `posed` is false until a pose has been applied since the bones were last handed to the solver.
@@ -71,6 +73,14 @@ struct Ragdoll {
 
     /// The pose held the bones last tick; runtime, not serialized.
     bool held = false;
+
+    /**
+     * @brief Where `root` stands in the world while live, so the bones under it stay where the solver
+     *        puts them however this entity is moved; runtime, not serialized.
+     */
+    glm::mat4 pinnedWorld = glm::mat4(1.0f);
+    Transform rootRest;        ///< `root`'s own Transform as it went live, put back when it stands down.
+    bool      pinned = false;  ///< Whether pinnedWorld holds.
 };
 
 } // namespace Vkm::Engine

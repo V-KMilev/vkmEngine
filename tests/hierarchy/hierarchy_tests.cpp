@@ -255,71 +255,57 @@ void testTheResolveAgreesWithTheWalk() {
     );
 }
 
-void testTheWalksAreBounded() {
-    std::printf("A chain deeper than the engine supports:\n");
+void testAChainIsNeverMadeDeeperThanTheWalksGo() {
+    std::printf("A chain grown past the depth the engine supports:\n");
 
+    using HierarchyOperations::MAX_DEPTH;
     Scene scene;
     std::vector<EntityId> chain;
-    for (uint32_t i = 0; i < HierarchyOperations::MAX_DEPTH + 8; ++i) {
+    for (uint32_t i = 0; i < MAX_DEPTH + 2; ++i) {
         // A metre per link, so where the resolve stopped reads as a distance.
         chain.push_back(named(scene, "Link", {0.0f, 1.0f, 0.0f}));
         if (i > 0) HierarchyOperations::setParent(scene, chain[i], chain[i - 1]);
     }
-
-    // Read-only walks stop at MAX_DEPTH; a reparent's ancestor question must not, or
-    // it could close a ring through a chain this deep.
-    check(
-        "an ancestor past the cap is still recognised as one",
-        HierarchyOperations::isAncestorOf(scene, chain.front(), chain.back())
-    );
-    check("  as is one inside it", HierarchyOperations::isAncestorOf(scene, chain[0], chain[4]));
-    HierarchyOperations::setParent(scene, chain.front(), chain.back());
-    check(
-        "  so parenting the top of the chain under its bottom is refused",
-        !scene.get<Hierarchy>(chain.front()).parent
-    );
+    const auto parentOf = [&](EntityId id) {
+        const Hierarchy* node = scene.tryGet<Hierarchy>(id);
+        return node ? node->parent : EntityId{};
+    };
+    check("a chain grows to MAX_DEPTH entities", parentOf(chain[MAX_DEPTH - 1]) == chain[MAX_DEPTH - 2]);
+    check("  and a link past it is refused", !parentOf(chain[MAX_DEPTH]));
+    check("  which goes on as a chain of its own", parentOf(chain[MAX_DEPTH + 1]) == chain[MAX_DEPTH]);
+    HierarchyOperations::setParent(scene, chain[MAX_DEPTH], chain[MAX_DEPTH - 2]);
+    check("a subtree that would end past it is refused too", !parentOf(chain[MAX_DEPTH]));
+    HierarchyOperations::setParent(scene, chain[MAX_DEPTH], chain[MAX_DEPTH - 3]);
+    check("  and taken where it ends at it", parentOf(chain[MAX_DEPTH]) == chain[MAX_DEPTH - 3]);
+    HierarchyOperations::setParent(scene, chain.front(), chain[MAX_DEPTH - 1]);
+    check("parenting the top of the chain under its bottom is refused", !parentOf(chain.front()));
 
     TestFrame frame(scene);
     HierarchySystem hierarchy;
     hierarchy.update(frame.ctx);
-    // The resolve's own bound: everything inside the cap resolves through its whole
-    // chain, and everything past it stays where it started rather than resolving wrongly.
-    const auto worldY = [&](EntityId id) {
-        return scene.get<WorldTransform>(id).model[3].y;
-    };
     check(
-        "the last entity inside the cap is resolved through its whole chain",
-        nearly(
-            worldY(chain[HierarchyOperations::MAX_DEPTH - 1]),
-            static_cast<float>(HierarchyOperations::MAX_DEPTH)
-        )
+        "the deepest link resolves through its whole chain",
+        nearly(scene.get<WorldTransform>(chain[MAX_DEPTH - 1]).model[3].y, static_cast<float>(MAX_DEPTH))
     );
-    check(
-        "  and the first one past it is not resolved at all",
-        nearly(worldY(chain[HierarchyOperations::MAX_DEPTH]), 0.0f)
-    );
-    check("  nor is the deepest", nearly(worldY(chain.back()), 0.0f));
-    check("  with every one of them still alive", scene.isAlive(chain.back()));
 }
 
-// A resolve past MAX_DEPTH is wrong but bounded; a delete cannot be. It means "all
-// of this goes", and a tail left alive is a subtree the outliner's selection no longer shows.
-void testDestroyingAChainDeeperThanTheWalksGoesWhole() {
-    std::printf("Destroying a chain deeper than the engine resolves:\n");
+// A delete means "all of this goes", however deep: a tail left alive is a subtree the outliner's
+// selection no longer shows.
+void testDestroyingTheDeepestChainGoesWhole() {
+    std::printf("Destroying a chain as deep as a hierarchy goes:\n");
 
     Scene scene;
-    std::vector<EntityId> chain;
-    for (uint32_t i = 0; i < HierarchyOperations::MAX_DEPTH + 8; ++i) {
-        chain.push_back(named(scene, "Link"));
-        if (i > 0) HierarchyOperations::setParent(scene, chain[i], chain[i - 1]);
-    }
     const EntityId holder = named(scene, "Holder");
-    HierarchyOperations::setParent(scene, chain.front(), holder);
+    std::vector<EntityId> chain;
+    for (uint32_t i = 0; i + 1 < HierarchyOperations::MAX_DEPTH; ++i) {
+        chain.push_back(named(scene, "Link"));
+        HierarchyOperations::setParent(scene, chain[i], i > 0 ? chain[i - 1] : holder);
+    }
 
     HierarchyOperations::destroyHierarchy(scene, chain.front());
     bool allGone = true;
     for (const EntityId link : chain) allGone = allGone && !scene.isAlive(link);
-    check("every link goes, past the depth the resolve stops at", allGone);
+    check("every link goes", allGone);
     check("  the entity above it stays", scene.isAlive(holder));
     const Hierarchy* above = scene.tryGet<Hierarchy>(holder);
     check("  and no longer names a child", !above || !above->firstChild);
@@ -546,8 +532,8 @@ void runHierarchyTests() {
     testDestroyingASubtree();
     testDestroyingAParentLeavesItsChildrenInPlace();
     testTheResolveAgreesWithTheWalk();
-    testTheWalksAreBounded();
-    testDestroyingAChainDeeperThanTheWalksGoesWhole();
+    testAChainIsNeverMadeDeeperThanTheWalksGo();
+    testDestroyingTheDeepestChainGoesWhole();
     testASearchInsideASearchKeepsItsOwnQueue();
     testSiblingsKeepTheOrderTheyWereAttachedIn();
     testAWideSubtreeIsSearchedWhole();

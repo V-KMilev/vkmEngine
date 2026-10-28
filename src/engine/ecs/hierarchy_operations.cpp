@@ -29,6 +29,40 @@ void warnWalkBound(const char* walk, size_t bound) {
     );
 }
 
+namespace {
+
+/// Entities from @p entity up to its root, itself included; MAX_DEPTH once the walk's bound is met.
+uint32_t depthOf(const Scene& scene, EntityId entity) {
+    uint32_t depth = 0;
+    forSelfAndAncestors(scene, entity, [&](EntityId) {
+        ++depth;
+        return true;
+    });
+    return depth;
+}
+
+/// Levels of @p entity's subtree, itself the first; past MAX_DEPTH, MAX_DEPTH + 1.
+uint32_t heightOf(const Scene& scene, EntityId entity) {
+    // A leaf, as nearly every entity a load or a spawn attaches is.
+    const Hierarchy* own = scene.tryGet<Hierarchy>(entity);
+    if (!own || !own->firstChild) return 1;
+
+    std::vector<EntityId> level{entity};
+    std::vector<EntityId> next;
+    uint32_t height = 0;
+    while (!level.empty() && height <= MAX_DEPTH) {
+        ++height;
+        next.clear();
+        for (const EntityId node : level) {
+            forEachChild(scene, node, [&](EntityId child) { next.push_back(child); });
+        }
+        level.swap(next);
+    }
+    return height;
+}
+
+} // namespace
+
 void setParent(Scene& scene, EntityId child, EntityId parent, EntityId before) {
     VKM_ASSERT(scene.isAlive(child), "HierarchyOperations::setParent: child is dead");
     VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
@@ -41,6 +75,11 @@ void setParent(Scene& scene, EntityId child, EntityId parent, EntityId before) {
     }
     if (child == parent || isAncestorOf(scene, child, parent)) {
         LOG_WARNING("HierarchyOperations::setParent: cycle detected, ignoring");
+        return;
+    }
+    // Every walk over the links follows MAX_DEPTH entities, so no chain is made deeper.
+    if (depthOf(scene, parent) + heightOf(scene, child) > MAX_DEPTH) {
+        LOG_WARNING("HierarchyOperations::setParent: a chain deeper than %u entities, ignoring", MAX_DEPTH);
         return;
     }
 
@@ -203,6 +242,11 @@ namespace Vkm::Engine {
 void detachFromHierarchy(Scene& scene, EntityId entity) {
     const Hierarchy* node = scene.tryGet<Hierarchy>(entity);
     if (!node) return;
+    // A leaf, as every entity destroyHierarchy takes is: no child to keep in place.
+    if (!node->firstChild) {
+        HierarchyOperations::removeFromParent(scene, entity);
+        return;
+    }
 
     const EntityId  parent   = scene.isAlive(node->parent) ? node->parent : EntityId{};
     const glm::mat4 toParent = parent

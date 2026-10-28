@@ -38,6 +38,9 @@ struct Animation {
     /// Whether playOnStart has been honoured this session. Session state.
     bool started = false;
 
+    /// Whether it gave its Kinematic body a velocity last tick, to take back once it stops. Session state.
+    bool movingBody = false;
+
     /**
      * @brief The effective length: the latest keyframe of the three tracks, or @ref length if greater.
      *

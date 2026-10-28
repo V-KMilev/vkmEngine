@@ -16,7 +16,8 @@ namespace Vkm::Engine::HierarchyOperations {
 /**
  * @brief Attach a child entity to a parent entity, as its last child or in front of one of its children.
  *
- * A cycle-forming parent or a dead entity at either end is refused with a warning.
+ * A cycle-forming parent, a chain made deeper than MAX_DEPTH entities, or a dead entity at either
+ * end is refused with a warning.
  *
  * @param scene  Scene both entities live in; Hierarchy and WorldTransform are
  *               added to whichever endpoint lacks them.
@@ -49,12 +50,13 @@ void removeFromParent(Scene& scene, EntityId entity);
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 
 /**
- * @brief Deepest chain a walk along the hierarchy's links follows.
+ * @brief Most entities a chain from a root down holds: setParent makes none deeper, so every walk
+ *        along the links that follows this many sees a whole chain.
  *
- * Public so a walk outside this file cuts a too-deep or cyclic chain where
+ * Public so a walk outside this file cuts a cyclic chain, or one written past setParent, where
  * forSelfAndAncestors does.
  */
-constexpr uint32_t MAX_DEPTH = 32;
+constexpr uint32_t MAX_DEPTH = 64;
 
 /**
  * @brief Report a walk over the hierarchy that ran into its bound, once for the process.

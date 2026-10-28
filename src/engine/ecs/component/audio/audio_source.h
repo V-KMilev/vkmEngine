@@ -58,6 +58,14 @@ struct AudioSource {
     AudioRolloff rolloff = AudioRolloff::Linear;  ///< How it fades between the two distances.
 
     /**
+     * @brief Whether the world's colliders shape it: muffled behind a wall, ringing in a room.
+     *
+     * A positioned source only, and only while the scene's Environment::acoustics is on. Off for a
+     * sound that must cut through, as a voice in the player's ear.
+     */
+    bool acoustics = true;
+
+    /**
      * @brief Which voice gives way when too many sounds play (AudioDevice::play).
      *
      * A source whose voice was taken reads `playing` false, as one that finished.
@@ -82,5 +90,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::AudioSource)
     VKM_F(minDistance)
     VKM_F(maxDistance)
     VKM_F(rolloff)
+    VKM_F(acoustics)
     VKM_F(priority)
 VKM_REFLECT_END()

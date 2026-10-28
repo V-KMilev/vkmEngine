@@ -10,9 +10,10 @@ namespace Vkm::Engine {
  * @brief Turns a desired direction into velocity on a Rigidbody, and reports what the body stands on.
  *
  * Driven by a System rather than a Behavior: the writer of moveInput changes, the reader should not.
- * Needs a Rigidbody and a capsule Collider; the body should set freezeRotation and canSleep false, so
- * standing still does not park a body the input then has to wake. It climbs what gameplay says it is
- * on - a ladder, a rope, a wall - by `climbing`, crouches by `crouching`, and rides what it stands on.
+ * Needs a Rigidbody and a capsule Collider; the body should set freezeRotation, and canSleep false so
+ * that standing still its contacts go on reporting and what rests on it stays awake. It climbs what
+ * gameplay says it is on - a ladder, a rope, a wall - by `climbing`, crouches by `crouching`, and rides
+ * what it stands on.
  */
 struct CharacterController {
     glm::vec3 moveInput     = {0.0f, 0.0f, 0.0f};  ///< Desired horizontal velocity, world space, m/s.
@@ -37,7 +38,9 @@ struct CharacterController {
      * @brief Tallest obstacle, in metres, the character mounts instead of stopping at; zero disables it.
      *
      * Taller is a wall to slide along. A step needs clear space at the top and walkable ground beyond,
-     * checked before anything moves, so a tall setting climbs more, never through.
+     * checked before anything moves, so a tall setting climbs more, never through. It also caps how far
+     * ground falling away under a walking character in one tick may drop and still hold it (`grounded`);
+     * at zero, a crest or a dip in a slope can lift it off.
      */
     float stepHeight = 0.4f;
 
@@ -63,8 +66,25 @@ struct CharacterController {
     bool  crouching    = false;
     float crouchHeight = 1.0f;  ///< The capsule's whole height crouched, caps included, metres.
 
-    bool  grounded  = false;                     ///< Read-only: on a surface within maxSlopeAngle.
-    float walkSpeed = 0.0f;                      ///< Read-only: horizontal speed its steering left, m/s.
+    /**
+     * @brief Read-only: standing on a surface within maxSlopeAngle.
+     *
+     * Held through a tick whose contact is lost while walkable ground lies within twice what a slope
+     * that steep drops in a tick at its speed, or a few centimetres, capped by `stepHeight`: it is
+     * pulled down onto it rather than left to fly off a crest or skip down a slope.
+     */
+    bool  grounded  = false;
+    float walkSpeed = 0.0f;  ///< Read-only: horizontal speed its steering left, m/s.
+
+    /**
+     * @brief Read-only: thrown off the ground - by a jump, a leap off a climb, a pad or a blast - and still
+     *        rising off it.
+     *
+     * Never grounded meanwhile, so the contact the tick after a jump still reports does not take the
+     * jump back. Ground it stood on throws it by being left faster than a contact starts to bounce;
+     * a landing's bounce never does, and grounding takes it back.
+     */
+    bool jumping = false;
 
     // A climb outlives the condition that started it: it leaves the ground first, so re-deciding it
     // from `grounded` each tick would abort it. These carry it to the measured height.

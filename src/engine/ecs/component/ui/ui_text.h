@@ -17,9 +17,10 @@ inline constexpr const char* DEFAULT_UI_FONT = "ui:roboto";
 /**
  * @brief Text drawn within its element's rect, on as many lines as it breaks into.
  *
- * The font is a name, not a handle, because a name is what a scene file can hold;
- * it is resolved through ResourceManager::findByName each frame. Text taller than
- * the rect overflows unless an ancestor clips (clipChildren, or a UIScroll).
+ * The font is a name, not a handle: a font is not an asset a scene loads but one the host
+ * bakes for its display and keeps across scene loads (docs/reference/ui.md, "Fonts"), so
+ * the text names one and finds it each frame (ResourceManager::findByName). Text taller
+ * than the rect overflows unless an ancestor clips (clipChildren, or a UIScroll).
  */
 struct UIText {
     enum class Align  : uint8_t { Left, Center, Right, Count };

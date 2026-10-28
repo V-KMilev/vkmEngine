@@ -30,7 +30,8 @@ enum class RigidbodyMotion : uint8_t {
  * pose back into the parent's frame.
  */
 struct Rigidbody {
-    glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s)
+    /// World-space velocity (m/s): of its centre of mass, for a dynamic body (solverCentre).
+    glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};
     glm::vec3 angularVelocity = {0.0f, 0.0f, 0.0f};  ///< World-space spin (rad/s, axis * speed)
 
     /**
@@ -69,7 +70,7 @@ struct Rigidbody {
     int collidesWith = ~0;
 
     bool freezeRotation = false;  ///< Contacts never torque the body (character controllers)
-    bool canSleep       = true;   ///< False keeps a script-driven body responsive
+    bool canSleep       = true;   ///< False never rests: its island stays awake, its contacts reported
     bool sleeping       = false;  ///< Rested long enough; skipped until disturbed
 
     float sleepTimer = 0.0f;  ///< Runtime-only: seconds spent resting
@@ -93,9 +94,11 @@ struct Rigidbody {
     glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};
 
     /**
-     * @brief Wake a sleeping body so the next tick moves it.
+     * @brief Wake a sleeping body so the next tick moves it, and restart its rest.
      *
-     * Clears the timer too: a cleared flag with a long rest on the timer falls asleep again that tick.
+     * A velocity set on a sleeper wakes it by itself; this is for a change that sets none - a
+     * teleport, a new shape - or to keep awake a body that would rest, such as a float. Clears the
+     * timer too: a cleared flag with a long rest on the timer falls asleep again that tick.
      *
      * @param rb Body to wake.
      */
@@ -104,6 +107,19 @@ struct Rigidbody {
         rb.sleepTimer = 0.0f;
     }
 };
+
+/**
+ * @brief Whether bodies on these layers collide: each one's layer in the other's mask.
+ *
+ * @param layerA        One body's Rigidbody::layer.
+ * @param collidesWithA Its Rigidbody::collidesWith.
+ * @param layerB        The other's layer.
+ * @param collidesWithB And its mask.
+ * @return True when the pair collides.
+ */
+inline bool layersCollide(int layerA, int collidesWithA, int layerB, int collidesWithB) {
+    return (layerA & collidesWithB) != 0 && (layerB & collidesWithA) != 0;
+}
 
 } // namespace Vkm::Engine
 

@@ -97,7 +97,9 @@ struct Animator {
      * @brief Start playing @p clip, blending out of whatever is playing now.
      *
      * The outgoing clip keeps advancing while it fades; the blend runs in simulation seconds, unscaled
-     * by `speed`. A call mid-fade drops the clip on its way out, so the pose jumps by its remaining weight.
+     * by `speed`. A call mid-fade back to the clip on its way out turns the fade round: that clip resumes
+     * at its own head from the weight it had. Any other call mid-fade drops the clip on its way out, so
+     * the pose jumps by its remaining weight.
      *
      * @param animator Animator to retarget, in place.
      * @param clip Clip to play; the same clip already playing is left alone, a stopped one plays again.

@@ -37,7 +37,7 @@ struct SkySettings {
     float sunAzimuth   = 30.0f;  ///< Degrees around the horizon, from +Z toward +X.
 
     // The sun: the key light's daylight end, which SkySystem blends with the moonlight,
-    // and what lights the sky (Atmosphere::solarIlluminance). The Light's own colour and
+    // and what lights the sky (Atmosphere::solarIlluminance). The Light's own color and
     // intensity are unused under the procedural sky.
     glm::vec3 lightColor     = {1.0f, 0.96f, 0.90f};  ///< With the sun overhead.
     float     lightIntensity = 3.0f;                  ///< Illuminance with the sun overhead.
@@ -119,6 +119,15 @@ struct FogSettings {
 };
 
 /**
+ * @brief Sound shaped by the world's colliders: muffled behind what stands between a source and
+ *        the ear, and ringing in the space the ear is in (docs/reference/audio.md, "Acoustics").
+ */
+struct AcousticsSettings {
+    bool  enabled = true;
+    float reverb  = 1.0f;  ///< Scale on the room's reverberation; 0 keeps the occlusion alone.
+};
+
+/**
  * @brief Where a celestial body sits, in the authored angle form.
  *
  * The sun is authored as this pair and the moon derived as one.
@@ -129,15 +138,16 @@ struct SkyAngles {
 };
 
 /**
- * @brief The scene's lighting environment: sky, night sky and fog.
+ * @brief The scene's environment: sky, night sky, fog and how its spaces sound.
  *
  * Scene-global, not a component: one per Scene (Scene::environment()), saved
  * with it. The backend re-bakes the IBL whenever the sky changes.
  */
 struct Environment {
-    SkySettings      sky;
-    NightSkySettings night;
-    FogSettings      fog;
+    SkySettings       sky;
+    NightSkySettings  night;
+    FogSettings       fog;
+    AcousticsSettings acoustics;
 
     /**
      * @brief Where the sun sits, straight off the authored fields.
@@ -233,8 +243,14 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::FogSettings)
     VKM_F(maxDistance)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(::Vkm::Engine::AcousticsSettings)
+    VKM_F(enabled)
+    VKM_F(reverb)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(::Vkm::Engine::Environment)
     VKM_F(sky)
     VKM_F(night)
     VKM_F(fog)
+    VKM_F(acoustics)
 VKM_REFLECT_END()

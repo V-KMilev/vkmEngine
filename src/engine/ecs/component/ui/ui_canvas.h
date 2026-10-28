@@ -16,6 +16,9 @@ class Scene;
  * live viewport. Several canvases draw in ascending sortOrder.
  */
 struct UICanvas {
+    /// The screen height a canvas is authored at unless it says otherwise, and anything sized as one.
+    static constexpr float REFERENCE_HEIGHT = 1080.0f;
+
     /**
      * @brief How the canvas maps authored pixels to on-screen pixels.
      */
@@ -26,7 +29,7 @@ struct UICanvas {
     };
 
     /// Authoring height in pixels; ScaleWithHeight scales against it.
-    float     referenceHeight = 1080.0f;
+    float     referenceHeight = REFERENCE_HEIGHT;
     ScaleMode scaleMode       = ScaleMode::ScaleWithHeight;
     /// Draw order across canvases; higher draws on top.
     int32_t   sortOrder       = 0;
