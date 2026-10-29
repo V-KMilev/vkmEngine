@@ -1,4 +1,4 @@
-# vkm_core - ECS, resources, IO, platform, and the non-render systems.
+# vkm_core - ECS, resources, IO, input, and the non-render systems.
 # Everything under src/engine except the render system, which is its own shared
 # library below. Enumerated as one sweep and one removal rather than as a list of
 # directories: a list has to be edited to add a subsystem, and the edit is
@@ -34,6 +34,10 @@ target_link_libraries(vkm_core PUBLIC
     nlohmann_json
 )
 
+# Its headers are C++17, so a module compiles as C++17 whatever its compiler defaults to (Clang 14's is
+# C++14), not only because a library it links says so.
+target_compile_features(vkm_core PUBLIC cxx_std_17)
+
 # Static libraries absorbed INTO this shared library are linked privately, and
 # only their include directories travel outward (below). A consumer must not link
 # them again: their code is already inside libvkm_core, and on Windows - where
@@ -41,25 +45,30 @@ target_link_libraries(vkm_core PUBLIC
 # import library and the static archive is a duplicate-definition error at link
 # time. Linux hides this because the dynamic linker picks one; Windows does not.
 target_link_libraries(vkm_core PRIVATE
-    glfw
     vkm_warnings
-    vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
-    stb                # image decode and encode
-    miniaudio          # system/audio owns the device
-)
+    vkm_build_info     # io/project/roots.h resolves paths against APP_ROOT_DIR
 
-# The headers those private dependencies own are still part of this library's
-# public surface - platform/window/glfw_include.h names GLFW types - so consumers
-# need the include paths without the archives. SYSTEM, like the module's own
-# (modules/CMakeLists.txt): they are not the engine's to warn about.
-target_include_directories(vkm_core SYSTEM PUBLIC
-    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
+    # The platform, the audio, the network's transport and the physics, whole: a gameplay module
+    # and the tests reach what the engine itself never calls through this library too.
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,vkm_platform>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,vkm_audio>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,vkm_network>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,vkm_physics>
+)
+add_dependencies(vkm_core vkm_build_stamp)  # host_boot.cpp logs build_stamp.h
+
+# vkmPlatform's, vkmAudio's, vkmNetwork's and vkmPhysics' headers are part of this library's public
+# surface - the frame names the window, the audio system the audio's types, the session and a game's
+# codecs the network's, the components and the queries the physics' - so their include paths travel
+# outward. GLFW's does not: only the OpenGL backend and the editor reach it, linking glfw themselves.
+target_include_directories(vkm_core PUBLIC
+    $<TARGET_PROPERTY:vkm_platform,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkm_audio,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkm_network,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkm_physics,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(vkm_core PUBLIC
-    GLM_ENABLE_EXPERIMENTAL
-    GLM_FORCE_INTRINSICS
-
     # Here rather than in vkm_build_info, which a gameplay module built against
     # an installed SDK does not link: the module reports this back through
     # vkmModuleEngineVersion(), and a host that reads a different number refuses
@@ -83,21 +92,20 @@ if(VKM_ASSERTS)
     target_compile_options(vkm_core PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,/UNDEBUG,-UNDEBUG>)
 endif()
 
-# A module built against a shipping engine keeps its debug info too.
+# A tree other than build/ keeps its examples' modules beside its hosts (CMakeLists.txt), and
+# io/project/roots.cpp looks for an example's there.
+if(VKM_TREE_EXAMPLE_MODULES)
+    target_compile_definitions(vkm_core PRIVATE VKM_TREE_EXAMPLE_MODULES=1)
+endif()
+
+# A module built against a shipping engine keeps its debug info too. The engine itself draws no
+# debug lines (engine.cpp).
 if(VKM_SHIPPING)
     target_compile_options(vkm_core PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-g>)
+    target_compile_definitions(vkm_core PRIVATE VKM_SHIPPING=1)
 endif()
 
-# Winsock, for platform/net. It is not linked by anything else the engine
-# already pulls in - GLFW has no use for it - so without this the socket calls
-# resolve to nothing at link time. Private, like the other absorbed libraries:
-# the sockets live inside libvkm_core and nothing outside names a winsock type.
-# winmm is the same case for FrameLimiter's timeBeginPeriod.
-if(WIN32)
-    target_link_libraries(vkm_core PRIVATE ws2_32 winmm)
-endif()
-
-# Tracy is linked privately for the same reason as glfw: its objects live inside
+# Tracy is linked privately for the same reason as the libraries: its objects live inside
 # libvkm_core, and a consumer expanding a PROFILE_ macro resolves the symbols
 # from there. Its include path and its compile definitions still propagate,
 # because the facade's macros expand into Tracy's header in the consumer's own
@@ -132,4 +140,10 @@ target_include_directories(vkm_render PUBLIC
 target_link_libraries(vkm_render
     PUBLIC  vkm_core
     PRIVATE vkm_warnings
+)
+
+# stb's PNG writer's declarations, for the screenshot (system/render/screenshot.cpp), which compiles
+# a private copy of the writer.
+target_include_directories(vkm_render SYSTEM PRIVATE
+    ${PROJECT_SOURCE_DIR}/modules/stb
 )
