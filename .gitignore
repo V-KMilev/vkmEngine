@@ -2,6 +2,8 @@
 .claude/
 
 build*/
+# But the build checks' area, which is source.
+!tests/build/
 cache/
 # Python's bytecode cache, written beside tools/ scripts that import one another.
 __pycache__/
@@ -24,13 +26,13 @@ assets/*
 !assets/docs/
 
 # The logo pipeline keeps its recipe rather than its intermediates, which is the
-# trade the asset library and make_multimesh_rig.py already make: build_logos.py
-# is tracked, and the shapes it reads and the previews it writes are not.
+# trade the asset library already makes: build_logos.py is tracked, and the shapes
+# it reads and the previews it writes are not.
 assets/logo/_preview/*
 !assets/logo/_preview/build_logos.py
 assets/logo/source_split/
 
-# Per-user editor state. It belongs in ProjectPaths::userRoot(), but that root
+# Per-user editor state. It belongs in Roots::userRoot(), but that root
 # falls back to the engine root when the platform names no user directory or
 # names one that is not writable - and a dev checkout is where that lands.
 editor_user.json
