@@ -16,10 +16,12 @@ class EngineErrorLog {
     public:
         struct Entry {
             std::chrono::system_clock::time_point timestamp;
-            std::string  category;      ///< Subsystem, e.g. "Behavior".
-            std::string  source;        ///< e.g. "MyBehavior / onUpdate".
-            std::string  message;
-            unsigned int repeatCount = 1;
+            std::string                           category;         ///< Subsystem, e.g. "Behavior".
+            std::string                           source;           ///< e.g. "MyBehavior / onUpdate".
+            std::string                           message;
+            unsigned int                          repeatCount = 1;
+            unsigned long long                    number      = 0;  ///< Its place among every entry pushed:
+                                                                    ///< kept as older ones go.
         };
 
         static constexpr std::size_t CAPACITY = 64;
@@ -68,7 +70,7 @@ class EngineErrorLog {
         unsigned long long totalPushed() const { return m_totalPushed; }
 
     private:
-        std::vector<Entry> m_entries;        ///< Oldest first.
+        std::vector<Entry> m_entries;          ///< Oldest first.
         unsigned long long m_totalPushed = 0;
 };
 

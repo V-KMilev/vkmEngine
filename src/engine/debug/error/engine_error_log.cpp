@@ -1,10 +1,10 @@
 #define VKM_LOG_CATEGORY "ENGINE"
 
-#include "debug/engine_error_log.h"
+#include "debug/error/engine_error_log.h"
 
 #include <utility>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 namespace Vkm::Engine {
 
@@ -38,6 +38,7 @@ void EngineErrorLog::push(std::string category, std::string source, std::string 
     entry.source      = std::move(source);
     entry.message     = std::move(message);
     entry.repeatCount = 1;
+    entry.number      = m_totalPushed;
     m_entries.push_back(std::move(entry));
     ++m_totalPushed;
 
