@@ -5,7 +5,7 @@
 #include <vector>
 #include <type_traits>
 
-#include "l_assert.h"
+#include "vkm_log/assert.h"
 
 namespace Vkm::Engine {
 
@@ -202,6 +202,17 @@ class SparseSet : public ISparseSet {
          * @return The key at that slot.
          */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
+
+        /**
+         * @brief The dense index a key's element is stored at: keyAt's inverse.
+         *
+         * @param key External sparse key; must be present.
+         * @return Its position in packed order.
+         */
+        uint32_t indexOf(uint32_t key) const {
+            VKM_ASSERT(contains(key), "SparseSet::indexOf called with invalid key");
+            return m_dataIndex[key];
+        }
 
         /**
          * @brief Moved by every add, remove and clear: what a cache keyed on dense indices compares.

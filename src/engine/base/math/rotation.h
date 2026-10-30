@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "core/math/axes.h"
+#include "base/math/axes.h"
 
 namespace Vkm::Engine::Math {
 
@@ -28,7 +28,7 @@ inline glm::vec3 computeForward(const glm::quat& rotation) {
  * @return Its unit up vector.
  */
 inline glm::vec3 computeUp(const glm::quat& rotation) {
-    return glm::normalize(rotation * WORLD_AXIS_Y);
+    return glm::normalize(rotation * WORLD_UP);
 }
 
 /**
@@ -51,7 +51,7 @@ inline glm::vec3 computeRight(const glm::quat& rotation) {
  * axis is implied by the other two, or the identity's column, so never NaN.
  *
  * @param worldMatrix Model matrix to read; translation is ignored.
- * @return Its rotation, normalised.
+ * @return Its rotation, normalized.
  */
 inline glm::quat worldRotationOf(const glm::mat4& worldMatrix) {
     glm::mat3 basis(worldMatrix);
@@ -97,7 +97,22 @@ inline glm::quat lookRotation(const glm::vec3& direction, const glm::vec3& up = 
  * @return The orientation those two angles name.
  */
 inline glm::quat fromYawPitch(float yaw, float pitch) {
-    return glm::angleAxis(yaw, WORLD_AXIS_Y) * glm::angleAxis(pitch, WORLD_AXIS_X);
+    return glm::angleAxis(yaw, WORLD_UP) * glm::angleAxis(pitch, WORLD_RIGHT);
+}
+
+/**
+ * @brief Two unit vectors spanning the plane square to a unit @p dir, square to each other.
+ *
+ * Built off world up, or world right when @p dir is nearly vertical.
+ *
+ * @param dir       The plane's unit normal.
+ * @param[out] outT First of the two.
+ * @param[out] outB Second: outT cross dir.
+ */
+inline void orthoBasis(const glm::vec3& dir, glm::vec3& outT, glm::vec3& outB) {
+    const glm::vec3 ref = std::abs(dir.y) < 0.99f ? WORLD_UP : WORLD_RIGHT;
+    outT = glm::normalize(glm::cross(dir, ref));
+    outB = glm::normalize(glm::cross(outT, dir));
 }
 
 /**

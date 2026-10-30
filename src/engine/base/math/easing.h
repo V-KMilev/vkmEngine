@@ -6,9 +6,9 @@
 
 #include <glm/gtx/easing.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/enum_names.h"
 
-namespace Vkm::Engine {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief Type alias for easing function pointers.
@@ -100,20 +100,10 @@ inline EasingFunction easingFunction(Easing easing) {
     return index < std::size(FUNCTIONS) ? FUNCTIONS[index] : FUNCTIONS[0];
 }
 
-/**
- * @brief The share of the way to close on a target this frame, closing at @p rate a second,
- *        the same whatever the frame rate: `value = mix(value, target, damp(rate, dt))`.
- *
- * @param rate How fast, per second: a tenth of the way left after ln(10) / rate seconds.
- * @param dt   The frame's seconds.
- * @return 0 to 1.
- */
-inline float damp(float rate, float dt) { return 1.0f - glm::exp(-rate * dt); }
-
-} // namespace Vkm::Engine
+} // namespace Vkm::Engine::Math
 
 #define VKM_EASING_NAME(id, name, fn) name,
-VKM_ENUM_NAMES(::Vkm::Engine::Easing, VKM_EASINGS(VKM_EASING_NAME))
+VKM_ENUM_NAMES(::Vkm::Engine::Math::Easing, VKM_EASINGS(VKM_EASING_NAME))
 #undef VKM_EASING_NAME
 
 #undef VKM_EASINGS

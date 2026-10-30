@@ -1,6 +1,6 @@
-#include "core/event/event_bus.h"
+#include "base/event/event_bus.h"
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 
 namespace Vkm::Engine {
 

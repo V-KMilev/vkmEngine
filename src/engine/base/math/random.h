@@ -67,8 +67,7 @@ class Rng {
         bool nextBool()                       { return (nextU32() >> 31u) != 0u; }
 
     private:
-        /// Canonical PCG stream.
-        static constexpr uint64_t DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;
+        static constexpr uint64_t DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;  ///< Canonical PCG stream.
 
     private:
         /**
@@ -80,8 +79,8 @@ class Rng {
          * @return A value in [0, range).
          */
         uint32_t boundedU32(uint32_t range) {
-            uint32_t x = nextU32();
-            uint64_t m = static_cast<uint64_t>(x) * static_cast<uint64_t>(range);
+            uint32_t x   = nextU32();
+            uint64_t m   = static_cast<uint64_t>(x) * static_cast<uint64_t>(range);
             uint32_t low = static_cast<uint32_t>(m);
             if (low < range) {
                 const uint32_t threshold = (0u - range) % range;
@@ -112,7 +111,7 @@ namespace Random {
  *
  * Seeded lazily per thread from a clock sample and a global counter, so streams
  * are distinct. Not inline: no engine header carries a thread_local
- * (docs/guides/implementation.md, Threads).
+ * (docs/reference/threading.md, The rules).
  *
  * @return This thread's generator.
  */

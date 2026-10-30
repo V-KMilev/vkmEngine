@@ -23,9 +23,29 @@ constexpr uint64_t FNV1A_PRIME        = 1099511628211ull;
  */
 inline uint64_t fnv1a64Bytes(const void* data, std::size_t size, uint64_t seed = FNV1A_OFFSET_BASIS) {
     const auto* bytes = static_cast<const unsigned char*>(data);
-    uint64_t hash = seed;
+    uint64_t hash     = seed;
     for (std::size_t i = 0; i < size; ++i) {
         hash ^= bytes[i];
+        hash *= FNV1A_PRIME;
+    }
+    return hash;
+}
+
+/**
+ * @brief FNV-1a taken a 64-bit word a step, continuing from @p seed.
+ *
+ * An eighth of fnv1a64Bytes' steps over the same bytes, and not its hash: for a signature
+ * compared only with others made this way.
+ *
+ * @param words Words to hash.
+ * @param count How many.
+ * @param seed  A previous hash to continue, or the offset basis.
+ * @return The hash.
+ */
+inline uint64_t fnv1a64Words(const uint64_t* words, std::size_t count, uint64_t seed = FNV1A_OFFSET_BASIS) {
+    uint64_t hash = seed;
+    for (std::size_t i = 0; i < count; ++i) {
+        hash ^= words[i];
         hash *= FNV1A_PRIME;
     }
     return hash;

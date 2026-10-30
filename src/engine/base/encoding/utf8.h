@@ -6,14 +6,14 @@
 
 namespace Vkm::Engine::Utf8 {
 
-/// What a malformed sequence decodes as, and what an unencodable codepoint encodes as.
-constexpr char32_t REPLACEMENT = 0xFFFD;
+constexpr char32_t REPLACEMENT = 0xFFFD;  ///< What a malformed sequence decodes as, and what an unencodable
+                                          ///< codepoint encodes as.
 
 /**
  * @brief Decode the codepoint that starts at @p at, and step past it.
  *
  * A malformed sequence decodes as REPLACEMENT and consumes one byte, so a walk
- * always advances and resynchronises on the next lead byte.
+ * always advances and resynchronizes on the next lead byte.
  *
  * @param text Text being walked; @p at must be inside it.
  * @param at   Byte offset of the sequence; left at the byte after it.
@@ -31,16 +31,16 @@ inline char32_t next(std::string_view text, std::size_t& at) {
     char32_t    least  = 0;   // the smallest codepoint this length may carry
     if ((lead & 0xE0) == 0xC0) {
         length = 2;
-        value = lead & 0x1F;
-        least = 0x80;
+        value  = lead & 0x1F;
+        least  = 0x80;
     } else if ((lead & 0xF0) == 0xE0) {
         length = 3;
-        value = lead & 0x0F;
-        least = 0x800;
+        value  = lead & 0x0F;
+        least  = 0x800;
     } else if ((lead & 0xF8) == 0xF0) {
         length = 4;
-        value = lead & 0x07;
-        least = 0x10000;
+        value  = lead & 0x07;
+        least  = 0x10000;
     } else {
         ++at;
         return REPLACEMENT;

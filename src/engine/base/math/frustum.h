@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
 
-#include "core/math/bounds.h"
+#include "base/math/aabb.h"
 
 namespace Vkm::Engine::Math {
 
@@ -31,9 +31,9 @@ inline Frustum extractFrustum(const glm::mat4& viewProjection) {
     const glm::vec4 row1 = glm::row(viewProjection, 1);
     const glm::vec4 row2 = glm::row(viewProjection, 2);
     const glm::vec4 row3 = glm::row(viewProjection, 3);
-    glm::vec4 planes[6] = {row3 + row0, row3 - row0, row3 + row1, row3 - row1, row3 + row2, row3 - row2};
+    glm::vec4 planes[6]  = {row3 + row0, row3 - row0, row3 + row1, row3 - row1, row3 + row2, row3 - row2};
     for (int i = 0; i < 6; ++i) {
-        const glm::vec3 n = glm::vec3(planes[i]);
+        const glm::vec3 n  = glm::vec3(planes[i]);
         const float length = glm::length(n);
         if (length > 0.0f) {
             const float invLen = 1.0f / length;

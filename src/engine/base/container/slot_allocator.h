@@ -4,10 +4,39 @@
 #include <cstdint>
 #include <vector>
 
-#include "l_assert.h"
-#include "core/memory/types.h"
+#include "vkm_log/assert.h"
+#include "base/container/storage_index.h"
 
 namespace Vkm::Engine {
+
+/**
+ * @brief Per-slot alive flag (bit 31) and generation counter (bits 0-30) in one uint32_t.
+ */
+struct GenerationIndex {
+    uint32_t value = 0;
+
+    static constexpr uint32_t ALIVE_BIT = uint32_t(1) << 31;
+    static constexpr uint32_t GEN_MASK  = ~ALIVE_BIT;
+
+    /**
+     * @brief Set the alive/dead status, leaving the generation untouched.
+     *
+     * @param alive True marks the slot alive, false dead.
+     */
+    void setAlive(bool alive) { value = (value & GEN_MASK) | (alive ? ALIVE_BIT : 0); }
+
+    /**
+     * @brief Increment the generation counter, preserving the alive bit.
+     *
+     * Called on each removal, staling every handle minted before. Wraps at 31 bits.
+     */
+    void bumpGeneration() { value = (value & ALIVE_BIT) | (((value & GEN_MASK) + 1) & GEN_MASK); }
+
+    bool     alive() const      { return value & ALIVE_BIT; }
+    uint32_t generation() const { return value & GEN_MASK; }
+};
+
+static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
 
 /**
  * @brief Lightweight slot allocator that issues generation-safe handles.
@@ -17,13 +46,11 @@ namespace Vkm::Engine {
  */
 class SlotAllocator {
     public:
-        /**
-         * @brief The highest index allocateAt will claim.
-         *
-         * allocateAt grows the table to an index often read from a file or a
-         * datagram, so this bounds what a file or a peer can make it allocate.
-         */
-        static constexpr uint32_t MAX_CLAIMED_INDEX = 1u << 22;
+        static constexpr uint32_t MAX_CLAIMED_INDEX = 1u << 22;  ///< The highest index allocateAt will claim.
+                                                                 ///< allocateAt grows the table to an index
+                                                                 ///< often read from a file or a datagram, so
+                                                                 ///< this bounds what a file or a peer can
+                                                                 ///< make it allocate.
 
     public:
         SlotAllocator() : m_generation({GenerationIndex{}}) {}
@@ -112,7 +139,7 @@ class SlotAllocator {
          *
          * For a loader whose entities keep their saved slot indices. Gaps grown
          * across go onto the free list. A claimed slot still in the free list
-         * is skipped when popped, not erased (a linear find per call).
+         * is skipped when popped, not erased.
          *
          * @param index Slot to claim; must be free.
          * @return The new handle, or null for slot 0, an index past
@@ -155,11 +182,14 @@ class SlotAllocator {
 
         /**
          * @brief Reset every slot to dead, bumping generations so outstanding handles go stale.
+         *
+         * The floor stays (keepBelow): it is the caller's, not the slots'.
          */
         void clear() {
             m_freeList.clear();
+            m_kept.clear();
             m_freeList.reserve(m_generation.size());
-            // Highest first, so slot 1 comes out next, as from a new allocator.
+            // Highest first, so the lowest slot allocate() may hand out comes out next.
             for (uint32_t i = static_cast<uint32_t>(m_generation.size()); i-- > 1;) {
                 if (m_generation[i].alive()) {
                     m_generation[i].setAlive(false);
@@ -169,6 +199,59 @@ class SlotAllocator {
             }
             m_liveCount = 0;
         }
+
+        /**
+         * @brief Every slot's generation, slot 0's included: a live slot's id's, a free slot's next.
+         *
+         * @return What startAt() takes to number another allocator's slots as these are.
+         */
+        std::vector<uint32_t> generations() const {
+            std::vector<uint32_t> each;
+            each.reserve(m_generation.size());
+            for (const GenerationIndex slot : m_generation) each.push_back(slot.generation());
+            return each;
+        }
+
+        /**
+         * @brief Number every slot as @p generations does, all of them free.
+         *
+         * For a world rebuilt under the ids it had: allocateAt then claims each slot at the generation
+         * it had, and a slot that was free hands out no id it gave before. Asserts and refuses while a
+         * slot is live. The floor stays, as clear() leaves it.
+         *
+         * @param generations What generations() answered; slot 0's is not read.
+         */
+        void startAt(const std::vector<uint32_t>& generations) {
+            VKM_ASSERT(m_liveCount == 0, "SlotAllocator::startAt called with live slots");
+            if (m_liveCount != 0) return;
+
+            m_generation.assign(std::max<size_t>(generations.size(), 1), GenerationIndex{});
+            m_freeList.clear();
+            m_kept.clear();
+            // Highest first, so the lowest slot allocate() may hand out comes out next.
+            for (uint32_t i = static_cast<uint32_t>(m_generation.size()); i-- > 1;) {
+                m_generation[i].value = generations[i] & GenerationIndex::GEN_MASK;
+                m_freeList.push_back(i);
+            }
+        }
+
+        /**
+         * @brief Hand out no slot below @p floor from allocate(): those are left to allocateAt.
+         *
+         * A client's own entities go above where the server's are named, so each of the server's
+         * finds its own slot free (NetSession). Zero hands out every slot again.
+         *
+         * @param floor The lowest slot allocate() returns.
+         */
+        void keepBelow(uint32_t floor) {
+            m_floor = floor;
+            if (floor > 0) return;
+            m_freeList.insert(m_freeList.end(), m_kept.begin(), m_kept.end());
+            m_kept.clear();
+        }
+
+        /// The lowest slot allocate() returns; 0 for none kept.
+        uint32_t floor() const { return m_floor; }
 
         /**
          * @brief Swap internal state with another allocator.
@@ -181,7 +264,9 @@ class SlotAllocator {
             using std::swap;
             swap(m_generation, other.m_generation);
             swap(m_freeList,   other.m_freeList);
+            swap(m_kept,       other.m_kept);
             swap(m_liveCount,  other.m_liveCount);
+            swap(m_floor,      other.m_floor);
         }
 
         /**
@@ -206,16 +291,25 @@ class SlotAllocator {
          * @return The index of an allocatable slot.
          */
         uint32_t allocateSlot(bool& reused) {
-            // Skip slots allocateAt claimed; each is discarded once, so amortised O(1).
+            // Skip slots allocateAt claimed; each is discarded once, so amortized O(1).
             while (!m_freeList.empty()) {
                 const uint32_t idx = m_freeList.back();
                 m_freeList.pop_back();
-                if (!m_generation[idx].alive()) {
-                    reused = true;
-                    return idx;
+                if (m_generation[idx].alive()) continue;
+                // Set aside, not dropped: handed out again once the floor goes.
+                if (idx < m_floor) {
+                    m_kept.push_back(idx);
+                    continue;
                 }
+                reused = true;
+                return idx;
             }
 
+            // Grown past the floor, what lies below it is free for allocateAt.
+            while (m_generation.size() < m_floor) {
+                m_kept.push_back(static_cast<uint32_t>(m_generation.size()));
+                m_generation.push_back({});
+            }
             reused = false;
             const uint32_t idx = static_cast<uint32_t>(m_generation.size());
             m_generation.push_back({});
@@ -224,8 +318,12 @@ class SlotAllocator {
 
     private:
         std::vector<GenerationIndex> m_generation;
-        std::vector<uint32_t> m_freeList;   ///< May hold slots allocateAt has since claimed.
-        size_t m_liveCount = 0;
+        std::vector<uint32_t>        m_freeList;       ///< May hold slots allocateAt has since claimed.
+        std::vector<uint32_t>        m_kept;           ///< Free slots below the floor, for when it goes; as
+                                                       ///< m_freeList, some allocateAt may have claimed
+                                                       ///< since.
+        size_t                       m_liveCount = 0;
+        uint32_t                     m_floor     = 0;  ///< See keepBelow().
 };
 
 } // namespace Vkm::Engine

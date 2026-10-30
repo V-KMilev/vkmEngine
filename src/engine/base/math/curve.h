@@ -5,26 +5,9 @@
 
 #include <glm/glm.hpp>
 
-#include "core/reflect.h"
-#include "core/math/random.h"
+#include "base/reflect/reflect.h"
 
 namespace Vkm::Engine::Math {
-
-/**
- * @brief A value drawn once, uniformly between min and max; equal ends are a constant.
- */
-struct FloatRange {
-    float min = 0.0f;
-    float max = 0.0f;
-
-    /**
-     * @brief One draw from the range.
-     *
-     * @param rng The stream it is drawn from: a constant draws nothing, so it never moves the stream.
-     * @return A value in [min, max].
-     */
-    float draw(Rng& rng) const { return min == max ? min : rng.nextFloat(min, max); }
-};
 
 /**
  * @brief The value of @p keys at @p t: straight between the nearest key either side, the first
@@ -84,7 +67,7 @@ struct Curve {
 };
 
 /**
- * @brief One key of a Gradient: its colour at a time between 0 and 1.
+ * @brief One key of a Gradient: its color at a time between 0 and 1.
  */
 struct GradientKey {
     float     time = 0.0f;
@@ -92,19 +75,19 @@ struct GradientKey {
 };
 
 /**
- * @brief A colour over a span from 0 to 1, straight between its keys in linear RGBA.
+ * @brief A color over a span from 0 to 1, straight between its keys in linear RGBA.
  *
- * None reads white; one reads its colour throughout; before the first key and after the last the
- * end colour holds.
+ * None reads white; one reads its color throughout; before the first key and after the last the
+ * end color holds.
  */
 struct Gradient {
     std::vector<GradientKey> keys;
 
     /**
-     * @brief The colour at @p t.
+     * @brief The color at @p t.
      *
      * @param t Where in the span, 0 to 1.
-     * @return The colour there.
+     * @return The color there.
      */
     glm::vec4 at(float t) const {
         return sampleKeys(keys, t, glm::vec4(1.0f), [](const GradientKey& key) { return key.color; });
@@ -112,11 +95,6 @@ struct Gradient {
 };
 
 } // namespace Vkm::Engine::Math
-
-VKM_REFLECT_BEGIN(::Vkm::Engine::Math::FloatRange)
-    VKM_F(min)
-    VKM_F(max)
-VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Math::CurveKey)
     VKM_F(time)

@@ -1,11 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "core/memory/types.h"
+#include "base/container/type_id.h"
 
 namespace Vkm::Engine {
 
@@ -105,21 +104,6 @@ class TypeRegistry {
          * @param other Registry to trade with.
          */
         void swap(TypeRegistry& other) noexcept { m_slots.swap(other.m_slots); }
-
-        /**
-         * @brief How many types actually have a slot.
-         *
-         * Not the vector's length, which includes other registries' empty slots.
-         *
-         * @return The number of filled slots.
-         */
-        std::size_t count() const {
-            std::size_t n = 0;
-            for (const auto& held : m_slots) {
-                if (held) ++n;
-            }
-            return n;
-        }
 
         /**
          * @brief Invoke fn(Base&) for every filled slot, in type-id order.
