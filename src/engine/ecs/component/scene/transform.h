@@ -4,20 +4,32 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "core/math/rotation.h"
-#include "core/reflect.h"
+#include "base/math/rotation.h"
+#include "base/reflect/reflect.h"
+#include "resource/asset/bone_pose.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief Local position, rotation and scale of an entity.
  *
- * For pure quat/axis math, use core/math/ (rotation.h, axes.h).
+ * For pure quat/axis math, use base/math/ (rotation.h, axes.h).
  */
 struct Transform {
     glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< Local position
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation
     glm::vec3 scale    = {1.0f, 1.0f, 1.0f};        ///< Local scale
+
+    /**
+     * @brief A bone's pose as a Transform.
+     *
+     * @param pose A bone's local position, rotation and scale.
+     * @return The same TRS.
+     */
+    static Transform fromPose(const BonePose& pose) { return {pose.position, pose.rotation, pose.scale}; }
+
+    /// This TRS as a bone's pose, as a rig keeps it.
+    BonePose pose() const { return {position, rotation, scale}; }
 
     /**
      * @brief Compute the model matrix from transform data.

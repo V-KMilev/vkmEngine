@@ -14,11 +14,11 @@ namespace Vkm::Engine {
  * that is where a save puts it back.
  */
 struct MissingAssetRef {
-    std::string component;   ///< Scene-format component key, e.g. "Mesh".
-    /// Path inside that component's block, its steps joined by dots: "material", or
-    /// "levels.2.mesh" for a name inside a list (ReflectJson::childPath).
-    std::string field;
-    std::string name;        ///< The asset name the file gave.
+    std::string component;                ///< Scene-format component key, e.g. "Mesh".
+    std::string field;                    ///< Path inside that component's block, its steps joined by dots:
+                                          ///< "material", or "levels.2.mesh" for a name inside a list
+                                          ///< (ReflectJson::childPath).
+    std::string name;                     ///< The asset name the file gave.
     AssetType   type = AssetType::Count;  ///< Kind it was looked up as.
 };
 

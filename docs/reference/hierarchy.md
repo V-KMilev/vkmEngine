@@ -7,74 +7,44 @@ an entity outside any hierarchy has none and is read by its local `Transform`.
 
 ## Changing the graph
 
-`HierarchyOperations` is a namespace of free functions and the only sanctioned
-way to change the graph - never write the components directly.
+`HierarchyOperations` (`src/engine/ecs/hierarchy_operations.h`) is a namespace of free
+functions and the only sanctioned way to change the graph - never write the components
+directly; `setParent` says why. It links a child (last, or in front of a sibling), makes a
+root, and destroys an entity with every descendant. A chain is at most
+`HierarchyOperations::MAX_DEPTH` entities deep: `setParent` refuses one deeper, a cycle or
+a dead entity, with a warning.
 
-| Function                                  | Purpose                                                                                |
-|-------------------------------------------|----------------------------------------------------------------------------------------|
-| `setParent(scene, child, parent, before)` | Link `child` under `parent`, last or in front of `before`. Refuses a ring and a dead entity. |
-| `removeFromParent(scene, entity)`         | Make `entity` a root.                                                                  |
-| `destroyHierarchy(scene, entity)`         | Destroy `entity` and every descendant.                                                 |
-
-`setParent` adds `Hierarchy` and a placeholder `WorldTransform` to both ends
-before the resolve runs, so the parallel per-frame loop never adds a component -
-a structural change that is not thread-safe. Linking entities any other way
-brings that hazard back.
-
-Children keep the order they were attached in: the last parented is walked
-last, listed last in the editor's hierarchy panel and, on a UI canvas, drawn on
-top. Saving and prefabs keep the order.
+Children keep their order - the last attached, or where `setParent`'s `before` put it:
+they are walked in it, listed in it in the editor's hierarchy panel and, on a UI canvas,
+drawn in it, the last on top. Saving and prefabs keep the order.
 
 ## Walking the graph
 
-Every walk over the graph belongs in the namespace, and every one is bounded, so
-a cycle ends the walk instead of hanging it:
-
-| Function                                          | Purpose                                                                              |
-|---------------------------------------------------|--------------------------------------------------------------------------------------|
-| `forEachChild(scene, entity, fn)`                 | Call `fn(childId)` for each direct child, in order.                                  |
-| `forSelfAndAncestors(scene, entity, fn)`          | Call `fn` on `entity`, then each ancestor nearest first, until it returns false.     |
-| `computeWorldMatrix(scene, entity)`               | The world matrix as the scene stands now, composed up the chain; writes nothing.     |
-| `findInSelfOrDescendants<T>(scene, root)`         | The nearest entity at or below `root` with a `T`, breadth first - an imported model puts the rig or physics below the entity an author selects. |
-| `findInSelfOrDescendantsIf(scene, root, match)`   | The same walk against a predicate.                                                   |
-| `findNamed(scene, root, name)`                    | The same walk for a `Name`; of two, the shallower wins.                              |
-| `findInSelfOrAncestors<T>(scene, leaf)`           | The nearest entity at or above `leaf` with a `T`.                                    |
-| `isAncestorOf(scene, ancestor, node)`             | Whether `ancestor` is a strict ancestor of `node` - the check a reparent runs.       |
-| `collectSubtree(scene, root)`                     | Every entity at or below `root`, parents first. What a subtree *is*: destroy, undo and Save as Prefab all use it, so they agree. |
-| `warnWalkBound(walk, bound)`                      | Called by a walk that hit its bound (a ring, or a chain too deep); warns once.        |
+The namespace also walks the graph: the children, the ancestors, the nearest component or
+name at or below or above an entity, a whole subtree, the world matrix now - each a
+function in its header. Every walk is bounded, so a cycle ends it instead of hanging it:
+the namespace's are, and one written elsewhere (`UISystem`'s layout, a recursive one)
+stops at `HierarchyOperations::MAX_DEPTH`.
 
 ## Reading a world pose
 
-`ecs/component/core/world_transform.h` reads what this frame's Transform stage
-resolved, falling back to the local `Transform` when there is no
-`WorldTransform`:
-
-| Function                                          | Returns                                                        |
-|---------------------------------------------------|----------------------------------------------------------------|
-| `resolvedWorldMatrix(scene, entity, local)`       | `WorldTransform::model` if present, else the local model matrix |
-| `resolvedWorldPosition(scene, entity, local)`     | The same rule, translation only                                 |
-| `resolvedWorldRotation(scene, entity, local)`     | The same rule, rotation only                                    |
-| `resolvedWorldScale(scene, entity, local)`        | The same rule, scale only                                       |
-
-A `Transform` written after the Transform stage (the editor's gizmo, say) shows
-in `computeWorldMatrix` at once and in these only next frame.
+`computeWorldMatrix` composes the chain as the scene stands now. `resolvedWorldMatrix`
+and its position, rotation and scale siblings (`ecs/component/scene/world_transform.h`)
+read what this frame's Transform stage resolved. A `Transform` written after that stage
+(the editor's gizmo, say) shows in the first at once and, on a parented entity, in the
+others only next frame.
 
 ## How it works inside
 
-`HierarchySystem::update` resolves level by level from the roots, each level
-under `parallelFor`: compose the local `Transform` onto the parent's
-`WorldTransform`. An entity with no `Transform` is descended into but not
-written. There is no dirty flag - every hierarchical entity resolves every frame,
+`HierarchySystem` resolves a level at a time from the roots, each level under
+`parallelFor`; an entity with no `Transform` keeps its matrix, and its children compose
+onto it. There is no dirty flag - every hierarchical entity resolves every frame,
 because a flag would be a second statement of whether a matrix is current
-([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
-
-In the editor, drag-to-reparent goes through a `ReparentCommand` and delete
-through `DestroySubtreeCommand`, which snapshots the subtree first so undo
-restores it exactly ([editor.md](editor.md)).
+([decisions.md](decisions.md#what-has-been-decided)).
 
 ## Key files
 
-- `src/engine/ecs/hierarchy_operations.h` - the API above
+- `src/engine/ecs/hierarchy_operations.h` - `HierarchyOperations`, every link and walk
 - `src/engine/system/hierarchy/hierarchy_system.h` - the per-frame resolve
-- `src/engine/ecs/component/core/hierarchy.h` - `Hierarchy`
-- `src/engine/ecs/component/core/world_transform.h` - `WorldTransform` and the readers
+- `src/engine/ecs/component/scene/hierarchy.h` - `Hierarchy`
+- `src/engine/ecs/component/scene/world_transform.h` - `WorldTransform` and the readers

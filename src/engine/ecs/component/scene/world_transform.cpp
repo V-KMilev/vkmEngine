@@ -1,8 +1,8 @@
-#include "ecs/component/core/world_transform.h"
+#include "ecs/component/scene/world_transform.h"
 
-#include "core/math/rotation.h"
+#include "base/math/rotation.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Vkm::Engine {
 

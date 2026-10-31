@@ -6,19 +6,61 @@
 #include <utility>
 #include <vector>
 
-#include "l_assert.h"
+#include "vkm_log/assert.h"
 
-#include "ecs/component/core/hierarchy.h"
-#include "core/memory/type_registry.h"
-#include "ecs/environment.h"
-#include "ecs/physics_settings.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "base/container/type_registry.h"
+#include "ecs/settings/environment.h"
+#include "ecs/settings/physics_settings.h"
 #include "ecs/entity.h"
-#include "ecs/scene_observer.h"
-#include "core/memory/slot_allocator.h"
-#include "core/memory/sparse_set.h"
-#include "core/memory/types.h"
+#include "ecs/water/water_data.h"
+#include "base/container/slot_allocator.h"
+#include "base/container/sparse_set.h"
+#include "base/container/type_id.h"
 
 namespace Vkm::Engine {
+
+/**
+ * @brief Observer notified by a Scene when an entity is destroyed.
+ *
+ * Registered via Scene::addObserver(). Lets a system react to deletions without
+ * Scene depending on it. Scene::clear() and Scene::swap() do not notify.
+ */
+class ISceneObserver {
+    public:
+        ISceneObserver() = default;
+        virtual ~ISceneObserver() = default;
+
+        ISceneObserver(const ISceneObserver& other) = delete;
+        ISceneObserver& operator=(const ISceneObserver& other) = delete;
+
+        ISceneObserver(ISceneObserver && other) = delete;
+        ISceneObserver& operator=(ISceneObserver && other) = delete;
+
+    public:
+        /**
+         * @brief Called just before @p id's components are removed.
+         * @param id Entity being destroyed; still alive, components intact.
+         */
+        virtual void onEntityDestroyed(EntityId id) = 0;
+};
+
+class Scene;
+
+/**
+ * @brief Detach an entity from the hierarchy tree, handing its children to its parent.
+ *
+ * Children take the entity's place among its siblings, in order (or become
+ * roots), each keeping its world pose. A child left with no relatives loses its
+ * Hierarchy and WorldTransform as removeFromParent leaves any leaf.
+ *
+ * Scene-internal, for Scene::destroyEntity; edit the graph through
+ * HierarchyOperations instead.
+ *
+ * @param scene  Scene the entity lives in.
+ * @param entity Entity being spliced out, still alive.
+ */
+void detachFromHierarchy(Scene& scene, EntityId entity);
 
 /**
  * @brief Central registry managing entities and an open set of component types.
@@ -77,6 +119,8 @@ class Scene {
         /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
          *
+         * Its children move up to its parent, in its place among the siblings, or become roots,
+         * each keeping its world pose; HierarchyOperations::destroyHierarchy takes the subtree.
          * The teardown is keyed on the bare slot, so a stale id asserts and is
          * refused, or it would destroy the slot's new owner.
          *
@@ -94,6 +138,28 @@ class Scene {
 
             m_components.forEach([&](ISparseSet& set) { set.removeIfPresent(id.slot()); });
             m_entityAllocator.free(id.key);
+        }
+
+        /// SlotAllocator::keepBelow: createEntity() takes no slot below @p floor; createEntityAt still can.
+        void keepSlotsBelow(uint32_t floor) { m_entityAllocator.keepBelow(floor); }
+        uint32_t slotFloor() const          { return m_entityAllocator.floor(); }
+        /// One past the highest slot ever taken.
+        uint32_t slotExtent() const         { return static_cast<uint32_t>(m_entityAllocator.extent()); }
+
+        /// SlotAllocator::generations: what startSlotsAt() takes to rebuild this world under its ids.
+        std::vector<uint32_t> slotGenerations() const { return m_entityAllocator.generations(); }
+
+        /**
+         * @brief Number the slots as @p generations does, so createEntityAt() gives each entity of
+         *        the world they were taken from the id it had there (SlotAllocator::startAt).
+         *
+         * For a world rebuilt from a document, which names its entities by slot alone. The scene holds
+         * no entity: one that does asserts, and is left as it is.
+         *
+         * @param generations Another scene's slotGenerations().
+         */
+        void startSlotsAt(const std::vector<uint32_t>& generations) {
+            m_entityAllocator.startAt(generations);
         }
 
         bool isAlive(EntityId id)           const { return m_entityAllocator.has(id.key); }
@@ -130,6 +196,19 @@ class Scene {
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
             VKM_ASSERT(!has<U>(entity), "Scene::add: entity already carries this component type");
             return getStorage<U>().add(entity.slot(), std::forward<T>(component));
+        }
+
+        /**
+         * @brief The entity's T, given a default one first when it has none.
+         *
+         * @tparam T Component type; default-constructible.
+         * @param entity Entity to look on; alive.
+         * @return The component in storage.
+         */
+        template<typename T>
+        T& getOrAdd(EntityId entity) {
+            if (T* held = tryGet<T>(entity)) return *held;
+            return add(entity, T{});
         }
 
         /**
@@ -307,7 +386,7 @@ class Scene {
     public:
         /**
          * @brief Drop every component set and reset the entity allocator, the
-         *        environment and the physics settings in one pass.
+         *        environment, the physics settings and the water in one pass.
          *
          * The sets are destroyed, not emptied: a set's vtable may live in the
          * gameplay module, which a project switch unloads next.
@@ -318,6 +397,7 @@ class Scene {
             m_entityAllocator.clear();
             m_environment = Environment{};
             m_physics     = PhysicsSettings{};
+            m_water       = WaterData{};
             ++m_epoch;
         }
 
@@ -342,6 +422,7 @@ class Scene {
             m_components.swap(other.m_components);
             swap(m_environment, other.m_environment);
             swap(m_physics, other.m_physics);
+            swap(m_water, other.m_water);
             ++m_epoch;
             ++other.m_epoch;
         }
@@ -397,7 +478,7 @@ class Scene {
         uint64_t epoch() const { return m_epoch; }
 
         /**
-         * @brief The scene's lighting environment, saved with it.
+         * @brief The scene's Environment, saved with it.
          *
          * @return This scene's Environment.
          */
@@ -411,6 +492,14 @@ class Scene {
          */
         PhysicsSettings& physics() { return m_physics; }
         const PhysicsSettings& physics() const { return m_physics; }
+
+        /**
+         * @brief The scene's water and its waves, as WaterSystem last built them; never saved.
+         *
+         * @return This scene's WaterData.
+         */
+        WaterData& water() { return m_water; }
+        const WaterData& water() const { return m_water; }
 
     private:
         /**
@@ -444,11 +533,12 @@ class Scene {
     private:
         Environment     m_environment;
         PhysicsSettings m_physics;
+        WaterData       m_water;
 
         uint64_t m_epoch = 0;
 
-        SlotAllocator m_entityAllocator;
-        TypeRegistry<ISparseSet> m_components;
+        SlotAllocator                m_entityAllocator;
+        TypeRegistry<ISparseSet>     m_components;
         std::vector<ISceneObserver*> m_observers;  ///< Non-owning.
 };
 

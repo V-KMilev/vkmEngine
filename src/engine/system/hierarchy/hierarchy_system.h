@@ -8,12 +8,12 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Resolves hierarchical transforms into the WorldTransform component.
+ * @brief Resolves hierarchical transforms into the WorldTransform component, every frame, in the
+ *        Transform stage.
  *
- * Runs after Simulation and before VisibilitySystem. WorldTransform is pre-seeded by
- * HierarchyOperations::setParent, so this never mutates the component graph; an entity
- * without one is read from its Transform (see resolvedWorldMatrix). Every matrix is
- * resolved every frame; no dirty flag (docs/guides/engine.md, section 4).
+ * WorldTransform is seeded by HierarchyOperations::setParent, so this never changes the component
+ * graph; an entity without one is read from its Transform (resolvedWorldMatrix). How the resolve runs:
+ * docs/reference/hierarchy.md, "How it works inside".
  */
 class HierarchySystem : public System {
     public:
@@ -34,7 +34,7 @@ class HierarchySystem : public System {
          * @brief Resolve world transforms for every hierarchical entity.
          *
          * A level at a time from the roots, each through parallelFor, so a child reads its
-         * parent's finalised matrix without a race. Each entity is visited from its own
+         * parent's finalized matrix without a race. Each entity is visited from its own
          * parent, so a cycle, which no root reaches, is never visited.
          *
          * @param scene Scene whose WorldTransforms are written.

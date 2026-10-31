@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "core/memory/types.h"
+#include "base/container/storage_index.h"
 
 namespace Vkm::Engine {
 

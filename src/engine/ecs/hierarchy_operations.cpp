@@ -2,9 +2,9 @@
 
 #include "ecs/hierarchy_operations.h"
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "ecs/component/core/world_transform.h"
+#include "ecs/component/scene/world_transform.h"
 
 namespace Vkm::Engine::HierarchyOperations {
 
@@ -29,6 +29,40 @@ void warnWalkBound(const char* walk, size_t bound) {
     );
 }
 
+namespace {
+
+/// Entities from @p entity up to its root, itself included; MAX_DEPTH once the walk's bound is met.
+uint32_t depthOf(const Scene& scene, EntityId entity) {
+    uint32_t depth = 0;
+    forSelfAndAncestors(scene, entity, [&](EntityId) {
+        ++depth;
+        return true;
+    });
+    return depth;
+}
+
+/// Levels of @p entity's subtree, itself the first; past MAX_DEPTH, MAX_DEPTH + 1.
+uint32_t heightOf(const Scene& scene, EntityId entity) {
+    // A leaf, as nearly every entity a load or a spawn attaches is.
+    const Hierarchy* own = scene.tryGet<Hierarchy>(entity);
+    if (!own || !own->firstChild) return 1;
+
+    std::vector<EntityId> level{entity};
+    std::vector<EntityId> next;
+    uint32_t height = 0;
+    while (!level.empty() && height <= MAX_DEPTH) {
+        ++height;
+        next.clear();
+        for (const EntityId node : level) {
+            forEachChild(scene, node, [&](EntityId child) { next.push_back(child); });
+        }
+        level.swap(next);
+    }
+    return height;
+}
+
+} // namespace
+
 void setParent(Scene& scene, EntityId child, EntityId parent, EntityId before) {
     VKM_ASSERT(scene.isAlive(child), "HierarchyOperations::setParent: child is dead");
     VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
@@ -43,6 +77,11 @@ void setParent(Scene& scene, EntityId child, EntityId parent, EntityId before) {
         LOG_WARNING("HierarchyOperations::setParent: cycle detected, ignoring");
         return;
     }
+    // Every walk over the links follows MAX_DEPTH entities, so no chain is made deeper.
+    if (depthOf(scene, parent) + heightOf(scene, child) > MAX_DEPTH) {
+        LOG_WARNING("HierarchyOperations::setParent: a chain deeper than %u entities, ignoring", MAX_DEPTH);
+        return;
+    }
 
     removeFromParent(scene, child);
 
@@ -52,7 +91,7 @@ void setParent(Scene& scene, EntityId child, EntityId parent, EntityId before) {
     ensure<Hierarchy>(scene, parent);
     ensure<WorldTransform>(scene, parent);
 
-    auto& childH = scene.get<Hierarchy>(child);
+    auto& childH  = scene.get<Hierarchy>(child);
     auto& parentH = scene.get<Hierarchy>(parent);
     childH.parent = parent;
 
@@ -89,9 +128,9 @@ void removeFromParent(Scene& scene, EntityId entity) {
     const EntityId parent      = h.parent;
     const EntityId prevSibling = h.prevSibling;
     const EntityId nextSibling = h.nextSibling;
-    const bool     isLeaf      = !h.firstChild;
+    const bool isLeaf = !h.firstChild;
 
-    // Guarded against malformed links: warn about a dangling neighbour, do not crash.
+    // Guarded against malformed links: warn about a dangling neighbor, do not crash.
     if (prevSibling) {
         if (Hierarchy* prev = scene.tryGet<Hierarchy>(prevSibling)) {
             prev->nextSibling = nextSibling;
@@ -126,7 +165,7 @@ void removeFromParent(Scene& scene, EntityId entity) {
         above->lastChild = prevSibling;
     }
 
-    h.parent = {};
+    h.parent      = {};
     h.prevSibling = {};
     h.nextSibling = {};
 
@@ -197,34 +236,3 @@ std::vector<EntityId> collectSubtree(const Scene& scene, EntityId root) {
 }
 
 } // namespace Vkm::Engine::HierarchyOperations
-
-namespace Vkm::Engine {
-
-void detachFromHierarchy(Scene& scene, EntityId entity) {
-    const Hierarchy* node = scene.tryGet<Hierarchy>(entity);
-    if (!node) return;
-
-    const EntityId  parent   = scene.isAlive(node->parent) ? node->parent : EntityId{};
-    const glm::mat4 toParent = parent
-        ? glm::inverse(HierarchyOperations::computeWorldMatrix(scene, parent))
-        : glm::mat4(1.0f);
-
-    HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
-        if (!scene.isAlive(child)) return;
-        const bool      placed = scene.has<Transform>(child);
-        const glm::mat4 world  = placed
-            ? HierarchyOperations::computeWorldMatrix(scene, child)
-            : glm::mat4(1.0f);
-        if (parent) {
-            // Before the entity going, so its children take its place among its siblings.
-            HierarchyOperations::setParent(scene, child, parent, entity);
-        } else {
-            HierarchyOperations::removeFromParent(scene, child);
-        }
-        if (placed) scene.get<Transform>(child) = Transform::fromModelMatrix(toParent * world);
-    });
-
-    HierarchyOperations::removeFromParent(scene, entity);
-}
-
-} // namespace Vkm::Engine
