@@ -56,9 +56,9 @@ class GLContext {
         std::string m_version;
         std::string m_renderer;
 
-        void*       m_display = nullptr;   ///< EGLDisplay, opaque so EGL stays out of this header
-        void*       m_context = nullptr;   ///< EGLContext
-        void*       m_surface = nullptr;   ///< EGLSurface once attachSurface has made one
+        void*       m_display = nullptr;  ///< EGLDisplay, opaque so EGL stays out of this header
+        void*       m_context = nullptr;  ///< EGLContext
+        void*       m_surface = nullptr;  ///< EGLSurface once attachSurface has made one
 };
 
 } // namespace Vkm::Test

@@ -5,15 +5,16 @@
 
 #include <GL/glew.h>
 
-#include "gl_window_surface.h"
+#include "vkm_opengl/core/load.h"
+#include "vkm_opengl/core/version.h"
 
 namespace Vkm::Test {
 
 namespace {
 
-// The engine's own version, so a suite never skips on a driver the engine runs on.
-constexpr EGLint GL_MAJOR = Vkm::Engine::OPENGL_MAJOR_VERSION;
-constexpr EGLint GL_MINOR = Vkm::Engine::OPENGL_MINOR_VERSION;
+// The version vkmOpenGL needs, so a suite never skips on a driver the engine runs on.
+constexpr EGLint GL_MAJOR = Vkm::OpenGL::MAJOR_VERSION;
+constexpr EGLint GL_MINOR = Vkm::OpenGL::MINOR_VERSION;
 
 const char* glString(GLenum name) {
     const GLubyte* s = glGetString(name);
@@ -23,7 +24,9 @@ const char* glString(GLenum name) {
 } // namespace
 
 GLContext::GLContext() {
-    auto queryDevices = reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(eglGetProcAddress("eglQueryDevicesEXT"));
+    auto queryDevices       = reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(
+        eglGetProcAddress("eglQueryDevicesEXT")
+    );
     auto getPlatformDisplay = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         eglGetProcAddress("eglGetPlatformDisplayEXT")
     );
@@ -33,10 +36,10 @@ GLContext::GLContext() {
         return;
     }
 
-    // Every device, not the first: software rasterisers listed beside the GPU may
-    // fail to initialise or give no core context.
+    // Every device, not the first: software rasterizers listed beside the GPU may
+    // fail to initialize or give no core context.
     EGLDeviceEXT devices[8];
-    EGLint       deviceCount = 0;
+    EGLint deviceCount = 0;
     queryDevices(8, devices, &deviceCount);
     if (deviceCount <= 0) {
         m_reason = "EGL reports no devices";
@@ -76,21 +79,14 @@ GLContext::GLContext() {
             continue;
         }
 
-        // The engine reaches GL through glew, so the tests must too.
-        glewExperimental = GL_TRUE;
-        const GLenum glewStatus = glewInit();
-        // GLEW_ERROR_NO_GLX_DISPLAY only says there is no GLX display, as expected
-        // under EGL; every entry point still loads.
-        if (glewStatus != GLEW_OK && glewStatus != GLEW_ERROR_NO_GLX_DISPLAY) {
-            m_reason = std::string("glew could not load the entry points: ")
-                + reinterpret_cast<const char*>(glewGetErrorString(glewStatus));
+        // Loaded as the engine's window loads it.
+        if (const Vkm::OpenGL::Loaded loaded = Vkm::OpenGL::load(); !loaded.ok) {
+            m_reason = loaded.reason;
             eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
             eglDestroyContext(display, context);
             eglTerminate(display);
             continue;
         }
-        // glewExperimental provokes a meaningless GL_INVALID_ENUM; clear it for the first glGetError.
-        glGetError();
 
         m_display   = display;
         m_context   = context;
@@ -116,8 +112,8 @@ bool GLContext::attachSurface(int width, int height) {
         EGL_RED_SIZE,   8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
         EGL_NONE
     };
-    EGLConfig config = nullptr;
-    EGLint    configCount = 0;
+    EGLConfig config   = nullptr;
+    EGLint configCount = 0;
     if (!eglChooseConfig(display, configAttribs, &config, 1, &configCount) || configCount < 1) {
         return false;
     }
