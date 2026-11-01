@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <ios>
 
 #include "resource/asset_type.h"
 
@@ -11,32 +12,29 @@ struct AnimationClipAsset;
 struct AudioClipAsset;
 struct MeshAsset;
 struct SkeletonAsset;
-struct TerrainAsset;
 struct TextureAsset;
-
-namespace TerrainFile {
-    struct Names;
-}
 
 /**
  * @brief Cooked binary asset format (derived cache).
  *
  * Host-endian; an endian sentinel rejects a file written on a differently-endianed machine. Cooked
  * files are regenerable and keyed to their recipe by name (see cacheKey). Readers validate every
- * count against the file length before allocating. Materials load straight from JSON and are not
- * cooked; meshes, textures, skeletons, animation clips, sounds and terrains are.
+ * count against the file length before allocating. Materials load straight from JSON and terrains
+ * from their .terrain files; meshes, textures, skeletons, animation clips and sounds are cooked.
  */
 namespace AssetCook {
 
-/**
- * @brief Bump when anything the cooker writes changes: a kind's byte layout, an importer flag, a mip
- *        policy, a vertex welding rule.
- *
- * Part of every cache key, so a bump re-bakes everything. Also written into each header, where a reader
- * refuses a mismatch - the case of a file copied under a name not baked for it. Only
- * testTheCookersOutputIsPinnedToItsVersion notices a forgotten bump that changes no layout.
- */
-constexpr uint16_t COOKER_VERSION = 13;
+constexpr uint16_t COOKER_VERSION = 19;  ///< Bump when anything the cooker writes changes: a kind's byte
+                                         ///< layout, an importer flag, a mip policy, a welding rule. Part of
+                                         ///< every cache key, so a bump re-bakes everything, and of each
+                                         ///< header, where a reader refuses a mismatch: a file copied under a
+                                         ///< name not baked for it. Only the test "what the cooker writes
+                                         ///< is pinned to its version" notices a forgotten bump that changes
+                                         ///< no layout.
+
+constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t);
+    ///< Where a cooked file's body begins. The header is written field by field, never as a struct, so
+    ///< padding cannot leak into the format: magic[4], endian sentinel, kind, version, payload bytes.
 
 /**
  * @brief The complete cache key for one cooked artifact.
@@ -52,34 +50,14 @@ constexpr uint16_t COOKER_VERSION = 13;
 uint64_t cacheKey(uint64_t recipeHash, AssetType type);
 
 /**
- * @brief Bone count past which a rig is refused as corrupt rather than read.
- *
- * A rejection threshold, not a capability: a full character rig lands near three hundred bones.
- */
-constexpr uint32_t MAX_SKELETON_BONES = 1024;
-
-/**
- * @brief Channel count past which a sound is refused as corrupt rather than read.
- *
- * A rejection threshold, not a capability: 7.1 is the outer edge of authored source material.
- */
-constexpr uint32_t MAX_AUDIO_CHANNELS = 8;
-
-/**
- * @brief Sample rate past which a clip is refused as corrupt rather than read.
- *
- * Twice the highest consumer hardware rate. The rate gives the clip's duration, so a wild one makes the
- * length wrong everywhere it is read.
- */
-constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
-
-/**
  * @brief Write one cooked file of each kind.
  *
  * Creates the parent directories and writes beside the target, renaming onto it once the write is whole.
  *
  * @param path Where the file goes, already named for its key.
- * @return False on any IO error.
+ * @param mesh The asset written; each writer below takes its own kind alike.
+ * @return False, having logged, for an asset that breaks its kind's rules (findMeshFault and its
+ *         siblings), which the reader would refuse, or on any IO error.
  */
 [[nodiscard]] bool writeMesh         (const std::filesystem::path& path, const MeshAsset&          mesh);
 [[nodiscard]] bool writeTexture      (const std::filesystem::path& path, const TextureAsset&       texture);
@@ -88,23 +66,11 @@ constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
 [[nodiscard]] bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&     audio);
 
 /**
- * @brief Cook @p terrain from its .terrain file (TerrainFile), the body copied once it reads soundly.
- *
- * From the file, not the asset: the body keeps the names of what the asset holds by handle, which
- * only a graph can give. The editor writes the file before it cooks.
- *
- * @param path    Where the file goes, already named for its key.
- * @param terrain The terrain, whose recipe names its file.
- * @return False when the file is missing or unsound, or on any IO error.
- */
-[[nodiscard]] bool writeTerrain(const std::filesystem::path& path, const TerrainAsset& terrain);
-
-/**
  * @brief Whether the cooked file at @p path can still serve @p type.
  *
  * Reads the header and measures the file, nothing more. Not current: absent, not a cooked asset, another
  * kind, or a length other than the header's. Recipe and cooker version are in the name, so not checked.
- * A material is never current: it has no binary. Logs nothing; a stale cache is the caller's to report.
+ * A kind with no binary is never current. Logs nothing; a stale cache is the caller's to report.
  *
  * @param type Asset type the file is expected to hold.
  * @param path Cooked file to probe, already named for its key.
@@ -116,28 +82,15 @@ constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
  * @brief Read one cooked file of each kind.
  *
  * @param path The cooked file.
- * @param out  Filled on success.
- * @return False, logging the reason, on any magic, endian, kind, version, size or integrity mismatch.
+ * @param out  Filled on success, left as it was otherwise.
+ * @return False, logging the reason, on any magic, endian, kind, version or size mismatch, or an asset
+ *         that breaks its kind's rules.
  */
 [[nodiscard]] bool readMesh         (const std::filesystem::path& path, MeshAsset&          out);
 [[nodiscard]] bool readTexture      (const std::filesystem::path& path, TextureAsset&       out);
 [[nodiscard]] bool readSkeleton     (const std::filesystem::path& path, SkeletonAsset&      out);
 [[nodiscard]] bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out);
 [[nodiscard]] bool readAudioClip    (const std::filesystem::path& path, AudioClipAsset&     out);
-
-/**
- * @brief Read a cooked terrain: its handles empty, what they name in @p names (TerrainFile::resolve).
- *
- * @param path  The cooked file.
- * @param out   Filled on success.
- * @param names What its layers and plants name.
- * @return False, logging the reason, on any header mismatch or an unsound body.
- */
-[[nodiscard]] bool readTerrain(
-    const std::filesystem::path& path,
-    TerrainAsset& out,
-    TerrainFile::Names& names
-);
 
 } // namespace AssetCook
 

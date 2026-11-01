@@ -2,11 +2,11 @@
 
 #include <string>
 
+#include "resource/asset_type.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
-#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -14,45 +14,26 @@ namespace Vkm::Engine {
 class ResourceManager;
 
 /**
- * @brief Load a cooked mesh or texture by its library name, decoded off the main thread.
+ * @brief Load the cooked @p Asset called @p name in the library.
  *
- * The runtime's load path: no importer or image decoder. Returns a loading stub at once and reads on the
- * ThreadPool; AsyncLoaderSystem finalises on the main thread.
+ * The runtime's load path: no importer or image decoder. A mesh or texture is decoded off the main
+ * thread: a loading stub comes back at once, read on the ThreadPool, and AsyncLoaderSystem finalizes
+ * it on the main thread. The rest are read at once: a rig or clip is too small to earn an
+ * AsyncLoadQueue lane, and a sound needs no decode (the cooked file is the mixer's PCM), where a
+ * worker hop would open a window in which a scene's sounds exist but are silent.
  *
+ * @tparam Asset    A kind of VKM_COOKED_ASSET_KINDS, each defined in cooked_loader.cpp.
  * @param name      The asset's library name.
  * @param resources The graph the asset is added to.
  * @return The asset (the one resident under @p name, if any), or an invalid handle when the manifest has
- *         no row for @p name or no cooked file this build can read.
+ *         no row for @p name, no cooked file this build can read, or a file read at once does not read.
  */
-MeshHandle    loadCookedMesh   (const std::string& name, ResourceManager& resources);
-TextureHandle loadCookedTexture(const std::string& name, ResourceManager& resources);
+template<typename Asset>
+Handle<Asset> loadCooked(const std::string& name, ResourceManager& resources);
 
-/**
- * @brief Load a cooked skeleton, animation clip or sound by its library name, synchronously.
- *
- * A rig or clip is too small to earn an AsyncLoadQueue lane. A sound needs no decode (the cooked file is
- * the mixer's PCM), and a worker hop would open a window in which a scene's sounds exist but are silent.
- *
- * @param name      The asset's library name.
- * @param resources The graph the asset is added to.
- * @return The asset (the one resident under @p name, if any), or an invalid handle when the manifest has
- *         no row for @p name, no cooked file this build can read, or the file does not read.
- */
-SkeletonHandle      loadCookedSkeleton     (const std::string& name, ResourceManager& resources);
-AnimationClipHandle loadCookedAnimationClip(const std::string& name, ResourceManager& resources);
-AudioClipHandle     loadCookedAudioClip    (const std::string& name, ResourceManager& resources);
-
-/**
- * @brief Load a cooked terrain by its library name, synchronously, its layers' materials and its
- *        plants' meshes and materials found by name in @p resources (TerrainFile::resolve).
- *
- * Loaded after the materials and meshes it names (ASSET_DEPENDENCY_ORDER), which must be in
- * @p resources already.
- *
- * @param name      The asset's library name.
- * @param resources The graph the asset is added to.
- * @return The asset, or an invalid handle as loadCookedSkeleton's.
- */
-TerrainHandle loadCookedTerrain(const std::string& name, ResourceManager& resources);
+#define VKM_DECLARE_LOAD_COOKED(tag, Asset, kindName, dir, cooked) \
+    template<> Handle<Asset> loadCooked<Asset>(const std::string& name, ResourceManager& resources);
+VKM_COOKED_ASSET_KINDS(VKM_DECLARE_LOAD_COOKED)
+#undef VKM_DECLARE_LOAD_COOKED
 
 } // namespace Vkm::Engine

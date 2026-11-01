@@ -1,11 +1,11 @@
 #pragma once
 
 #include <string>
-#include <type_traits>
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
+#include "resource/asset_type.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -42,17 +42,16 @@ using TextureDecode = bool (*)(const std::string& ref, TextureUsage usage, Textu
  * the texture decode a bake reads a second texture by.
  *
  * io loads cooked files itself but cannot link the importers, so a host that imports installs these
- * (registerRecipeAssetFactories). A material has no slot: its recipe is its runtime form, which io
- * reads itself.
+ * (registerRecipeAssetFactories). Each kind of VKM_COOKED_ASSET_KINDS has its slot, `create` and its
+ * tag: createMesh, createTexture and the rest. A material has none: its recipe is its runtime form,
+ * which io reads itself.
  */
 struct AssetFactory {
-    RecipeImport<MeshAsset>          createMesh          = nullptr;
-    RecipeImport<TextureAsset>       createTexture       = nullptr;
-    RecipeImport<SkeletonAsset>      createSkeleton      = nullptr;
-    RecipeImport<AnimationClipAsset> createAnimationClip = nullptr;
-    RecipeImport<AudioClipAsset>     createAudioClip     = nullptr;
-    RecipeImport<TerrainAsset>       createTerrain       = nullptr;
-    TextureDecode                    decodeTexture       = nullptr;
+#define VKM_ASSET_IMPORT_SLOT(tag, Asset, name, dir, cooked) RecipeImport<Asset> create##tag = nullptr;
+    VKM_COOKED_ASSET_KINDS(VKM_ASSET_IMPORT_SLOT)
+#undef VKM_ASSET_IMPORT_SLOT
+
+    TextureDecode decodeTexture = nullptr;
 };
 
 /**
@@ -70,14 +69,13 @@ AssetFactory& assetFactory();
  */
 template<typename Asset>
 RecipeImport<Asset> recipeImport() {
-    const AssetFactory& factory = assetFactory();
-    if constexpr (std::is_same_v<Asset, MeshAsset>)               return factory.createMesh;
-    else if constexpr (std::is_same_v<Asset, TextureAsset>)       return factory.createTexture;
-    else if constexpr (std::is_same_v<Asset, SkeletonAsset>)      return factory.createSkeleton;
-    else if constexpr (std::is_same_v<Asset, AnimationClipAsset>) return factory.createAnimationClip;
-    else if constexpr (std::is_same_v<Asset, AudioClipAsset>)     return factory.createAudioClip;
-    else if constexpr (std::is_same_v<Asset, TerrainAsset>)       return factory.createTerrain;
-    else static_assert(Reflect::DEPENDENT_FALSE<Asset>, "recipeImport: this kind has no import slot");
+    static_assert(Reflect::DEPENDENT_FALSE<Asset>, "recipeImport: this kind has no import slot");
+    return nullptr;
 }
+
+#define VKM_ASSET_RECIPE_IMPORT(tag, Asset, name, dir, cooked) \
+    template<> inline RecipeImport<Asset> recipeImport<Asset>() { return assetFactory().create##tag; }
+VKM_COOKED_ASSET_KINDS(VKM_ASSET_RECIPE_IMPORT)
+#undef VKM_ASSET_RECIPE_IMPORT
 
 } // namespace Vkm::Engine

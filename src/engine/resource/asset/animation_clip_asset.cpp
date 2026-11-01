@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "resource/asset/skeleton_asset.h"
+
 namespace Vkm::Engine {
 
 namespace {
@@ -17,6 +19,10 @@ std::string findClipFault(const AnimationClipAsset& clip) {
     // advanceHead divides by the duration; a NaN would spread through every pose.
     if (!std::isfinite(clip.duration) || clip.duration < 0.0f) {
         return "its duration " + std::to_string(clip.duration) + " is not a length of time";
+    }
+    if (clip.bones.size() > SkeletonAsset::MAX_BONES) {
+        return std::to_string(clip.bones.size()) + " bones is past the "
+            + std::to_string(SkeletonAsset::MAX_BONES) + " a rig may have";
     }
     if (clip.positionTimes.size() != clip.positions.size()
         || clip.rotationTimes.size() != clip.rotations.size()
@@ -41,6 +47,10 @@ std::string findClipFault(const AnimationClipAsset& clip) {
             + " is outside its " + std::to_string(clip.duration) + " seconds";
     }
     return {};
+}
+
+bool clipFitsRig(const AnimationClipAsset& clip, const SkeletonAsset& skeleton) {
+    return clip.skeleton == skeleton.name() && clip.bones.size() == skeleton.bones.size();
 }
 
 } // namespace Vkm::Engine

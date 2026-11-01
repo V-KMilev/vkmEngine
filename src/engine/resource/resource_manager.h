@@ -7,17 +7,17 @@
 #include <utility>
 #include <vector>
 
-#include "l_assert.h"
-#include "logger.h"
+#include "vkm_log/assert.h"
+#include "vkm_log/logger.h"
 
-#include "core/memory/slot_allocator.h"
-#include "core/memory/sparse_set.h"
-#include "core/memory/types.h"
-#include "core/memory/type_registry.h"
+#include "base/container/slot_allocator.h"
+#include "base/container/sparse_set.h"
+#include "base/container/storage_index.h"
+#include "base/container/type_registry.h"
 #include "resource/asset_ref.h"
 #include "resource/asset_type.h"
 #include "resource/resource.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 
 namespace Vkm::Engine {
 
@@ -149,16 +149,15 @@ class ResourceManager {
         /**
          * @brief Remove a resource: its name mapping, storage and handle slot.
          *
-         * GPU memory is not freed: GLView reclaims a slot when its index is recycled, or all at
+         * GPU memory is not freed: the renderer reclaims a slot when its index is recycled, or all at
          * once when the epoch moves. A stale handle asserts in debug and is a no-op in release:
          * past the generation check everything addresses the slot index alone.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle The resource to remove; must still be live.
          */
-        template<typename HandleType>
-        void remove(const HandleType& handle) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        void remove(const Handle<T>& handle) {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::remove invalid handle");
             if (!slot.allocator.has(handle.key)) return;
@@ -175,27 +174,25 @@ class ResourceManager {
          *
          * For get/edit on handles that may have been freed since, chiefly in async completions.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle Any value.
          * @return Whether @p handle names a live resource.
          */
-        template<typename HandleType>
-        bool isAlive(const HandleType& handle) const {
-            using T = typename HandleType::resource_t;
-            return getSlotConst<T>().allocator.has(handle.key);
+        template<typename T>
+        bool isAlive(const Handle<T>& handle) const {
+            return getSlot<T>().allocator.has(handle.key);
         }
 
         /**
          * @brief The resource @p handle names; asserts it is live (see isAlive(), tryGet()).
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle The resource to fetch.
          * @return The stored resource.
          */
-        template<typename HandleType>
-        const auto& get(const HandleType& handle) const {
-            using T = typename HandleType::resource_t;
-            const auto& slot = getSlotConst<T>();
+        template<typename T>
+        const T& get(const Handle<T>& handle) const {
+            const auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::get invalid handle");
             return storageOfConst<T>(slot).get(handle.key.index);
         }
@@ -206,15 +203,14 @@ class ResourceManager {
          * The tolerant get(), as Scene::tryGet: for a handle out of a component or cached state,
          * which may be null or stale.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle Any value; null or stale answers nullptr.
          * @return The asset, or nullptr.
          */
-        template<typename HandleType>
-        const auto* tryGet(const HandleType& handle) const {
-            using T = typename HandleType::resource_t;
-            const TypedSlot& slot = getSlotConst<T>();
-            if (!slot.allocator.has(handle.key)) return static_cast<const T*>(nullptr);
+        template<typename T>
+        const T* tryGet(const Handle<T>& handle) const {
+            const TypedSlot& slot = getSlot<T>();
+            if (!slot.allocator.has(handle.key)) return nullptr;
             return &storageOfConst<T>(slot).get(handle.key.index);
         }
 
@@ -223,15 +219,14 @@ class ResourceManager {
          *
          * The tolerant edit(): commit() afterwards if the backend needs to see the change.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle Any value.
          * @return The asset, or nullptr.
          */
-        template<typename HandleType>
-        auto* tryEdit(const HandleType& handle) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        T* tryEdit(const Handle<T>& handle) {
             TypedSlot& slot = getSlot<T>();
-            if (!slot.allocator.has(handle.key)) return static_cast<T*>(nullptr);
+            if (!slot.allocator.has(handle.key)) return nullptr;
             return &storageOf<T>(slot).get(handle.key.index);
         }
 
@@ -241,13 +236,12 @@ class ResourceManager {
          * Identity stays private to Resource: rename() changes a name, commit() tells the backend
          * the contents changed.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle The resource; must still be live.
          * @return The stored resource.
          */
-        template<typename HandleType>
-        auto& edit(const HandleType& handle) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        T& edit(const Handle<T>& handle) {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::edit invalid handle");
             return storageOf<T>(slot).get(handle.key.index);
@@ -263,16 +257,15 @@ class ResourceManager {
          * @param handle The asset to rename.
          * @param newName Desired name; made unique.
          */
-        template<typename HandleType>
-        void rename(const HandleType& handle, std::string newName) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        void rename(const Handle<T>& handle, std::string newName) {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::rename invalid handle");
             auto& res = storageOf<T>(slot).get(handle.key.index);
             // Before the uniqueness check, so renaming to the current name is not a self-collision.
             dropNameIndex(slot, res.m_name, handle.key.index);
             ensureUniqueName(slot, newName);
-            res.m_name = std::move(newName);
+            res.m_name                 = std::move(newName);
             slot.nameIndex[res.m_name] = handle.key.index;
         }
 
@@ -285,13 +278,12 @@ class ResourceManager {
          * would break the name index and replay a version the backend has seen; @p value can be
          * removed afterwards like any other asset.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle The asset to rebuild; must still be live.
          * @param value The new contents; receives the old ones.
          */
-        template<typename HandleType>
-        void swapValue(const HandleType& handle, typename HandleType::resource_t& value) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        void swapValue(const Handle<T>& handle, T& value) {
             static_assert(
                 std::is_base_of_v<Resource, T>,
                 "Resource type must inherit from Resource to use swapValue()."
@@ -312,14 +304,13 @@ class ResourceManager {
         }
 
         /**
-         * @brief Bump the asset's version, which GLView::sync keys its GPU re-upload on.
+         * @brief Bump the asset's version, which the renderer keys its GPU re-upload on.
          *
-         * @tparam HandleType Handle type identifying the resource type.
+         * @tparam T The resource type, deduced from the handle.
          * @param handle The changed resource; must still be live.
          */
-        template<typename HandleType>
-        void commit(const HandleType& handle) {
-            using T = typename HandleType::resource_t;
+        template<typename T>
+        void commit(const Handle<T>& handle) {
             static_assert(
                 std::is_base_of_v<Resource, T>,
                 "Resource type must inherit from Resource to use commit()."
@@ -339,7 +330,7 @@ class ResourceManager {
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
-            const TypedSlot& slot = getSlotConst<T>();
+            const TypedSlot& slot = getSlot<T>();
             auto it = slot.nameIndex.find(name);
             if (it == slot.nameIndex.end()) return {};
             return Handle<T>{slot.allocator.handleAt(it->second)};
@@ -362,7 +353,7 @@ class ResourceManager {
         }
 
         /**
-         * @brief Visit every live resource of type T; a linear scan for tooling, not hot paths.
+         * @brief Visit every live resource of type T, a linear scan.
          *
          * @tparam T  The resource type.
          * @tparam Fn Callable taking (Handle<T>, const T&).
@@ -370,7 +361,7 @@ class ResourceManager {
          */
         template<typename T, typename Fn>
         void forEachOfType(Fn&& fn) const {
-            const TypedSlot& slot = getSlotConst<T>();
+            const TypedSlot& slot = getSlot<T>();
             storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
                 fn(Handle<T>{slot.allocator.handleAt(index)}, res);
             });
@@ -383,7 +374,7 @@ class ResourceManager {
          */
         template<typename T>
         size_t countOfType() const {
-            return storageOfConst<T>(getSlotConst<T>()).size();
+            return storageOfConst<T>(getSlot<T>()).size();
         }
 
         /**
@@ -439,16 +430,15 @@ class ResourceManager {
          */
         template<typename T>
         uint64_t revisionOf() const {
-            return getSlotConst<T>().revision;
+            return getSlot<T>().revision;
         }
 
     private:
         struct TypedSlot {
-            SlotAllocator                   allocator;
-            std::unique_ptr<ISparseSet>     storage;
-            /// name -> storage index.
-            std::unordered_map<std::string, uint32_t> nameIndex;
-            uint64_t                        revision = 0;  ///< See revisionOf().
+            SlotAllocator                             allocator;
+            std::unique_ptr<ISparseSet>               storage;
+            std::unordered_map<std::string, uint32_t> nameIndex;     ///< name -> its handle's slot index.
+            uint64_t                                  revision = 0;  ///< See revisionOf().
         };
 
         /// Record a change to one of @p slot's assets, in its revision and the graph's.
@@ -463,6 +453,11 @@ class ResourceManager {
          */
         void makeEngineSlots();
 
+        /// Make T's slot: makeEngineSlots() alone, for each engine type.
+        template<typename T>
+        void makeSlot();
+
+        /// T's slot, made with the manager by makeEngineSlots().
         template<typename T>
         TypedSlot& getSlot() {
             static_assert(
@@ -470,16 +465,12 @@ class ResourceManager {
                 "ResourceManager stores the engine's asset types only: a slot for a type a "
                 "gameplay module declares would carry the module's code past its unload."
             );
-            return m_slots.ensure<T>([] {
-                auto slot = std::make_unique<TypedSlot>();
-                slot->storage = std::make_unique<SparseSet<T>>();
-                return slot;
-            });
+            return *m_slots.find<T>();
         }
 
-        /// getSlot() for a const caller: the slot was made with the manager, by makeEngineSlots().
+        /// @copydoc getSlot()
         template<typename T>
-        const TypedSlot& getSlotConst() const {
+        const TypedSlot& getSlot() const {
             static_assert(IS_ENGINE_ASSET<T>, "ResourceManager stores the engine's asset types only.");
             return *m_slots.find<T>();
         }
@@ -499,7 +490,7 @@ class ResourceManager {
          *
          * @param slot  The type's slot.
          * @param name  The name to drop.
-         * @param index Dense index the name must still point at.
+         * @param index Slot index the name must still point at.
          */
         static void dropNameIndex(TypedSlot& slot, const std::string& name, uint32_t index) {
             auto it = slot.nameIndex.find(name);
@@ -518,7 +509,7 @@ class ResourceManager {
          * @tparam T The resource type.
          * @tparam ResourceType The incoming value's type, T or a reference to one.
          * @param slot That type's slot.
-         * @param index Dense index of the asset being replaced.
+         * @param index Slot index of the asset being replaced.
          * @param resource The new contents (moved from).
          * @return The handle that already named the asset.
          */
@@ -529,7 +520,7 @@ class ResourceManager {
             // First: re-declaring an asset with its own contents hands in target itself, and
             // constructing from it would move the name away.
             const uint64_t version = target.m_version;
-            std::string    name    = std::move(target.m_name);
+            std::string name = std::move(target.m_name);
 
             // Constructed: Resource has no copy assignment.
             T incoming(std::forward<ResourceType>(resource));
@@ -578,8 +569,7 @@ class ResourceManager {
     private:
         TypeRegistry<TypedSlot> m_slots;
 
-        /// Starts at 1, so a cache can hold 0 as "never synced".
-        uint64_t m_epoch = 1;
+        uint64_t m_epoch    = 1;  ///< Starts at 1, so a cache can hold 0 as "never synced".
         uint64_t m_revision = 1;  ///< See revision(); from 1 for the same reason.
 };
 

@@ -8,9 +8,11 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "resource/resource.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 
 namespace Vkm::Engine {
+
+struct SkeletonAsset;
 
 /**
  * @brief One bone's keys for one channel, as a range into the clip's flat arrays.
@@ -50,21 +52,14 @@ struct ClipMarker {
 struct AnimationClipAsset : public Resource {
     std::string skeleton;         ///< Name of the rig whose bone order `bones` addresses.
 
-    /**
-     * @brief Length in seconds.
-     *
-     * Stored, not derived from the last key, so a held tail is kept.
-     */
-    float duration = 0.0f;
+    float duration = 0.0f;  ///< Length in seconds. Stored, not derived from the last key, so a held tail is
+                            ///< kept.
 
     std::vector<ClipBone> bones;  ///< Parallel to the skeleton's bones.
 
-    /**
-     * @brief Instants the clip announces as the head passes them, in time order.
-     *
-     * On the clip, not the Animator: every rig playing the walk gets its footsteps.
-     */
-    std::vector<ClipMarker> markers;
+    std::vector<ClipMarker> markers;  ///< Instants the clip announces as the head passes them, in time order.
+                                      ///< On the clip, not the Animator: every rig playing the walk gets its
+                                      ///< footsteps.
 
     std::vector<float>     positionTimes;
     std::vector<glm::vec3> positions;
@@ -77,13 +72,26 @@ struct AnimationClipAsset : public Resource {
 /**
  * @brief Why @p clip cannot be played, or an empty string when it can.
  *
- * What the sampler relies on unchecked: a finite duration, paired key times and
- * values, channels in range, markers on the timeline. Rig fit is not asked.
+ * What the sampler relies on unchecked - a finite duration, paired key times and
+ * values, channels in range, markers on the timeline - and no more bones than a rig may
+ * have (SkeletonAsset::MAX_BONES). Rig fit is not asked.
  *
  * @param clip Clip to judge.
  * @return The first fault found, worded to follow "cannot be played - ".
  */
 std::string findClipFault(const AnimationClipAsset& clip);
+
+/**
+ * @brief Whether @p clip was cooked for @p skeleton: its rig's name, and a channel for each bone.
+ *
+ * A clip's per-bone table is bound at cook time to one rig's name and length; another rig's would
+ * move the wrong bones.
+ *
+ * @param clip     The clip.
+ * @param skeleton The rig it would pose.
+ * @return True when it fits.
+ */
+bool clipFitsRig(const AnimationClipAsset& clip, const SkeletonAsset& skeleton);
 
 using AnimationClipHandle = Handle<AnimationClipAsset>;
 

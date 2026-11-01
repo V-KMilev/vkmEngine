@@ -1,15 +1,19 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 
 #include "core/system.h"
+#include "core/frame/arrival_hold.h"
 
 namespace Vkm::Engine {
 
 class ResourceManager;
+class Scene;
 
 /**
- * @brief Finalise every completion waiting in the AsyncLoadQueue against @p resources.
+ * @brief Finalize every completion waiting in the AsyncLoadQueue against @p resources.
  *
  * What AsyncLoaderSystem does, without a frame; cheap on an empty queue, so pollable.
  *
@@ -18,7 +22,7 @@ class ResourceManager;
 void finalizeAsyncLoads(ResourceManager& resources);
 
 /**
- * @brief Finalise completions until nothing in @p resources is still loading.
+ * @brief Finalize completions until nothing in @p resources is still loading.
  *
  * Completions for another manager's assets go back on the process-wide queue rather
  * than being dropped. Gives up after @p patience with no load landing, so a dead
@@ -26,15 +30,12 @@ void finalizeAsyncLoads(ResourceManager& resources);
  *
  * @param resources Holds the assets being waited on.
  * @param patience  How long to wait with nothing landing; generous, for the largest import.
- * @return False when assets were still loading at the deadline (logged).
+ * @return False when assets were still loading at the deadline, or one came out empty (logged).
  */
-bool awaitAsyncLoads(
-    ResourceManager& resources,
-    std::chrono::milliseconds patience = std::chrono::seconds(30)
-);
+bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patience = ASYNC_LOAD_PATIENCE);
 
 /**
- * @brief Drains the AsyncLoadQueue once per frame and finalises completed asset loads.
+ * @brief Drains the AsyncLoadQueue once per frame and finalizes completed asset loads.
  *
  * Runs at Simulation, ahead of Render, so a resource is uploaded in the frame it lands.
  */

@@ -1,9 +1,11 @@
-#include "resource/generate/mesh_generators.h"
+#include "io/asset/generate/mesh_generators.h"
 
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -11,9 +13,13 @@
 
 #include <nlohmann/json.hpp>
 
-#include "l_assert.h"
+#include "vkm_log/assert.h"
 
-#include "resource/asset_source_kind.h"
+#include "debug/error/engine_error_log.h"
+#include "io/asset/recipe/asset_factory.h"
+#include "io/asset/recipe/asset_source.h"
+#include "io/json/json_number.h"
+#include "io/json/reflect_json.h"
 #include "resource/resource_manager.h"
 
 namespace Vkm::Engine {
@@ -31,8 +37,8 @@ namespace {
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
     j[AssetSourceKey::KIND] = AssetSourceKind::GENERATOR;
-    j["type"] = type;
-    if (!params.empty()) j["params"] = std::move(params);
+    j[AssetSourceKey::TYPE] = type;
+    if (!params.empty()) j[AssetSourceKey::PARAMS] = std::move(params);
     return j;
 }
 
@@ -46,8 +52,8 @@ nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlo
  * @return The name the mesh belongs under.
  */
 std::string generatorName(const nlohmann::json& source) {
-    std::string key = "mesh:generator:" + source.value("type", std::string{});
-    const auto params = source.find("params");
+    std::string key   = "mesh:generator:" + source.value(AssetSourceKey::TYPE, std::string{});
+    const auto params = source.find(AssetSourceKey::PARAMS);
     if (params != source.end() && params->is_object()) {
         for (auto it = params->begin(); it != params->end(); ++it) {
             key += ':';
@@ -68,55 +74,123 @@ void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& par
     mesh.sourceJson() = meshGeneratorSource(type, params);
 }
 
+constexpr int64_t MAX_GENERATED_SEGMENTS = 1024;  ///< The most a generated mesh is cut into along one way; a
+                                                  ///< recipe asking for more is refused.
+
+/**
+ * @brief A count a generator recipe gives, as a recipe read from a file may say anything.
+ *
+ * @param params   The recipe's parameters.
+ * @param key      The count's name.
+ * @param fallback What a recipe without it means.
+ * @param[out] ok  Cleared when the count is not a whole number within 0..MAX_GENERATED_SEGMENTS.
+ * @return The count; @p fallback when absent or refused.
+ */
+uint32_t countParam(const nlohmann::json& params, const char* key, uint32_t fallback, bool& ok) {
+    if (!params.contains(key)) return fallback;
+    const nlohmann::json& value = params[key];
+    const int64_t count = value.is_number_integer() ? value.get<int64_t>() : -1;
+    if (count < 0 || count > MAX_GENERATED_SEGMENTS) {
+        ok = false;
+        return fallback;
+    }
+    return static_cast<uint32_t>(count);
+}
+
+/**
+ * @brief A length a generator recipe gives, as a recipe read from a file may say anything.
+ *
+ * @param params   The recipe's parameters.
+ * @param key      The length's name.
+ * @param fallback What a recipe without it means.
+ * @param zero     Whether zero is a length here: a ring's hole, closed.
+ * @param[out] ok  Cleared when the length is not a finite number above zero, or at zero when allowed.
+ * @return The length, meters; @p fallback when absent or refused.
+ */
+float lengthParam(const nlohmann::json& params, const char* key, float fallback, bool zero, bool& ok) {
+    if (!params.contains(key)) return fallback;
+    const nlohmann::json& value = params[key];
+    const float length = detail::fitsIn<float>(value) ? value.get<float>() : -1.0f;
+    if (!std::isfinite(length) || length < 0.0f || (length == 0.0f && !zero)) {
+        ok = false;
+        return fallback;
+    }
+    return length;
+}
+
 } // namespace
 
 MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh) {
     VKM_ASSERT(mesh.hasSource(), "addGeneratedMesh: the mesh carries no generator descriptor");
     const std::string name = generatorName(mesh.sourceJson());
-    if (auto existing = resources.findByName<MeshAsset>(name)) return existing;
-    return resources.add(std::move(mesh), name);
+    if (const MeshHandle held = resources.findByName<MeshAsset>(name)) return held;
+
+    // Built by the host's import where there is one, as a recipe load builds it, so a cook writes the
+    // same mesh whichever made it first.
+    const RecipeImport<MeshAsset> import = recipeImport<MeshAsset>();
+    if (const MeshHandle built = import ? import(mesh.sourceJson(), resources) : MeshHandle{}) {
+        MeshAsset unwrapped(resources.get(built));
+        resources.remove(built);
+        return resources.findOrAdd<MeshAsset>(name, [&] { return std::move(unwrapped); });
+    }
+    return resources.findOrAdd<MeshAsset>(name, [&] { return std::move(mesh); });
 }
 
 MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& resources) {
-    const std::string type = source.value("type", std::string{});
-    const auto& p = source.contains("params") ? source["params"] : nlohmann::json::object();
+    const std::string type = source.value(AssetSourceKey::TYPE, std::string{});
+    const nlohmann::json none = nlohmann::json::object();
+    const auto& p = source.contains(AssetSourceKey::PARAMS) ? source[AssetSourceKey::PARAMS] : none;
 
+    // Read before anything is built: a count a recipe got wrong would build until memory ran out.
+    bool ok = true;
+    const auto build = [&](auto params, auto generate, std::string_view mayBeZero = {}) {
+        Reflect::forEachField(params, [&](std::string_view key, auto& value) {
+            using Value = std::decay_t<decltype(value)>;
+            constexpr bool COUNT = std::is_same_v<Value, uint32_t>;
+            static_assert(COUNT || std::is_same_v<Value, float>, "a count or a length");
+            const std::string name(key);
+            if constexpr (COUNT) value = countParam(p, name.c_str(), value, ok);
+            else value = lengthParam(p, name.c_str(), value, key == mayBeZero, ok);
+        });
+        return ok ? generate(params) : MeshAsset{};
+    };
     MeshAsset mesh;
     if (type == "cube") {
         mesh = generateCube();
     } else if (type == "sphere") {
-        mesh = generateSphere(p.value("resolution", 16u));
+        mesh = build(SphereParams{}, &generateSphere);
     } else if (type == "cone") {
-        mesh = generateCone(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 16u));
+        mesh = build(ConeParams{}, &generateCone);
     } else if (type == "cylinder") {
-        mesh = generateCylinder(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 20u));
+        mesh = build(CylinderParams{}, &generateCylinder);
     } else if (type == "ring") {
-        mesh = generateRing(
-            p.value("innerRadius", 0.25f),
-            p.value("outerRadius", 0.5f),
-            p.value("segments", 32u)
-        );
+        // A hole of no size is a disc; one as wide as the ring leaves nothing.
+        const auto ring = [&](const RingParams& params) {
+            ok = params.innerRadius < params.outerRadius;
+            return ok ? generateRing(params) : MeshAsset{};
+        };
+        mesh = build(RingParams{}, ring, "innerRadius");
     } else if (type == "pyramid") {
-        mesh = generatePyramid(p.value("baseSize", 1.0f), p.value("height", 1.0f));
+        mesh = build(PyramidParams{}, &generatePyramid);
     } else if (type == "plane") {
-        mesh = generatePlane(
-            p.value("width", 1.0f),
-            p.value("depth", 1.0f),
-            p.value("widthSegments", 1u),
-            p.value("depthSegments", 1u)
-        );
+        mesh = build(PlaneParams{}, &generatePlane);
     } else if (type == "triangle") {
-        mesh = generateTriangle(p.value("size", 1.0f));
+        mesh = build(TriangleParams{}, &generateTriangle);
     } else {
         return {};
     }
 
+    if (!ok) {
+        reportError("Asset", "a generated " + type, "its recipe asks for what cannot be made: " + p.dump());
+        return {};
+    }
     if (mesh.vertices.empty()) return {};
     return resources.add(std::move(mesh));
 }
 
-MeshAsset generateTriangle(float size) {
+MeshAsset generateTriangle(TriangleParams params) {
     MeshAsset mesh;
+    auto& [size] = params;
 
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     // V grows toward +Z and cross(+Y, +X) is -Z, so w is -1.
@@ -134,12 +208,13 @@ MeshAsset generateTriangle(float size) {
     // CCW seen from +Y, so cross(v1-v0, v2-v0) == +Y, the normal side.
     mesh.indices = { 0, 2, 1 };
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "triangle", {{"size", size}});
+    stampGenerated(mesh, "triangle", ReflectJson::toJson(params));
     return mesh;
 }
 
-MeshAsset generatePlane(float width, float depth, uint32_t widthSegments, uint32_t depthSegments) {
+MeshAsset generatePlane(PlaneParams params) {
     MeshAsset mesh;
+    auto& [width, depth, widthSegments, depthSegments] = params;
 
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     // V grows toward +Z below, and cross(+Y, +X) is -Z, so w is -1.
@@ -180,13 +255,7 @@ MeshAsset generatePlane(float width, float depth, uint32_t widthSegments, uint32
     }
 
     mesh.computeAndSetBounds();
-    const nlohmann::json params = {
-        {"width", width},
-        {"depth", depth},
-        {"widthSegments", widthSegments},
-        {"depthSegments", depthSegments}
-    };
-    stampGenerated(mesh, "plane", params);
+    stampGenerated(mesh, "plane", ReflectJson::toJson(params));
     return mesh;
 }
 
@@ -260,8 +329,9 @@ MeshAsset generateCube() {
     return mesh;
 }
 
-MeshAsset generateSphere(uint32_t resolution) {
+MeshAsset generateSphere(SphereParams params) {
     MeshAsset mesh;
+    auto& [resolution] = params;
     const float radius = 0.5f;
 
     // Each cube face maps its own [0,1] UVs.
@@ -288,8 +358,8 @@ MeshAsset generateSphere(uint32_t resolution) {
         const glm::vec3 n = faceN[f];
         // Any orthonormal in-plane basis for this face.
         const glm::vec3 helper = (std::abs(n.y) < 0.99f) ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
-        const glm::vec3 uAxis = glm::normalize(glm::cross(helper, n));
-        const glm::vec3 vAxis = glm::cross(n, uAxis);
+        const glm::vec3 uAxis  = glm::normalize(glm::cross(helper, n));
+        const glm::vec3 vAxis  = glm::cross(n, uAxis);
 
         const uint32_t base   = static_cast<uint32_t>(mesh.vertices.size());
         const uint32_t stride = res + 1;
@@ -329,12 +399,13 @@ MeshAsset generateSphere(uint32_t resolution) {
     }
 
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "sphere", {{"resolution", resolution}});
+    stampGenerated(mesh, "sphere", ReflectJson::toJson(params));
     return mesh;
 }
 
-MeshAsset generatePyramid(float baseSize, float height) {
+MeshAsset generatePyramid(PyramidParams params) {
     MeshAsset mesh;
+    auto& [baseSize, height] = params;
 
     const float h = baseSize * 0.5f;
 
@@ -402,18 +473,19 @@ MeshAsset generatePyramid(float baseSize, float height) {
     };
 
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "pyramid", {{"baseSize", baseSize}, {"height", height}});
+    stampGenerated(mesh, "pyramid", ReflectJson::toJson(params));
     return mesh;
 }
 
-MeshAsset generateCone(float radius, float height, uint32_t segments) {
+MeshAsset generateCone(ConeParams params) {
     MeshAsset mesh;
+    auto& [radius, height, segments] = params;
 
     // Three is the fewest that closes a ring; a recipe can hold any number.
     if (segments < 3) segments = 3;
 
-    const float     halfHeight = height * 0.5f;
-    const float     twoPi      = glm::two_pi<float>();
+    const float halfHeight = height * 0.5f;
+    const float twoPi      = glm::two_pi<float>();
     const glm::vec3 tip(0.0f, halfHeight, 0.0f);
     const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
 
@@ -443,9 +515,9 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     // axis, so the tip lights the same from any side.
     const glm::vec3 tipNormal(0.0f, 1.0f, 0.0f);
     for (uint32_t i = 0; i < segments; ++i) {
-        const float    mid   = (static_cast<float>(i) + 0.5f) / static_cast<float>(segments);
-        const float    angle = mid * twoPi;
-        const uint32_t apex  = static_cast<uint32_t>(mesh.vertices.size());
+        const float mid     = (static_cast<float>(i) + 0.5f) / static_cast<float>(segments);
+        const float angle   = mid * twoPi;
+        const uint32_t apex = static_cast<uint32_t>(mesh.vertices.size());
         mesh.vertices.push_back(Vertex{
             tip,
             tipNormal,
@@ -459,7 +531,7 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     }
 
     // Own ring for a hard rim; U along +X, V along +Z = cross(-Y, +X), so w is +1.
-    const uint32_t  centre = static_cast<uint32_t>(mesh.vertices.size());
+    const uint32_t center = static_cast<uint32_t>(mesh.vertices.size());
     const glm::vec4 capTangent(1.0f, 0.0f, 0.0f, 1.0f);
     mesh.vertices.push_back(Vertex{ {0.0f, -halfHeight, 0.0f}, nDown, {0.5f, 0.5f}, capTangent });
     for (uint32_t i = 0; i < segments; ++i) {
@@ -474,20 +546,21 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
         });
     }
     // The ring runs from +X toward +Z, clockwise seen from above, so the fan
-    // (centre, i, next) faces -Y.
+    // (center, i, next) faces -Y.
     for (uint32_t i = 0; i < segments; ++i) {
-        mesh.indices.push_back(centre);
-        mesh.indices.push_back(centre + 1 + i);
-        mesh.indices.push_back(centre + 1 + (i + 1) % segments);
+        mesh.indices.push_back(center);
+        mesh.indices.push_back(center + 1 + i);
+        mesh.indices.push_back(center + 1 + (i + 1) % segments);
     }
 
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "cone", {{"radius", radius}, {"height", height}, {"segments", segments}});
+    stampGenerated(mesh, "cone", ReflectJson::toJson(params));
     return mesh;
 }
 
-MeshAsset generateCylinder(float radius, float height, uint32_t segments) {
+MeshAsset generateCylinder(CylinderParams params) {
     MeshAsset mesh;
+    auto& [radius, height, segments] = params;
 
     if (segments < 3) segments = 3;
 
@@ -518,12 +591,12 @@ MeshAsset generateCylinder(float radius, float height, uint32_t segments) {
     // Caps get their own rings for a hard rim. U along +X, V along +Z, so w is
     // -1 on top (cross(+Y, +X) is -Z) and +1 underneath.
     for (int cap = 0; cap < 2; ++cap) {
-        const bool      top    = (cap == 0);
-        const float     y      = top ? halfHeight : -halfHeight;
+        const bool top = (cap == 0);
+        const float y = top ? halfHeight : -halfHeight;
         const glm::vec3 normal = top ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, -1.0f, 0.0f);
         const glm::vec4 capTangent(1.0f, 0.0f, 0.0f, top ? -1.0f : 1.0f);
 
-        const uint32_t centre = static_cast<uint32_t>(mesh.vertices.size());
+        const uint32_t center = static_cast<uint32_t>(mesh.vertices.size());
         mesh.vertices.push_back({{0.0f, y, 0.0f}, normal, {0.5f, 0.5f}, capTangent});
 
         for (uint32_t i = 0; i < segments; ++i) {
@@ -540,27 +613,28 @@ MeshAsset generateCylinder(float radius, float height, uint32_t segments) {
         }
 
         for (uint32_t i = 0; i < segments; ++i) {
-            const uint32_t a = centre + 1 + i;
-            const uint32_t b = centre + 1 + (i + 1) % segments;
+            const uint32_t a = center + 1 + i;
+            const uint32_t b = center + 1 + (i + 1) % segments;
 
             // The ring runs from +X toward +Z, clockwise seen from above, so the
-            // top fans (centre, next, i) to face +Y and the bottom the other way.
-            if (top) mesh.indices.insert(mesh.indices.end(), {centre, b, a});
-            else     mesh.indices.insert(mesh.indices.end(), {centre, a, b});
+            // top fans (center, next, i) to face +Y and the bottom the other way.
+            if (top) mesh.indices.insert(mesh.indices.end(), {center, b, a});
+            else     mesh.indices.insert(mesh.indices.end(), {center, a, b});
         }
     }
 
     // Set, not measured: the ring's cos/sin never quite reach the radius.
     mesh.boundsMin = glm::vec3(-radius, -halfHeight, -radius);
     mesh.boundsMax = glm::vec3( radius,  halfHeight,  radius);
-    stampGenerated(mesh, "cylinder", {{"radius", radius}, {"height", height}, {"segments", segments}});
+    stampGenerated(mesh, "cylinder", ReflectJson::toJson(params));
     return mesh;
 }
 
-MeshAsset generateRing(float innerRadius, float outerRadius, uint32_t segments) {
+MeshAsset generateRing(RingParams params) {
     MeshAsset mesh;
+    auto& [innerRadius, outerRadius, segments] = params;
     segments = std::max(segments, 3u);
-    const float     twoPi = glm::two_pi<float>();
+    const float twoPi = glm::two_pi<float>();
     const glm::vec3 up(0.0f, 1.0f, 0.0f);
 
     // A pair a step round, inner then outer; the seam's pair is doubled at u = 1. U grows round
@@ -582,11 +656,7 @@ MeshAsset generateRing(float innerRadius, float outerRadius, uint32_t segments) 
 
     mesh.boundsMin = glm::vec3(-outerRadius, 0.0f, -outerRadius);
     mesh.boundsMax = glm::vec3( outerRadius, 0.0f,  outerRadius);
-    stampGenerated(
-        mesh,
-        "ring",
-        {{"innerRadius", innerRadius}, {"outerRadius", outerRadius}, {"segments", segments}}
-    );
+    stampGenerated(mesh, "ring", ReflectJson::toJson(params));
     return mesh;
 }
 

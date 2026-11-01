@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -11,11 +12,13 @@
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/reflect.h"
-#include "io/json_vec.h"
-#include "resource/resource_handle.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
+#include "io/json/json_number.h"
+#include "io/json/json_vec.h"
+#include "resource/handle.h"
 
 /**
  * @brief A reflected struct to JSON and back, field by field, by its VKM_REFLECT names.
@@ -23,17 +26,18 @@
  * What the scene file is written with, and what a project keeps its own files with - its
  * settings, a save. Leaves, scoped enums by their VKM_ENUM_NAMES, nested reflected structs and
  * vectors of any of them go through; a field missing from the JSON keeps its value, so a file
- * written before a field was added still loads. The context decides the rest: a Handle needs one
+ * written before a field was added still loads, and a key no field has is not read (unreadKeys
+ * names it, for the file's reader to warn of). The context decides the rest: a Handle needs one
  * that turns it into its asset's name and back (ComponentSerializer's), and a field holding the
  * wrong type of value is an error in a scene - the load reports it, naming where it stood - but
- * in a project's own file keeps its value and warns (OwnFile, which toJson and fromJson use). A
- * glm value of the wrong shape warns and keeps its own in either.
+ * in a project's own file keeps its value and warns (OwnFile, which toJson and fromJson use).
  */
 namespace Vkm::Engine::ReflectJson {
 
 // The leaves every field comes down to; a new field type adds a pair here.
 inline nlohmann::json leafToJson(bool v) { return v; }
 inline nlohmann::json leafToJson(int v) { return v; }
+inline nlohmann::json leafToJson(uint16_t v) { return v; }
 inline nlohmann::json leafToJson(uint32_t v) { return v; }
 inline nlohmann::json leafToJson(float v) { return v; }
 inline nlohmann::json leafToJson(const std::string& s) { return s; }
@@ -43,14 +47,15 @@ inline nlohmann::json leafToJson(const glm::vec4& v) { return detail::vec4ToJson
 inline nlohmann::json leafToJson(const glm::quat& q) { return detail::quatToJson(q); }
 
 inline void leafFromJson(const nlohmann::json& j, bool& v) { v = j.get<bool>(); }
-inline void leafFromJson(const nlohmann::json& j, int& v) { v = j.get<int>(); }
-inline void leafFromJson(const nlohmann::json& j, uint32_t& v) { v = j.get<uint32_t>(); }
-inline void leafFromJson(const nlohmann::json& j, float& v) { v = j.get<float>(); }
+inline void leafFromJson(const nlohmann::json& j, int& v) { v = detail::jsonToNumber<int>(j); }
+inline void leafFromJson(const nlohmann::json& j, uint16_t& v) { v = detail::jsonToNumber<uint16_t>(j); }
+inline void leafFromJson(const nlohmann::json& j, uint32_t& v) { v = detail::jsonToNumber<uint32_t>(j); }
+inline void leafFromJson(const nlohmann::json& j, float& v) { v = detail::jsonToNumber<float>(j); }
 inline void leafFromJson(const nlohmann::json& j, std::string& s) { s = j.get<std::string>(); }
-inline void leafFromJson(const nlohmann::json& j, glm::vec2& v) { v = detail::jsonToVec2(j, v); }
-inline void leafFromJson(const nlohmann::json& j, glm::vec3& v) { v = detail::jsonToVec3(j, v); }
-inline void leafFromJson(const nlohmann::json& j, glm::vec4& v) { v = detail::jsonToVec4(j, v); }
-inline void leafFromJson(const nlohmann::json& j, glm::quat& q) { q = detail::jsonToQuat(j, q); }
+inline void leafFromJson(const nlohmann::json& j, glm::vec2& v) { v = detail::jsonToVec<2>(j); }
+inline void leafFromJson(const nlohmann::json& j, glm::vec3& v) { v = detail::jsonToVec<3>(j); }
+inline void leafFromJson(const nlohmann::json& j, glm::vec4& v) { v = detail::jsonToVec<4>(j); }
+inline void leafFromJson(const nlohmann::json& j, glm::quat& q) { q = detail::jsonToQuat(j); }
 
 // Fixed-size character buffers (Name::value).
 template<std::size_t N>
@@ -96,7 +101,9 @@ struct PlainData {
     static constexpr bool KEEPS_WRONG_FIELDS = false;
 };
 
-/// Plain data in a project's own file: a field of the wrong type keeps its value and warns.
+/**
+ * @brief Plain data in a project's own file: a field of the wrong type keeps its value and warns.
+ */
 struct OwnFile : PlainData {
     static constexpr bool KEEPS_WRONG_FIELDS = true;
 };
@@ -115,6 +122,36 @@ void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, const char* pat
  */
 inline std::string childPath(const char* parent, const std::string& step) {
     return (parent && *parent) ? std::string(parent) + "." + step : step;
+}
+
+/**
+ * @brief Each key @p read holds that @p written does not, at any depth, into @p out: what a load
+ *        reading only what a save writes leaves unread.
+ *
+ * Objects both hold are walked; each element of a list is held to @p written's first, when it has
+ * one, and named by the list's path, so a key every element repeats is named once.
+ *
+ * @param read    A value as a file holds it.
+ * @param written The same value as a save of this build writes it.
+ * @param path    Where both stand, as childPath joins it.
+ * @param out     Receives each key's path.
+ */
+inline void unreadKeys(
+    const nlohmann::json& read,
+    const nlohmann::json& written,
+    const std::string& path,
+    std::set<std::string>& out
+) {
+    if (read.is_object() && written.is_object()) {
+        for (const auto& [key, value] : read.items()) {
+            const auto held = written.find(key);
+            const std::string step = childPath(path.c_str(), key);
+            if (held == written.end()) out.insert(step);
+            else                       unreadKeys(value, *held, step, out);
+        }
+    } else if (read.is_array() && written.is_array() && !written.empty()) {
+        for (const nlohmann::json& element : read) unreadKeys(element, written.front(), path, out);
+    }
 }
 
 /**
@@ -140,6 +177,9 @@ nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
 /**
  * @brief The same in the other direction.
  *
+ * @param j     The JSON value read.
+ * @param val   Where it is read into; a list replaces what it held.
+ * @param ctx   Resolves a handle's asset name, as valueToJson's context names it.
  * @param field Where the value is stored, as childPath joins it, which a handle's context may
  *              keep an unresolved name under.
  */
@@ -151,8 +191,8 @@ void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* 
     } else if constexpr (IsVector<V>::value && Ctx::KEEPS_WRONG_FIELDS) {
         // Read aside, each element strictly, and kept whole: a list that is no list, or wrong
         // anywhere inside - a value of the wrong type, an element that is no object - keeps the one
-        // there was rather than an element half its defaults. A glm value of the wrong shape, or
-        // an enumerator this build does not know, reads as its default with a warning, as anywhere.
+        // there was rather than an element half its defaults. An enumerator this build does not
+        // know reads as its default with a warning, as anywhere.
         V read;
         const nlohmann::json::array_t& elements = j.get_ref<const nlohmann::json::array_t&>();
         read.reserve(elements.size());
@@ -201,7 +241,7 @@ void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, const char* pat
     }
     Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
         const std::string key(name);
-        const auto        it = j.find(key);
+        const auto it = j.find(key);
         if (it == j.end()) return;
         const std::string field = childPath(path, key);
         if constexpr (Ctx::KEEPS_WRONG_FIELDS) {
@@ -221,14 +261,14 @@ void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, const char* pat
 }
 
 /**
- * @brief A reflected struct of plain data as a JSON object, a key a field.
+ * @brief Plain data as JSON: a reflected struct an object, a key a field, and a list of them an array.
  *
- * @param obj The struct.
+ * @param obj The struct, or list.
  * @return Its fields.
  */
 template<typename T>
 nlohmann::json toJson(const T& obj) {
-    return saveFields(obj, OwnFile{});
+    return valueToJson(obj, OwnFile{});
 }
 
 /**

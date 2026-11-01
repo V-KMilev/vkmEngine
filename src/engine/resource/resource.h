@@ -54,7 +54,7 @@ class Resource {
         /**
          * @brief Mutable source JSON, allocating a null document if there is none.
          *
-         * Callers must #include <nlohmann/json.hpp>.
+         * Callers must `#include <nlohmann/json.hpp>`.
          *
          * @return The source descriptor.
          */
@@ -76,8 +76,7 @@ class Resource {
         std::string m_name;
         bool        m_hidden  = false;
 
-        /// Origin descriptor, lazy-allocated.
-        std::unique_ptr<nlohmann::json> m_source;
+        std::unique_ptr<nlohmann::json> m_source;  ///< Origin descriptor, lazy-allocated.
 };
 
 } // namespace Vkm::Engine

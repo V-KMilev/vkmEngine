@@ -19,17 +19,16 @@ namespace Vkm::Engine {
 template<typename Asset>
 struct LoadCompletion {
     Handle<Asset> handle;
-    /// Resource::uid requested for; a scene load can hand its handle to a stranger.
-    uint64_t      assetUid = 0;
-    /// What the worker read; left empty when the decode failed.
-    Asset         decoded;
+    uint64_t      assetUid = 0;  ///< Resource::uid requested for; a scene load can hand its handle to a
+                                 ///< stranger.
+    Asset         decoded;       ///< What the worker read; left empty when the decode failed.
 };
 
 using MeshLoadCompletion    = LoadCompletion<MeshAsset>;
 using TextureLoadCompletion = LoadCompletion<TextureAsset>;
 
 /**
- * @brief Thread-safe drop-box for async-loaded assets awaiting main-thread finalisation.
+ * @brief Thread-safe drop-box for async-loaded assets awaiting main-thread finalization.
  *
  * One per process, so a worker task carries no pointer back to its request.
  */
@@ -63,9 +62,9 @@ class AsyncLoadQueue {
         AsyncLoadQueue() = default;
 
     private:
-        std::mutex                          m_mutex;
-        std::vector<TextureLoadCompletion>  m_textures;
-        std::vector<MeshLoadCompletion>     m_meshes;
+        std::mutex                         m_mutex;
+        std::vector<TextureLoadCompletion> m_textures;
+        std::vector<MeshLoadCompletion>    m_meshes;
 };
 
 } // namespace Vkm::Engine

@@ -1,76 +1,44 @@
 #pragma once
 
+#include <cstddef>
+#include <string>
+
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "logger.h"
+#include "io/json/json_number.h"
 
 namespace Vkm::Engine::detail {
 
-// GLM <-> flat JSON arrays. A null node returns the fallback silently (field
-// omitted); a present but malformed one returns it with a warning.
+// GLM <-> flat JSON arrays. A value of the wrong shape - no array of that many numbers a float
+// holds - throws, as a leaf of the wrong type does.
 
 inline nlohmann::json vec2ToJson(const glm::vec2& v) { return {v.x, v.y}; }
 inline nlohmann::json vec3ToJson(const glm::vec3& v) { return {v.x, v.y, v.z}; }
 inline nlohmann::json vec4ToJson(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }
 inline nlohmann::json quatToJson(const glm::quat& q) { return {q.w, q.x, q.y, q.z}; }
 
-inline glm::vec2 jsonToVec2(const nlohmann::json& j, const glm::vec2& fallback = glm::vec2(0.0f)) {
-    if (j.is_null()) return fallback;
-    if (!j.is_array() || j.size() < 2) {
-        LOG_WARNING_C(
-            "IO",
-            "jsonToVec2: expected a 2-element array, got '%s'; using fallback",
-            j.dump().c_str()
+/// The first @p N numbers of the array @p j, each a float; anything else throws.
+template<glm::length_t N>
+glm::vec<N, float> jsonToVec(const nlohmann::json& j) {
+    const nlohmann::json::array_t& items = j.get_ref<const nlohmann::json::array_t&>();
+    if (items.size() < N) {
+        throw nlohmann::json::type_error::create(
+            302,
+            "expected an array of " + std::to_string(N) + " numbers",
+            &j
         );
-        return fallback;
     }
-    return {j[0], j[1]};
+    glm::vec<N, float> v;
+    for (glm::length_t i = 0; i < N; ++i) v[i] = jsonToNumber<float>(items[i]);
+    return v;
 }
-inline glm::vec3 jsonToVec3(const nlohmann::json& j, const glm::vec3& fallback = glm::vec3(0.0f)) {
-    if (j.is_null()) return fallback;
-    if (!j.is_array() || j.size() < 3) {
-        LOG_WARNING_C(
-            "IO",
-            "jsonToVec3: expected a 3-element array, got '%s'; using fallback",
-            j.dump().c_str()
-        );
-        return fallback;
-    }
-    return {j[0], j[1], j[2]};
-}
-inline glm::vec4 jsonToVec4(const nlohmann::json& j, const glm::vec4& fallback = glm::vec4(0.0f)) {
-    if (j.is_null()) return fallback;
-    if (!j.is_array() || j.size() < 4) {
-        LOG_WARNING_C(
-            "IO",
-            "jsonToVec4: expected a 4-element array, got '%s'; using fallback",
-            j.dump().c_str()
-        );
-        return fallback;
-    }
-    return {j[0], j[1], j[2], j[3]};
-}
-inline glm::quat jsonToQuat(
-    const nlohmann::json& j,
-    const glm::quat& fallback = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)
-) {
-    if (j.is_null()) return fallback;
-    if (!j.is_array() || j.size() < 4) {
-        LOG_WARNING_C(
-            "IO",
-            "jsonToQuat: expected a 4-element array, got '%s'; using fallback",
-            j.dump().c_str()
-        );
-        return fallback;
-    }
-    return glm::quat(
-        static_cast<float>(j[0]),
-        static_cast<float>(j[1]),
-        static_cast<float>(j[2]),
-        static_cast<float>(j[3])
-    );
+
+/// @p j as quatToJson writes it, w first; anything else throws.
+inline glm::quat jsonToQuat(const nlohmann::json& j) {
+    const glm::vec4 v = jsonToVec<4>(j);
+    return glm::quat(v[0], v[1], v[2], v[3]);
 }
 
 } // namespace Vkm::Engine::detail

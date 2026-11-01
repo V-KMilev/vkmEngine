@@ -26,6 +26,10 @@ std::string_view unqualifiedBoneName(std::string_view name) {
 
 std::string findSkeletonFault(const SkeletonAsset& skeleton) {
     const size_t count = skeleton.bones.size();
+    if (count > SkeletonAsset::MAX_BONES) {
+        return std::to_string(count) + " bones is past the " + std::to_string(SkeletonAsset::MAX_BONES)
+            + " a rig may have";
+    }
     if (skeleton.inverseBind.size() != count || skeleton.bindPose.size() != count) {
         return std::to_string(count) + " bone(s) against "
             + std::to_string(skeleton.inverseBind.size()) + " inverse-bind and "

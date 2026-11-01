@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "ASYNC_LOADER"
 
-#include "system/async/async_loader_system.h"
+#include "system/async_loader/async_loader_system.h"
 
 #include <chrono>
 #include <cstdint>
@@ -10,13 +10,15 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "debug/profiler.h"
+#include "debug/error/engine_error_log.h"
+#include "base/profile/profiler.h"
+#include "ecs/scene.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/texture_asset.h"
-#include "system/async/async_load_queue.h"
+#include "resource/async_load_queue.h"
 
 namespace Vkm::Engine {
 
@@ -79,9 +81,11 @@ bool hasContent(const TextureAsset& texture) { return !texture.pixelData.empty()
  * @tparam Asset MeshAsset or TextureAsset.
  * @param rm Resource manager holding the target assets.
  * @param completions The batch to land; consumed.
+ * @return How many of its own assets came out empty.
  */
 template <typename Asset>
-void finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completions) {
+size_t finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completions) {
+    size_t failed = 0;
     for (LoadCompletion<Asset>& c : completions) {
         if (!c.handle) continue;
         if (!rm.isAlive(c.handle)) {
@@ -99,15 +103,18 @@ void finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completion
             continue;
         }
 
+        // An error, not a warning: a host's error sink is how a cook learns an asset came out empty.
         if (!hasContent(c.decoded)) {
-            LOG_WARNING("Async decode failed for '%s' - leaving asset empty", live.name().c_str());
+            reportError("Asset", live.name(), "its file could not be read - it is left empty");
             live.loading = false;
+            ++failed;
             continue;
         }
         if (live.hasSource()) c.decoded.sourceJson() = live.sourceJson();
         c.decoded.loading = false;
         rm.swapValue(c.handle, c.decoded);
     }
+    return failed;
 }
 
 } // namespace
@@ -120,11 +127,12 @@ void finalizeAsyncLoads(ResourceManager& rm) {
 
 bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patience) {
     AsyncLoadQueue& queue = AsyncLoadQueue::get();
-    auto   deadline  = std::chrono::steady_clock::now() + patience;
+    auto deadline = std::chrono::steady_clock::now() + patience;
     size_t waitingOn = SIZE_MAX;
+    size_t failed    = 0;
     for (;;) {
         const std::unordered_set<uint64_t> pending = inFlight(resources);
-        if (pending.empty()) return true;
+        if (pending.empty()) return failed == 0;
         const auto now = std::chrono::steady_clock::now();
         if (pending.size() < waitingOn) {
             waitingOn = pending.size();
@@ -139,9 +147,9 @@ bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patie
             return false;
         }
         // This graph's completions only - the declaration says why.
-        finalize(resources, keepOwn(queue.drainTextures(), pending, &AsyncLoadQueue::pushTexture));
-        finalize(resources, keepOwn(queue.drainMeshes(), pending, &AsyncLoadQueue::pushMesh));
-        if (inFlight(resources).empty()) return true;
+        failed += finalize(resources, keepOwn(queue.drainTextures(), pending, &AsyncLoadQueue::pushTexture));
+        failed += finalize(resources, keepOwn(queue.drainMeshes(), pending, &AsyncLoadQueue::pushMesh));
+        if (inFlight(resources).empty()) return failed == 0;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }

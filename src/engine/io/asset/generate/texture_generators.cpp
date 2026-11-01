@@ -1,4 +1,4 @@
-#include "resource/generate/texture_generators.h"
+#include "io/asset/generate/texture_generators.h"
 
 #include <cmath>
 #include <cstdint>
@@ -8,20 +8,22 @@
 #include <glm/common.hpp>
 #include <nlohmann/json.hpp>
 
+#include "io/json/json_vec.h"
 #include "resource/resource_manager.h"
-#include "resource/asset_source_kind.h"
+#include "io/asset/recipe/asset_source.h"
+#include "io/asset/recipe/texture_recipe.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
 /**
- * @brief Quantise a 0-1 colour channel to the 8-bit value a texel holds.
+ * @brief Quantize a 0-1 color channel to the 8-bit value a texel holds.
  *
- * Shared by the texel and the dedup name, which must not quantise differently.
+ * Shared by the texel and the dedup name, which must not quantize differently.
  * Rounds to nearest.
  *
- * @param channel Colour channel; clamped to 0-1 before quantisation.
+ * @param channel Color channel; clamped to 0-1 before quantization.
  * @return The channel as an 8-bit value.
  */
 uint8_t quantizeChannel(float channel) {
@@ -33,18 +35,18 @@ uint8_t quantizeChannel(float channel) {
  *        @p usage stores a texel.
  *
  * @param color RGBA color, clamped to 0-1 per channel.
- * @param usage Colour (sRGB RGBA), data (linear RGBA) or a normal (red and
+ * @param usage Color (sRGB RGBA), data (linear RGBA) or a normal (red and
  *              green as x and y).
  * @return The 1x1 texture.
  */
 TextureAsset makeSolidColorAsset(glm::vec4 color, TextureUsage usage) {
     const int channels = usage == TextureUsage::Normal ? 2 : 4;
     TextureAsset texture;
-    texture.params.width = 1;
-    texture.params.height = 1;
-    texture.params.internalFormat = inferInternalFormat(channels, usage);
-    texture.params.format = inferFormat(channels);
-    texture.params.type = TexturePixelType::UnsignedByte;
+    texture.params.width           = 1;
+    texture.params.height          = 1;
+    texture.params.internalFormat  = inferInternalFormat(channels, usage);
+    texture.params.format          = inferFormat(channels);
+    texture.params.type            = TexturePixelType::UnsignedByte;
     texture.params.generateMipmaps = false;
 
     const uint8_t texel[4] = {
@@ -76,7 +78,7 @@ TextureHandle generateGrayTexture(ResourceManager& rm) {
 }
 
 TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, TextureUsage usage) {
-    // Keyed on the quantised colour and usage, by the quantiser that writes the
+    // Keyed on the quantized color and usage, by the quantizer that writes the
     // texel, so equal solids dedup and the name matches the pixel.
     char key[64];
     std::snprintf(
@@ -90,25 +92,22 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, Text
         Reflect::enumName(usage)
     );
 
-    if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
-
-    TextureAsset tex = makeSolidColorAsset(color, usage);
-    nlohmann::json src;
-    src[AssetSourceKey::KIND] = AssetSourceKind::SOLID;
-    src["color"] = {color.r, color.g, color.b, color.a};
-    src[AssetSourceKey::USAGE] = Reflect::enumName(usage);
-    tex.sourceJson() = std::move(src);
-    return rm.add(std::move(tex), key);
+    return rm.findOrAdd<TextureAsset>(key, [&] {
+        TextureAsset tex = makeSolidColorAsset(color, usage);
+        nlohmann::json src;
+        src[AssetSourceKey::KIND]  = AssetSourceKind::SOLID;
+        src[AssetSourceKey::COLOR] = detail::vec4ToJson(color);
+        src[AssetSourceKey::USAGE] = Reflect::enumName(usage);
+        tex.sourceJson() = std::move(src);
+        return tex;
+    });
 }
 
 TextureHandle createGeneratedTexture(const nlohmann::json& source, ResourceManager& rm) {
     if (source.value(AssetSourceKey::KIND, std::string{}) != AssetSourceKind::SOLID) return {};
 
-    glm::vec4 color(1.0f);
-    if (source.contains("color") && source["color"].is_array() && source["color"].size() >= 4) {
-        const auto& c = source["color"];
-        color = glm::vec4(c[0].get<float>(), c[1].get<float>(), c[2].get<float>(), c[3].get<float>());
-    }
+    const auto said = source.find(AssetSourceKey::COLOR);
+    const glm::vec4 color = said == source.end() ? glm::vec4(1.0f) : detail::jsonToVec<4>(*said);
     return createSolidColorTexture(color, rm, textureUsageFromRecipe(source));
 }
 

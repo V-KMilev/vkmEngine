@@ -9,7 +9,7 @@ namespace Vkm::Engine {
  *
  * A behavior field such as `AssetRef<AudioClipAsset> footstep;`. A name, not a
  * Handle<Asset>, because a handle means nothing in the next session. The type
- * tells AssetSerializer's walk which section of the assets block the name goes
+ * tells SceneAssets's walk which section of the assets block the name goes
  * in, and the editor which list to offer.
  *
  * An empty name means "none". The behavior resolves it once, in onStart():
@@ -23,7 +23,7 @@ template<typename Asset>
 struct AssetRef {
     using asset_t = Asset;
 
-    std::string name;   ///< Asset name; empty for none.
+    std::string name;  ///< Asset name; empty for none.
 };
 
 /**

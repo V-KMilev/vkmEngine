@@ -3,71 +3,83 @@
 #include <algorithm>
 #include <cstdint>
 
-#include "core/reflect.h"
+#include "base/reflect/enum_names.h"
 
 namespace Vkm::Engine {
 
-// Every enum TextureParams holds is persisted by value in cooked textures: a reorder or an addition
-// bumps COOKER_VERSION and updates the pins in writeTexture (io/asset/asset_cook.cpp).
+// Every enum TextureParams holds is written by value into cooked textures, so its values are the
+// format: numbered from 0 with no gap, so a byte below Count names one. A new enumerator takes the
+// next value and bumps COOKER_VERSION; none is renumbered.
 
 /**
  * @brief GPU-side storage format (channels + bit depth + color space).
  *
- * The BC formats store 4x4 texel blocks, and only the cooker produces them (cook/texture_bake.h).
+ * The BC formats store 4x4 texel blocks, and only the cooker produces them
+ * (src/pipeline/cook/texture/texture_bake.h).
  */
 enum class TextureInternalFormat : uint8_t {
-    R8,
-    RG8,
-    RGB8,
-    RGBA8,
-    SRGB8,
-    SRGBA8,
-    RGBA16F,
-    RGBA32F,
-    BC4R,       ///< One linear channel, 8 bytes a block (RGTC1).
-    BC5RG,      ///< Two linear channels, 16 bytes a block (RGTC2).
-    BC7RGBA,    ///< Linear RGBA, 16 bytes a block (BPTC).
-    BC7SRGBA    ///< sRGB colour with linear alpha, 16 bytes a block (BPTC).
+    R8       = 0,
+    RG8      = 1,
+    RGB8     = 2,
+    RGBA8    = 3,
+    SRGB8    = 4,
+    SRGBA8   = 5,
+    RGBA16F  = 6,
+    RGBA32F  = 7,
+    BC4R     = 8,   ///< One linear channel, 8 bytes a block (RGTC1).
+    BC5RG    = 9,   ///< Two linear channels, 16 bytes a block (RGTC2).
+    BC7RGBA  = 10,  ///< Linear RGBA, 16 bytes a block (BPTC).
+    BC7SRGBA = 11,  ///< sRGB color with linear alpha, 16 bytes a block (BPTC).
+
+    Count
 };
 
 /**
  * @brief Channel layout of the source pixel data passed on upload.
  */
 enum class TexturePixelFormat : uint8_t {
-    R,
-    RG,
-    RGB,
-    RGBA
+    R    = 0,
+    RG   = 1,
+    RGB  = 2,
+    RGBA = 3,
+
+    Count
 };
 
 /**
  * @brief Component type of the source pixel data passed on upload.
  */
 enum class TexturePixelType : uint8_t {
-    UnsignedByte,
-    Float,
-    HalfFloat
+    UnsignedByte = 0,
+    Float        = 1,
+    HalfFloat    = 2,
+
+    Count
 };
 
 /**
  * @brief How sampling behaves for UVs outside [0,1].
  */
 enum class TextureWrapMode : uint8_t {
-    Repeat,
-    MirroredRepeat,
-    ClampToEdge,
-    ClampToBorder
+    Repeat         = 0,
+    MirroredRepeat = 1,
+    ClampToEdge    = 2,
+    ClampToBorder  = 3,
+
+    Count
 };
 
 /**
- * @brief A texture's override of RenderSettings::textureFiltering.
+ * @brief A texture's own filter, over the trilinear every other takes.
  *
  * Nearest is for content that is wrong when blended at any quality - pixel art, lookup tables, UI
- * sprites. Bilinear against trilinear is a cost question, left to the setting alone.
+ * sprites.
  */
 enum class TextureFilterOverride : uint8_t {
-    None,
-    Nearest
+    None    = 0,
+    Nearest = 1,
+
+    Count
 };
 
 /**
@@ -88,8 +100,8 @@ struct TextureParams {
 
     bool generateMipmaps = true;
 
-    /// Levels the pixel data carries, level 0 first: one, or the whole chain down to 1x1.
-    uint32_t mipLevels = 1;
+    uint32_t mipLevels = 1;  ///< Levels the pixel data carries, level 0 first: one, or the whole chain down
+                             ///< to 1x1.
 };
 
 /**
@@ -109,8 +121,8 @@ enum class TextureUsage : uint8_t {
 /**
  * @brief How many channels an image file holding @p fileChannels is stored as.
  *
- * Grey+alpha widens to four (RG storage would sample no alpha), as does grey colour (no one-channel
- * sRGB format); grey data stays one, read as grey in every channel. A normal keeps x and y only:
+ * Gray+alpha widens to four (RG storage would sample no alpha), as does gray color (no one-channel
+ * sRGB format); gray data stays one, read as gray in every channel. A normal keeps x and y only:
  * z is rebuilt, and a two-channel block format holds better than a three-channel one.
  *
  * @param fileChannels Channels the file holds, as the decoder reports them.
@@ -126,7 +138,7 @@ inline int decodeChannels(int fileChannels, TextureUsage usage) {
 /**
  * @brief Infer the GPU storage format from a stored channel count and a usage.
  *
- * Unexpected counts fall back to (S)RGBA8. Each usage gets formats no other takes - colour the
+ * Unexpected counts fall back to (S)RGBA8. Each usage gets formats no other takes - color the
  * sRGB ones, a normal RG8, data the rest - so textureUsageOf can read it back.
  *
  * @param channels Channels stored per texel, as decodeChannels settled them.
@@ -146,7 +158,7 @@ inline TextureInternalFormat inferInternalFormat(int channels, TextureUsage usag
 }
 
 /**
- * @brief Whether @p format stores colour in sRGB.
+ * @brief Whether @p format stores color in sRGB.
  *
  * @param format The GPU storage format.
  * @return True for the three sRGB formats.
@@ -189,7 +201,8 @@ inline uint64_t blockBytes(TextureInternalFormat format) {
         case TextureInternalFormat::SRGB8:
         case TextureInternalFormat::SRGBA8:
         case TextureInternalFormat::RGBA16F:
-        case TextureInternalFormat::RGBA32F:  return 0;
+        case TextureInternalFormat::RGBA32F:
+        case TextureInternalFormat::Count:    return 0;
     }
     return 0;
 }
@@ -212,10 +225,11 @@ inline bool isCompressedFormat(TextureInternalFormat format) {
  */
 inline uint32_t channelCount(TexturePixelFormat format) {
     switch (format) {
-        case TexturePixelFormat::R:    return 1;
-        case TexturePixelFormat::RG:   return 2;
-        case TexturePixelFormat::RGB:  return 3;
-        case TexturePixelFormat::RGBA: break;
+        case TexturePixelFormat::R:     return 1;
+        case TexturePixelFormat::RG:    return 2;
+        case TexturePixelFormat::RGB:   return 3;
+        case TexturePixelFormat::RGBA:
+        case TexturePixelFormat::Count: break;
     }
     return 4;
 }
@@ -234,6 +248,7 @@ inline uint64_t bytesPerTexel(TexturePixelFormat format, TexturePixelType type) 
         case TexturePixelType::UnsignedByte: componentBytes = 1; break;
         case TexturePixelType::HalfFloat:    componentBytes = 2; break;
         case TexturePixelType::Float:        componentBytes = 4; break;
+        case TexturePixelType::Count:        break;
     }
     return channels * componentBytes;
 }
@@ -245,7 +260,7 @@ inline uint64_t bytesPerTexel(TexturePixelFormat format, TexturePixelType type) 
  * @param height Level-0 height.
  * @return The level count including level 0; 0 for an empty image.
  */
-inline uint32_t mipChainLength(uint32_t width, uint32_t height) {
+constexpr uint32_t mipChainLength(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) return 0;
     uint32_t extent = std::max(width, height);
     uint32_t levels = 1;
@@ -263,7 +278,7 @@ inline uint32_t mipChainLength(uint32_t width, uint32_t height) {
  * @param level  Mip level, 0 being the image itself.
  * @return The side at that level, never below 1.
  */
-inline uint32_t mipExtent(uint32_t extent, uint32_t level) {
+constexpr uint32_t mipExtent(uint32_t extent, uint32_t level) {
     return (level >= 32) ? 1u : std::max(extent >> level, 1u);
 }
 
@@ -299,7 +314,7 @@ inline uint64_t textureLevelUnits(const TextureParams& params, uint32_t level) {
  * @brief The bytes mip level @p level of @p params occupies.
  *
  * Unbounded multiply: for trusted sides only; an untrusted reader divides first
- * (AssetCook::readTexture).
+ * (findTextureFault).
  *
  * @param params The texture's description.
  * @param level  Mip level, 0 being the image itself.
