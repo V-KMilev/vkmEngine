@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <set>
 #include <string>
 #include <system_error>
@@ -12,18 +13,21 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/scene/hierarchy.h"
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/hierarchy_operations.h"
-#include "io/asset/asset_serializer.h"
-#include "io/project_paths.h"
-#include "io/json_file.h"
+#include "ecs/prefab_instances.h"
+#include "io/scene/scene_assets.h"
+#include "io/project/roots.h"
+#include "io/json/json_file.h"
+#include "io/json/json_number.h"
+#include "io/scene/scene_components.h"
 #include "io/scene/scene_serializer.h"
 
 namespace Vkm::Engine::Prefab {
@@ -34,7 +38,7 @@ using nlohmann::json;
 
 // Bumped when the layout below changes. A newer prefab is refused rather than
 // half-read, as scenes are.
-constexpr int PREFAB_FORMAT_VERSION = 3;
+constexpr int PREFAB_FORMAT_VERSION = 4;
 
 /**
  * @brief The unsigned number @p from stores at @p key, or @p fallback.
@@ -47,8 +51,9 @@ constexpr int PREFAB_FORMAT_VERSION = 3;
  * @return The stored number, or @p fallback.
  */
 uint32_t numberOr(const json& from, const char* key, uint32_t fallback) {
-    const auto it = from.find(key);
-    return (it != from.end() && it->is_number_unsigned()) ? it->get<uint32_t>() : fallback;
+    const auto it   = from.find(key);
+    const bool held = it != from.end() && it->is_number_unsigned() && detail::fitsIn<uint32_t>(*it);
+    return held ? it->get<uint32_t>() : fallback;
 }
 
 /**
@@ -66,30 +71,14 @@ uint32_t uidAt(const json& entities, size_t index) {
 }
 
 /**
- * @brief Read @p path and check it is a prefab this build can build from.
+ * @brief Whether @p doc, read from @p path, is a prefab this build can build from.
  *
  * Past here, each entry and its component block are objects, every entry past
  * the root carries a uid, uids are unique, and a child's parent is an earlier
  * entry; a file that disagrees is refused whole.
- *
- * @param path Prefab reference, project-relative or absolute.
- * @param doc Receives the document on success.
- * @return True when the file parsed and is a prefab this build can build from.
  */
-bool readPrefab(const std::string& path, json& doc) {
-    const std::filesystem::path resolved = ProjectPaths::resolveProjectPath(path);
-    if (!detail::readJsonFile(resolved.string(), doc, "Prefab")) return false;
-
-    const uint32_t version = numberOr(doc, "version", 0);
-    if (version == 0 || version > PREFAB_FORMAT_VERSION) {
-        LOG_ERROR(
-            "Prefab '%s' version %u is unreadable by this build (%d)",
-            path.c_str(),
-            version,
-            PREFAB_FORMAT_VERSION
-        );
-        return false;
-    }
+bool acceptsPrefab(const std::string& path, const json& doc) {
+    if (!detail::readsFormatVersion(doc, PREFAB_FORMAT_VERSION, "Prefab", path.c_str())) return false;
     if (!doc.contains("entities") || !doc["entities"].is_array() || doc["entities"].empty()) {
         LOG_ERROR("Prefab '%s' has no entities", path.c_str());
         return false;
@@ -99,7 +88,7 @@ bool readPrefab(const std::string& path, json& doc) {
         return false;
     }
 
-    const json& entities = doc["entities"];
+    const json& entities = doc.at("entities");
     std::set<uint32_t> seen;
     for (size_t i = 0; i < entities.size(); ++i) {
         const auto components = entities[i].find("components");
@@ -108,7 +97,9 @@ bool readPrefab(const std::string& path, json& doc) {
             return false;
         }
         const auto stored = entities[i].find("uid");
-        if (i > 0 && (stored == entities[i].end() || !stored->is_number_unsigned())) {
+        const bool named  = stored != entities[i].end() && stored->is_number_unsigned()
+            && detail::fitsIn<uint32_t>(*stored);
+        if (i > 0 && !named) {
             LOG_ERROR("Prefab '%s' entry %zu carries no uid", path.c_str(), i);
             return false;
         }
@@ -124,12 +115,12 @@ bool readPrefab(const std::string& path, json& doc) {
             return false;
         }
 
-        // The build parents each entry to created[parent] unchecked, so a parent
-        // must be an earlier entry.
+        // The build parents each entry to the one its parent names, unchecked, so the
+        // parent must be an earlier entry: a name from 1 to i.
         if (i > 0) {
             const auto parent = entities[i].find("parent");
             if (parent == entities[i].end() || !parent->is_number_unsigned()
-                || parent->get<uint64_t>() >= i) {
+                || parent->get<uint64_t>() == 0 || parent->get<uint64_t>() > i) {
                 LOG_ERROR(
                     "Prefab '%s' entry %zu does not name an earlier entry as its parent",
                     path.c_str(),
@@ -140,6 +131,52 @@ bool readPrefab(const std::string& path, json& doc) {
         }
     }
     return true;
+}
+
+/**
+ * @brief A prefab file as readPrefab last accepted it, while its write time and size hold.
+ */
+struct ReadPrefab {
+    std::filesystem::file_time_type written;
+    std::uintmax_t                  bytes = 0;
+    std::shared_ptr<const json>     doc;
+};
+
+// By resolved path. Prefabs are built on the main thread alone, as scenes load there.
+std::unordered_map<std::string, ReadPrefab> g_read;
+
+/**
+ * @brief The prefab at @p path, parsed once until the file changes, if this build can build from it.
+ *
+ * What a build would leave unread of it is warned of as it is parsed.
+ *
+ * @param path Prefab reference, project-relative or absolute.
+ * @return The document, or null when it does not read or is refused (acceptsPrefab).
+ */
+std::shared_ptr<const json> readPrefab(const std::string& path) {
+    const std::string resolved = Roots::resolveProjectPath(path).string();
+    std::error_code ec;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(resolved, ec);
+    const std::uintmax_t bytes = ec ? 0 : std::filesystem::file_size(resolved, ec);
+    if (const auto held = g_read.find(resolved); held != g_read.end()) {
+        if (!ec && held->second.written == written && held->second.bytes == bytes) return held->second.doc;
+        g_read.erase(held);
+    }
+
+    json doc;
+    if (!detail::readJsonFile(resolved, doc, "Prefab") || !acceptsPrefab(path, doc)) return nullptr;
+
+    // Said once a read of the file, not once an instance.
+    SceneSerializer::UnreadKeys unread;
+    for (const json& entry : doc.at("entities")) {
+        const auto components = entry.find("components");
+        if (components != entry.end()) SceneSerializer::collectUnread(*components, unread);
+    }
+    SceneSerializer::warnUnread(unread, path.c_str());
+
+    auto accepted = std::make_shared<const json>(std::move(doc));
+    if (!ec) g_read[resolved] = ReadPrefab{written, bytes, accepted};
+    return accepted;
 }
 
 /**
@@ -157,7 +194,7 @@ void ensureAssets(const json& doc, const std::string& path, ResourceManager& res
     if (assets == doc.end()) return;
 
     try {
-        AssetSerializer::loadAssets(*assets, resources);
+        SceneAssets::loadAssets(*assets, resources);
     } catch (const std::exception& e) {
         LOG_ERROR("Prefab '%s': assets could not be loaded: %s", path.c_str(), e.what());
     }
@@ -243,13 +280,13 @@ json applyOverrides(
 
         // The root's Transform is the instance's pose, reapplied after load, so an
         // override on it could never take effect.
-        if (uid == PrefabEntity::ROOT && o.component == "Transform") {
+        if (uid == PrefabEntity::ROOT && o.component == sceneKey<Transform>()) {
             report("the root Transform is the instance's own pose");
             continue;
         }
         // A Script override would work, and must not: the component is one field
         // holding the whole behavior list, so it would replace every behavior.
-        if (o.component == "Script") {
+        if (o.component == sceneKey<ScriptComponent>()) {
             report("behavior fields are the prefab's, not per-instance");
             continue;
         }
@@ -285,35 +322,6 @@ json applyOverrides(
 
 } // namespace
 
-EntityId instanceRootOf(const Scene& scene, EntityId id) {
-    return HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(scene, id);
-}
-
-bool isInsideInstance(const Scene& scene, EntityId id) {
-    // From the parent, so the instance root itself answers false.
-    const Hierarchy* node = scene.tryGet<Hierarchy>(id);
-    return node && instanceRootOf(scene, node->parent);
-}
-
-BuiltSlots builtSlotsOf(const Scene& scene, EntityId root) {
-    BuiltSlots slots;
-    for (const EntityId id : HierarchyOperations::collectSubtree(scene, root)) {
-        if (id == root) continue;
-        if (const PrefabEntity* stamped = scene.tryGet<PrefabEntity>(id)) {
-            slots[stamped->uid] = id.slot();
-        }
-    }
-    return slots;
-}
-
-InstanceSlots instanceSlotsOf(const Scene& scene) {
-    InstanceSlots instances;
-    scene.forEach<PrefabInstance>([&](EntityId root, const PrefabInstance&) {
-        instances[root.slot()] = builtSlotsOf(scene, root);
-    });
-    return instances;
-}
-
 bool save(Scene& scene, EntityId root, const std::string& path, const ResourceManager& resources) {
     if (!scene.isAlive(root)) {
         LOG_ERROR("Prefab::save: entity is not alive");
@@ -343,7 +351,7 @@ bool save(Scene& scene, EntityId root, const std::string& path, const ResourceMa
         return false;
     }
 
-    // Entity ids mean nothing outside their scene, so parents are file indices.
+    // Entity ids mean nothing outside their scene, so the file names entities by position.
     std::unordered_map<uint32_t, size_t> indexOf;
     for (size_t i = 0; i < subtree.size(); ++i) indexOf[subtree[i].slot()] = i;
 
@@ -365,7 +373,7 @@ bool save(Scene& scene, EntityId root, const std::string& path, const ResourceMa
     {
         json existing;
         std::error_code ec;
-        const std::filesystem::path resolved = ProjectPaths::resolveProjectPath(path);
+        const std::filesystem::path resolved = Roots::resolveProjectPath(path);
         if (std::filesystem::exists(resolved, ec) && detail::readJsonFile(resolved, existing, "Prefab")) {
             nextUid = numberOr(existing, "nextUid", 0);
         }
@@ -394,26 +402,26 @@ bool save(Scene& scene, EntityId root, const std::string& path, const ResourceMa
 
         json components = json::object();
         SceneSerializer::saveComponents(scene, id, components, resources, name);
-        // The parent is rewritten as a file index below.
-        components.erase("Hierarchy");
+        // Hierarchy names its parent by slot; the entry names it below, by position.
+        components.erase(sceneKey<Hierarchy>());
 
         json entity;
         entity["uid"]        = uids[i];
         entity["components"] = std::move(components);
 
-        const Hierarchy* node = i > 0 ? scene.tryGet<Hierarchy>(id) : nullptr;
-        if (node) {
-            auto it = indexOf.find(node->parent.slot());
-            if (it != indexOf.end()) entity["parent"] = it->second;
-        }
+        // The root's parent is outside the file; every other entry's is in it.
+        if (i > 0) entity["parent"] = name(scene.get<Hierarchy>(id).parent);
 
         doc["entities"].push_back(std::move(entity));
     }
 
     doc["nextUid"] = nextUid;
-    doc["assets"]  = AssetSerializer::saveAssetsForEntities(scene, subtree, resources);
+    doc["assets"]  = SceneAssets::saveAssetsForEntities(scene, subtree, resources);
 
-    if (!detail::writeJsonFile(ProjectPaths::resolveProjectPath(path), doc, "Prefab")) return false;
+    const std::filesystem::path written = Roots::resolveProjectPath(path);
+    // Dropped whatever the write does: a file system's coarse write time could hide the change.
+    g_read.erase(written.string());
+    if (!detail::writeJsonFile(written, doc, "Prefab")) return false;
 
     for (size_t i = 0; i < subtree.size(); ++i) {
         PrefabEntity* stamped = scene.tryGet<PrefabEntity>(subtree[i]);
@@ -449,8 +457,7 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
         return {};
     }
 
-    scene.add(root, PrefabInstance{});
-    scene.get<PrefabInstance>(root).source = path;
+    scene.add(root, PrefabInstance{}).source = path;
     return root;
 }
 
@@ -463,11 +470,11 @@ bool instantiateInto(
     std::set<std::string>* drift,
     const BuiltSlots* slots
 ) {
-    json doc;
-    if (!readPrefab(path, doc)) return false;
-    ensureAssets(doc, path, resources);
+    const std::shared_ptr<const json> doc = readPrefab(path);
+    if (!doc) return false;
+    ensureAssets(*doc, path, resources);
 
-    const json& entities = doc["entities"];
+    const json& entities = doc->at("entities");
 
     std::vector<EntityId> created;
     created.reserve(entities.size());
@@ -502,10 +509,10 @@ bool instantiateInto(
 
     for (size_t i = 0; i < entities.size(); ++i) {
         const json& entry = entities[i];
-        EntityId entity = created[i];
+        EntityId entity   = created[i];
 
         // The identity an override addresses.
-        const uint32_t uid = uidAt(entities, i);
+        const uint32_t uid    = uidAt(entities, i);
         PrefabEntity* stamped = scene.tryGet<PrefabEntity>(entity);
         if (!stamped) stamped = &scene.add(entity, PrefabEntity{});
         stamped->uid = uid;
@@ -514,16 +521,17 @@ bool instantiateInto(
         if (entry.contains("components")) {
             // The root keeps the pose it was placed at.
             const Transform* at = i == 0 ? scene.tryGet<Transform>(entity) : nullptr;
-            const bool      keepTransform = at != nullptr;
-            const Transform placed        = at ? *at : Transform{};
+            const bool keepTransform = at != nullptr;
+            const Transform placed = at ? *at : Transform{};
 
-            const json patched = overrides.empty()
-                ? entry["components"]
-                : applyOverrides(entry["components"], uid, overrides, path, drift);
+            const json& authored = entry.at("components");
+            json        patched;
+            if (!overrides.empty()) patched = applyOverrides(authored, uid, overrides, path, drift);
 
             // A malformed block throws; it costs this instance, not the caller.
             try {
-                SceneSerializer::loadComponents(patched, scene, entity, resources, resolve);
+                const json& components = overrides.empty() ? authored : patched;
+                SceneSerializer::loadComponents(components, scene, entity, resources, resolve);
             } catch (const std::exception& e) {
                 LOG_ERROR("Prefab '%s' entity %u could not be built: %s", path.c_str(), uid, e.what());
                 abandon();
@@ -538,8 +546,7 @@ bool instantiateInto(
 
         if (i > 0) {
             // Total: readPrefab refused any entry not naming an earlier parent.
-            const size_t parentIndex = numberOr(entry, "parent", 0);
-            HierarchyOperations::setParent(scene, entity, created[parentIndex]);
+            HierarchyOperations::setParent(scene, entity, resolve(numberOr(entry, "parent", 0u)));
         }
     }
 
@@ -568,18 +575,18 @@ bool reloadComponent(
 
     // The root's Transform is the instance's pose; re-reading the prefab's would
     // teleport the instance when an override is dropped.
-    if (uid == PrefabEntity::ROOT && component == "Transform") return false;
+    if (uid == PrefabEntity::ROOT && component == sceneKey<Transform>()) return false;
 
-    json doc;
-    if (!readPrefab(path, doc)) return false;
-    ensureAssets(doc, path, resources);
+    const std::shared_ptr<const json> doc = readPrefab(path);
+    if (!doc) return false;
+    ensureAssets(*doc, path, resources);
 
-    const json& entities = doc["entities"];
+    const json& entities = doc->at("entities");
     for (size_t i = 0; i < entities.size(); ++i) {
         if (uidAt(entities, i) != uid) continue;
         if (!entities[i].contains("components")) return false;
 
-        const json patched = applyOverrides(entities[i]["components"], uid, overrides, path, nullptr);
+        const json patched = applyOverrides(entities[i].at("components"), uid, overrides, path, nullptr);
         if (!patched.contains(component)) return false;
 
         // A cross-entity reference resolves within this entity's instance, not to
@@ -620,10 +627,10 @@ bool reloadComponent(
 }
 
 bool definesComponent(const std::string& path, uint32_t uid, const std::string& component) {
-    json doc;
-    if (!readPrefab(path, doc)) return false;
+    const std::shared_ptr<const json> doc = readPrefab(path);
+    if (!doc) return false;
 
-    const json& entities = doc["entities"];
+    const json& entities = doc->at("entities");
     for (size_t i = 0; i < entities.size(); ++i) {
         if (uidAt(entities, i) != uid) continue;
         const auto it = entities[i].find("components");

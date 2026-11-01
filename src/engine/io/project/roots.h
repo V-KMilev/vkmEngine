@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace Vkm::Engine {
 
@@ -15,7 +16,7 @@ namespace Vkm::Engine {
  *
  * Project or user is the question "would you commit this?"
  */
-namespace ProjectPaths {
+namespace Roots {
 
 /**
  * @brief Directory holding the engine's own read-only data.
@@ -63,14 +64,27 @@ std::filesystem::path userRoot();
  *
  * A @p game folder in the same platform directory as userRoot(), not inside the
  * engine's: a player knows the game, not what it was made with. The project root
- * when there is no home or no name, and when the folder cannot be created, which
- * warns. Exists when this returns. readOwnFile and writeOwnFile read and write there.
+ * when there is no home or no name. Not made here: the first file written there
+ * makes it, so a game that saves nothing leaves none. readOwnFile and writeOwnFile
+ * read and write there.
  *
  * @param game The folder's name, the game's own - its Project::name serves; only its last
  *             part counts.
  * @return Absolute path to the folder.
  */
 std::filesystem::path playerRoot(const std::string& game);
+
+/**
+ * @brief A file of the open game's own on this machine - a save, the player's controls - in
+ *        playerRoot of the game's name, as project.json gives it.
+ *
+ * For code that holds no Project, as a behavior: it reads project.json on every call, so a host
+ * holding its Project asks playerRoot(project.name) instead.
+ *
+ * @param name The file's name, as "progress.json".
+ * @return Its absolute path; its folder is made by the first write.
+ */
+std::filesystem::path playerFile(std::string_view name);
 
 /**
  * @brief Directory a host writes its log to when the project cannot hold one.
@@ -106,10 +120,12 @@ std::filesystem::path resolveProjectPath(const std::string& path);
 std::string toProjectRelative(const std::string& path);
 
 // Engine-owned, read-only to a game.
-inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; }
-inline std::filesystem::path engineAssets()  { return engineRoot() / "assets"; }
-inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; }
-/// The engine's content packs (see ContentPack).
+inline std::filesystem::path engineAssets() { return engineRoot() / "assets"; }
+inline std::filesystem::path engineFonts()  { return engineAssets() / "fonts"; }
+/**
+ * @brief The engine's content packs (see ContentPack), which the editor copies into a project;
+ *        never read in place.
+ */
 inline std::filesystem::path engineContent() { return engineRoot() / "content"; }
 
 /**
@@ -118,6 +134,16 @@ inline std::filesystem::path engineContent() { return engineRoot() / "content"; 
  * @return Absolute path to the project's binary directory.
  */
 inline std::filesystem::path projectBin() { return projectRoot() / "bin"; }
+
+/**
+ * @brief Where the open project's build writes its gameplay module.
+ *
+ * An example of the engine's, run by a host of an engine tree but build/, is that tree's own,
+ * beside its executable in examples/<name>/ (CMakeLists.txt, VKM_TREE_EXAMPLE_MODULES).
+ *
+ * @return The module's path, in the project's bin/ but for such an example, named for this platform.
+ */
+std::filesystem::path gameplayModule();
 
 // Project-owned: the game's own content.
 inline std::filesystem::path assets()  { return projectRoot() / "assets"; }
@@ -131,6 +157,6 @@ inline std::filesystem::path library()       { return projectRoot() / "library";
 inline std::filesystem::path cooked()        { return projectRoot() / "cooked"; }
 inline std::filesystem::path assetManifest() { return cooked() / "_manifest.json"; }
 
-} // namespace ProjectPaths
+} // namespace Roots
 
 } // namespace Vkm::Engine

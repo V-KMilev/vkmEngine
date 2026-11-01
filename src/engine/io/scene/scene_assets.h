@@ -7,8 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/entity.h"
-#include "io/scene/component_serializer.h"
-#include "resource/asset/material_asset.h"
+#include "io/scene/asset_refs.h"
 #include "resource/asset_type.h"
 
 namespace Vkm::Engine {
@@ -25,36 +24,7 @@ class Scene;
  * ResourceManager already holds; a name neither serves stays unresolved. Sections load in
  * ASSET_DEPENDENCY_ORDER, so textures land before the materials that resolve them.
  */
-namespace AssetSerializer {
-    /**
-     * @brief Every asset reference a set of entities holds, as an assets block would name it.
-     *
-     * Handles from components, plus names with no handle: an AssetRef a behavior authors, and a name the
-     * last load could not resolve, kept so a save still names it. An asset's own references (a
-     * material's textures, a mesh's or a clip's rig) are not here.
-     */
-    struct EntityAssetRefs {
-        ComponentSerializer::AssetRefs                 handles;
-        std::vector<std::pair<AssetType, std::string>> names;
-    };
-
-    /**
-     * @brief Append every asset reference @p id holds to @p refs.
-     *
-     * The one walk over an entity's references: a field that names an asset is seen here or nowhere.
-     *
-     * @param scene Scene holding the entity.
-     * @param id Entity to walk; alive.
-     * @param resources The asset graph the entity's handles index into.
-     * @param refs Where the references are appended; duplicates are kept.
-     */
-    void collectAssetRefs(
-        const Scene& scene,
-        EntityId id,
-        const ResourceManager& resources,
-        EntityAssetRefs& refs
-    );
-
+namespace SceneAssets {
     /**
      * @brief The assets block for a chosen set of entities.
      *
@@ -96,6 +66,17 @@ namespace AssetSerializer {
     nlohmann::json saveAllAssets(const ResourceManager& resources);
 
     /**
+     * @brief Every asset an assets block names, by the section it is under and its name.
+     *
+     * Reads whatever sections the block has rather than a list of them, so a new asset kind is
+     * counted the day saveAssetsForScene writes it. A name is unique only within its section.
+     *
+     * @param block A block as saveAssetsForScene or saveAllAssets writes one.
+     * @return In the block's order; an entry with no name is skipped.
+     */
+    std::vector<std::pair<std::string, std::string>> namesIn(const nlohmann::json& block);
+
+    /**
      * @brief What loadAssets does about a name @p resources already holds.
      */
     enum class LoadMode {
@@ -133,6 +114,16 @@ namespace AssetSerializer {
     );
 
     /**
+     * @brief Load one asset of the library by name, as an assets block naming it alone would.
+     *
+     * @param type      Its kind.
+     * @param name      Its name in the library.
+     * @param resources The asset graph to build into; one it already holds is left alone.
+     * @return Whether @p resources now holds it.
+     */
+    bool loadNamed(AssetType type, const std::string& name, ResourceManager& resources);
+
+    /**
      * @brief Drop every asset in @p resources that @p assetsJson does not name.
      *
      * The other half of a restore: loadAssets leaves alone what the document does not name, and a session
@@ -146,29 +137,6 @@ namespace AssetSerializer {
      */
     size_t dropAssetsNotIn(const nlohmann::json& assetsJson, ResourceManager& resources);
 
-    /**
-     * @brief Build a material from its recipe.
-     *
-     * A missing key reads as the field's default; a wrong-typed value throws, for the caller to
-     * report against the material.
-     *
-     * @param source    The recipe, as materialToRecipe writes it.
-     * @param resources Resolves texture names; a name it does not hold leaves that map empty, logged.
-     * @return The material, unnamed.
-     */
-    MaterialAsset materialFromRecipe(const nlohmann::json& source, const ResourceManager& resources);
-
-    /**
-     * @brief Build a material's recipe: its PBR scalars plus texture refs by name.
-     *
-     * The material's editable source of truth: what its recipe file holds.
-     *
-     * @param material  The material to describe.
-     * @param resources Resolves its texture handles to the names written.
-     * @return The recipe.
-     */
-    nlohmann::json materialToRecipe(const MaterialAsset& material, const ResourceManager& resources);
-
-} // namespace AssetSerializer
+} // namespace SceneAssets
 
 } // namespace Vkm::Engine

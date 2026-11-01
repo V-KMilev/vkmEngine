@@ -1,41 +1,19 @@
-#define VKM_LOG_CATEGORY "IO"
+#include "io/project/roots.h"
 
-#include "io/project_paths.h"
-
-#include <cstdlib>
+#include <string>
 #include <system_error>
 
-#include "logger.h"
+#include "io/project/project.h"
+#include "vkm_platform/process/dynamic_library.h"
+#include "vkm_platform/process/this_process.h"
 
-#include "platform/windows_api.h"
-
-#if !defined(_WIN32)
-    #include <climits>
-    #include <unistd.h>
-#endif
-
-namespace Vkm::Engine::ProjectPaths {
+namespace Vkm::Engine::Roots {
 
 namespace {
 
-// Absolute directory of the running executable, or empty on failure.
-std::filesystem::path executableDir() {
-#if defined(_WIN32)
-    wchar_t buf[MAX_PATH];
-    const DWORD len = ::GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    if (len == 0 || len >= MAX_PATH) return {};  // failed or truncated
-    return std::filesystem::path(buf, buf + len).parent_path();
-#else
-    char buf[PATH_MAX];
-    const ssize_t len = ::readlink("/proc/self/exe", buf, sizeof(buf));
-    if (len <= 0 || static_cast<size_t>(len) >= sizeof(buf)) return {};
-    return std::filesystem::path(buf, buf + len).parent_path();
-#endif
-}
-
 std::filesystem::path resolveRoot() {
     // shaders/ always ships, so it marks a packaged (relocatable) layout.
-    const std::filesystem::path exeDir = executableDir();
+    const std::filesystem::path exeDir = Platform::executableDir();
     if (!exeDir.empty()) {
         std::error_code ec;
         for (const std::filesystem::path& dir : { exeDir, exeDir.parent_path() }) {
@@ -52,44 +30,6 @@ std::filesystem::path& projectOverride() {
 }
 
 constexpr const char* USER_DIR_NAME = "vkmEngine";
-
-// An environment variable as a path, or empty when unset or blank. Wide on
-// Windows: the narrow environment mangles a non-ANSI user name.
-#if defined(_WIN32)
-std::filesystem::path envPath(const wchar_t* name) {
-    const wchar_t* value = ::_wgetenv(name);
-    return (value && *value) ? std::filesystem::path(value) : std::filesystem::path{};
-}
-#else
-std::filesystem::path envPath(const char* name) {
-    const char* value = std::getenv(name);
-    return (value && *value) ? std::filesystem::path(value) : std::filesystem::path{};
-}
-#endif
-
-// The platform's directory for per-user configuration, empty if it names none.
-std::filesystem::path userConfigBase() {
-#if defined(_WIN32)
-    return envPath(L"APPDATA");
-#else
-    const std::filesystem::path xdg = envPath("XDG_CONFIG_HOME");
-    if (!xdg.empty()) return xdg;
-    const std::filesystem::path home = envPath("HOME");
-    return home.empty() ? std::filesystem::path{} : home / ".config";
-#endif
-}
-
-// The platform's directory for per-user state, distinct from configuration.
-std::filesystem::path userStateBase() {
-#if defined(_WIN32)
-    return envPath(L"LOCALAPPDATA");
-#else
-    const std::filesystem::path xdg = envPath("XDG_STATE_HOME");
-    if (!xdg.empty()) return xdg;
-    const std::filesystem::path home = envPath("HOME");
-    return home.empty() ? std::filesystem::path{} : home / ".local" / "state";
-#endif
-}
 
 } // namespace
 
@@ -112,7 +52,7 @@ std::filesystem::path projectRoot() {
 std::filesystem::path userRoot() {
     // Created on resolve: a missing root is a save that fails silently at shutdown.
     static const std::filesystem::path s_resolved = [] {
-        const std::filesystem::path base = userConfigBase();
+        const std::filesystem::path base = Platform::userConfigDir();
         if (base.empty()) return engineRoot();
 
         const std::filesystem::path dir = base / USER_DIR_NAME;
@@ -128,24 +68,23 @@ std::filesystem::path playerRoot(const std::string& game) {
     std::filesystem::path name = std::filesystem::path(game).lexically_normal();
     if (name.filename().empty()) name = name.parent_path();
     name = name.filename();
-    const std::filesystem::path base = userConfigBase();
+    const std::filesystem::path base = Platform::userConfigDir();
     if (base.empty() || name.empty() || name == "." || name == "..") return projectRoot();
 
-    const std::filesystem::path dir = base / name;
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    if (!ec) return dir;
-    LOG_WARNING(
-        "A game's files cannot go in '%s' (%s); keeping them in the project",
-        dir.string().c_str(),
-        ec.message().c_str()
-    );
-    return projectRoot();
+    // Not made here: the first file written makes it (WholeFileWrite), so a game that saves
+    // nothing leaves no folder behind.
+    return base / name;
+}
+
+std::filesystem::path playerFile(std::string_view name) {
+    Project game;
+    loadProject(projectRoot(), game);
+    return playerRoot(game.name) / std::filesystem::path(name);
 }
 
 std::filesystem::path userLogs() {
     static const std::filesystem::path s_resolved = [] {
-        const std::filesystem::path base = userStateBase();
+        const std::filesystem::path base = Platform::userStateDir();
         if (base.empty()) return engineRoot() / "logs";
         return base / USER_DIR_NAME / "logs";
     }();
@@ -172,4 +111,19 @@ std::string toProjectRelative(const std::string& path) {
     return generic;
 }
 
-} // namespace Vkm::Engine::ProjectPaths
+std::filesystem::path gameplayModule() {
+    const std::string file = Platform::DynamicLibrary::platformName("game");
+#if defined(VKM_TREE_EXAMPLE_MODULES)
+    // A tree but build/ keeps its examples' modules beside its hosts (CMakeLists.txt), so an example
+    // runs the one this tree built, never another tree's.
+    std::filesystem::path root = projectRoot().lexically_normal();
+    if (!root.has_filename()) root = root.parent_path();
+    std::error_code ec;
+    if (std::filesystem::equivalent(root.parent_path(), engineRoot() / "examples", ec)) {
+        return Platform::executableDir() / "examples" / root.filename() / file;
+    }
+#endif
+    return projectBin() / file;
+}
+
+} // namespace Vkm::Engine::Roots

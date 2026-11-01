@@ -1,18 +1,18 @@
-#include "resource/generate/default_scene.h"
+#include "io/scene/default_scene.h"
 
 #include <glm/gtc/quaternion.hpp>
 
 #include "resource/resource_manager.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/mesh.h"
 
-#include "resource/generate/light_generators.h"
-#include "resource/generate/material_generators.h"
-#include "resource/generate/mesh_generators.h"
+#include "ecs/component/light/light.h"
+#include "io/asset/generate/material_generators.h"
+#include "io/asset/generate/mesh_generators.h"
 
 namespace Vkm::Engine {
 

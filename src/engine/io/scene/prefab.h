@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/prefab_instances.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/prefab/prefab_instance.h"
 
 namespace Vkm::Engine {
@@ -32,27 +33,6 @@ class ResourceManager;
 namespace Prefab {
 
     /**
-     * @brief The root of the prefab instance @p id belongs to: itself, or its
-     *        nearest ancestor carrying PrefabInstance.
-     *
-     * Walks up, so descendants carry no bookkeeping that could fall out of sync.
-     *
-     * @param scene Scene holding the entity.
-     * @param id    Entity to resolve.
-     * @return The instance root, or a null id when @p id is not part of one.
-     */
-    EntityId instanceRootOf(const Scene& scene, EntityId id);
-
-    /**
-     * @brief Is @p id inside (but not the root of) a prefab instance?
-     *
-     * @param scene Scene holding the entity.
-     * @param id    Entity to test.
-     * @return True when an ancestor of @p id carries PrefabInstance.
-     */
-    bool isInsideInstance(const Scene& scene, EntityId id);
-
-    /**
      * @brief Write @p root and its descendants to @p path as a prefab.
      *
      * The root's Transform is saved as the authored pose; an instance replaces it.
@@ -72,8 +52,8 @@ namespace Prefab {
      * @brief Does the prefab at @p path define @p component on the entity
      *        @p uid names?
      *
-     * Answers whether an override addressing that pair could ever apply. Reads
-     * the file per call.
+     * Answers whether an override addressing that pair could ever apply. Parses
+     * the file again only when it has changed since the last read.
      *
      * @param path      Prefab file to read.
      * @param uid       Entity identity inside the prefab.
@@ -81,40 +61,6 @@ namespace Prefab {
      * @return True when the prefab holds that entity and that component on it.
      */
     bool definesComponent(const std::string& path, uint32_t uid, const std::string& component);
-
-    /**
-     * @brief Where one instance's built entities stand: prefab uid to slot.
-     *
-     * A scene file does not keep it: a load builds an instance into whatever slots
-     * are free, and a history addressing entities by slot then addresses others.
-     * A rebuild handed this puts each entity back.
-     */
-    using BuiltSlots = std::map<uint32_t, uint32_t>;
-
-    /**
-     * @brief Every instance's BuiltSlots, keyed by the slot its root holds.
-     *
-     * Comparable, so a caller that rebuilt a world can ask whether it came back
-     * exactly.
-     */
-    using InstanceSlots = std::map<uint32_t, BuiltSlots>;
-
-    /**
-     * @brief Where the instance rooted at @p root put each of its entities.
-     *
-     * @param scene Scene holding the instance.
-     * @param root  Instance root; itself not listed, since its slot is its own.
-     * @return Each entity below @p root carrying a PrefabEntity, by uid.
-     */
-    BuiltSlots builtSlotsOf(const Scene& scene, EntityId root);
-
-    /**
-     * @brief builtSlotsOf for every instance in @p scene.
-     *
-     * @param scene Scene to read.
-     * @return One entry per PrefabInstance, by the slot of its root.
-     */
-    InstanceSlots instanceSlotsOf(const Scene& scene);
 
     /**
      * @brief Instantiate @p path into @p scene, placing the root at @p at.
@@ -182,7 +128,7 @@ namespace Prefab {
      *
      * An instance's component is the prefab's value patched by its overrides, so
      * dropping an override is a re-read, not an undo. Only @p component is
-     * touched. Reads the file per call, so not for a per-frame path.
+     * touched. Asks the file system per call, so not for a per-frame path.
      *
      * @param scene     Scene holding the entity.
      * @param resources Resolves asset names to handles.
