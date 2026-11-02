@@ -7,18 +7,23 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "vkm_physics/geometry/rotation.h"
+#include "vkm_physics/mass_model.h"
+
 #include "core/clock.h"
-#include "core/math/rotation.h"
-#include "debug/engine_error_log.h"
-#include "debug/profiler.h"
+#include "base/math/rotation.h"
+#include "debug/error/engine_error_log.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/hierarchy_operations.h"
-#include "system/animation/pose_buffer.h"
+#include "core/frame/pose_buffer.h"
 
 namespace Vkm::Engine {
 
@@ -28,44 +33,7 @@ namespace {
 // hundred, matrix-chain noise far below this.
 constexpr float STALE_SCALE_TOLERANCE = 0.01f;
 
-// The world-space spin that turns `from` into `to` over dt, the short way round.
-glm::vec3 spinBetween(const glm::quat& from, const glm::quat& to, float dt) {
-    glm::quat delta = to * glm::conjugate(from);
-    if (delta.w < 0.0f) delta = -delta;
-    const glm::vec3 axis(delta.x, delta.y, delta.z);
-    const float sine = glm::length(axis);
-    if (sine <= glm::epsilon<float>()) return axis * (2.0f / dt);
-    return axis * (2.0f * std::atan2(sine, delta.w) / (sine * dt));
-}
-
 } // namespace
-
-EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone) {
-    if (!body) return {};
-
-    auto* storage = scene.storage<Ragdoll>();
-    if (!storage) return {};
-
-    const uint32_t count = static_cast<uint32_t>(storage->size());
-    for (uint32_t i = 0; i < count; ++i) {
-        const Ragdoll& ragdoll = storage->dataAt(i);
-        for (const RagdollBone& bone : ragdoll.bones) {
-            if (bone.body != body) continue;
-            if (outBone) *outBone = bone.bone;
-            return scene.entityAt(storage->keyAt(i));
-        }
-    }
-    return {};
-}
-
-void destroyRagdollBodies(Scene& scene, const Ragdoll& ragdoll) {
-    for (const RagdollBone& bone : ragdoll.bones) {
-        if (bone.body && scene.isAlive(bone.body)) scene.destroyEntity(bone.body);
-    }
-    if (ragdoll.root && scene.isAlive(ragdoll.root)) {
-        HierarchyOperations::destroyHierarchy(scene, ragdoll.root);
-    }
-}
 
 void RagdollSystem::init(FrameContext& ctx) {
     m_scene = &ctx.scene;
@@ -91,7 +59,7 @@ void RagdollSystem::onEntityDestroyed(EntityId id) {
 void RagdollSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("RagdollSystem");
 
-    Scene& scene = ctx.scene;
+    Scene& scene  = ctx.scene;
     auto* storage = scene.storage<Ragdoll>();
     if (!storage) {
         m_scaled.endPass();
@@ -101,8 +69,28 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
     const uint32_t count = static_cast<uint32_t>(storage->size());
     for (uint32_t i = 0; i < count; ++i) {
         const EntityId self = scene.entityAt(storage->keyAt(i));
-        Ragdoll& ragdoll = storage->dataAt(i);
+        Ragdoll& ragdoll    = storage->dataAt(i);
         if (ragdoll.bones.empty()) continue;
+
+        Transform* rootAt = ragdoll.root ? scene.tryGet<Transform>(ragdoll.root) : nullptr;
+        const Hierarchy* rootIn = ragdoll.root ? scene.tryGet<Hierarchy>(ragdoll.root) : nullptr;
+        if (ragdoll.active && rootAt) {
+            // Live, the group node stays where it stood in the world, and the bones with it: what moves
+            // the character does not drag the body it has become.
+            const glm::mat4 parentWorld = rootIn && rootIn->parent
+                ? HierarchyOperations::computeWorldMatrix(scene, rootIn->parent)
+                : glm::mat4(1.0f);
+            if (!ragdoll.pinned) {
+                ragdoll.pinnedWorld = HierarchyOperations::computeWorldMatrix(scene, ragdoll.root);
+                ragdoll.rootRest    = *rootAt;
+                ragdoll.pinned      = true;
+            } else {
+                *rootAt = Transform::fromModelMatrix(glm::inverse(parentWorld) * ragdoll.pinnedWorld);
+            }
+        } else if (ragdoll.pinned) {
+            if (rootAt) *rootAt = ragdoll.rootRest;
+            ragdoll.pinned = false;
+        }
 
         if (ragdoll.active) {
             // Handed over: the bodies are ordinary dynamics, and the pose follows them.
@@ -127,7 +115,7 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
             : glm::mat4(1.0f);
 
         // Bones are children of the group node, so world poses come back through its frame.
-        const EntityId under = ragdoll.root ? ragdoll.root : self;
+        const EntityId under     = ragdoll.root ? ragdoll.root : self;
         const glm::mat4 toParent = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, under));
 
         // Bone offsets carry the build scale, so a rescaled rig misplaces every body. Asked of the rig,
@@ -151,7 +139,7 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
             if (!held) continue;
 
             Rigidbody& body = *held;
-            body.linearVelocity = glm::vec3(0.0f);
+            body.linearVelocity  = glm::vec3(0.0f);
             body.angularVelocity = glm::vec3(0.0f);
 
             if (!slice || bone.bone < 0) continue;
@@ -171,11 +159,14 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
             transform->rotation = Math::worldRotationOf(bodyLocal);
 
             // The pose's speed is what activation hands the solver: felled mid-stride, it falls forward.
-            const glm::vec3 position = glm::vec3(bodyWorld[3]);
+            // Of the point the bone is solved about once it falls.
+            const Physics::MassModel model = massModelOf(scene.tryGet<Collider>(bone.body));
+            const glm::vec3 center   = Physics::solverCenter(Physics::Motion::Dynamic, body.mass, model);
+            const glm::vec3 position = glm::vec3(bodyWorld * glm::vec4(center, 1.0f));
             const glm::quat rotation = Math::worldRotationOf(bodyWorld);
             if (wasPosed && dt > 0.0f) {
                 body.linearVelocity  = (position - bone.lastPosition) / dt;
-                body.angularVelocity = spinBetween(bone.lastRotation, rotation, dt);
+                body.angularVelocity = Physics::rotationBetween(bone.lastRotation, rotation) / dt;
             }
             bone.lastPosition = position;
             bone.lastRotation = rotation;
@@ -183,47 +174,6 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
         }
     }
     m_scaled.endPass();
-}
-
-namespace {
-
-/**
- * @brief Call @p fn with every body an inactive ragdoll poses.
- *
- * The one statement of the rule, so the per-entity and per-world questions agree.
- *
- * @tparam Fn Callable taking the bone's body EntityId.
- * @param scene World whose ragdolls are walked.
- * @param fn Called once per bone; the body may be dead, and @p fn decides.
- */
-template<typename Fn>
-void forEachPosedBody(const Scene& scene, Fn&& fn) {
-    const auto* ragdolls = scene.storage<Ragdoll>();
-    if (!ragdolls) return;
-
-    for (size_t i = 0; i < ragdolls->size(); ++i) {
-        const Ragdoll& ragdoll = ragdolls->dataAt(static_cast<uint32_t>(i));
-        if (ragdoll.active) continue;
-        for (const RagdollBone& bone : ragdoll.bones) fn(bone.body);
-    }
-}
-
-} // namespace
-
-bool isPosedByAnimation(const Scene& scene, EntityId entity) {
-    bool posed = false;
-    forEachPosedBody(scene, [&](EntityId body) { posed = posed || body == entity; });
-    return posed && scene.isAlive(entity);
-}
-
-void markPosedByAnimation(const Scene& scene, std::vector<bool>& bySlot) {
-    bySlot.clear();
-    forEachPosedBody(scene, [&](EntityId body) {
-        // By id: a dead bone must not mark the slot's new occupant.
-        if (!scene.isAlive(body)) return;
-        if (bySlot.size() <= body.slot()) bySlot.resize(body.slot() + 1, false);
-        bySlot[body.slot()] = true;
-    });
 }
 
 } // namespace Vkm::Engine

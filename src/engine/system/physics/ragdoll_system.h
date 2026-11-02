@@ -4,38 +4,14 @@
 #include <vector>
 
 #include "core/system.h"
-#include "debug/fault_latch.h"
+#include "debug/error/fault_latch.h"
 #include "ecs/entity.h"
-#include "ecs/scene_observer.h"
+#include "ecs/scene.h"
 
 namespace Vkm::Engine {
 
 class Scene;
 struct Ragdoll;
-
-/**
- * @brief Which ragdoll a body belongs to, and which bone it is.
- *
- * Maps a hit body back to its bone. A search, so no per-limb component has to stay true through save,
- * load and rebuild.
- *
- * @param scene Scene to search.
- * @param body The entity a query returned.
- * @param[out] outBone Index into the rig's bone array, when there is one.
- * @return The entity carrying the Ragdoll, or an invalid id.
- */
-EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone = nullptr);
-
-/**
- * @brief Destroy a ragdoll's bone bodies, then the node they are grouped under.
- *
- * The bones go one by one first, since a scene may have moved one out from under the node, and the
- * node goes whole, since a plain destroyEntity leaves its children. The Ragdoll itself is the caller's.
- *
- * @param scene   Scene holding them.
- * @param ragdoll The ragdoll whose bodies go; its own entity is untouched.
- */
-void destroyRagdollBodies(Scene& scene, const Ragdoll& ragdoll);
 
 /**
  * @brief Keeps a ragdoll's bodies in step with whichever is in charge.
@@ -79,27 +55,5 @@ class RagdollSystem : public System, public ISceneObserver {
         Scene*     m_scene = nullptr;  ///< For removing the observer registration
         FaultLatch m_scaled;           ///< A ragdoll built for its rig at another scale
 };
-
-/**
- * @brief Is @p entity a ragdoll bone the animation is placing this tick?
- *
- * Such a bone is a hitbox rather than a body; the rule is stated here once (markPosedByAnimation is the
- * whole-world form). False for an active ragdoll.
- *
- * @param scene World holding the ragdolls.
- * @param entity Entity asked about; a dead one is never posed.
- * @return True when @p entity is a live bone of an inactive ragdoll.
- */
-bool isPosedByAnimation(const Scene& scene, EntityId entity);
-
-/**
- * @brief isPosedByAnimation for a whole world, in one walk of its ragdolls.
- *
- * Asking per entity walks every ragdoll each time; a caller asking of many marks them all once.
- *
- * @param scene  World whose inactive ragdolls are walked.
- * @param bySlot True at the slot of every posed bone; a slot past its end is not one.
- */
-void markPosedByAnimation(const Scene& scene, std::vector<bool>& bySlot);
 
 } // namespace Vkm::Engine

@@ -1,16 +1,17 @@
 #define VKM_LOG_CATEGORY "PHYSICS"
 
-#include "system/physics/authoring/mesh_collider.h"
+#include "ecs/component/physics/mesh_collider.h"
 
 #include <algorithm>
 #include <vector>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+
+#include "vkm_physics/collision/mesh_bvh.h"
 
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/terrain_asset.h"
 #include "resource/resource_manager.h"
-#include "system/physics/collision/mesh_bvh.h"
 
 namespace Vkm::Engine {
 
@@ -24,8 +25,7 @@ const ColliderPart* trianglePartOf(const Collider& collider) {
     return nullptr;
 }
 
-/// Grid squares a terrain tree's leaf holds at most.
-constexpr uint32_t TERRAIN_LEAF_SQUARES = 4;
+constexpr uint32_t TERRAIN_LEAF_SQUARES = 4;  ///< Grid squares a terrain tree's leaf holds at most.
 
 /**
  * @brief A terrain's squares as triangles and the tree over them, built from the grid: halving its
@@ -55,7 +55,7 @@ class TerrainTree {
          * @param[out] points Three corners a triangle, in the tree's order.
          * @param[out] nodes  The tree, root first.
          */
-        void build(std::vector<glm::vec3>& points, std::vector<MeshNode>& nodes) {
+        void build(std::vector<glm::vec3>& points, std::vector<Physics::MeshNode>& nodes) {
             const uint32_t squares = m_terrain.resolution - 1;
             points.clear();
             nodes.clear();
@@ -74,7 +74,7 @@ class TerrainTree {
         /// The node over squares [i0, i1) by [j0, j1); its index in @p nodes.
         uint32_t add(
             std::vector<glm::vec3>& points,
-            std::vector<MeshNode>& nodes,
+            std::vector<Physics::MeshNode>& nodes,
             uint32_t i0,
             uint32_t i1,
             uint32_t j0,
@@ -91,7 +91,7 @@ class TerrainTree {
                         points.insert(points.end(), {v00, v11, corner(i + 1, j), v00, corner(i, j + 1), v11});
                     }
                 }
-                MeshNode& leaf     = nodes[at];
+                Physics::MeshNode& leaf = nodes[at];
                 leaf.firstTriangle = first / 3;
                 leaf.triangleCount = (static_cast<uint32_t>(points.size()) - first) / 3;
                 leaf.min           = points[first];
@@ -112,7 +112,7 @@ class TerrainTree {
                 add(points, nodes, i0, i1, j0, middle);
                 right = add(points, nodes, i0, i1, middle, j1);
             }
-            MeshNode& node  = nodes[at];
+            Physics::MeshNode& node = nodes[at];
             node.rightChild = right;
             node.min        = glm::min(nodes[at + 1].min, nodes[right].min);
             node.max        = glm::max(nodes[at + 1].max, nodes[right].max);
@@ -125,11 +125,14 @@ class TerrainTree {
         float               m_half;
 };
 
-/// Every whole triangle of @p mesh, scaled, three corners each.
+/// Every whole triangle of @p mesh, scaled, three corners each, wound to face out.
 std::vector<glm::vec3> trianglesOf(const MeshAsset& mesh, const glm::vec3& scale) {
     std::vector<glm::vec3> points;
     const size_t triangles = mesh.indices.size() / 3;
     points.reserve(triangles * 3);
+
+    // A triangle is solid on one side, told by its winding: a mirroring scale turns it inside out.
+    const bool mirrored = scale.x * scale.y * scale.z < 0.0f;
     for (size_t t = 0; t < triangles; ++t) {
         bool whole = true;
         for (size_t c = 0; c < 3; ++c) {
@@ -142,7 +145,8 @@ std::vector<glm::vec3> trianglesOf(const MeshAsset& mesh, const glm::vec3& scale
         if (!whole) continue;
 
         for (size_t c = 0; c < 3; ++c) {
-            points.push_back(mesh.vertices[mesh.indices[t * 3 + c]].position * scale);
+            const size_t corner = mirrored && c > 0 ? 3 - c : c;
+            points.push_back(mesh.vertices[mesh.indices[t * 3 + corner]].position * scale);
         }
     }
     return points;
@@ -171,12 +175,12 @@ uint32_t addMeshCollider(
     collider.parts.push_back(part);
     syncMeshCollider(collider, resources);
 
-    if (collider.meshPoints.empty()) {
+    if (collider.triangles.points.empty()) {
         collider.parts.pop_back();
         collider.meshBuiltFrom = MeshColliderSource{};
         return 0;
     }
-    return static_cast<uint32_t>(collider.meshPoints.size() / 3);
+    return static_cast<uint32_t>(collider.triangles.points.size() / 3);
 }
 
 bool syncMeshCollider(Collider& collider, const ResourceManager& resources) {
@@ -196,13 +200,15 @@ bool syncMeshCollider(Collider& collider, const ResourceManager& resources) {
     }
 
     collider.meshBuiltFrom = source;
-    collider.meshPoints.clear();
-    collider.meshNodes.clear();
+    collider.triangles.points.clear();
+    collider.triangles.nodes.clear();
     if (!asset) return true;
 
-    collider.meshPoints = trianglesOf(*asset, part->meshScale);
-    collider.meshNodes  = buildMeshBvh(collider.meshPoints);
-    // A scene may hold more; each would collide as this one's triangles, placed at its own centre.
+    collider.triangles.points = trianglesOf(*asset, part->meshScale);
+    collider.triangles.nodes  = Physics::buildMeshBvh(collider.triangles.points);
+    // Rebuilt in place: a body at rest on the old triangles collides with these again.
+    ++collider.triangles.revision;
+    // A scene may hold more; each would collide as this one's triangles, placed at its own center.
     const auto isMesh    = [](const ColliderPart& p) { return isTriangles(p.shape); };
     const auto meshParts = std::count_if(collider.parts.begin(), collider.parts.end(), isMesh);
     if (meshParts > 1) {
@@ -218,7 +224,7 @@ bool syncMeshCollider(Collider& collider, const ResourceManager& resources) {
 bool syncTerrainCollider(Collider& collider, const TerrainAsset* terrain) {
     const ColliderPart* part = trianglePartOf(collider);
     if (!part || part->shape != ColliderShape::Terrain) return false;
-    // Placed where the terrain is drawn, at the entity, whatever a centre says.
+    // Placed where the terrain is drawn, at the entity, whatever a center says.
     for (ColliderPart& each : collider.parts) {
         if (each.shape == ColliderShape::Terrain) each.center = glm::vec3(0.0f);
     }
@@ -234,11 +240,13 @@ bool syncTerrainCollider(Collider& collider, const TerrainAsset* terrain) {
         return false;
     }
     collider.meshBuiltFrom = source;
-    collider.meshPoints.clear();
-    collider.meshNodes.clear();
-    const bool sound = terrain && TerrainAsset::validResolution(terrain->resolution)
-        && terrain->heights.size() == static_cast<size_t>(terrain->resolution) * terrain->resolution;
-    if (sound) TerrainTree(*terrain).build(collider.meshPoints, collider.meshNodes);
+    collider.triangles.points.clear();
+    collider.triangles.nodes.clear();
+    if (terrain && terrain->holdsGrid()) {
+        TerrainTree(*terrain).build(collider.triangles.points, collider.triangles.nodes);
+    }
+    // A brush stroke keeps the size: only the revision tells a body at rest that the ground moved.
+    ++collider.triangles.revision;
     return true;
 }
 

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vector>
+
 #include "core/system.h"
-#include "debug/fault_latch.h"
+#include "debug/error/fault_latch.h"
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
@@ -34,8 +37,9 @@ class CharacterControllerSystem : public System {
         bool isReplayed() const override { return true; }
 
     private:
-        FaultLatch m_noCapsule;  ///< A controller with no enabled capsule Collider.
-        FaultLatch m_spinnable;  ///< A controller's Rigidbody with freezeRotation off.
+        FaultLatch            m_noCapsule;  ///< A controller with no enabled capsule Collider.
+        FaultLatch            m_spinnable;  ///< A controller's Rigidbody with freezeRotation off.
+        std::vector<EntityId> m_order;      ///< This tick's characters by slot; a member for its capacity.
 };
 
 } // namespace Vkm::Engine

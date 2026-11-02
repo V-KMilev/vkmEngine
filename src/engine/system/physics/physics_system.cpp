@@ -2,221 +2,58 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
-#include <utility>
+#include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "vkm_log/assert.h"
+
+#include "vkm_physics/mass_model.h"
+#include "vkm_physics/workers.h"
+
 #include "core/clock.h"
-#include "debug/engine_error_log.h"
-#include "debug/profiler.h"
+#include "debug/draw/debug_draw.h"
+#include "debug/error/engine_error_log.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
-#include "ecs/environment.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/settings/environment.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/rigidbody.h"
-#include "ecs/component/render/terrain.h"
+#include "ecs/component/landscape/terrain.h"
 #include "ecs/hierarchy_operations.h"
-#include "core/event/event_bus.h"
+#include "base/event/event_bus.h"
 #include "net/net_session.h"
-#include "core/math/axes.h"
-#include "core/math/rotation.h"
-#include "platform/threading/thread_pool.h"
+#include "base/math/axes.h"
+#include "base/math/rotation.h"
+#include "vkm_platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
-#include "system/physics/authoring/mesh_collider.h"
-#include "system/physics/body_pose.h"
-#include "system/physics/inertia.h"
-#include "system/physics/physics_events.h"
-#include "system/physics/ragdoll_system.h"
-#include "system/physics/collision/mesh_bvh.h"
-#include "system/physics/collision/narrowphase.h"
-#include "system/physics/collision/part_bounds.h"
-#include "core/math/bounds.h"
+#include "ecs/component/physics/mesh_collider.h"
+#include "core/frame/body_pose.h"
+#include "core/frame/physics_events.h"
+#include "ecs/component/physics/ragdoll.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
 /**
- * @brief Fastest any point of a body may move and still count as resting, m/s.
- *
- * Centre speed plus spin times reach, since a toppling tall box turns slowly while its top moves fast.
- * Box2D's figure.
+ * @brief The step's threads: the engine's pool, a chunk to a claim.
  */
-constexpr float SLEEP_SPEED = 0.05f;
-constexpr float SLEEP_DELAY = 0.5f;  ///< Seconds of rest before sleeping.
-
-/// No body this tick holds that slot.
-constexpr uint32_t NO_BODY = ~0u;
+class PoolWorkers final : public Physics::Workers {
+    public:
+        void forEach(size_t count, const Physics::Job& job) override {
+            Platform::parallelFor(count, 1, [&](size_t index) { job.run(job.state, index); });
+        }
+};
 
 float horizontalLengthSq(const glm::vec3& normal) {
     return normal.x * normal.x + normal.z * normal.z;
-}
-
-// Zero for anything but a Dynamic body of positive mass: nothing the solver does moves it.
-float inverseMassOf(const Rigidbody& rb, RigidbodyMotion motion) {
-    return motion == RigidbodyMotion::Dynamic && rb.mass > 0.0f ? 1.0f / rb.mass : 0.0f;
-}
-
-template <typename Fn>
-void forEachMeshPart(const ColliderProxy& proxy, Fn&& fn) {
-    for (const ColliderPart& part : proxy.collider->parts) {
-        if (isTriangles(part.shape)) fn(*proxy.collider, part);
-    }
-}
-
-// Every part's bound in the body's own frame, together. Empty collider: a point.
-Math::AABB colliderLocalBounds(const Collider& collider) {
-    if (collider.parts.empty()) return {glm::vec3(0.0f), glm::vec3(0.0f)};
-
-    Math::AABB out{
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::lowest())
-    };
-    for (const ColliderPart& part : collider.parts) {
-        const Math::AABB local = partLocalBounds(collider, part);
-        out.min = glm::min(out.min, part.center + local.min);
-        out.max = glm::max(out.max, part.center + local.max);
-    }
-    return out;
-}
-
-glm::mat3 localInverseInertia(const Rigidbody& rb, float invMass, const Collider* collider) {
-    // freezeRotation: infinite rotational inertia, so contacts never torque it.
-    if (rb.freezeRotation) return glm::mat3(0.0f);
-    if (invMass == 0.0f || !collider || collider->parts.empty()) return glm::mat3(0.0f);
-
-    glm::vec3 center(0.0f);
-    glm::mat3 inertia(0.0f);
-    if (collider->parts.size() == 1 && collider->parts[0].shape == ColliderShape::Capsule) {
-        // The box approximation below is badly wrong for it; see docs/reference/physics.md.
-        const ColliderPart& part = collider->parts[0];
-        center  = part.center;
-        inertia = capsuleInertiaLocal(rb.mass, part.radius, part.halfHeight);
-    } else {
-        // A solid box of the collider's overall local extent.
-        const Math::AABB bounds = colliderLocalBounds(*collider);
-        center  = (bounds.max + bounds.min) * 0.5f;
-        inertia = boxInertiaLocal(rb.mass, (bounds.max - bounds.min) * 0.5f);
-    }
-
-    // Shifted to the entity origin, where the solver measures contact arms.
-    if (inertia == glm::mat3(0.0f)) return glm::mat3(0.0f);
-    const glm::mat3 shifted = glm::dot(center, center) > 0.0f
-        ? parallelAxisShift(inertia, rb.mass, center)
-        : inertia;
-    return glm::inverse(shifted);
-}
-
-bool aabbOverlap(const Math::AABB& a, const Math::AABB& b) {
-    return a.min.x <= b.max.x && a.max.x >= b.min.x
-        && a.min.y <= b.max.y && a.max.y >= b.min.y
-        && a.min.z <= b.max.z && a.max.z >= b.min.z;
-}
-
-/**
- * @brief Place one proxy's parts in world space, each with its world bound.
- *
- * Appends each box and capsule, with its bound, to its shape's arrays and records the spans on the
- * proxy, whose bound is their union. See ColliderProxy.
- *
- * @param p Proxy whose collider is placed.
- * @param position The body's world position.
- * @param rotation The body's world orientation.
- * @param boxes Every proxy's boxes, appended to.
- * @param boxBounds World bound of each box, parallel to @p boxes.
- * @param capsules Every proxy's capsules, appended to.
- * @param capsuleBounds World bound of each capsule, parallel to @p capsules.
- */
-void expandSubShapes(
-    ColliderProxy& p,
-    const glm::vec3& position,
-    const glm::quat& rotation,
-    std::vector<BoxShape>& boxes,
-    std::vector<Math::AABB>& boxBounds,
-    std::vector<CapsuleShape>& capsules,
-    std::vector<Math::AABB>& capsuleBounds
-) {
-    p.boxFirst     = static_cast<uint32_t>(boxes.size());
-    p.capsuleFirst = static_cast<uint32_t>(capsules.size());
-    const Math::AABB emptyBound{
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::lowest())
-    };
-    p.bounds = p.collider->parts.empty() ? Math::AABB{position, position} : emptyBound;
-    const auto enclose = [&](const Math::AABB& part) {
-        p.bounds.min = glm::min(p.bounds.min, part.min);
-        p.bounds.max = glm::max(p.bounds.max, part.max);
-    };
-
-    const glm::mat3 r = glm::mat3_cast(rotation);
-
-    for (const ColliderPart& part : p.collider->parts) {
-        const glm::vec3 center = position + r * part.center;
-
-        switch (part.shape) {
-            case ColliderShape::Capsule: {
-                // The capsule's segment runs along the body's local +Y.
-                const glm::vec3 axis = r[1] * part.halfHeight;
-                const glm::vec3 a = center - axis;
-                const glm::vec3 b = center + axis;
-                capsules.push_back({a, b, part.radius});
-                const glm::vec3 grow(part.radius);
-                capsuleBounds.push_back({glm::min(a, b) - grow, glm::max(a, b) + grow});
-                enclose(capsuleBounds.back());
-                break;
-            }
-            case ColliderShape::Mesh:
-            case ColliderShape::Terrain: {
-                // See ColliderProxy: only its tree's root bound, placed like a box, joins the proxy's.
-                const Math::AABB local = partLocalBounds(*p.collider, part);
-                const glm::vec3 middle = (local.min + local.max) * 0.5f;
-                const glm::vec3 half   = (local.max - local.min) * 0.5f;
-                const glm::vec3 at     = center + r * middle;
-                const glm::vec3 reach  = glm::abs(r[0]) * half.x
-                    + glm::abs(r[1]) * half.y
-                    + glm::abs(r[2]) * half.z;
-                enclose({at - reach, at + reach});
-                break;
-            }
-            case ColliderShape::Box: {
-                boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
-                const glm::vec3 reach = glm::abs(r[0]) * part.halfExtents.x
-                    + glm::abs(r[1]) * part.halfExtents.y
-                    + glm::abs(r[2]) * part.halfExtents.z;
-                boxBounds.push_back({center - reach, center + reach});
-                enclose(boxBounds.back());
-                break;
-            }
-
-            case ColliderShape::Count:
-                break;
-        }
-    }
-
-    p.boxCount     = static_cast<uint32_t>(boxes.size())    - p.boxFirst;
-    p.capsuleCount = static_cast<uint32_t>(capsules.size()) - p.capsuleFirst;
-}
-
-/**
- * @brief How fast two bodies' points at @p point close along @p normal (a -> b), m/s; zero apart.
- *
- * Read before the solve, as gathered: how hard a contact struck, not what is left of it after.
- */
-float closingSpeed(
-    const PhysicsBody& a,
-    const PhysicsBody& b,
-    const glm::vec3& point,
-    const glm::vec3& normal
-) {
-    const glm::vec3 va = a.linearVelocity + glm::cross(a.angularVelocity, point - a.position);
-    const glm::vec3 vb = b.linearVelocity + glm::cross(b.angularVelocity, point - b.position);
-    return glm::max(glm::dot(va - vb, normal), 0.0f);
 }
 
 } // namespace
@@ -225,48 +62,44 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("PhysicsSystem");
 
     Scene& scene = ctx.scene;
-    const float dt = ctx.clock.getFixedStep();
 
-    // A replacement world reuses the slots the cache keys by, so it would seed contacts never made.
+    // A replacement world reuses the slots the step's ids are, so it would seed contacts never made.
     // Its touching pairs go unreported: their ids now name the new world's entities.
     if (scene.epoch() != m_worldEpoch) {
-        m_contactCache.clear();
-        m_jointImpulses.clear();
+        m_stepper.forget();
         m_touchingLastTick.clear();
         m_worldEpoch = scene.epoch();
     }
 
-    const PhysicsSettings& physics = scene.physics();
     const bool replaying = ctx.net.replaying();
 
     if (!gatherBodies(scene, ctx.resources, ctx.net)) {
         // Nothing touches, so whatever touched on the last live tick has ended.
-        if (!replaying) reportContacts(scene, ctx.events);
+        if (!replaying) reportContacts(scene, ctx.events, {});
         return;
     }
 
-    // Before the narrowphase, which skips contacts between jointed bodies.
     gatherJoints(scene);
 
-    broadphase();
+    const PhysicsSettings& physics = scene.physics();
+    Physics::StepParams params;
+    params.gravity    = physics.gravity;
+    params.iterations = solverPasses(physics);
+    params.dt         = ctx.clock.getFixedStep();
+    params.replaying  = replaying;
+    PoolWorkers workers;
+    m_stepper.step(m_bodies, m_parts, m_joints, params, workers);
 
-    narrowphase(replaying);
-
-    buildIslands();
-
-    // After the islands wake what was struck, or a body woken this tick would hang for it.
-    integrateForces(physics, dt);
-
-    solve(physics, dt);
-
-    writeback(scene, replaying, dt);
+    writeback(scene, replaying);
 
     // After writeback, which decides what sleeps.
-    if (!replaying) reportContacts(scene, ctx.events);
+    if (!replaying) reportContacts(scene, ctx.events, m_stepper.touching());
 
     // After the solve: reads this tick's contacts, so the island applies from the next tick; a contact's
     // first tick still pushes an immovable body.
     leaseContacts(scene, ctx.net);
+
+    drawContacts(ctx);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources, const NetSession& net) {
@@ -279,13 +112,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
     }
 
     m_bodies.clear();
-    m_solverBodies.clear();
-    m_proxies.clear();
-    m_shapeBoxes.clear();
-    m_shapeBoxBounds.clear();
-    m_shapeCapsules.clear();
-    m_shapeCapsuleBounds.clear();
-    m_bodyFrames.clear();
+    m_parts.clear();
+    m_entities.clear();
+    m_rigidbodies.clear();
+    m_parents.clear();
 
     markPosedByAnimation(scene, m_posedBone);
 
@@ -300,6 +130,8 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         Collider* collider = scene.tryGet<Collider>(id);
         if (collider) {
             syncMeshCollider(*collider, resources);
+            // TerrainSystem syncs it too, but later in the frame: a terrain loaded or stroked since would
+            // be fallen through for a tick.
             const Terrain* terrain = scene.tryGet<Terrain>(id);
             syncTerrainCollider(*collider, terrain ? resources.tryGet(terrain->terrain) : nullptr);
         }
@@ -312,208 +144,212 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         // A bone an inactive ragdoll poses is a hitbox, placed by the animation: kinematic, with no contacts.
         const bool posed = idx < m_posedBone.size() && m_posedBone[idx];
 
-        BodyFrame frame;
-        frame.rb = &rb;
-        frame.motion = posed ? RigidbodyMotion::Kinematic : rb.motion;
-        // Re-derived every tick, so edits to mass or collider need no "apply".
-        frame.invMass = inverseMassOf(rb, frame.motion);
-        frame.invInertiaLocal = localInverseInertia(rb, frame.invMass, collider);
+        Physics::Body body;
+        body.id             = id.slot();
+        body.motion         = posed ? Physics::Motion::Kinematic : physicsMotionOf(rb.motion);
+        body.simulated      = net.simulates(scene, id);
+        body.mass           = rb.mass;
+        body.linearDamping  = rb.linearDamping;
+        body.angularDamping = rb.angularDamping;
+        body.restitution    = rb.restitution;
+        body.friction       = rb.friction;
+        body.gravityScale   = rb.gravityScale;
+        body.layer          = rb.layer;
+        body.collidesWith   = rb.collidesWith;
+        body.freezeRotation = rb.freezeRotation;
+        body.canSleep       = rb.canSleep;
+
+        // Its parts, which a disabled collider still has for its mass.
+        body.firstPart = static_cast<uint32_t>(m_parts.size());
         if (collider) {
-            // The bound's farthest corner from the origin.
-            const Math::AABB bounds = colliderLocalBounds(*collider);
-            frame.reach = glm::length(glm::max(glm::abs(bounds.min), glm::abs(bounds.max)));
+            for (const ColliderPart& part : collider->parts) m_parts.push_back(physicsPartOf(part));
         }
+        body.partCount = static_cast<uint32_t>(m_parts.size()) - body.firstPart;
+        body.triangles = collider ? &collider->triangles : nullptr;
+        body.trigger   = collider && collider->isTrigger;
+        body.collides  = collider && collider->enabled && !posed;
 
-        frame.pose    = worldPoseOf(scene, id, *local);
-        frame.decided = net.simulates(scene, id);
-        const glm::vec3 worldPos = frame.pose.position;
-        const glm::quat worldRot = frame.pose.rotation;
+        const BodyPose pose = worldPoseOf(scene, id, *local);
+        body.position        = pose.position;
+        body.rotation        = pose.rotation;
+        body.linearVelocity  = rb.linearVelocity;
+        body.angularVelocity = rb.angularVelocity;
+        body.sleeping        = rb.sleeping;
+        body.sleepTimer      = rb.sleepTimer;
 
-        const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
-        m_bodies.push_back(id);
-        m_bodyFrames.push_back(frame);
-
-        PhysicsBody pb;
-        pb.position = worldPos;
-        pb.rotation = worldRot;
-        pb.linearVelocity = rb.linearVelocity;
-        // A rotation-frozen body sheds residual spin, so its orientation stays script-owned.
-        pb.angularVelocity = rb.freezeRotation ? glm::vec3(0.0f) : rb.angularVelocity;
-        // Asleep, immovable, or another end's to move.
-        const bool frozen = rb.sleeping || frame.invMass == 0.0f || !frame.decided;
-        pb.invMass = frozen ? 0.0f : frame.invMass;
-        pb.invInertiaWorld = frozen ? glm::mat3(0.0f) : inverseInertiaWorld(frame.invInertiaLocal, worldRot);
-        pb.restitution = rb.restitution;
-        pb.friction = rb.friction;
-        m_solverBodies.push_back(pb);
-
-        if (collider && collider->enabled && !posed) {
-            ColliderProxy proxy;
-            proxy.body = bodyIndex;
-            proxy.collider = collider;
-            proxy.isTrigger = collider->isTrigger;
-            // In a replay only bodies this end decides can move.
-            proxy.immovable = frame.invMass == 0.0f || (net.replaying() && !frame.decided);
-            proxy.fixed     = frame.motion == RigidbodyMotion::Static;
-            proxy.layer = rb.layer;
-            proxy.collidesWith = rb.collidesWith;
-            expandSubShapes(
-                proxy,
-                worldPos,
-                worldRot,
-                m_shapeBoxes,
-                m_shapeBoxBounds,
-                m_shapeCapsules,
-                m_shapeCapsuleBounds
-            );
-            m_proxies.push_back(proxy);
-        }
+        m_bodies.push_back(body);
+        m_entities.push_back(id);
+        m_rigidbodies.push_back(&rb);
+        m_parents.push_back(pose.parentWorld);
     }
 
-    m_contacts.assign(m_bodies.size(), BodyContacts{});
     m_massless.endPass();
 
     return !m_bodies.empty();
 }
 
-void PhysicsSystem::integrateForces(const PhysicsSettings& physics, float dt) {
-    PROFILE_SCOPE("Physics/Integrate");
+void PhysicsSystem::gatherJoints(Scene& scene) {
+    PROFILE_SCOPE("Physics/GatherJoints");
+
+    m_joints.clear();
+    m_jointOf.clear();
+
+    auto* storage = scene.storage<Joint>();
+    if (!storage) return;
+
+    // From the bodies gathered, so an entity not simulated this tick resolves to NO_BODY.
+    uint32_t maxSlot = 0;
+    for (const EntityId body : m_entities) maxSlot = std::max(maxSlot, body.slot());
+    m_bodyIndexBySlot.assign(static_cast<size_t>(maxSlot) + 1, Physics::NO_BODY);
+    for (uint32_t i = 0; i < m_entities.size(); ++i) m_bodyIndexBySlot[m_entities[i].slot()] = i;
+
+    const auto bodyIndexOf = [&](uint32_t slot) {
+        return slot < m_bodyIndexBySlot.size() ? m_bodyIndexBySlot[slot] : Physics::NO_BODY;
+    };
+
+    const uint32_t count = static_cast<uint32_t>(storage->size());
+    for (uint32_t i = 0; i < count; ++i) {
+        const EntityId self = scene.entityAt(storage->keyAt(i));
+        Joint& joint = storage->dataAt(i);
+        // Kept only by a joint solved this tick: one skipped starts again from nothing.
+        const glm::vec3 impulse     = joint.impulse;
+        const glm::vec3 holdImpulse = joint.holdImpulse;
+
+        joint.impulse     = glm::vec3(0.0f);
+        joint.holdImpulse = glm::vec3(0.0f);
+        // Checked as a handle, not a slot: a dead entity's slot is reused.
+        if (!joint.connected || !scene.isAlive(joint.connected)) continue;
+        // A body held to itself is held to nothing.
+        if (joint.connected == self) continue;
+
+        Physics::Joint handed;
+        handed.bodyA = bodyIndexOf(self.slot());
+        if (handed.bodyA == Physics::NO_BODY) continue;
+
+        handed.bodyB = bodyIndexOf(joint.connected.slot());
+        if (handed.bodyB == Physics::NO_BODY) {
+            // A pose but no body: the joint holds to that world point.
+            if (!scene.has<Transform>(joint.connected)) continue;
+            const glm::mat4 world = HierarchyOperations::computeWorldMatrix(scene, joint.connected);
+            handed.fixedPosition = glm::vec3(world[3]);
+            handed.fixedRotation = Math::worldRotationOf(world);
+        }
+
+        handed.type             = physicsJointTypeOf(joint.type);
+        handed.anchor           = joint.anchor;
+        handed.connectedAnchor  = joint.connectedAnchor;
+        handed.distance         = joint.distance;
+        handed.stiffness        = joint.stiffness;
+        handed.holdTorque       = joint.holdTorque;
+        handed.collideConnected = joint.collideConnected;
+        handed.resolvedDistance = joint.resolvedDistance;
+        handed.heldRotation     = joint.heldRotation;
+        handed.heldResolved     = joint.heldResolved;
+        handed.impulse          = impulse;
+        handed.holdImpulse      = holdImpulse;
+
+        m_joints.push_back(handed);
+        m_jointOf.push_back(&joint);
+    }
+}
+
+int PhysicsSystem::solverPasses(const PhysicsSettings& physics) {
+    const int asked  = physics.solverIterations;
+    const int passes = std::clamp(
+        asked,
+        PhysicsSettings::MIN_SOLVER_ITERATIONS,
+        PhysicsSettings::MAX_SOLVER_ITERATIONS
+    );
+    if (passes != asked && m_passesOutside.report()) {
+        std::string said = std::to_string(asked) + " solver passes a step is outside ";
+        said += std::to_string(PhysicsSettings::MIN_SOLVER_ITERATIONS) + " to ";
+        said += std::to_string(PhysicsSettings::MAX_SOLVER_ITERATIONS) + "; the step runs ";
+        said += std::to_string(passes);
+        reportError("Physics", "the scene's solverIterations", said);
+    }
+    m_passesOutside.endPass();
+    return passes;
+}
+
+void PhysicsSystem::writeback(Scene& scene, bool replaying) {
+    PROFILE_SCOPE("Physics/Writeback");
+
+    // Each body's most upward and most horizontal contact normal, as the surface acts on it: A's pushes
+    // along -normal, B's along +normal. The step keeps only resolved manifolds, so a trigger holds nothing up.
+    m_support.assign(m_bodies.size(), Support{});
+    for (const Physics::ContactManifold& manifold : m_stepper.manifolds()) {
+        Support& a = m_support[manifold.bodyA];
+        Support& b = m_support[manifold.bodyB];
+        a.touched = true;
+        b.touched = true;
+        for (int c = 0; c < manifold.count; ++c) {
+            const glm::vec3& normal = manifold.contacts[c].normal;
+            if (-normal.y > a.normal.y) {
+                a.normal = -normal;
+                a.body   = manifold.bodyB;
+            }
+            if (normal.y > b.normal.y) {
+                b.normal = normal;
+                b.body   = manifold.bodyA;
+            }
+
+            // The normals differ only in sign, so one measure serves both.
+            const float horizontal = horizontalLengthSq(normal);
+            if (horizontal > horizontalLengthSq(a.block)) a.block = -normal;
+            if (horizontal > horizontalLengthSq(b.block)) b.block = normal;
+        }
+    }
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
-        PhysicsBody& pb = m_solverBodies[k];
-        // Zero for undecided bodies too: given gravity, one would press on its support with speed the solver
-        // cannot take back.
-        if (pb.invMass == 0.0f) continue;
+        const Physics::Body& body = m_bodies[k];
+        Rigidbody& rb = *m_rigidbodies[k];
 
-        const Rigidbody& rb = *m_bodyFrames[k].rb;
+        // A replay publishes no support for a body this end does not decide.
+        if (body.simulated || !replaying) {
+            const Support& support = m_support[k];
+            VKM_ASSERT(!support.touched || support.body != Physics::NO_BODY, "a touch whose contacts name no body");
+            // Named with the normal it gave, so a touch that named none supports nothing.
+            const bool supported = support.body != Physics::NO_BODY;
+            rb.supported     = supported;
+            rb.supportNormal = supported ? support.normal : Math::WORLD_UP;
+            rb.blockNormal   = supported ? support.block : Math::WORLD_UP;
+            rb.supportBody   = supported ? m_entities[support.body] : EntityId{};
+        }
 
-        pb.linearVelocity += physics.gravity * rb.gravityScale * dt;
-        pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
-        pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
-    }
-}
+        rb.linearVelocity  = body.linearVelocity;
+        rb.angularVelocity = body.angularVelocity;
+        rb.sleeping        = body.sleeping;
+        rb.sleepTimer      = body.sleepTimer;
+        if (!body.moved) continue;
 
-void PhysicsSystem::broadphase() {
-    PROFILE_SCOPE("Physics/Broadphase");
-
-    m_sorted.clear();
-    m_pairs.clear();
-
-    for (uint32_t p = 0; p < m_proxies.size(); ++p) m_sorted.push_back(p);
-
-    // Ties break on slot, so the order is a function of the world, not of add/remove history.
-    std::sort(m_sorted.begin(), m_sorted.end(), [&](uint32_t a, uint32_t b) {
-        const ColliderProxy& pa = m_proxies[a];
-        const ColliderProxy& pb = m_proxies[b];
-        if (pa.bounds.min.x != pb.bounds.min.x) return pa.bounds.min.x < pb.bounds.min.x;
-        return m_bodies[pa.body].slot() < m_bodies[pb.body].slot();
-    });
-
-    for (size_t a = 0; a < m_sorted.size(); ++a) {
-        const ColliderProxy& pa = m_proxies[m_sorted[a]];
-        for (size_t b = a + 1; b < m_sorted.size(); ++b) {
-            const ColliderProxy& pb = m_proxies[m_sorted[b]];
-            if (pb.bounds.min.x > pa.bounds.max.x) break;  // sorted on X: no further overlap
-            // Neither end can move, so nothing resolves - unless a trigger is asking.
-            if (pa.immovable && pb.immovable && !pa.isTrigger && !pb.isTrigger) continue;
-            // A trigger never senses the level, or it would report the floor under it every tick.
-            if ((pa.isTrigger && pb.fixed) || (pb.isTrigger && pa.fixed)) continue;
-
-            // Both ways round, so the answer cannot depend on which was asked.
-            if ((pa.layer & pb.collidesWith) == 0) continue;
-            if ((pb.layer & pa.collidesWith) == 0) continue;
-            if (!aabbOverlap(pa.bounds, pb.bounds)) continue;
-
-            // A is the lower slot, not whichever sorted first (equal bounds swap by rounding): A decides
-            // the normal's direction, the cache key and the event's order.
-            const bool swapped = m_bodies[pb.body].slot() < m_bodies[pa.body].slot();
-            m_pairs.emplace_back(swapped ? m_sorted[b] : m_sorted[a], swapped ? m_sorted[a] : m_sorted[b]);
+        Transform& t = scene.get<Transform>(m_entities[k]);
+        const glm::mat4& parent = m_parents[k];
+        if (parent == glm::mat4(1.0f)) {
+            t.position = body.position;
+            t.rotation = body.rotation;
+        } else {
+            t.position = glm::vec3(glm::inverse(parent) * glm::vec4(body.position, 1.0f));
+            t.rotation = glm::normalize(glm::conjugate(Math::worldRotationOf(parent)) * body.rotation);
         }
     }
-}
 
-void PhysicsSystem::narrowphase(bool replaying) {
-    PROFILE_SCOPE("Physics/Narrowphase");
+    for (size_t j = 0; j < m_joints.size(); ++j) {
+        const Physics::Joint& handed = m_joints[j];
+        Joint& joint = *m_jointOf[j];
 
-    m_manifolds.clear();
-
-    const size_t pairCount  = m_pairs.size();
-    const size_t chunkCount = (pairCount + NARROWPHASE_CHUNK_PAIRS - 1) / NARROWPHASE_CHUNK_PAIRS;
-    if (m_narrowphaseChunks.size() < chunkCount) m_narrowphaseChunks.resize(chunkCount);
-
-    {
-        PROFILE_SCOPE("Physics/Narrowphase/Pairs");
-        // Each chunk writes only its own NarrowphaseChunk, so threading does not change the answer.
-        parallelFor(chunkCount, 1, [&](size_t c) {
-            NarrowphaseChunk& chunk = m_narrowphaseChunks[c];
-            chunk.touching.clear();
-            chunk.manifolds.clear();
-            const size_t end = std::min(pairCount, (c + 1) * NARROWPHASE_CHUNK_PAIRS);
-            for (size_t p = c * NARROWPHASE_CHUNK_PAIRS; p < end; ++p) {
-                collidePair(static_cast<uint32_t>(p), chunk);
-            }
-        });
-    }
-
-    PROFILE_SCOPE("Physics/Narrowphase/Merge");
-    for (size_t c = 0; c < chunkCount; ++c) {
-        const NarrowphaseChunk& chunk = m_narrowphaseChunks[c];
-        const ContactManifold* manifold = chunk.manifolds.data();
-
-        for (const TouchingPair& touch : chunk.touching) {
-            const ColliderProxy& A = m_proxies[m_pairs[touch.pair].first];
-            const ColliderProxy& B = m_proxies[m_pairs[touch.pair].second];
-            if (!replaying) {
-                TrackedPair tracked;
-                tracked.a        = m_bodies[A.body];
-                tracked.b        = m_bodies[B.body];
-                tracked.aTrigger = A.isTrigger;
-                tracked.bTrigger = B.isTrigger;
-                tracked.point    = touch.point;
-                tracked.normal   = touch.normal;
-                tracked.speed    = closingSpeed(
-                    m_solverBodies[A.body],
-                    m_solverBodies[B.body],
-                    touch.point,
-                    touch.normal
-                );
-                m_touchingThisTick.push_back(tracked);
-            }
-
-            if (A.isTrigger || B.isTrigger) continue;
-
-            for (uint32_t m = 0; m < touch.manifoldCount; ++m, ++manifold) {
-                m_manifolds.push_back(*manifold);
-
-                // The most upward normal each body is held by: A's surface pushes along -normal, B's +normal.
-                for (int k = 0; k < manifold->count; ++k) {
-                    const glm::vec3& normal = manifold->contacts[k].normal;
-                    if (-normal.y > m_contacts[A.body].support.y) {
-                        m_contacts[A.body].support     = -normal;
-                        m_contacts[A.body].supportBody = B.body;
-                    }
-                    if (normal.y > m_contacts[B.body].support.y) {
-                        m_contacts[B.body].support     = normal;
-                        m_contacts[B.body].supportBody = A.body;
-                    }
-
-                    // The normals differ only in sign, so one measure serves both.
-                    const float horizontal = horizontalLengthSq(normal);
-                    if (horizontal > horizontalLengthSq(m_contacts[A.body].block))
-                        m_contacts[A.body].block = -normal;
-                    if (horizontal > horizontalLengthSq(m_contacts[B.body].block))
-                        m_contacts[B.body].block =  normal;
-                }
-            }
-
-            // Only a resolved contact counts: a trigger holds nothing up.
-            m_contacts[A.body].touched = true;
-            m_contacts[B.body].touched = true;
-        }
+        joint.resolvedDistance = handed.resolvedDistance;
+        joint.heldRotation     = handed.heldRotation;
+        joint.heldResolved     = handed.heldResolved;
+        joint.impulse          = handed.impulse;
+        joint.holdImpulse      = handed.holdImpulse;
     }
 }
 
-void PhysicsSystem::reportContacts(const Scene& scene, EventBus& events) {
+void PhysicsSystem::reportContacts(
+    const Scene& scene,
+    EventBus& events,
+    const std::vector<Physics::Touch>& touches
+) {
     PROFILE_SCOPE("Physics/Events");
 
     // Nothing about the contact changes until woken. A kinematic body is driven, so never rests.
@@ -537,7 +373,20 @@ void PhysicsSystem::reportContacts(const Scene& scene, EventBus& events) {
         if (pair.bTrigger) events.enqueue(TriggerEvent{pair.b, pair.a, phase});
     };
 
-    std::vector<TrackedPair>& now  = m_touchingThisTick;
+    m_touching.clear();
+    for (const Physics::Touch& touch : touches) {
+        TrackedPair pair;
+        pair.a        = m_entities[touch.a];
+        pair.b        = m_entities[touch.b];
+        pair.aTrigger = m_bodies[touch.a].trigger;
+        pair.bTrigger = m_bodies[touch.b].trigger;
+        pair.point    = touch.point;
+        pair.normal   = touch.normal;
+        pair.speed    = touch.speed;
+        m_touching.push_back(pair);
+    }
+
+    std::vector<TrackedPair>& now  = m_touching;
     std::vector<TrackedPair>& last = m_touchingLastTick;
     std::sort(now.begin(), now.end(), TrackedPair::before);
 
@@ -562,382 +411,6 @@ void PhysicsSystem::reportContacts(const Scene& scene, EventBus& events) {
     now.clear();
 }
 
-void PhysicsSystem::collidePair(uint32_t pair, NarrowphaseChunk& chunk) const {
-    const ColliderProxy& A = m_proxies[m_pairs[pair].first];
-    const ColliderProxy& B = m_proxies[m_pairs[pair].second];
-
-    if (!m_jointedPairs.empty()) {
-        const uint64_t low  = glm::min(A.body, B.body);
-        const uint64_t high = glm::max(A.body, B.body);
-        if (std::binary_search(m_jointedPairs.begin(), m_jointedPairs.end(), (low << 32) | high)) {
-            return;
-        }
-    }
-
-    // Placed in world space at gather.
-    const BoxShape*     boxesA         = m_shapeBoxes.data() + A.boxFirst;
-    const BoxShape*     boxesB         = m_shapeBoxes.data() + B.boxFirst;
-    const CapsuleShape* capsulesA      = m_shapeCapsules.data() + A.capsuleFirst;
-    const CapsuleShape* capsulesB      = m_shapeCapsules.data() + B.capsuleFirst;
-    const Math::AABB*   boxBoundsA     = m_shapeBoxBounds.data() + A.boxFirst;
-    const Math::AABB*   boxBoundsB     = m_shapeBoxBounds.data() + B.boxFirst;
-    const Math::AABB*   capsuleBoundsA = m_shapeCapsuleBounds.data() + A.capsuleFirst;
-    const Math::AABB*   capsuleBoundsB = m_shapeCapsuleBounds.data() + B.capsuleFirst;
-    const uint32_t boxCountA     = A.boxCount;
-    const uint32_t boxCountB     = B.boxCount;
-    const uint32_t capsuleCountA = A.capsuleCount;
-    const uint32_t capsuleCountB = B.capsuleCount;
-
-    const bool trigger = A.isTrigger || B.isTrigger;
-
-    Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
-    TouchingPair touch;
-    touch.pair = pair;
-    bool anyContact = false;
-    // A trigger's first contact answers it; the remaining shapes are never tried.
-    bool sensed = false;
-
-    // A body pair can yield several manifolds, all with the same bodyA/bodyB; contacts arrive A -> B.
-    auto record = [&](int n) {
-        if (n == 0) return;
-        if (!anyContact) {  // keep the first contact as the event's representative
-            touch.point  = scratch[0].point;
-            touch.normal = scratch[0].normal;
-        }
-        anyContact = true;
-        if (trigger) {  // queried, not resolved
-            sensed = true;
-            return;
-        }
-
-        ContactManifold manifold;
-        manifold.bodyA = A.body;
-        manifold.bodyB = B.body;
-        manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
-        for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
-        chunk.manifolds.push_back(manifold);
-        ++touch.manifoldCount;
-    };
-
-    for (uint32_t i = 0; i < boxCountA && !sensed; ++i) {
-        if (!aabbOverlap(boxBoundsA[i], B.bounds)) continue;
-        for (uint32_t j = 0; j < boxCountB && !sensed; ++j) {
-            if (!aabbOverlap(boxBoundsA[i], boxBoundsB[j])) continue;
-            record(contactBoxes(boxesA[i], boxesB[j], scratch));
-        }
-    }
-
-    for (uint32_t i = 0; i < capsuleCountA && !sensed; ++i) {
-        if (!aabbOverlap(capsuleBoundsA[i], B.bounds)) continue;
-        for (uint32_t j = 0; j < boxCountB && !sensed; ++j) {
-            if (!aabbOverlap(capsuleBoundsA[i], boxBoundsB[j])) continue;
-            record(contactCapsuleBox(capsulesA[i], boxesB[j], scratch));
-        }
-    }
-
-    // Capsule-vs-box is not symmetric: run capsule-first, then flip the normals back to A -> B.
-    for (uint32_t i = 0; i < capsuleCountB && !sensed; ++i) {
-        if (!aabbOverlap(capsuleBoundsB[i], A.bounds)) continue;
-        for (uint32_t j = 0; j < boxCountA && !sensed; ++j) {
-            if (!aabbOverlap(capsuleBoundsB[i], boxBoundsA[j])) continue;
-            const int n = contactCapsuleBox(capsulesB[i], boxesA[j], scratch);
-            for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
-            record(n);
-        }
-    }
-
-    for (uint32_t i = 0; i < capsuleCountA && !sensed; ++i) {
-        if (!aabbOverlap(capsuleBoundsA[i], B.bounds)) continue;
-        for (uint32_t j = 0; j < capsuleCountB && !sensed; ++j) {
-            if (!aabbOverlap(capsuleBoundsA[i], capsuleBoundsB[j])) continue;
-            record(contactCapsuleCapsule(capsulesA[i], capsulesB[j], scratch));
-        }
-    }
-
-    // Only triangles under the other shape are fetched; a triangle is convex, so one routine covers all.
-    const auto meshAgainst = [&](
-        const ColliderProxy& meshProxy,
-        const Collider& meshCollider,
-        const ColliderPart& meshPart,
-        const SupportShape& other,
-        const Math::AABB& otherBounds,
-        bool meshIsA
-    ) {
-        const PhysicsBody& meshBody = m_solverBodies[meshProxy.body];
-        const glm::mat3 rotation = glm::mat3_cast(meshBody.rotation);
-        const glm::mat3 toLocal = glm::transpose(rotation);
-        // The tree is over the raw points: the bound comes back through the body's pose and the part's
-        // centre, both, or the slab test misses.
-        const glm::vec3 origin = meshBody.position + rotation * meshPart.center;
-        const glm::vec3 corners[2] = {otherBounds.min - origin, otherBounds.max - origin};
-        glm::vec3 localMin(std::numeric_limits<float>::max());
-        glm::vec3 localMax(std::numeric_limits<float>::lowest());
-        for (int i = 0; i < 8; ++i) {
-            const glm::vec3 corner = {
-                corners[(i >> 0) & 1].x,
-                corners[(i >> 1) & 1].y,
-                corners[(i >> 2) & 1].z
-            };
-            const glm::vec3 local = toLocal * corner;
-            localMin = glm::min(localMin, local);
-            localMax = glm::max(localMax, local);
-        }
-
-        chunk.meshCandidates.clear();
-        queryMeshBvh(meshCollider.meshNodes, localMin, localMax, chunk.meshCandidates);
-
-        for (uint32_t triangle : chunk.meshCandidates) {
-            if (sensed) break;
-            const uint32_t base = triangle * 3;
-            if (base + 2 >= meshCollider.meshPoints.size()) continue;
-
-            glm::vec3 world[3];
-            for (int c = 0; c < 3; ++c) {
-                world[c] = origin + rotation * meshCollider.meshPoints[base + c];
-            }
-
-            // Normals run from the face to the shape: A -> B only when the mesh is A.
-            const int n = contactTriangle(world, other, scratch);
-            if (!meshIsA) {
-                for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
-            }
-            record(n);
-        }
-    };
-
-    forEachMeshPart(A, [&](const Collider& c, const ColliderPart& p) {
-        for (uint32_t i = 0; i < boxCountB && !sensed; ++i)
-            meshAgainst(A, c, p, supportOf(boxesB[i]), boxBoundsB[i], true);
-        for (uint32_t i = 0; i < capsuleCountB && !sensed; ++i)
-            meshAgainst(A, c, p, supportOf(capsulesB[i]), capsuleBoundsB[i], true);
-    });
-    forEachMeshPart(B, [&](const Collider& c, const ColliderPart& p) {
-        for (uint32_t i = 0; i < boxCountA && !sensed; ++i)
-            meshAgainst(B, c, p, supportOf(boxesA[i]), boxBoundsA[i], false);
-        for (uint32_t i = 0; i < capsuleCountA && !sensed; ++i)
-            meshAgainst(B, c, p, supportOf(capsulesA[i]), capsuleBoundsA[i], false);
-    });
-
-    if (anyContact) chunk.touching.push_back(touch);
-}
-
-bool PhysicsSystem::isIslandMember(uint32_t body) const {
-    return body < m_bodies.size() && m_bodyFrames[body].invMass > 0.0f && m_bodyFrames[body].decided;
-}
-
-void PhysicsSystem::buildIslands() {
-    PROFILE_SCOPE("Physics/Islands");
-
-    const uint32_t count = static_cast<uint32_t>(m_bodies.size());
-
-    // Statics never join, or the floor would put the whole level in one island. Joints join as contacts
-    // do, since a jointed pair makes no manifold.
-    m_islands.reset(count);
-    const auto join = [&](uint32_t a, uint32_t b) {
-        if (isIslandMember(a) && isIslandMember(b)) m_islands.join(a, b);
-    };
-    for (const ContactManifold& manifold : m_manifolds) join(manifold.bodyA, manifold.bodyB);
-    for (const JointConstraint& joint : m_joints) join(joint.bodyA, joint.bodyB);
-
-    // Held: a contact or joint to a non-member (a lamp's chain holds it to its post). Pushed: by an awake
-    // undecided body or a driven kinematic one, never a static, or the floor would wake everything.
-    const auto pushes = [&](uint32_t body) {
-        if (body >= count) return false;
-        const BodyFrame& frame = m_bodyFrames[body];
-        if (frame.rb->sleeping) return false;
-        if (frame.invMass > 0.0f) return true;
-        if (frame.motion != RigidbodyMotion::Kinematic) return false;
-        const PhysicsBody& moving = m_solverBodies[body];
-        return glm::dot(moving.linearVelocity, moving.linearVelocity) > 0.0f
-            || glm::dot(moving.angularVelocity, moving.angularVelocity) > 0.0f;
-    };
-    m_islandHeld.assign(count, 0);
-    m_islandDisturbed.assign(count, 0);
-    const auto touch = [&](uint32_t member, uint32_t other) {
-        if (!isIslandMember(member) || isIslandMember(other)) return;
-        const uint32_t root = m_islands.find(member);
-        m_islandHeld[root] = 1;
-        if (pushes(other)) m_islandDisturbed[root] = 1;
-    };
-    for (const ContactManifold& manifold : m_manifolds) {
-        touch(manifold.bodyA, manifold.bodyB);
-        touch(manifold.bodyB, manifold.bodyA);
-    }
-    for (const JointConstraint& joint : m_joints) {
-        touch(joint.bodyA, joint.bodyB);
-        touch(joint.bodyB, joint.bodyA);
-    }
-
-    // And from inside: one member awake moves the rest.
-    for (uint32_t k = 0; k < count; ++k) {
-        if (!isIslandMember(k)) continue;
-        if (!m_bodyFrames[k].rb->sleeping) m_islandDisturbed[m_islands.find(k)] = 1;
-    }
-
-    for (uint32_t k = 0; k < count; ++k) {
-        if (!isIslandMember(k)) continue;
-        Rigidbody& rb = *m_bodyFrames[k].rb;
-        if (!rb.sleeping) continue;
-
-        // Held by nothing: what it slept on is gone, and frozen it would hang in the air.
-        const uint32_t root = m_islands.find(k);
-        if (!m_islandDisturbed[root] && m_islandHeld[root]) continue;
-
-        Rigidbody::wake(rb);
-        m_solverBodies[k].invMass = m_bodyFrames[k].invMass;
-        // The gathered world rotation, not the local Transform's, which differs for a parented body.
-        m_solverBodies[k].invInertiaWorld =
-            inverseInertiaWorld(m_bodyFrames[k].invInertiaLocal, m_solverBodies[k].rotation);
-    }
-}
-
-void PhysicsSystem::gatherJoints(Scene& scene) {
-    PROFILE_SCOPE("Physics/GatherJoints");
-
-    m_joints.clear();
-    m_jointedPairs.clear();
-
-    auto* storage = scene.storage<Joint>();
-    if (!storage) return;
-
-    // From the bodies gathered, so an entity not simulated this tick resolves to NO_BODY.
-    uint32_t maxSlot = 0;
-    for (const EntityId body : m_bodies) maxSlot = std::max(maxSlot, body.slot());
-    m_bodyIndexBySlot.assign(static_cast<size_t>(maxSlot) + 1, NO_BODY);
-    for (uint32_t i = 0; i < m_bodies.size(); ++i) m_bodyIndexBySlot[m_bodies[i].slot()] = i;
-
-    const auto bodyIndexOf = [&](uint32_t slot) {
-        return slot < m_bodyIndexBySlot.size() ? m_bodyIndexBySlot[slot] : NO_BODY;
-    };
-
-    const uint32_t count = static_cast<uint32_t>(storage->size());
-    for (uint32_t i = 0; i < count; ++i) {
-        const EntityId self = scene.entityAt(storage->keyAt(i));
-        Joint& joint = storage->dataAt(i);
-        // Checked as a handle, not a slot: a dead entity's slot is reused.
-        if (!joint.connected || !scene.isAlive(joint.connected)) continue;
-        // A body held to itself is held to nothing.
-        if (joint.connected == self) continue;
-
-        const uint32_t bodyA = bodyIndexOf(self.slot());
-        if (bodyA == NO_BODY) continue;
-
-        const uint32_t connected = bodyIndexOf(joint.connected.slot());
-        uint32_t bodyB = 0;
-        glm::mat3 rotB(1.0f);
-        if (connected != NO_BODY) {
-            bodyB = connected;
-            rotB = glm::mat3_cast(m_solverBodies[bodyB].rotation);
-        } else if (scene.has<Transform>(joint.connected)) {
-            // A pose but no body: the joint holds to that world point.
-            const glm::mat4 world = HierarchyOperations::computeWorldMatrix(scene, joint.connected);
-            PhysicsBody anchor;
-            anchor.position = glm::vec3(world[3]);
-            anchor.rotation = Math::worldRotationOf(world);
-            bodyB = static_cast<uint32_t>(m_solverBodies.size());
-            m_solverBodies.push_back(anchor);
-            rotB = glm::mat3_cast(anchor.rotation);
-        } else {
-            continue;
-        }
-
-        const glm::mat3 rotA = glm::mat3_cast(m_solverBodies[bodyA].rotation);
-
-        JointConstraint constraint;
-        constraint.bodyA = bodyA;
-        constraint.bodyB = bodyB;
-        constraint.anchorA = rotA * joint.anchor;
-        constraint.anchorB = rotB * joint.connectedAnchor;
-        constraint.stiffness = glm::clamp(joint.stiffness, 0.0f, 1.0f);
-
-        // The angle a hold keeps is the pair's when they last began to move: a ragdoll keeps the pose it
-        // went live in, not the one it was built in.
-        const PhysicsBody& heldA = m_solverBodies[bodyA];
-        const PhysicsBody& heldB = m_solverBodies[bodyB];
-        if (heldA.invMass + heldB.invMass <= 0.0f) {
-            joint.heldResolved = false;
-        } else if (!joint.heldResolved) {
-            joint.heldRotation = glm::conjugate(heldA.rotation) * heldB.rotation;
-            joint.heldResolved = true;
-        }
-        constraint.holdTorque   = glm::max(joint.holdTorque, 0.0f);
-        constraint.heldRotation = joint.heldRotation;
-
-        if (joint.type == JointType::Distance) {
-            // Unset: whatever the two were apart when the joint first ran.
-            if (joint.distance >= 0.0f) {
-                joint.resolvedDistance = joint.distance;
-            } else if (joint.resolvedDistance < 0.0f) {
-                const glm::vec3 worldA = m_solverBodies[bodyA].position + constraint.anchorA;
-                const glm::vec3 worldB = m_solverBodies[bodyB].position + constraint.anchorB;
-                joint.resolvedDistance = glm::length(worldB - worldA);
-            }
-            constraint.distance = joint.resolvedDistance;
-        }
-
-        if (!joint.collideConnected) {
-            const uint64_t low  = glm::min(constraint.bodyA, constraint.bodyB);
-            const uint64_t high = glm::max(constraint.bodyA, constraint.bodyB);
-            m_jointedPairs.push_back((low << 32) | high);
-        }
-
-        m_joints.push_back(constraint);
-    }
-
-    // Sorted for the narrowphase's binary search.
-    std::sort(m_jointedPairs.begin(), m_jointedPairs.end());
-
-    // Gauss-Seidel makes order part of the answer: sorted by slots, not Joint insertion order. A world
-    // anchor's synthetic body has no slot.
-    const auto slotOf = [&](uint32_t body) {
-        return body < m_bodies.size() ? m_bodies[body].slot() : std::numeric_limits<uint32_t>::max();
-    };
-    std::sort(m_joints.begin(), m_joints.end(), [&](const JointConstraint& a, const JointConstraint& b) {
-        const uint32_t slotA = slotOf(a.bodyA);
-        const uint32_t slotB = slotOf(b.bodyA);
-        if (slotA != slotB) return slotA < slotB;
-        return slotOf(a.bodyB) < slotOf(b.bodyB);
-    });
-
-    // An entity carries one Joint, so its body (always A) names the joint; both lists run in slot order.
-    size_t held = 0;
-    for (JointConstraint& constraint : m_joints) {
-        const EntityId owner = m_bodies[constraint.bodyA];
-        while (held < m_jointImpulses.size() && m_jointImpulses[held].owner.slot() < owner.slot()) {
-            ++held;
-        }
-        if (held < m_jointImpulses.size() && m_jointImpulses[held].owner == owner) {
-            constraint.impulse     = m_jointImpulses[held].impulse;
-            constraint.holdImpulse = m_jointImpulses[held].holdImpulse;
-        }
-    }
-}
-
-void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
-    PROFILE_SCOPE("Physics/Solve");
-    PROFILE_PLOT("Physics/Bodies",    static_cast<int64_t>(m_bodies.size()));
-    PROFILE_PLOT("Physics/Manifolds", static_cast<int64_t>(m_manifolds.size()));
-    {
-        int64_t contacts = 0;
-        for (const ContactManifold& manifold : m_manifolds) contacts += manifold.count;
-        PROFILE_PLOT("Physics/Contacts", contacts);
-    }
-
-    SolverParams params;
-    params.iterations = physics.solverIterations;
-    params.dt = dt;
-
-    // What a pair needed last tick is what it needs now.
-    m_contactCache.seed(m_manifolds, m_bodies, m_bodyFrames);
-    solveStep(m_solverBodies, m_manifolds, m_joints, params);
-    m_contactCache.record(m_manifolds, m_bodies, m_bodyFrames);
-
-    m_jointImpulses.clear();
-    for (const JointConstraint& joint : m_joints) {
-        m_jointImpulses.push_back({m_bodies[joint.bodyA], joint.impulse, joint.holdImpulse});
-    }
-}
-
 void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
     PROFILE_SCOPE("Physics/Lease");
 
@@ -946,9 +419,10 @@ void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
     const EntityId owner = net.localEntity();
     if (!owner || !scene.isAlive(owner)) return;
 
+    const std::vector<EntityId>& bodies = m_entities;
     uint32_t ownerBody = UINT32_MAX;
-    for (uint32_t i = 0; i < m_bodies.size(); ++i) {
-        if (m_bodies[i] == owner) {
+    for (uint32_t i = 0; i < bodies.size(); ++i) {
+        if (bodies[i] == owner) {
             ownerBody = i;
             break;
         }
@@ -957,111 +431,64 @@ void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
 
     // Through no immovable body and onto no other character; see docs/reference/networking.md,
     // "Leasing".
-    const uint32_t count = static_cast<uint32_t>(m_bodies.size());
-    m_leaseCarries.assign(count, 0);
+    const uint32_t count = static_cast<uint32_t>(bodies.size());
+    std::vector<uint8_t>& carries = m_leaseCarries;
+    carries.assign(count, 0);
     for (uint32_t k = 0; k < count; ++k) {
-        m_leaseCarries[k] = k == ownerBody
-            || (m_bodyFrames[k].invMass > 0.0f && !scene.has<CharacterController>(m_bodies[k]));
+        const float invMass = Physics::inverseMassOf(m_bodies[k].motion, m_bodies[k].mass);
+        carries[k] = k == ownerBody || (invMass > 0.0f && !scene.has<CharacterController>(bodies[k]));
     }
 
     m_leaseIslands.reset(count);
     const auto join = [&](uint32_t a, uint32_t b) {
-        if (a < count && b < count && m_leaseCarries[a] && m_leaseCarries[b]) m_leaseIslands.join(a, b);
+        if (a < count && b < count && carries[a] && carries[b]) m_leaseIslands.join(a, b);
     };
-    for (const ContactManifold& manifold : m_manifolds) join(manifold.bodyA, manifold.bodyB);
-    for (const JointConstraint& joint : m_joints) join(joint.bodyA, joint.bodyB);
+    for (const Physics::ContactManifold& manifold : m_stepper.manifolds()) {
+        join(manifold.bodyA, manifold.bodyB);
+    }
+    for (const Physics::Joint& joint : m_joints) join(joint.bodyA, joint.bodyB);
 
     m_leased.clear();
     const uint32_t island = m_leaseIslands.find(ownerBody);
     for (uint32_t k = 0; k < count; ++k) {
-        if (k != ownerBody && m_leaseIslands.find(k) == island) m_leased.push_back(m_bodies[k]);
+        if (k != ownerBody && m_leaseIslands.find(k) == island) m_leased.push_back(bodies[k]);
     }
 
-    net.lease(m_leased);
+    net.lease(scene, m_leased);
 }
 
-void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
-    PROFILE_SCOPE("Physics/Writeback");
+namespace {
 
-    for (size_t k = 0; k < m_bodies.size(); ++k) {
-        const EntityId id = m_bodies[k];
-        Rigidbody& rb = *m_bodyFrames[k].rb;
-        PhysicsBody& pb = m_solverBodies[k];
+constexpr float CONTACT_ARROW = 0.5f;  ///< The longest a contact's arrow is drawn, in meters, however hard
+                                       ///< the solver pushed there.
 
-        // Before the early-outs: a sleeping body on the floor is supported, and a controller asks then.
-        const bool decided = m_bodyFrames[k].decided;
-        if (decided || !replaying) {
-            rb.supported     = m_contacts[k].touched;
-            rb.supportNormal = rb.supported ? m_contacts[k].support : Math::WORLD_UP;
-            rb.blockNormal   = rb.supported ? m_contacts[k].block   : Math::WORLD_UP;
-            const uint32_t under = m_contacts[k].supportBody;
-            rb.supportBody   = rb.supported && under < m_bodies.size() ? m_bodies[under] : EntityId{};
+constexpr float HALF_PUSH = 10.0f;  ///< The push, in newtons, whose arrow is drawn half CONTACT_ARROW long:
+                                    ///< about a kilogram's weight.
+
+} // namespace
+
+void PhysicsSystem::drawContacts(FrameContext& ctx) const {
+    PROFILE_SCOPE("Physics/Draw");
+    if (!ctx.debug || !ctx.debug->shown(DebugCategory::Contacts)) return;
+
+    DebugDraw& draw = *ctx.debug;
+    const DebugStyle style = DebugStyle(DebugCategory::Contacts);
+    const float dt = ctx.clock.getFixedStep();
+    for (const Physics::ContactManifold& manifold : m_stepper.manifolds()) {
+        // The push on B, or on A where B does not move: up out of a floor into a crate, whichever
+        // was made first.
+        const Physics::Body& b = m_bodies[manifold.bodyB];
+        const float into = Physics::inverseMassOf(b.motion, b.mass) > 0.0f ? 1.0f : -1.0f;
+        for (int c = 0; c < manifold.count; ++c) {
+            const Physics::Contact& contact = manifold.contacts[c];
+            draw.point(contact.point, style);
+            if (contact.normalImpulse <= 0.0f) continue;  // touching, but not pushed
+
+            // In newtons, so what rests draws alike at any tick rate.
+            const float push   = contact.normalImpulse / dt;
+            const float length = CONTACT_ARROW * push / (push + HALF_PUSH);
+            draw.arrow(contact.point, contact.point + contact.normal * (into * length), style);
         }
-        if (!decided) continue;
-
-        // The solver did not move a body with no inverse mass: nothing to write back.
-        if (m_bodyFrames[k].invMass == 0.0f) continue;
-        if (rb.sleeping) {
-            // Whether its support is still there is its island's question.
-            rb.linearVelocity = glm::vec3(0.0f);
-            rb.angularVelocity = glm::vec3(0.0f);
-            continue;
-        }
-
-        rb.linearVelocity = pb.linearVelocity;
-        rb.angularVelocity = pb.angularVelocity;
-
-        // The solve integrated the pose; this only maps it home.
-        Transform& t = scene.get<Transform>(id);
-        const BodyFrame& frame = m_bodyFrames[k];
-        if (frame.pose.parented) {
-            t.position = glm::vec3(glm::inverse(frame.pose.parentWorld) * glm::vec4(pb.position, 1.0f));
-            t.rotation = glm::normalize(glm::conjugate(frame.pose.parentRot) * pb.rotation);
-        } else {
-            t.position = pb.position;
-            t.rotation = pb.rotation;
-        }
-
-        // canSleep false opts out: a dozing script-driven character has its velocity writes zeroed.
-        // Whether the timer may act is sleepIslands' answer. A replayed tick was counted when lived.
-        if (rb.canSleep && !replaying) {
-            const float pointSpeed = glm::length(rb.linearVelocity)
-                + frame.reach * glm::length(rb.angularVelocity);
-            const bool resting = pointSpeed < SLEEP_SPEED;
-            if (resting) rb.sleepTimer += dt;
-            else         rb.sleepTimer  = 0.0f;
-        }
-    }
-
-    sleepIslands(replaying);
-}
-
-void PhysicsSystem::sleepIslands(bool replaying) {
-    PROFILE_SCOPE("Physics/Sleep");
-
-    // A live-timeline decision.
-    if (replaying) return;
-
-    // Islands are wholly asleep or awake. One unready member keeps its island awake: a crate asleep on
-    // a settling stack is immovable, and the stack slides out.
-    const uint32_t count = static_cast<uint32_t>(m_bodies.size());
-    m_islandReady.assign(count, 1);
-    for (uint32_t k = 0; k < count; ++k) {
-        if (!isIslandMember(k)) continue;
-        const Rigidbody& rb = *m_bodyFrames[k].rb;
-        if (rb.sleeping) continue;
-        if (!rb.canSleep || rb.sleepTimer < SLEEP_DELAY) m_islandReady[m_islands.find(k)] = 0;
-    }
-
-    for (uint32_t k = 0; k < count; ++k) {
-        if (!isIslandMember(k)) continue;
-        Rigidbody& rb = *m_bodyFrames[k].rb;
-        const uint32_t root = m_islands.find(k);
-        if (rb.sleeping || !m_islandHeld[root] || !m_islandReady[root]) continue;
-
-        rb.sleeping        = true;
-        rb.linearVelocity  = glm::vec3(0.0f);
-        rb.angularVelocity = glm::vec3(0.0f);
     }
 }
 

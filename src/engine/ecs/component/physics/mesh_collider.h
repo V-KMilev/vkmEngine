@@ -57,7 +57,7 @@ bool syncMeshCollider(Collider& collider, const ResourceManager& resources);
  * version differs from Collider::meshBuiltFrom: a brush stroke is collided as soon as it is made.
  * Called by whatever holds the entity, which the collider does not name: PhysicsSystem each tick,
  * TerrainSystem each frame. Does nothing to a collider with no terrain part; a terrain part's
- * centre is kept at zero, so it lies where the terrain is drawn.
+ * center is kept at zero, so it lies where the terrain is drawn.
  *
  * @param collider Collider to bring up to date.
  * @param terrain  The entity's terrain; null when it has none, which empties the triangles.

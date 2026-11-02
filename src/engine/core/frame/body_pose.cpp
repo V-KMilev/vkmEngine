@@ -1,9 +1,9 @@
-#include "system/physics/body_pose.h"
+#include "core/frame/body_pose.h"
 
-#include "core/math/rotation.h"
+#include "base/math/rotation.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/hierarchy_operations.h"
 
 namespace Vkm::Engine {
@@ -23,9 +23,7 @@ BodyPose worldPoseOf(Scene& scene, EntityId id, const Transform& local) {
 
     pose.position    = glm::vec3(selfWorld[3]);
     pose.rotation    = Math::worldRotationOf(selfWorld);
-    pose.parented    = true;
     pose.parentWorld = parentWorld;
-    pose.parentRot   = Math::worldRotationOf(parentWorld);
     return pose;
 }
 

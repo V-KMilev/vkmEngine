@@ -13,16 +13,13 @@ struct Transform;
 /**
  * @brief Where a body sits in the world, and the frame that maps back to local.
  *
- * Physics runs in world space and a Transform in its parent's frame. The parent fields are meaningful
- * only when `parented`, to put a solved pose back; the matrix, not its inverse, because only a body
- * actually written back needs the inverse.
+ * Physics runs in world space and a Transform in its parent's frame; the parent's matrix puts a solved
+ * pose back. The matrix, not its inverse, because only a body actually written back needs the inverse.
  */
 struct BodyPose {
     glm::vec3 position    = {0.0f, 0.0f, 0.0f};        ///< World position
     glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};  ///< World orientation
-    bool      parented    = false;                     ///< Came from a parent
-    glm::mat4 parentWorld = glm::mat4(1.0f);           ///< Parent model matrix
-    glm::quat parentRot   = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Parent world rotation
+    glm::mat4 parentWorld = glm::mat4(1.0f);           ///< Parent model matrix; identity with no parent
 };
 
 /**
