@@ -1,22 +1,24 @@
 #define VKM_LOG_CATEGORY "INPUT"
 
-#include "platform/input/input_map.h"
+#include "core/input_map.h"
 
 #include <algorithm>
 #include <cmath>
 #include <optional>
 #include <string>
+#include <variant>
 
 #include <glm/common.hpp>
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/fnv1a.h"
+#include "base/hash/fnv1a.h"
 #include "core/host_chrome.h"
-#include "core/reflect.h"
-#include "platform/input/input_handle.h"
-#include "platform/window/glfw_include.h"
+#include "base/reflect/reflect.h"
+#include "io/json/own_file.h"
+#include "io/project/actions_json.h"
+#include "vkm_platform/input/input_handle.h"
 
 namespace Vkm::Engine {
 
@@ -25,76 +27,52 @@ namespace {
 // Returned for an undefined action, so bindings() can return a reference.
 const std::vector<InputBinding> NO_BINDINGS;
 
-// Digital sources give exactly 0 or 1; the threshold lets an analogue one resolve to a button.
+// Digital sources give exactly 0 or 1; the threshold lets an analog one resolve to a button.
 constexpr float ACTIVE_THRESHOLD = 0.5f;
+
+/**
+ * @brief What the device says of one key or button since the last sample.
+ */
+struct Reading {
+    bool struck = false;  ///< Went down, even if up again.
+    bool down   = false;  ///< Held now, or struck.
+    bool again  = false;  ///< Let go and struck again.
+};
+
+Reading read(const Platform::InputHandle& input, Platform::Key key) {
+    const bool struck = input.wasKeyStruck(key);
+    return {struck, input.isKeyPressed(key) || struck, input.wasKeyRestruck(key)};
+}
+
+Reading read(const Platform::InputHandle& input, Platform::MouseButton button) {
+    const bool struck = input.wasButtonStruck(button);
+    return {struck, input.isButtonPressed(button) || struck, input.wasButtonRestruck(button)};
+}
+
+Reading read(const Platform::InputHandle& input, const InputControl& control) {
+    return std::visit([&](auto pressed) { return read(input, pressed); }, control);
+}
 
 } // namespace
 
-std::string bindingName(const InputBinding& binding) {
-    const int code = binding.code;
-    if (binding.source == InputSource::MouseButton) {
-        switch (code) {
-            case GLFW_MOUSE_BUTTON_LEFT:   return "Left mouse";
-            case GLFW_MOUSE_BUTTON_RIGHT:  return "Right mouse";
-            case GLFW_MOUSE_BUTTON_MIDDLE: return "Middle mouse";
-            default:                       return "Mouse " + std::to_string(code + 1);
-        }
-    }
-    if (code >= GLFW_KEY_A && code <= GLFW_KEY_Z) {
-        return std::string(1, static_cast<char>('A' + code - GLFW_KEY_A));
-    }
-    if (code >= GLFW_KEY_0 && code <= GLFW_KEY_9) {
-        return std::string(1, static_cast<char>('0' + code - GLFW_KEY_0));
-    }
-    if (code >= GLFW_KEY_F1 && code <= GLFW_KEY_F25) return "F" + std::to_string(code - GLFW_KEY_F1 + 1);
-    if (code >= GLFW_KEY_KP_0 && code <= GLFW_KEY_KP_9) {
-        return "Keypad " + std::to_string(code - GLFW_KEY_KP_0);
-    }
-    switch (code) {
-        case GLFW_KEY_SPACE:         return "Space";
-        case GLFW_KEY_APOSTROPHE:    return "'";
-        case GLFW_KEY_COMMA:         return ",";
-        case GLFW_KEY_MINUS:         return "-";
-        case GLFW_KEY_PERIOD:        return ".";
-        case GLFW_KEY_SLASH:         return "/";
-        case GLFW_KEY_SEMICOLON:     return ";";
-        case GLFW_KEY_EQUAL:         return "=";
-        case GLFW_KEY_LEFT_BRACKET:  return "[";
-        case GLFW_KEY_BACKSLASH:     return "\\";
-        case GLFW_KEY_RIGHT_BRACKET: return "]";
-        case GLFW_KEY_GRAVE_ACCENT:  return "`";
-        case GLFW_KEY_ESCAPE:        return "Escape";
-        case GLFW_KEY_ENTER:         return "Enter";
-        case GLFW_KEY_TAB:           return "Tab";
-        case GLFW_KEY_BACKSPACE:     return "Backspace";
-        case GLFW_KEY_INSERT:        return "Insert";
-        case GLFW_KEY_DELETE:        return "Delete";
-        case GLFW_KEY_RIGHT:         return "Right";
-        case GLFW_KEY_LEFT:          return "Left";
-        case GLFW_KEY_DOWN:          return "Down";
-        case GLFW_KEY_UP:            return "Up";
-        case GLFW_KEY_PAGE_UP:       return "Page Up";
-        case GLFW_KEY_PAGE_DOWN:     return "Page Down";
-        case GLFW_KEY_HOME:          return "Home";
-        case GLFW_KEY_END:           return "End";
-        case GLFW_KEY_CAPS_LOCK:     return "Caps Lock";
-        case GLFW_KEY_KP_ENTER:      return "Keypad Enter";
-        case GLFW_KEY_LEFT_SHIFT:    return "Left Shift";
-        case GLFW_KEY_LEFT_CONTROL:  return "Left Ctrl";
-        case GLFW_KEY_LEFT_ALT:      return "Left Alt";
-        case GLFW_KEY_RIGHT_SHIFT:   return "Right Shift";
-        case GLFW_KEY_RIGHT_CONTROL: return "Right Ctrl";
-        case GLFW_KEY_RIGHT_ALT:     return "Right Alt";
-        default:                     return "Key " + std::to_string(code);
-    }
-}
-
 InputMap::InputMap() {
-    defineEngineActions();
+    rebuildActions();
 }
 
-void InputMap::defineEngineActions() {
-    define(InputActions::UI_CLICK, { InputBinding{InputSource::MouseButton, GLFW_MOUSE_BUTTON_LEFT, 1.0f} });
+void InputMap::rebuildActions() {
+    m_actions.clear();
+    m_nextSlot    = 0;
+    m_fingerprint = FNV1A_OFFSET_BASIS;
+    define(InputActions::UI_CLICK, { InputBinding::mouse(Platform::MouseButton::Left) });
+    for (const InputAction& action : m_gameActions) define(action.name, action.bindings);
+}
+
+void InputMap::setActions(std::vector<InputAction> actions) {
+    std::sort(actions.begin(), actions.end(), [](const InputAction& a, const InputAction& b) {
+        return a.name < b.name;
+    });
+    m_gameActions = std::move(actions);
+    rebuildActions();
 }
 
 void InputMap::assignSlot(Action& entry, std::string_view action) {
@@ -110,96 +88,84 @@ void InputMap::assignSlot(Action& entry, std::string_view action) {
         return;
     }
     entry.slot = static_cast<int>(m_nextSlot++);
+    // Slots are only appended, so the fingerprint folds each name in as it is slotted. A separator
+    // after each, so "ab","c" and "a","bc" differ.
+    const char separator = '\0';
+    m_fingerprint = fnv1a64(action, m_fingerprint);
+    m_fingerprint = fnv1a64Bytes(&separator, 1, m_fingerprint);
 }
 
 void InputMap::define(std::string_view action, std::vector<InputBinding> bindings) {
-    Action& entry  = mutableAction(action);
-    entry.defaults = std::move(bindings);
+    Action& entry    = mutableAction(action);
     const auto saved = m_saved.find(action);
-    entry.bindings   = saved != m_saved.end() ? saved->second : entry.defaults;
+
+    entry.defaults = std::move(bindings);
+    entry.bindings = saved != m_saved.end() ? saved->second : entry.defaults;
     assignSlot(entry, action);
 }
 
 void InputMap::rebind(std::string_view action, std::vector<InputBinding> bindings) {
-    Action& entry = mutableAction(action);
+    const auto entry = m_actions.find(action);
+    if (entry == m_actions.end()) {
+        LOG_WARNING(
+            "No action '%.*s' to rebind: the game's are project.json's",
+            static_cast<int>(action.size()),
+            action.data()
+        );
+        return;
+    }
     m_saved[std::string(action)] = bindings;
-    entry.bindings = std::move(bindings);
-    assignSlot(entry, action);
+    entry->second.bindings = std::move(bindings);
+    writeBindings();
 }
 
 void InputMap::resetBindings() {
     for (auto& [name, entry] : m_actions) entry.bindings = entry.defaults;
     m_saved.clear();
+    writeBindings();
+}
+
+void InputMap::keepBindingsIn(std::filesystem::path file) {
+    m_bindingsFile = std::move(file);
+    loadBindings(readOwnFile(m_bindingsFile));
+}
+
+void InputMap::writeBindings() const {
+    if (!m_bindingsFile.empty()) writeOwnFile(m_bindingsFile, saveBindings());
+}
+
+std::string InputMap::keyName(std::string_view action) const {
+    const Action* entry = queried(action);
+    return entry && !entry->bindings.empty() ? bindingName(entry->bindings.front()) : std::string{};
 }
 
 namespace {
 
 bool sameBindings(const std::vector<InputBinding>& a, const std::vector<InputBinding>& b) {
     const auto same = [](const InputBinding& x, const InputBinding& y) {
-        return x.source == y.source && x.code == y.code && x.scale == y.scale;
+        return x.control == y.control && x.scale == y.scale;
     };
     return std::equal(a.begin(), a.end(), b.begin(), b.end(), same);
-}
-
-nlohmann::json bindingToJson(const InputBinding& binding) {
-    return {{"source", Reflect::enumName(binding.source)}, {"code", binding.code}, {"scale", binding.scale}};
-}
-
-// A saved binding as it was written, or nothing: a source this build names, a code that source
-// has, and a finite number for a scale, which may be left out.
-std::optional<InputBinding> bindingFromJson(const nlohmann::json& j) {
-    if (!j.is_object()) return std::nullopt;
-    const auto source = j.find("source");
-    const auto code   = j.find("code");
-    const auto scale  = j.find("scale");
-    InputBinding binding;
-    if (source == j.end() || !source->is_string()) return std::nullopt;
-    if (!Reflect::enumFromNameChecked(source->get<std::string>(), binding.source)) return std::nullopt;
-    if (code == j.end() || !code->is_number_integer()) return std::nullopt;
-    const int64_t last  = binding.source == InputSource::MouseButton ? MAX_MOUSE_BUTTON : MAX_KEY;
-    const int64_t value = code->get<int64_t>();
-    if (value < 0 || value > last) return std::nullopt;
-    binding.code = static_cast<int>(value);
-    if (scale != j.end()) {
-        if (!scale->is_number() || !std::isfinite(scale->get<float>())) return std::nullopt;
-        binding.scale = scale->get<float>();
-    }
-    return binding;
 }
 
 } // namespace
 
 nlohmann::json InputMap::saveBindings() const {
-    nlohmann::json out = nlohmann::json::object();
+    std::vector<InputAction> rebound;
     for (const auto& [name, bindings] : m_saved) {
         // Back at its defaults, it follows them; never defined this run, kept for one that does.
         const auto entry = m_actions.find(name);
         if (entry != m_actions.end() && sameBindings(bindings, entry->second.defaults)) continue;
-        nlohmann::json list = nlohmann::json::array();
-        for (const InputBinding& binding : bindings) list.push_back(bindingToJson(binding));
-        out[name] = std::move(list);
+        rebound.push_back({name, bindings});
     }
-    return out;
+    return actionsToJson(rebound);
 }
 
 void InputMap::loadBindings(const nlohmann::json& saved) {
-    if (!saved.is_object()) return;
-    for (auto it = saved.begin(); it != saved.end(); ++it) {
-        // Wrong anywhere, the action keeps its own: half a list could leave it unpressable.
-        std::vector<InputBinding> bindings;
-        bool                      readable = it.value().is_array();
-        for (size_t i = 0; readable && i < it.value().size(); ++i) {
-            const std::optional<InputBinding> binding = bindingFromJson(it.value()[i]);
-            readable = binding.has_value();
-            if (readable) bindings.push_back(*binding);
-        }
-        if (!readable) {
-            LOG_WARNING("Saved bindings for '%s' cannot be read; keeping its own", it.key().c_str());
-            continue;
-        }
-        const auto entry = m_actions.find(it.key());
-        if (entry != m_actions.end()) entry->second.bindings = bindings;
-        m_saved[it.key()] = std::move(bindings);
+    for (InputAction& action : actionsFromJson(saved)) {
+        const auto entry = m_actions.find(action.name);
+        if (entry != m_actions.end()) entry->second.bindings = action.bindings;
+        m_saved[action.name] = std::move(action.bindings);
     }
 }
 
@@ -207,22 +173,6 @@ InputMap::Action& InputMap::mutableAction(std::string_view action) {
     auto it = m_actions.find(action);
     if (it == m_actions.end()) it = m_actions.emplace(std::string(action), Action{}).first;
     return it->second;
-}
-
-uint64_t InputMap::actionFingerprint() const {
-    std::vector<std::string_view> bySlot(m_nextSlot);
-    for (const auto& [name, action] : m_actions) {
-        if (action.slot >= 0) bySlot[static_cast<size_t>(action.slot)] = name;
-    }
-
-    // A separator after each name, so "ab","c" and "a","bc" differ.
-    uint64_t hash = FNV1A_OFFSET_BASIS;
-    const char separator = '\0';
-    for (std::string_view name : bySlot) {
-        hash = fnv1a64(name, hash);
-        hash = fnv1a64Bytes(&separator, 1, hash);
-    }
-    return hash;
 }
 
 int InputMap::indexOf(std::string_view action) const {
@@ -243,15 +193,13 @@ std::vector<std::string> InputMap::actions() const {
 }
 
 bool InputMap::heldElsewhere(const InputBinding& binding, bool down, bool hostHas, bool uiHas, bool forUI) {
-    const auto sameButton = [&](const HeldPress& held) {
-        return held.source == binding.source && held.code == binding.code;
-    };
+    const auto sameControl = [&](const HeldPress& held) { return held.control == binding.control; };
     if (!down) return false;
 
-    auto found = std::find_if(m_heldPresses.begin(), m_heldPresses.end(), sameButton);
+    auto found = std::find_if(m_heldPresses.begin(), m_heldPresses.end(), sameControl);
     if (found == m_heldPresses.end()) {
         const Holder holder = hostHas ? Holder::Host : (uiHas ? Holder::UI : Holder::Gameplay);
-        found = m_heldPresses.insert(m_heldPresses.end(), HeldPress{binding.source, binding.code, holder});
+        found = m_heldPresses.insert(m_heldPresses.end(), HeldPress{binding.control, holder});
     } else if (hostHas) {
         // The host taking the device ends the gesture, so the press does not come back after.
         found->holder = Holder::Host;
@@ -265,27 +213,19 @@ bool InputMap::heldElsewhere(const InputBinding& binding, bool down, bool hostHa
     return false;
 }
 
-void InputMap::update(InputHandle& input, const HostChrome& chrome) {
-    const bool pointerOurs  = !chrome.capturesPointer();
-    const bool keyboardOurs = !chrome.capturesKeyboard();
+void InputMap::update(Platform::InputHandle& input, const HostChrome& chrome) {
+    const bool pointerOurs  = !chrome.capturePointer;
+    const bool keyboardOurs = !chrome.captureKeyboard;
 
     // A record ends with the press, bound or not: one left by a reset or rebind would hand
     // the next press to its old holder.
-    const auto letGo = [&](const HeldPress& held) {
-        switch (held.source) {
-            case InputSource::Key:
-                return !input.isKeyPressed(held.code) && !input.wasKeyStruck(held.code);
-            case InputSource::MouseButton:
-                return !input.isButtonPressed(held.code) && !input.wasButtonStruck(held.code);
-            case InputSource::Count:
-                break;
-        }
-        return true;
-    };
+    const auto letGo = [&](const HeldPress& held) { return !read(input, held.control).down; };
     const auto ended = std::remove_if(m_heldPresses.begin(), m_heldPresses.end(), letGo);
     m_heldPresses.erase(ended, m_heldPresses.end());
 
     m_pointer = {static_cast<float>(input.getX()), static_cast<float>(input.getY())};
+    // Over the UI as last laid out, but where the pointer is now.
+    if (m_blockersKnown) m_pointerOverUI = pointerInBlockers();
     m_pointerDelta = pointerOurs
         ? glm::vec2(static_cast<float>(input.getDeltaX()), static_cast<float>(input.getDeltaY()))
         : glm::vec2(0.0f);
@@ -297,56 +237,54 @@ void InputMap::update(InputHandle& input, const HostChrome& chrome) {
     m_struck.reset();
     if (keyboardOurs) {
         m_text = input.text();
-        for (int key = 0; key <= MAX_KEY; ++key) {
-            m_typed[static_cast<size_t>(key)] = input.wasKeyTyped(key);
-            if (!m_struck && input.wasKeyStruck(key)) m_struck = InputBinding{InputSource::Key, key, 1.0f};
+        for (size_t at = 0; at < KEYS; ++at) {
+            const auto key = static_cast<Platform::Key>(at);
+            m_typed[at] = input.wasKeyTyped(key);
+            if (!m_struck && input.wasKeyStruck(key)) m_struck = InputBinding::key(key);
         }
     }
-    for (int button = 0; button <= MAX_MOUSE_BUTTON && pointerOurs && !m_struck; ++button) {
-        if (input.wasButtonStruck(button)) m_struck = InputBinding{InputSource::MouseButton, button, 1.0f};
+    for (size_t at = 0; at < BUTTONS && pointerOurs && !m_struck; ++at) {
+        const auto button = static_cast<Platform::MouseButton>(at);
+        if (input.wasButtonStruck(button)) m_struck = InputBinding::mouse(button);
     }
 
     // The UI takes presses of its click's buttons, only while over a blocking element.
     const Action* uiClick = find(InputActions::UI_CLICK);
     const auto clicksUI = [&](const InputBinding& binding) {
-        if (!m_pointerOverUI || !uiClick || binding.source != InputSource::MouseButton) return false;
-        const auto sameButton = [&](const InputBinding& click) {
-            return click.source == binding.source && click.code == binding.code;
-        };
+        if (!m_pointerOverUI || !uiClick || !std::holds_alternative<Platform::MouseButton>(binding.control)) {
+            return false;
+        }
+        const auto sameButton = [&](const InputBinding& click) { return click.control == binding.control; };
         return std::any_of(uiClick->bindings.begin(), uiClick->bindings.end(), sameButton);
     };
 
     for (auto& [_, action] : m_actions) {
         const bool forUI = &action == uiClick;
         float value = 0.0f;
+        bool restruck = false;
+        bool stayed   = false;
         for (const InputBinding& binding : action.bindings) {
-            bool down = false;
-            bool ours = false;
-            switch (binding.source) {
-                case InputSource::Key:
-                    down = input.isKeyPressed(binding.code) || input.wasKeyStruck(binding.code);
-                    ours = keyboardOurs;
-                    break;
-                case InputSource::MouseButton:
-                    down = input.isButtonPressed(binding.code) || input.wasButtonStruck(binding.code);
-                    ours = pointerOurs;
-                    break;
-                case InputSource::Count:
-                    break;
-            }
-            if (heldElsewhere(binding, down, !ours, clicksUI(binding), forUI)) continue;
-            if (down) value += binding.scale;
+            const bool    isKey = std::holds_alternative<Platform::Key>(binding.control);
+            const bool    ours  = isKey ? keyboardOurs : pointerOurs;
+            const Reading now   = read(input, binding.control);
+            if (heldElsewhere(binding, now.down, !ours, clicksUI(binding), forUI)) continue;
+            if (now.down) value += binding.scale;
+            restruck = restruck || now.again;
+            stayed   = stayed || (now.down && !now.struck);
         }
 
         action.value     = glm::clamp(value, -1.0f, 1.0f);
         action.wasActive = action.active;
         action.active    = std::abs(action.value) >= ACTIVE_THRESHOLD;
+        // Down at both samples, it was let go and struck between: both edges, or a quick second
+        // click in a long frame is lost. Not while another binding held it down throughout.
+        action.restruck = action.wasActive && restruck && !stayed;
 
         // Latched here, not at tick time: an edge on a frame no tick follows would be lost.
         if (action.slot < 0) continue;
         const uint32_t bit = uint32_t(1) << action.slot;
-        if (action.active && !action.wasActive) m_pendingPressed  |= bit;
-        if (!action.active && action.wasActive) m_pendingReleased |= bit;
+        if (action.active && (!action.wasActive || action.restruck)) m_pendingPressed  |= bit;
+        if (action.wasActive && (!action.active || action.restruck)) m_pendingReleased |= bit;
     }
 
     // After every action has read them: two actions can share a key.
@@ -359,8 +297,8 @@ void InputMap::discardPendingEdges() {
 }
 
 void InputMap::reset() {
-    m_actions.clear();
-    m_nextSlot = 0;
+    m_blockers.clear();
+    m_blockersKnown = false;
     discardPendingEdges();
 
     m_pointerDelta = glm::vec2(0.0f);
@@ -368,20 +306,20 @@ void InputMap::reset() {
     m_uiWheel      = 0.0f;
     m_text.clear();
     m_typed.reset();
-    m_view         = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    m_view = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     m_struck.reset();
     m_payload.fill(0);
-    m_payloadSize  = 0;
+    m_payloadSize = 0;
 
     // Zeroed, as before the first tick, so nothing reads the last session's.
     m_command = InputCommand{};
-    defineEngineActions();
+    rebuildActions();
 }
 
 void InputMap::beginTick(uint32_t tick) {
-    m_command.sequence = m_nextSequence++;
-    m_command.tick     = tick;
-    m_command.view     = m_view;
+    m_command.sequence    = m_nextSequence++;
+    m_command.tick        = tick;
+    m_command.view        = m_view;
     m_command.payload     = m_payload;
     m_command.payloadSize = m_payloadSize;
     m_command.axis.fill(0.0f);
@@ -392,8 +330,8 @@ void InputMap::beginTick(uint32_t tick) {
     // Drained, not copied: a slow frame's second tick must not see the first's press.
     m_command.pressed  = m_pendingPressed;
     m_command.released = m_pendingReleased;
-    m_pendingPressed  = 0;
-    m_pendingReleased = 0;
+    m_pendingPressed   = 0;
+    m_pendingReleased  = 0;
 }
 
 bool InputMap::setPayload(const uint8_t* bytes, size_t size) {
@@ -405,22 +343,22 @@ bool InputMap::setPayload(const uint8_t* bytes, size_t size) {
 }
 
 bool InputMap::held(std::string_view action) const {
-    const Action* entry = find(action);
+    const Action* entry = queried(action);
     return entry && entry->active;
 }
 
 bool InputMap::pressed(std::string_view action) const {
-    const Action* entry = find(action);
-    return entry && entry->active && !entry->wasActive;
+    const Action* entry = queried(action);
+    return entry && entry->active && (!entry->wasActive || entry->restruck);
 }
 
 bool InputMap::released(std::string_view action) const {
-    const Action* entry = find(action);
-    return entry && !entry->active && entry->wasActive;
+    const Action* entry = queried(action);
+    return entry && entry->wasActive && (!entry->active || entry->restruck);
 }
 
 float InputMap::axis(std::string_view action) const {
-    const Action* entry = find(action);
+    const Action* entry = queried(action);
     return entry ? entry->value : 0.0f;
 }
 
@@ -429,23 +367,48 @@ bool InputMap::held(const InputCommand& command, std::string_view action) const 
 }
 
 bool InputMap::pressed(const InputCommand& command, std::string_view action) const {
-    const int slot = indexOf(action);
+    const Action* entry = queried(action);
+    const int slot = entry ? entry->slot : -1;
     return slot >= 0 && (command.pressed & (uint32_t(1) << slot)) != 0;
 }
 
 bool InputMap::released(const InputCommand& command, std::string_view action) const {
-    const int slot = indexOf(action);
+    const Action* entry = queried(action);
+    const int slot = entry ? entry->slot : -1;
     return slot >= 0 && (command.released & (uint32_t(1) << slot)) != 0;
 }
 
 float InputMap::axis(const InputCommand& command, std::string_view action) const {
-    const int slot = indexOf(action);
+    const Action* entry = queried(action);
+    const int slot = entry ? entry->slot : -1;
     return slot >= 0 ? command.axis[static_cast<size_t>(slot)] : 0.0f;
 }
 
 const InputMap::Action* InputMap::find(std::string_view action) const {
     auto it = m_actions.find(action);
     return it == m_actions.end() ? nullptr : &it->second;
+}
+
+const InputMap::Action* InputMap::queried(std::string_view action) const {
+    const Action* entry = find(action);
+    if (!entry && m_unknownRead.find(action) == m_unknownRead.end()) {
+        m_unknownRead.emplace(action);
+        LOG_WARNING(
+            "Input action '%.*s' is read but never listed, so it is never pressed; project.json's "
+            "actions list the game's",
+            static_cast<int>(action.size()),
+            action.data()
+        );
+    }
+    return entry;
+}
+
+bool InputMap::pointerInBlockers() const {
+    const auto under = [&](const glm::vec4& area) {
+        return m_pointer.x >= area.x && m_pointer.y >= area.y
+            && m_pointer.x < area.x + area.z && m_pointer.y < area.y + area.w;
+    };
+    return std::any_of(m_blockers.begin(), m_blockers.end(), under);
 }
 
 } // namespace Vkm::Engine

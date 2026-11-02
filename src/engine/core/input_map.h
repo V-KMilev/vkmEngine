@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <bitset>
+#include <filesystem>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,14 +14,15 @@
 #include <glm/gtc/quaternion.hpp>
 #include <nlohmann/json_fwd.hpp>
 
-#include "core/reflect.h"
+#include "base/hash/fnv1a.h"
 
+#include "platform/input/input_binding.h"
 #include "platform/input/input_command.h"
-#include "platform/input/input_handle.h"
+#include "vkm_platform/input/input_handle.h"
 
 namespace Vkm::Engine {
 
-class HostChrome;
+struct HostChrome;
 
 /**
  * @brief Action names the engine itself reads.
@@ -27,47 +30,14 @@ class HostChrome;
  * Strings, not an enum, so binding files can name actions the engine never heard of.
  */
 namespace InputActions {
-    /**
-     * @brief Press, hold and release of the game UI's primary pointer button.
-     *
-     * An action, not a raw button, so it is rebindable. InputMap binds it to the left mouse
-     * button at construction and after reset().
-     */
-    inline constexpr const char* UI_CLICK = "UI/Click";
+    inline constexpr const char* UI_CLICK = "UI/Click";  ///< Press, hold and release of the game UI's primary
+                                                         ///< pointer button: an action, not a raw button, so
+                                                         ///< it is rebindable. InputMap binds it to the left
+                                                         ///< mouse button at construction and after reset();
+                                                         ///< a game's UI/Click in project.json's actions
+                                                         ///< replaces it.
 
 } // namespace InputActions
-
-/**
- * @brief What physically produces an action's value.
- *
- * A new device (gamepad) is a new value here and a case in each switch in InputMap::update.
- */
-enum class InputSource : uint8_t {
-    Key,
-    MouseButton,
-    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
-};
-
-/**
- * @brief One physical control contributing to an action.
- *
- * `scale` makes an action an axis: W at +1 and S at -1 make "Move/Forward" read -1..1.
- */
-struct InputBinding {
-    InputSource source = InputSource::Key;
-    int         code   = 0;     ///< GLFW key or mouse-button code.
-    float       scale  = 1.0f;  ///< Contribution to axis(); sign gives direction.
-};
-
-/**
- * @brief What a binding is called, for a controls screen: "W", "Left Shift", "Left mouse".
- *
- * In English and by position, as the codes are: the key a US layout prints there.
- *
- * @param binding The key or button.
- * @return Its name; "Key N" or "Mouse N" for one with no name of its own.
- */
-std::string bindingName(const InputBinding& binding);
 
 /**
  * @brief Named actions resolved from physical bindings, sampled once per frame.
@@ -89,21 +59,21 @@ class InputMap {
 
     public:
         /**
-         * @brief Define (or replace) an action and its default bindings.
+         * @brief The game's actions, the whole set, in place of the last: what project.json lists.
          *
-         * A binding the player saved for it (loadBindings) is put in their place.
+         * Their command slots follow the engine's own in name order, so two ends listing the same
+         * actions agree whatever order they list them in. A binding the player saved is put in
+         * place of an action's own, and reset() keeps them.
          *
-         * @param action   Action name, e.g. "Move/Forward"; the stable identity a saved
-         *                 binding file refers to.
-         * @param bindings Physical controls feeding it by default.
+         * @param actions Each action with its default bindings.
          */
-        void define(std::string_view action, std::vector<InputBinding> bindings);
+        void setActions(std::vector<InputAction> actions);
 
         /**
          * @brief The player's own bindings for @p action, its defaults kept; what a controls
-         *        screen sets. Defines an action that was not.
+         *        screen sets. Written to the player's file (keepBindingsIn).
          *
-         * @param action   Action name.
+         * @param action   An action setActions named; any other is refused with a warning.
          * @param bindings Physical controls feeding it now.
          */
         void rebind(std::string_view action, std::vector<InputBinding> bindings);
@@ -114,20 +84,36 @@ class InputMap {
         void resetBindings();
 
         /**
+         * @brief Keep the player's bindings in @p file: read now, and written as they change.
+         *
+         * @param file The player's file, in Roots::playerRoot.
+         */
+        void keepBindingsIn(std::filesystem::path file);
+
+        /**
+         * @brief What to press for @p action, for a hint on screen: its first binding's name.
+         *
+         * @param action Action name.
+         * @return bindingName of its first binding; empty when it has none.
+         */
+        std::string keyName(std::string_view action) const;
+
+        /**
          * @brief The actions the player rebound, each its bindings, for a settings file.
          *
          * Only those that differ from their defaults: one left alone follows its default when the
          * game changes it.
          *
-         * @return An object, an action name a key, each an array of bindings.
+         * @return An object, an action name a key, each an array of bindings as project.json
+         *         writes them.
          */
         nlohmann::json saveBindings() const;
 
         /**
          * @brief Rebinds each action @p saved names, as saveBindings wrote it.
          *
-         * Kept as the player's, as rebind's are, through reset(): one not defined yet, or
-         * defined again, takes them when it is. An entry that cannot be read is skipped.
+         * Kept as the player's, as rebind's are, through reset(): one not listed yet takes them
+         * when setActions lists it. An entry that cannot be read is skipped with a warning.
          *
          * @param saved An object as saveBindings writes; anything else changes nothing.
          */
@@ -160,16 +146,22 @@ class InputMap {
          * @param input  Device state to sample; its strikes are cleared.
          * @param chrome What the host's UI holds this frame.
          */
-        void update(InputHandle& input, const HostChrome& chrome);
+        void update(Platform::InputHandle& input, const HostChrome& chrome);
 
         /**
-         * @brief Say whether the pointer is over a blocking element of the game's UI.
+         * @brief Give where the game's UI blocks the pointer, as last laid out, in window pixels.
          *
-         * Read by the next update(): one frame of lag, as the host's chrome has.
+         * The pointer is over the UI (pointerOverUI) while it is inside one, asked now and at each
+         * update() of where it is then, not where the layout saw it: a click the frame the pointer
+         * crosses a panel's edge goes to whoever is under it.
          *
-         * @param over Whether a blocking element is under the pointer.
+         * @param areas Each blocking element's visible rect: x, y, width, height.
          */
-        void setPointerOverUI(bool over) { m_pointerOverUI = over; }
+        void setPointerBlockers(const std::vector<glm::vec4>& areas) {
+            m_blockers.assign(areas.begin(), areas.end());
+            m_blockersKnown = true;
+            m_pointerOverUI = pointerInBlockers();
+        }
 
         /**
          * @brief Drop the edges latched since the last command.
@@ -180,10 +172,10 @@ class InputMap {
         void discardPendingEdges();
 
         /**
-         * @brief Forget every action and every latched edge, then define the engine's own.
+         * @brief Forget every latched edge and value, then define the engine's actions and the
+         *        game's again.
          *
-         * Frees the command slots, which kept would fill MAX_INPUT_ACTIONS across sessions. The
-         * command sequence keeps counting, since an ack names it; a press held across a reset
+         * The command sequence keeps counting, since an ack names it; a press held across a reset
          * stays with its holder until let go.
          */
         void reset();
@@ -201,8 +193,8 @@ class InputMap {
         /**
          * @brief Say where the player is looking, for the commands that follow.
          *
-         * Read back off InputCommand::view in a fixed update. A game steering relative to its
-         * camera calls this once per frame after moving it.
+         * Engine::run says it every frame, before the ticks, with the active camera's view as the
+         * last frame showed it; a tick reads it back off InputCommand::view (BehaviorBase::alongView).
          *
          * @param view Orientation the input from now on is aimed with.
          */
@@ -224,8 +216,9 @@ class InputMap {
         /**
          * @brief The command's slot for @p action, or -1 when it has none.
          *
-         * Assigned in definition order, stable for the session. An action past MAX_INPUT_ACTIONS
-         * has no slot: absent from every command, still answered by the frame queries.
+         * The engine's actions first, then the game's in name order. An action past
+         * MAX_INPUT_ACTIONS has no slot: absent from every command, still answered by the frame
+         * queries.
          *
          * @param action Action name.
          * @return Index into InputCommand::axis, or -1.
@@ -240,31 +233,38 @@ class InputMap {
          *
          * @return A hash of the slotted names in slot order.
          */
-        uint64_t actionFingerprint() const;
+        uint64_t actionFingerprint() const { return m_fingerprint; }
 
         /**
          * @brief Is the action active this frame?
          *
-         * The summed value decides: W and S held together cancel.
+         * The summed value decides: W and S held together cancel. An action read but never listed
+         * warns once, by name, and reads as never pressed, here and in every query.
          *
          * @param action Action name.
-         * @return Whether its value is at or past the activation threshold; false if undefined.
+         * @return Whether its value reaches 0.5 either way; false if undefined.
          */
         bool held(std::string_view action) const;
 
         /**
          * @brief Did it become active this frame?
          *
+         * Active as held() reads it: a summed value of 0.5 or more either way.
+         *
          * @param action Action name.
-         * @return Whether it is active now and was not the previous frame.
+         * @return Whether it is active now and was not the previous frame, or was let go and
+         *         pressed again since.
          */
         bool pressed(std::string_view action) const;
 
         /**
          * @brief Did it stop being active this frame?
          *
+         * Active as held() reads it: a summed value of 0.5 or more either way.
+         *
          * @param action Action name.
-         * @return Whether it was active the previous frame and is not now.
+         * @return Whether it was active the previous frame and is not now, or was let go and
+         *         pressed again since.
          */
         bool released(std::string_view action) const;
 
@@ -319,9 +319,9 @@ class InputMap {
         /**
          * @brief Whether the pointer was over a blocking element of the game's UI.
          *
-         * As of the last UI layout; e.g. for hiding a crosshair over a panel.
+         * Inside an area setPointerBlockers gave; e.g. for hiding a crosshair over a panel.
          *
-         * @return What UISystem last set through setPointerOverUI.
+         * @return Whether it was, at the last update() or blockers given.
          */
         bool pointerOverUI() const { return m_pointerOverUI; }
 
@@ -365,7 +365,8 @@ class InputMap {
          * @brief The characters typed this frame, in order, as UTF-32.
          *
          * Layout, Shift and dead keys applied, which no binding can say. Empty while the host's
-         * UI holds the keyboard.
+         * UI holds the keyboard. The keys still reach gameplay bound to them, so a text field
+         * belongs where the game is not listening: a menu, a pause screen.
          *
          * @return This frame's characters, valid until the next update().
          */
@@ -377,15 +378,15 @@ class InputMap {
          * For editing keys (Backspace, arrows, Enter), which act again at the repeat rate as
          * pressed() does not. False while the host's UI holds the keyboard.
          *
-         * @param key GLFW key code.
-         * @return Whether it was typed this frame; false for out-of-range keys.
+         * @param key The key to ask about.
+         * @return Whether it was typed this frame.
          */
-        bool typed(int key) const { return key >= 0 && key <= MAX_KEY && m_typed[static_cast<size_t>(key)]; }
+        bool typed(Platform::Key key) const { return m_typed[static_cast<size_t>(key)]; }
 
         /**
          * @brief The key or mouse button that went down this frame, bound or not.
          *
-         * What a rebinding screen listens for. Keys before buttons, the lowest code first, when
+         * What a rebinding screen listens for. Keys before buttons, each in its enum's order, when
          * several went down together; a device the host's UI holds says nothing.
          *
          * @return The press, as a binding of scale one; nothing when there was none.
@@ -412,6 +413,9 @@ class InputMap {
         uint32_t actionCount() const { return m_nextSlot; }
 
     private:
+        static constexpr size_t KEYS    = static_cast<size_t>(Platform::Key::Count);
+        static constexpr size_t BUTTONS = static_cast<size_t>(Platform::MouseButton::Count);
+
         struct Action {
             std::vector<InputBinding> bindings;
             std::vector<InputBinding> defaults;  ///< As defined; what a rebinding is measured from.
@@ -419,6 +423,7 @@ class InputMap {
             float value     = 0.0f;   ///< This frame's axis value.
             bool  active    = false;  ///< |value| past the threshold.
             bool  wasActive = false;  ///< Previous frame's, for the edges.
+            bool  restruck  = false;  ///< Let go and pressed again between the two.
             int   slot      = -1;     ///< Index in an InputCommand, or -1 past the cap.
         };
 
@@ -435,17 +440,35 @@ class InputMap {
          * @brief A key or button that is down, and whose press it is.
          */
         struct HeldPress {
-            InputSource source;
-            int         code;
-            Holder      holder;
+            InputControl control;
+            Holder       holder;
         };
 
         /**
-         * @brief Define the actions in InputActions with their default bindings.
+         * @brief Define (or replace) an action and its default bindings, the player's own put in
+         *        their place.
          *
-         * Before any project's, so a saved binding file overrides them and they hold the first slots.
+         * @param action   Action name.
+         * @param bindings Physical controls feeding it by default.
          */
-        void defineEngineActions();
+        void define(std::string_view action, std::vector<InputBinding> bindings);
+
+        /**
+         * @brief Empty the action table, then define the actions in InputActions and the game's
+         *        (setActions), in that order, so slots and the fingerprint start afresh.
+         */
+        void rebuildActions();
+
+        /**
+         * @brief The action a query names, or null, said once a name when the game never listed it.
+         *
+         * @param action Action name.
+         * @return Its entry, or nullptr.
+         */
+        const Action* queried(std::string_view action) const;
+
+        /// Write the player's bindings to the kept file, if there is one.
+        void writeBindings() const;
 
         /**
          * @brief Look up an action, or null when it was never defined.
@@ -489,23 +512,39 @@ class InputMap {
          */
         bool heldElsewhere(const InputBinding& binding, bool down, bool hostHas, bool uiHas, bool forUI);
 
+        /// Whether the pointer, where update() last saw it, is inside one of m_blockers.
+        bool pointerInBlockers() const;
+
     private:
-        /**
-         * @brief Every defined action, by name.
-         *
-         * Transparent comparator: a string_view lookup builds no std::string.
-         */
-        std::map<std::string, Action, std::less<>> m_actions;
-        /// The player's own bindings, by action, rebound or loaded: define() puts them in place.
-        std::map<std::string, std::vector<InputBinding>, std::less<>> m_saved;
+        std::map<std::string, Action, std::less<>>                    m_actions;       ///< Every defined
+                                                                                       ///< action, by name.
+                                                                                       ///< Transparent
+                                                                                       ///< comparator: a
+                                                                                       ///< string_view lookup
+                                                                                       ///< builds no
+                                                                                       ///< std::string.
+        std::map<std::string, std::vector<InputBinding>, std::less<>> m_saved;         ///< The player's own
+                                                                                       ///< bindings, by
+                                                                                       ///< action, rebound or
+                                                                                       ///< loaded: define()
+                                                                                       ///< puts them in
+                                                                                       ///< place.
+        std::vector<InputAction>                                      m_gameActions;   ///< setActions', in
+                                                                                       ///< name order.
+        std::filesystem::path                                         m_bindingsFile;  ///< Where the player's
+                                                                                       ///< bindings are kept;
+                                                                                       ///< or none.
+
+        mutable std::set<std::string, std::less<>> m_unknownRead;
+            ///< Names read that no action has, each warned of once.
 
         glm::vec2 m_pointer{0.0f};       ///< Window pixels.
         glm::vec2 m_pointerDelta{0.0f};
         float     m_wheel   = 0.0f;      ///< Notches gameplay may act on.
         float     m_uiWheel = 0.0f;      ///< Every notch.
 
-        std::u32string             m_text;   ///< Capacity reused.
-        std::bitset<MAX_KEY + 1>   m_typed;  ///< Keys pressed or repeated this frame.
+        std::u32string              m_text;    ///< Capacity reused.
+        std::bitset<KEYS>           m_typed;   ///< Keys pressed or repeated this frame.
         std::optional<InputBinding> m_struck;  ///< The press this frame, for a rebinding screen.
 
         InputCommand m_command;              ///< The current tick's.
@@ -516,17 +555,14 @@ class InputMap {
         uint32_t     m_pendingReleased = 0;
         uint32_t     m_nextSequence    = 1;  ///< 0 is the zeroed pre-first-tick command.
         uint32_t     m_nextSlot        = 0;
+        uint64_t     m_fingerprint     = FNV1A_OFFSET_BASIS;  ///< See actionFingerprint.
 
-        bool m_pointerOverUI = false;  ///< From the last UI layout.
+        bool                   m_pointerOverUI = false;  ///< See pointerOverUI.
+        std::vector<glm::vec4> m_blockers;               ///< See setPointerBlockers.
+        bool                   m_blockersKnown = false;  ///< Whether a UI has given them.
 
-        /**
-         * @brief Every key and button down, with whose press it is, until released.
-         *
-         * Few are held at once, so a scan beats a set.
-         */
-        std::vector<HeldPress> m_heldPresses;
+        std::vector<HeldPress> m_heldPresses;  ///< Every key and button down, with whose press it is, until
+                                               ///< released. Few are held at once, so a scan beats a set.
 };
 
 } // namespace Vkm::Engine
-
-VKM_ENUM_NAMES(::Vkm::Engine::InputSource, "Key", "MouseButton")
