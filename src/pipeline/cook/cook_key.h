@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -12,25 +11,15 @@ namespace Vkm::Engine::AssetCooker {
 /**
  * @brief Every file importing the source at @p projectRelativePath reads, as project references.
  *
- * The source, a .gltf's external buffers, and an .obj's material libraries plus the `<name>.mtl` beside
- * it: a re-export can change those while the source stays byte-identical. A cook folds them into the key
- * and records them (AssetRecord::sources). Images are not included; a model's maps are texture assets
- * keyed by their own files.
+ * The source, then for a model every file its parse reads beside it (filesReadBy), one it names and
+ * cannot find too, so its arrival moves the key: a re-export can change those while the source stays
+ * byte-identical. A cook folds them into the key and records them (AssetRecord::sources). Images are
+ * not included; a model's maps are texture assets keyed by their own files.
  *
  * @param projectRelativePath The `path` a recipe names; empty names no files.
  * @return The files, the source first; a .gltf that does not parse adds none.
  */
 std::vector<std::string> sourceFiles(const std::string& projectRelativePath);
-
-/**
- * @brief sourceFiles for a path on this machine rather than a project reference.
- *
- * For an importer on a worker: resolving a reference reads the project root, which is the main thread's.
- *
- * @param path The source file on this machine; empty names no files.
- * @return The files, the source first, as paths on this machine.
- */
-std::vector<std::filesystem::path> sourceFilesAt(const std::filesystem::path& path);
 
 /**
  * @brief Fold the bytes of the source file at @p projectRelativePath into @p seed.

@@ -1,6 +1,6 @@
 #pragma once
 
-// Built into vkm_cook, not vkm_tools: only a host that links the importers can call this.
+// Built into vkm_pipeline, not vkm_loader: only a host that links the importers can call this.
 
 namespace Vkm::Engine {
 

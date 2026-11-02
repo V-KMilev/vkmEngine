@@ -1,7 +1,8 @@
 #define VKM_LOG_CATEGORY "ASSETS"
 
-#include "cook/recipe_registration.h"
+#include "import/recipe_registration.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -9,21 +10,24 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "io/asset/asset_factory.h"
-#include "io/project_paths.h"
+#include "io/asset/recipe/asset_factory.h"
+#include "io/json/json_number.h"
+#include "io/scene/scene_assets.h"
+#include "io/project/roots.h"
 #include "resource/resource_manager.h"
-#include "system/async/async_loader_system.h"
-#include "resource/generate/mesh_generators.h"
-#include "resource/generate/texture_generators.h"
-#include "import/audio_loaders.h"
-#include "import/terrain_loaders.h"
-#include "import/texture_loaders.h"
-#include "import/model_loaders.h"
-#include "cook/lod_generator.h"
-#include "cook/mesh_processing.h"
-#include "resource/asset_source_kind.h"
+#include "system/async_loader/async_loader_system.h"
+#include "io/asset/generate/mesh_generators.h"
+#include "io/asset/generate/texture_generators.h"
+#include "import/audio_import.h"
+#include "import/texture_import.h"
+#include "io/asset/recipe/texture_recipe.h"
+#include "import/model/model_import.h"
+#include "mesh/lod_generator.h"
+#include "mesh/mesh_decimate.h"
+#include "mesh/lightmap_unwrap.h"
+#include "io/asset/recipe/asset_source.h"
 
 namespace Vkm::Engine {
 
@@ -37,11 +41,24 @@ Handle<Asset> refuseKind(const char* what, const nlohmann::json& source) {
     return {};
 }
 
+// The bases this thread's decimate imports are loading: a level whose chain of bases comes back to
+// one of them names itself, and loading that base again would never return.
+thread_local std::vector<std::string> t_basesInProgress;
+
 MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value(AssetSourceKey::KIND, std::string{});
 
-    // Synchronous: generators are cheap, no benefit to async.
-    if (kind == AssetSourceKind::GENERATOR) return createGeneratedMesh(source, resources);
+    // Synchronous, as a generator reads no file. Unwrapped here, as an imported mesh is: the
+    // engine's generators run in the runtime, which carries no unwrapper.
+    if (kind == AssetSourceKind::GENERATOR) {
+        const MeshHandle handle = createGeneratedMesh(source, resources);
+        if (handle) {
+            MeshAsset mesh = resources.get(handle);
+            unwrapLightmap(mesh, mesh.name());
+            resources.swapValue(handle, mesh);
+        }
+        return handle;
+    }
 
     // Async: parsing a model file is the slow path.
     if (kind == AssetSourceKind::MODEL) {
@@ -52,22 +69,33 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
         );
     }
 
-    // The base must come earlier in the meshes block, or the level is dropped.
+    // A level the scene names without its base, as a terrain's scattered plants are, brings the base.
     if (kind == AssetSourceKind::DECIMATE) {
         const std::string baseName = source.value(AssetSourceKey::BASE, std::string{});
-        const float ratio          = decimateRatioFromRecipe(source);
+        const float ratio = decimateRatioFromRecipe(source);
+        if (!baseName.empty() && !resources.findByName<MeshAsset>(baseName)) {
+            const auto inProgress = std::find(t_basesInProgress.begin(), t_basesInProgress.end(), baseName);
+            if (inProgress != t_basesInProgress.end()) {
+                LOG_ERROR(
+                    "decimate: base mesh '%s' is a base of itself (LOD level dropped)",
+                    baseName.c_str()
+                );
+                return {};
+            }
+            t_basesInProgress.push_back(baseName);
+            SceneAssets::loadNamed(AssetType::Mesh, baseName, resources);
+            t_basesInProgress.pop_back();
+        }
         const MeshHandle baseH = baseName.empty() ? MeshHandle{} : resources.findByName<MeshAsset>(baseName);
         if (!baseH) {
             LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
             return {};
         }
-        // Resident is not landed: the base decodes on the ThreadPool and no frame has finalised it
-        // inside a scene load. Decimating a stub yields nothing.
-        if (!awaitAsyncLoads(resources)) {
-            LOG_ERROR(
-                "decimate: base mesh '%s' never finished loading (LOD level dropped)",
-                baseName.c_str()
-            );
+        // Resident is not landed: the base decodes on the ThreadPool and no frame has finalized it
+        // inside a scene load. Decimating a stub yields nothing. Its own landing is what counts here.
+        awaitAsyncLoads(resources);
+        if (resources.get(baseH).loading || resources.get(baseH).vertices.empty()) {
+            LOG_ERROR("decimate: base mesh '%s' did not load (LOD level dropped)", baseName.c_str());
             return {};
         }
         MeshAsset dec = decimateMesh(resources.get(baseH), ratio);
@@ -82,7 +110,7 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
 
 // A project-relative texture file, decoded whole on this thread.
 bool decodeTextureFile(const std::string& ref, TextureUsage usage, TextureAsset& out) {
-    std::ifstream file(ProjectPaths::resolveProjectPath(ref), std::ios::binary);
+    std::ifstream file(Roots::resolveProjectPath(ref), std::ios::binary);
     const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>(file), {}};
     return !bytes.empty() && decodeTextureFromMemory(bytes.data(), bytes.size(), usage, out);
 }
@@ -143,7 +171,7 @@ std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
     markers.reserve(it->size());
     for (const nlohmann::json& entry : *it) {
         if (!entry.is_object()) continue;
-        markers.push_back({entry.value("name", std::string{}), entry.value("time", 0.0f)});
+        markers.push_back({entry.value("name", std::string{}), detail::numberAt(entry, "time", 0.0f)});
     }
     return markers;
 }
@@ -168,26 +196,18 @@ AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceMana
     return refuseKind<AudioClipAsset>("sound", source);
 }
 
-TerrainHandle createRecipeTerrain(const nlohmann::json& source, ResourceManager& resources) {
-    if (source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::FILE) {
-        return loadTerrainFile(source.value(AssetSourceKey::PATH, std::string{}), resources);
-    }
-    return refuseKind<TerrainAsset>("terrain", source);
-}
-
 } // namespace
 
 void registerRecipeAssetFactories() {
     LOG_INFO(
         "Registering recipe asset factories (meshes: generator/model/decimate, "
-        "textures: file/solid/model-image, skeletons + clips: model, sounds and terrains: file)"
+        "textures: file/solid/model-image, skeletons + clips: model, sounds: file)"
     );
     assetFactory().createMesh          = &createRecipeMesh;
     assetFactory().createTexture       = &createRecipeTexture;
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
     assetFactory().createAudioClip     = &createRecipeAudioClip;
-    assetFactory().createTerrain       = &createRecipeTerrain;
     assetFactory().decodeTexture       = &decodeTextureFile;
 }
 

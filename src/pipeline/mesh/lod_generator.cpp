@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "GENERATOR"
 
-#include "cook/lod_generator.h"
+#include "mesh/lod_generator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,12 +9,13 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "cook/mesh_processing.h"
-#include "debug/engine_error_log.h"
+#include "mesh/mesh_decimate.h"
+#include "debug/error/engine_error_log.h"
+#include "io/json/json_number.h"
 #include "resource/resource_manager.h"
-#include "resource/asset_source_kind.h"
+#include "io/asset/recipe/asset_source.h"
 
 namespace Vkm::Engine {
 
@@ -54,7 +55,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
 
     const std::string baseName = sourceMesh.name();
 
-    float  ratio             = FIRST_RATIO;
+    float ratio = FIRST_RATIO;
     size_t previousTriangles = sourceMesh.indices.size() / 3;
 
     lod.levels.push_back({source, 0.0f});
@@ -62,7 +63,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
     for (uint32_t level = 1; level <= extraLevels; ++level) {
         // Re-read each iteration: adding an asset can reallocate the storage.
         const float levelRatio = ratio;
-        float       error      = 0.0f;
+        float error = 0.0f;
         MeshAsset decimated = decimateMesh(resources.get(source), levelRatio, &error);
         ratio *= RATIO_FALLOFF;
 
@@ -78,7 +79,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
             continue;
         }
 
-        const std::string name = baseName + ":lod" + std::to_string(level);
+        const std::string name = LOD::levelName(baseName, level);
         // AssetCooker skips a sourceless asset, and the scene could not resolve the level on load.
         decimated.sourceJson() = decimateRecipe(baseName, levelRatio);
 
@@ -86,7 +87,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
         const MeshHandle handle = resources.add(std::move(decimated), name);
 
         // Never nearer than the previous hand-over, which a smaller error would put out of order.
-        LODLevel& above = lod.levels.back();
+        LODLevel& above   = lod.levels.back();
         const float floor = lod.levels.size() > 1 ? lod.levels[lod.levels.size() - 2].maxDistance : 0.0f;
         above.maxDistance = std::max(switchDistance(error), floor);
 
@@ -115,7 +116,7 @@ nlohmann::json decimateRecipe(const std::string& baseName, float ratio) {
 float decimateRatioFromRecipe(const nlohmann::json& source) {
     const auto it = source.find(AssetSourceKey::RATIO);
     if (it == source.end()) return FIRST_RATIO;
-    if (!it->is_number()) {
+    if (!detail::fitsIn<float>(*it)) {
         reportError(
             "Asset",
             "decimate recipe for '" + source.value(AssetSourceKey::BASE, std::string{}) + "'",

@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "import/texture_loaders.h"
+#include "import/texture_import.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -9,42 +9,23 @@
 #include <nlohmann/json.hpp>
 #include "stb_image.h"
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "io/project_paths.h"
-#include "loader/image_loaders.h"
-#include "platform/threading/thread_pool.h"
-#include "resource/asset_source_kind.h"
+#include "io/project/roots.h"
+#include "decoded_image.h"
+#include "vkm_platform/threading/thread_pool.h"
+#include "io/asset/recipe/asset_source.h"
+#include "io/asset/recipe/texture_recipe.h"
 #include "resource/resource_manager.h"
-#include "resource/texture_format.h"
-#include "system/async/async_load_queue.h"
+#include "resource/asset/texture_params.h"
+#include "resource/async_load_queue.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-// A wrap mode's recipe spelling, or null past the last mode; ClampToEdge's is never written. The
-// switch has no default label, so -Wswitch flags a mode added without one.
-const char* wrapName(TextureWrapMode mode) {
-    switch (mode) {
-        case TextureWrapMode::Repeat:         return "repeat";
-        case TextureWrapMode::MirroredRepeat: return "mirror";
-        case TextureWrapMode::ClampToEdge:    return "clamp";
-        case TextureWrapMode::ClampToBorder:  return "border";
-    }
-    return nullptr;
-}
-
-constexpr const char* FILTER_NEAREST = "nearest";
-
-// A recipe key's string, or empty when it holds something else - reported as unknown, not thrown.
-std::string recipeString(const nlohmann::json& source, const char* key) {
-    const auto found = source.find(key);
-    return found != source.end() && found->is_string() ? found->get<std::string>() : std::string{};
-}
-
 // Decode through stb by decodeChannels' rule. A normal map is decoded at three channels and
-// packed to x and y in place, as stb's two are grey and alpha. Null, with stb's reason set, on
+// packed to x and y in place, as stb's two are gray and alpha. Null, with stb's reason set, on
 // failure; freed with stbi_image_free.
 template<typename Info, typename Load>
 unsigned char* decodeStored(
@@ -114,53 +95,11 @@ void takeDecoded(
 
 } // namespace
 
-nlohmann::json fileTextureRecipe(
-    const std::string& ref,
-    TextureUsage usage,
-    bool generateMipmaps,
-    TextureFilterOverride filterOverride,
-    TextureWrapMode wrap
-) {
-    nlohmann::json source = {
-        {AssetSourceKey::KIND,             AssetSourceKind::FILE},
-        {AssetSourceKey::PATH,             ref},
-        {AssetSourceKey::USAGE,            Reflect::enumName(usage)},
-        {AssetSourceKey::GENERATE_MIPMAPS, generateMipmaps},
-    };
-    if (filterOverride == TextureFilterOverride::Nearest) source[AssetSourceKey::FILTER] = FILTER_NEAREST;
-    if (wrap != TextureWrapMode::ClampToEdge) source[AssetSourceKey::WRAP] = wrapName(wrap);
-    return source;
-}
-
-TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source) {
-    if (!source.contains(AssetSourceKey::FILTER)) return TextureFilterOverride::None;
-    const std::string filter = recipeString(source, AssetSourceKey::FILTER);
-    if (filter == FILTER_NEAREST) return TextureFilterOverride::Nearest;
-    reportUnknownTextureValue(source, AssetSourceKey::FILTER, FILTER_NEAREST, "none");
-    return TextureFilterOverride::None;
-}
-
-bool textureMipmapsFromRecipe(const nlohmann::json& source) {
-    return source.value(AssetSourceKey::GENERATE_MIPMAPS, true);
-}
-
-TextureWrapMode textureWrapFromRecipe(const nlohmann::json& source) {
-    if (!source.contains(AssetSourceKey::WRAP)) return TextureWrapMode::ClampToEdge;
-    const std::string wrap = recipeString(source, AssetSourceKey::WRAP);
-    std::string known;
-    for (uint8_t value = 0; const char* name = wrapName(static_cast<TextureWrapMode>(value)); ++value) {
-        if (wrap == name) return static_cast<TextureWrapMode>(value);
-        known += known.empty() ? name : std::string(", ") + name;
-    }
-    reportUnknownTextureValue(source, AssetSourceKey::WRAP, known, wrapName(TextureWrapMode::ClampToEdge));
-    return TextureWrapMode::ClampToEdge;
-}
-
 bool decodeTextureFromMemory(const unsigned char* bytes, size_t size, TextureUsage usage, TextureAsset& out) {
     decodeImagesBottomUp();
     const int length = static_cast<int>(size);
-    int width = 0;
-    int height = 0;
+    int width    = 0;
+    int height   = 0;
     int channels = 0;
     unsigned char* data = decodeStored(
         usage,
@@ -188,13 +127,14 @@ TextureHandle loadTexture(
     TextureWrapMode wrap
 ) {
     // Named by the reference: an absolute name would bake this machine's tree into every scene.
-    const std::string ref      = ProjectPaths::toProjectRelative(filePath);
-    const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
+    const std::string ref      = Roots::toProjectRelative(filePath);
+    const std::string resolved = Roots::resolveProjectPath(ref).string();
+    if (const TextureHandle existing = findLoadedTexture(ref, resourceManager, usage)) return existing;
 
     decodeImagesBottomUp();
 
-    int width = 0;
-    int height = 0;
+    int width    = 0;
+    int height   = 0;
     int channels = 0;
     unsigned char* data = decodeImage(resolved, usage, width, height, channels);
 
@@ -205,9 +145,9 @@ TextureHandle loadTexture(
 
     TextureAsset texture;
     texture.params.generateMipmaps = generateMipmaps;
-    texture.params.filterOverride = filterOverride;
-    texture.params.wrapS = wrap;
-    texture.params.wrapT = wrap;
+    texture.params.filterOverride  = filterOverride;
+    texture.params.wrapS           = wrap;
+    texture.params.wrapT           = wrap;
     takeDecoded(texture, data, width, height, channels, usage);
 
     LOG_VERBOSE(
@@ -223,6 +163,27 @@ TextureHandle loadTexture(
     return resourceManager.add(std::move(texture), ref);
 }
 
+TextureHandle findLoadedTexture(
+    const std::string& filePath,
+    const ResourceManager& resourceManager,
+    TextureUsage usage
+) {
+    const std::string ref = Roots::toProjectRelative(filePath);
+    const TextureHandle existing = resourceManager.findByName<TextureAsset>(ref);
+    if (!existing) return existing;
+    const TextureUsage loaded = resourceManager.get(existing).usage();
+    if (loaded != usage) {
+        LOG_WARNING(
+            "'%s' is already loaded as %s and is being asked for as %s; "
+            "the loaded one is returned unchanged",
+            ref.c_str(),
+            Reflect::enumName(loaded),
+            Reflect::enumName(usage)
+        );
+    }
+    return existing;
+}
+
 TextureHandle requestTextureAsync(
     const std::string& filePath,
     ResourceManager& resourceManager,
@@ -231,24 +192,10 @@ TextureHandle requestTextureAsync(
     TextureFilterOverride filterOverride,
     TextureWrapMode wrap
 ) {
-    // Relativised first, or two spellings of one file become two assets.
-    const std::string ref      = ProjectPaths::toProjectRelative(filePath);
-    const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
-    if (auto existing = resourceManager.findByName<TextureAsset>(ref)) {
-        // Identity is the path, so a second caller gets the first's settings; a disagreeing usage
-        // changes the pixels, so it is reported.
-        const TextureUsage loaded = resourceManager.get(existing).usage();
-        if (loaded != usage) {
-            LOG_WARNING(
-                "'%s' is already loaded as %s and is being asked for as %s; "
-                "the loaded one is returned unchanged",
-                ref.c_str(),
-                Reflect::enumName(loaded),
-                Reflect::enumName(usage)
-            );
-        }
-        return existing;
-    }
+    // Relativized first, or two spellings of one file become two assets.
+    const std::string ref      = Roots::toProjectRelative(filePath);
+    const std::string resolved = Roots::resolveProjectPath(ref).string();
+    if (const TextureHandle existing = findLoadedTexture(ref, resourceManager, usage)) return existing;
 
     // Until the pixels arrive the format is the usage's four-channel one; the decode keeps the rest.
     TextureAsset stub;
@@ -260,11 +207,12 @@ TextureHandle requestTextureAsync(
     stub.loading                = true;
     stub.sourceJson() = fileTextureRecipe(ref, usage, generateMipmaps, filterOverride, wrap);
     const TextureHandle handle = resourceManager.add(std::move(stub), ref);
-    const uint64_t      uid    = resourceManager.get(handle).uid();
+    const uint64_t uid = resourceManager.get(handle).uid();
 
     // Captures only values: ResourceManager is touched on the main thread when AsyncLoaderSystem
     // drains the completion.
-    ThreadPool::get().addTask([handle, uid, resolved, usage, params = resourceManager.get(handle).params]() {
+    const TextureParams params = resourceManager.get(handle).params;
+    Platform::ThreadPool::get().addTask([handle, uid, resolved, usage, params]() {
         decodeImagesBottomUp();
         int w = 0, h = 0, channels = 0;
         unsigned char* data = decodeImage(resolved, usage, w, h, channels);

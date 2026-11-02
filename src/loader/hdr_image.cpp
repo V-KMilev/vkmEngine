@@ -1,29 +1,29 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "loader/environment_loaders.h"
+#include "hdr_image.h"
 
 #include <cstddef>
 #include <string>
 
 #include "stb_image.h"
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "io/project_paths.h"
-#include "loader/image_loaders.h"
+#include "io/project/roots.h"
+#include "decoded_image.h"
 
 namespace Vkm::Engine {
 
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;
-    const std::string resolved = ProjectPaths::resolveProjectPath(filePath).string();
+    const std::string resolved = Roots::resolveProjectPath(filePath).string();
 
     decodeImagesBottomUp();
 
-    int width = 0;
-    int height = 0;
+    int width    = 0;
+    int height   = 0;
     int channels = 0;
-    float* data = stbi_loadf(resolved.c_str(), &width, &height, &channels, 3);
+    float* data  = stbi_loadf(resolved.c_str(), &width, &height, &channels, 3);
 
     if (!data) {
         LOG_ERROR("Failed to load HDR environment '%s': %s", resolved.c_str(), stbi_failure_reason());

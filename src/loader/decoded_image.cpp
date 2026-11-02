@@ -1,26 +1,26 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "loader/image_loaders.h"
+#include "decoded_image.h"
 
 #include <cstddef>
 
 #include "stb_image.h"
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "io/project_paths.h"
+#include "io/project/roots.h"
 
 namespace Vkm::Engine {
 
 DecodedImage decodeImageRGBA(const std::string& filePath) {
     DecodedImage image;
-    const std::string resolved = ProjectPaths::resolveProjectPath(filePath).string();
+    const std::string resolved = Roots::resolveProjectPath(filePath).string();
 
     decodeImagesBottomUp();
 
-    int width    = 0;
-    int height   = 0;
-    int channels = 0;
+    int width     = 0;
+    int height    = 0;
+    int channels  = 0;
     stbi_uc* data = stbi_load(resolved.c_str(), &width, &height, &channels, 4);
 
     if (!data) {

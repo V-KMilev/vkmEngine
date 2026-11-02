@@ -12,8 +12,8 @@ namespace Vkm::Engine {
  * Row-major, bottom-up, the engine's row order. Empty pixels means the load failed.
  */
 struct HDRImage {
-    uint32_t width  = 0;
-    uint32_t height = 0;
+    uint32_t           width  = 0;
+    uint32_t           height = 0;
     std::vector<float> pixels;  ///< width * height * 3
 
     bool isValid() const { return width > 0 && height > 0 && !pixels.empty(); }

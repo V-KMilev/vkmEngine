@@ -7,7 +7,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/skeleton_asset.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -93,9 +93,9 @@ AnimationClipHandle loadModelAnimationClip(
  * An empty root is not a failure: a clips-only file spawns nothing. `ok` tells them apart.
  */
 struct ModelImport {
-    EntityId root{};      ///< Empty when nothing was spawned.
-    uint32_t clips = 0;   ///< Animation clips imported.
-    bool     ok = false;  ///< Whether the file opened and was understood.
+    EntityId root{};         ///< Empty when nothing was spawned.
+    uint32_t clips = 0;      ///< Animation clips imported.
+    bool     ok    = false;  ///< Whether the file opened and was understood.
 };
 
 /**

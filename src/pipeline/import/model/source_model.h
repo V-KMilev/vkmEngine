@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,7 +9,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 
@@ -57,7 +58,7 @@ struct SourceImage {
  * @brief One texture slot of a material, bound to one of the file's images.
  */
 struct SourceMap {
-    TextureHandle MaterialAsset::* slot = nullptr;
+    TextureHandle MaterialAsset::* slot  = nullptr;
     TextureUsage                   usage = TextureUsage::Data;
     uint32_t                       image = 0;  ///< Index into SourceModel::images.
 };
@@ -108,7 +109,7 @@ struct SourceModel {
 /**
  * @brief Parse a model file into the engine's terms.
  *
- * glTF/GLB through cgltf, FBX and OBJ through ufbx. The result is right-handed, +Y up, metres, V
+ * glTF/GLB through cgltf, FBX and OBJ through ufbx. The result is right-handed, +Y up, meters, V
  * up, welded, with tangents (the file's or MikkTSpace's). List order is the file's and names
  * assets, so it is part of the format (docs/reference/resources.md).
  *
@@ -119,11 +120,20 @@ struct SourceModel {
 std::unique_ptr<SourceModel> parseModel(const std::string& path, const std::string& ref);
 
 /**
+ * @brief Every file a parse of the model at @p path reads: itself, then what it opens beside it -
+ *        a .gltf's buffers, an OBJ's material libraries - as the parse finds them.
+ *
+ * @param path The model file on this machine.
+ * @return The files, @p path first, each once.
+ */
+std::vector<std::filesystem::path> filesReadBy(const std::filesystem::path& path);
+
+/**
  * @brief parseModel, once for each version of a file's bytes.
  *
  * Otherwise a glTF with N meshes, asked for asset by asset, is parsed N times. A few recent files
- * are kept, reused while every file the parse read (AssetCooker::sourceFilesAt) keeps its size and
- * write time. A request waits for another worker's parse of the same file; a failure is not kept.
+ * are kept, reused while every file the parse read (filesReadBy) keeps its size and write time. A
+ * request waits for another worker's parse of the same file; a failure is not kept.
  * Callable from a worker, as @p path arrives resolved.
  *
  * @param path The model file on this machine.

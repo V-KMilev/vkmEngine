@@ -1,4 +1,4 @@
-#include "cook/bc4_encoder.h"
+#include "cook/texture/bc4_encoder.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -18,10 +18,10 @@ constexpr int REFINE_ROUNDS = 4;
  *        the squared error that leaves, in 35ths squared.
  */
 struct Fit {
-    int      e0 = 0;
-    int      e1 = 0;
+    int      e0          = 0;
+    int      e1          = 0;
     uint8_t  indices[16] = {};
-    uint64_t error = 0;
+    uint64_t error       = 0;
 };
 
 int64_t divideRounded(int64_t numerator, int64_t denominator) {
@@ -52,11 +52,11 @@ uint64_t assignIndices(const uint8_t values[16], int e0, int e1, uint8_t indices
     uint64_t total = 0;
     for (int i = 0; i < 16; ++i) {
         const int64_t value = values[i] * SCALE;
-        uint8_t  best      = 0;
+        uint8_t best = 0;
         uint64_t bestError = UINT64_MAX;
         for (uint8_t k = 0; k < 8; ++k) {
-            const int64_t  difference = palette[k] - value;
-            const uint64_t error      = static_cast<uint64_t>(difference * difference);
+            const int64_t difference = palette[k] - value;
+            const uint64_t error     = static_cast<uint64_t>(difference * difference);
             if (error < bestError) {
                 bestError = error;
                 best      = k;

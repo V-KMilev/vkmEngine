@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "import/model_loaders.h"
+#include "import/model/model_import.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,24 +18,23 @@
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 
-#include "logger.h"
-#include "debug/profiler.h"
-#include "platform/threading/thread_pool.h"
-#include "io/asset/asset_cook.h"
-#include "io/project_paths.h"
-#include "loader/image_loaders.h"
-#include "import/model_part_names.h"
-#include "import/model_source.h"
-#include "import/texture_loaders.h"
+#include "vkm_log/logger.h"
+#include "base/profile/profiler.h"
+#include "vkm_platform/threading/thread_pool.h"
+#include "io/project/roots.h"
+#include "mesh/lightmap_unwrap.h"
+#include "import/model/model_part_names.h"
+#include "import/model/source_model.h"
+#include "import/texture_import.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/hierarchy_operations.h"
-#include "system/async/async_load_queue.h"
-#include "resource/asset_source_kind.h"
+#include "resource/async_load_queue.h"
+#include "io/asset/recipe/asset_source.h"
 
 namespace Vkm::Engine {
 
@@ -77,15 +76,16 @@ std::string usageSuffix(TextureUsage usage) {
 
 // The parsed file a project reference names, from the main thread.
 std::shared_ptr<const SourceModel> modelFor(const std::string& ref) {
-    return loadSourceModel(ProjectPaths::resolveProjectPath(ref).string(), ref);
+    return loadSourceModel(Roots::resolveProjectPath(ref).string(), ref);
 }
 
 /**
  * @brief A rig, and the node its first bone is: the Animator goes on that node's parent.
  */
 struct Rig {
-    SkeletonAsset skeleton;
-    int32_t       rootNode = -1;
+    SkeletonAsset                          skeleton;
+    int32_t                                rootNode = -1;
+    std::unordered_map<uint32_t, uint16_t> boneOfNode;  ///< File node -> its bone in the skeleton.
 };
 
 /**
@@ -161,8 +161,9 @@ Rig buildRig(const SourceModel& model, const std::string& path) {
         const SourceNode& source = model.nodes[node];
         const glm::mat4 global = parentGlobal * Transform::computeModelMatrix(source.local);
         const auto index = static_cast<int32_t>(skeleton.bones.size());
+        out.boneOfNode[node] = static_cast<uint16_t>(index);
         skeleton.bones.push_back({source.name, parent});
-        skeleton.bindPose.push_back(source.local);
+        skeleton.bindPose.push_back(source.local.pose());
         const auto offset = offsets.find(node);
         // A connecting node no vertex uses: nothing reads its inverse bind, so the inverse of its
         // own bind transform stands in.
@@ -173,14 +174,20 @@ Rig buildRig(const SourceModel& model, const std::string& path) {
     };
     emit(rigRoot, -1, glm::mat4(1.0f));
 
-    if (skeleton.bones.size() > AssetCook::MAX_SKELETON_BONES) {
-        LOG_ERROR(
-            "Model '%s': its rig has %zu bones, past the %u the cooked format admits",
-            path.c_str(),
-            skeleton.bones.size(),
-            AssetCook::MAX_SKELETON_BONES
-        );
+    const std::string fault = findSkeletonFault(skeleton);
+    if (!fault.empty()) {
+        LOG_ERROR("Model '%s': its rig cannot be posed - %s", path.c_str(), fault.c_str());
         return {};
+    }
+    // A clip binds by name, so of two bones named alike it moves the first.
+    std::unordered_set<std::string> named;
+    for (const Bone& bone : skeleton.bones) {
+        if (named.insert(bone.name).second) continue;
+        LOG_WARNING(
+            "Model '%s': two bones are named '%s'; a clip moves only the first",
+            path.c_str(),
+            bone.name.c_str()
+        );
     }
     skeleton.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::MODEL}, {AssetSourceKey::PATH, path}};
     out.rootNode = static_cast<int32_t>(rigRoot);
@@ -197,7 +204,7 @@ std::vector<ClipMarker> usableMarkers(
         return marker.name.empty() || !std::isfinite(marker.time)
             || marker.time < 0.0f || marker.time > duration;
     };
-    const auto keep = std::remove_if(markers.begin(), markers.end(), unusable);
+    const auto keep    = std::remove_if(markers.begin(), markers.end(), unusable);
     const auto dropped = static_cast<size_t>(markers.end() - keep);
     if (dropped > 0) {
         LOG_WARNING(
@@ -352,14 +359,15 @@ MeshAsset buildMesh(const SourceModel& model, const std::string& path, int meshI
             std::vector<uint16_t> toRig;
             toRig.reserve(source.bones.size());
             for (const SourceBone& bone : source.bones) {
-                // Every joint a mesh names is in the rig: the rig is their union.
-                toRig.push_back(static_cast<uint16_t>(rig.skeleton.indexOf(model.nodes[bone.node].name)));
+                // Every joint a mesh names is in the rig, the rig being their union; by node, so
+                // two joints named alike are still two.
+                toRig.push_back(rig.boneOfNode.at(bone.node));
             }
             out.skin = source.geometry.skin;
             for (SkinVertex& skin : out.skin) {
                 if (skin.weights[0] == 0) {
                     // All-zero weights collapse the vertex to the origin; rigid to the root keeps it.
-                    skin = SkinVertex{};
+                    skin            = SkinVertex{};
                     skin.weights[0] = 255;
                     continue;
                 }
@@ -371,6 +379,9 @@ MeshAsset buildMesh(const SourceModel& model, const std::string& path, int meshI
             out.computeAndSetSkinRadius(rig.skeleton);
         }
     }
+
+    // What does not move is unwrapped for a lightmap.
+    if (out.skin.empty()) unwrapLightmap(out, meshName(path, meshIdx));
 
     out.sourceJson() = modelMeshRecipe(path, meshIdx);
     out.computeAndSetBounds();
@@ -429,7 +440,6 @@ TextureHandle textureFor(
     if (image.ref.empty() || (image.embedded.empty() && image.ref.front() == '*')) return {};
     const std::string key = image.ref + usageSuffix(usage);
     if (auto it = cache.find(key); it != cache.end()) return it->second;
-    decodeImagesBottomUp();
 
     if (!image.embedded.empty()) {
         const TextureHandle h = decodeEmbedded(image, res, embeddedName(modelPath, key), modelPath, usage);
@@ -440,15 +450,11 @@ TextureHandle textureFor(
     // External file, relative to the resolved model directory.
     std::filesystem::path p(image.ref);
     if (p.is_relative())
-        p = ProjectPaths::resolveProjectPath(modelPath).parent_path() / p;
+        p = Roots::resolveProjectPath(modelPath).parent_path() / p;
     const std::string abs = p.lexically_normal().string();
 
     // Named by the reference, so one image two models reference is one asset.
-    const std::string fileRef = ProjectPaths::toProjectRelative(abs);
-    if (TextureHandle existing = res.findByName<TextureAsset>(fileRef)) {
-        cache[key] = existing;
-        return existing;
-    }
+    const std::string fileRef = Roots::toProjectRelative(abs);
 
     // Through the file-texture loader its recipe reloads by, so import and later loads decode alike.
     const bool generateMipmaps = true;
@@ -486,7 +492,7 @@ MaterialHandle buildMaterial(
     // that first pairing.
     if (out.metallicRoughnessTexture && out.normalTexture) {
         const nlohmann::json& normal = res.get(out.normalTexture).sourceJson();
-        nlohmann::json& recipe       = res.edit(out.metallicRoughnessTexture).sourceJson();
+        nlohmann::json& recipe = res.edit(out.metallicRoughnessTexture).sourceJson();
         if (normal.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::FILE
             && !recipe.contains(AssetSourceKey::ROUGHNESS_NORMAL)) {
             recipe[AssetSourceKey::ROUGHNESS_NORMAL] = normal.value(AssetSourceKey::PATH, std::string{});
@@ -498,9 +504,9 @@ MaterialHandle buildMaterial(
 } // namespace
 
 MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex, ResourceManager& resources) {
-    // Resolved here, not in the worker: ProjectPaths::setProjectRoot can re-point the root.
-    const std::string ref      = ProjectPaths::toProjectRelative(path);
-    const std::string absolute = ProjectPaths::resolveProjectPath(ref).string();
+    // Resolved here, not in the worker: Roots::setProjectRoot can re-point the root.
+    const std::string ref      = Roots::toProjectRelative(path);
+    const std::string absolute = Roots::resolveProjectPath(ref).string();
     const std::string name     = meshName(ref, meshIndex);
 
     if (auto existing = resources.findByName<MeshAsset>(name)) return existing;
@@ -509,9 +515,9 @@ MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex, Resourc
     stub.loading = true;
     stub.sourceJson() = modelMeshRecipe(ref, meshIndex);
     const MeshHandle handle = resources.add(std::move(stub), name);
-    const uint64_t   uid    = resources.get(handle).uid();
+    const uint64_t uid = resources.get(handle).uid();
 
-    ThreadPool::get().addTask([handle, uid, absolute, ref, meshIndex]() {
+    Platform::ThreadPool::get().addTask([handle, uid, absolute, ref, meshIndex]() {
         // Workers asking for one file's meshes share one parse.
         const std::shared_ptr<const SourceModel> model = loadSourceModel(absolute, ref);
         MeshAsset decoded = model ? buildMesh(*model, ref, meshIndex) : MeshAsset{};
@@ -522,7 +528,7 @@ MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex, Resourc
 }
 
 SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resources) {
-    const std::string ref = ProjectPaths::toProjectRelative(path);
+    const std::string ref = Roots::toProjectRelative(path);
     if (auto existing = resources.findByName<SkeletonAsset>(skeletonName(ref))) return existing;
 
     const std::shared_ptr<const SourceModel> model = modelFor(ref);
@@ -539,7 +545,7 @@ AnimationClipHandle loadModelAnimationClip(
     ResourceManager& resources,
     const std::string& rig
 ) {
-    const std::string ref = ProjectPaths::toProjectRelative(path);
+    const std::string ref = Roots::toProjectRelative(path);
     if (auto existing = resources.findByName<AnimationClipAsset>(clipName(ref, clipIndex))) return existing;
 
     const std::shared_ptr<const SourceModel> model = modelFor(ref);
@@ -586,7 +592,7 @@ TextureHandle loadModelEmbeddedTexture(
     TextureUsage usage,
     ResourceManager& resources
 ) {
-    const std::string modelRef = ProjectPaths::toProjectRelative(path);
+    const std::string modelRef = Roots::toProjectRelative(path);
     const std::shared_ptr<const SourceModel> model = modelFor(modelRef);
     if (!model) return {};
     const auto image = std::find_if(
@@ -599,55 +605,130 @@ TextureHandle loadModelEmbeddedTexture(
         return {};
     }
     const std::string name = embeddedName(modelRef, ref + usageSuffix(usage));
-    decodeImagesBottomUp();
     return decodeEmbedded(*image, resources, name, modelRef, usage);
 }
 
-ModelImport importModelIntoScene(const std::string& path, ResourceManager& resources, Scene& scene) {
-    PROFILE_SCOPE("ModelImport");
-    const std::string ref = ProjectPaths::toProjectRelative(path);
+namespace {
 
-    const std::shared_ptr<const SourceModel> model = modelFor(ref);
-    if (!model) return {};
-
-    // Animations only: clips bound to a rig already loaded; with several, it must be named per clip.
-    if (model->meshes.empty()) {
-        if (model->clips.empty()) {
-            LOG_ERROR("Model import failed '%s': it holds no mesh and no animation", ref.c_str());
-            return {};
-        }
-
-        std::vector<std::string> rigs;
-        resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& asset) {
-            rigs.push_back(asset.name());
-        });
-
-        if (rigs.size() != 1) {
-            LOG_ERROR(
-                "'%s' holds %zu animation(s) and no rig of its own. The project has %zu rig(s) "
-                "loaded, so which one they animate cannot be guessed - import the character "
-                "first, or name the rig on the clip.",
-                ref.c_str(),
-                model->clips.size(),
-                rigs.size()
-            );
-            return {};
-        }
-
-        unsigned imported = 0;
-        for (size_t i = 0; i < model->clips.size(); ++i) {
-            if (loadModelAnimationClip(ref, static_cast<int>(i), {}, resources, rigs.front())) ++imported;
-        }
-        LOG_INFO(
-            "Imported %u clip(s) from '%s', bound to rig '%s'. Nothing was added to the scene: "
-            "the file has no mesh.",
-            imported,
-            ref.c_str(),
-            rigs.front().c_str()
-        );
-        return {EntityId{}, imported, true};
+/**
+ * @brief Import a file of animations only: its clips, bound to the one rig the project has loaded.
+ *
+ * @param model     The parsed file, with no mesh.
+ * @param ref       Its project-relative reference.
+ * @param resources Takes the clips.
+ * @return What was imported, not ok when there is no clip or no single rig to bind them to.
+ */
+ModelImport importClipsOnly(const SourceModel& model, const std::string& ref, ResourceManager& resources) {
+    if (model.clips.empty()) {
+        LOG_ERROR("Model import failed '%s': it holds no mesh and no animation", ref.c_str());
+        return {};
     }
 
+    std::vector<std::string> rigs;
+    resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& asset) {
+        rigs.push_back(asset.name());
+    });
+
+    // With several, it must be named per clip.
+    if (rigs.size() != 1) {
+        LOG_ERROR(
+            "'%s' holds %zu animation(s) and no rig of its own. The project has %zu rig(s) "
+            "loaded, so which one they animate cannot be guessed - import the character "
+            "first, or name the rig on the clip.",
+            ref.c_str(),
+            model.clips.size(),
+            rigs.size()
+        );
+        return {};
+    }
+
+    unsigned imported = 0;
+    for (size_t i = 0; i < model.clips.size(); ++i) {
+        if (loadModelAnimationClip(ref, static_cast<int>(i), {}, resources, rigs.front())) ++imported;
+    }
+    LOG_INFO(
+        "Imported %u clip(s) from '%s', bound to rig '%s'. Nothing was added to the scene: "
+        "the file has no mesh.",
+        imported,
+        ref.c_str(),
+        rigs.front().c_str()
+    );
+    return {EntityId{}, imported, true};
+}
+
+/**
+ * @brief A file's rig and clips as loaded assets.
+ */
+struct RigAssets {
+    SkeletonHandle      skeleton;
+    AnimationClipHandle firstClip;
+    uint32_t            clips = 0;  ///< What was built: a clip for some other rig does not count.
+};
+
+/**
+ * @brief Add a file's rig and its clips, each unless one of its name is loaded.
+ *
+ * @param model     The parsed file.
+ * @param ref       Its project-relative reference.
+ * @param rig       buildRig's answer; an empty one adds nothing.
+ * @param resources Takes the assets.
+ * @return The handles, null for a file with no rig.
+ */
+RigAssets addRigAssets(
+    const SourceModel& model,
+    const std::string& ref,
+    const Rig& rig,
+    ResourceManager& resources
+) {
+    RigAssets added;
+    if (rig.skeleton.bones.empty()) return added;
+
+    added.skeleton = resources.findByName<SkeletonAsset>(skeletonName(ref));
+    if (!added.skeleton) {
+        SkeletonAsset copy = rig.skeleton;
+        added.skeleton = resources.add(std::move(copy), skeletonName(ref));
+    }
+    for (size_t i = 0; i < model.clips.size(); ++i) {
+        const int clipIdx = static_cast<int>(i);
+        AnimationClipHandle handle = resources.findByName<AnimationClipAsset>(clipName(ref, clipIdx));
+        if (!handle) {
+            // No interchange format has markers; they are authored into the recipe later.
+            AnimationClipAsset clip = buildClip(model, ref, clipIdx, rig.skeleton, skeletonName(ref), {});
+            if (!clip.bones.empty()) handle = resources.add(std::move(clip), clipName(ref, clipIdx));
+        }
+        if (!handle) continue;
+        ++added.clips;
+        if (!added.firstClip) added.firstClip = handle;
+    }
+    return added;
+}
+
+/**
+ * @brief The entities a file's nodes became.
+ */
+struct SpawnedNodes {
+    EntityId                               root;
+    std::unordered_map<uint32_t, EntityId> nodeEntity;     ///< File node -> its entity.
+    std::vector<EntityId>                  skinnedMeshes;  ///< Each its own entity, to move onto the rig.
+};
+
+/**
+ * @brief Spawn a root and an entity per node that is not only a bone, with their meshes.
+ *
+ * @param model     The parsed file, with a mesh.
+ * @param ref       Its project-relative reference.
+ * @param skeleton  The file's rig; its bones' nodes become no entity.
+ * @param resources Takes the meshes and materials, each unless one of its name is loaded.
+ * @param scene     Takes the entities.
+ * @return The entities.
+ */
+SpawnedNodes spawnNodes(
+    const SourceModel& model,
+    const std::string& ref,
+    const SkeletonAsset& skeleton,
+    ResourceManager& resources,
+    Scene& scene
+) {
     // Keyed by index in the file.
     std::unordered_map<uint32_t, MeshHandle>     meshes;
     std::unordered_map<uint32_t, MaterialHandle> materials;
@@ -657,7 +738,7 @@ ModelImport importModelIntoScene(const std::string& path, ResourceManager& resou
         const std::string nm = meshName(ref, static_cast<int>(idx));
         MeshHandle h = resources.findByName<MeshAsset>(nm);
         if (!h) {
-            MeshAsset ma = buildMesh(*model, ref, static_cast<int>(idx));
+            MeshAsset ma = buildMesh(model, ref, static_cast<int>(idx));
             if (!ma.vertices.empty()) h = resources.add(std::move(ma), nm);
         }
         meshes[idx] = h;
@@ -666,78 +747,49 @@ ModelImport importModelIntoScene(const std::string& path, ResourceManager& resou
     auto materialFor = [&](uint32_t idx) -> MaterialHandle {
         auto it = materials.find(idx);
         if (it != materials.end()) return it->second;
-        MaterialHandle h = buildMaterial(*model, ref, static_cast<int>(idx), resources);
+        MaterialHandle h = buildMaterial(model, ref, static_cast<int>(idx), resources);
         materials[idx] = h;
         return h;
     };
 
-    // The rig and clips belong to the file, not a node.
-    const Rig           rig = buildRig(*model, ref);
-    SkeletonHandle      rigHandle;
-    AnimationClipHandle firstClip;
-    // What was built: a clip for some other rig does not count.
-    uint32_t            clips = 0;
-    if (!rig.skeleton.bones.empty()) {
-        rigHandle = resources.findByName<SkeletonAsset>(skeletonName(ref));
-        if (!rigHandle) {
-            SkeletonAsset copy = rig.skeleton;
-            rigHandle = resources.add(std::move(copy), skeletonName(ref));
-        }
-        for (size_t i = 0; i < model->clips.size(); ++i) {
-            const int clipIdx = static_cast<int>(i);
-            AnimationClipHandle handle = resources.findByName<AnimationClipAsset>(clipName(ref, clipIdx));
-            if (!handle) {
-                // No interchange format has markers; they are authored into the recipe later.
-                AnimationClipAsset clip =
-                    buildClip(*model, ref, clipIdx, rig.skeleton, skeletonName(ref), {});
-                if (!clip.bones.empty()) handle = resources.add(std::move(clip), clipName(ref, clipIdx));
-            }
-            if (!handle) continue;
-            ++clips;
-            if (!firstClip) firstClip = handle;
-        }
-    }
-
     // The import root is the file's own root node: its children are the top level.
-    EntityId root = scene.createEntity();
-    scene.add(root, model->nodes.front().local);
-    scene.add(root, makeName(stemOf(ref).c_str()));
+    SpawnedNodes spawned;
+    spawned.root = scene.createEntity();
+    scene.add(spawned.root, model.nodes.front().local);
+    scene.add(spawned.root, makeName(stemOf(ref).c_str()));
+    spawned.nodeEntity[0] = spawned.root;
 
     // A bone-only node is no entity. Pruned as whole subtrees, so a prop on a hand keeps the bone
     // chain that places it.
     std::unordered_set<std::string> boneNames;
-    for (const Bone& bone : rig.skeleton.bones) boneNames.insert(bone.name);
+    for (const Bone& bone : skeleton.bones) boneNames.insert(bone.name);
 
-    std::vector<int8_t> boneOnlyCache(model->nodes.size(), -1);
+    std::vector<int8_t> boneOnlyCache(model.nodes.size(), -1);
     std::function<bool(uint32_t)> boneOnly = [&](uint32_t node) -> bool {
         if (boneOnlyCache[node] >= 0) return boneOnlyCache[node] != 0;
-        const SourceNode& source = model->nodes[node];
+        const SourceNode& source = model.nodes[node];
         bool answer = source.meshes.empty() && boneNames.count(source.name) != 0;
         for (size_t c = 0; answer && c < source.children.size(); ++c) answer = boneOnly(source.children[c]);
         boneOnlyCache[node] = answer ? 1 : 0;
         return answer;
     };
 
-    std::unordered_map<uint32_t, EntityId> nodeEntity;
-    nodeEntity[0] = root;
-    std::vector<EntityId> skinnedMeshes;
-
     std::function<void(uint32_t, EntityId)> spawn = [&](uint32_t node, EntityId parent) {
         if (boneOnly(node)) return;
-        const SourceNode& source = model->nodes[node];
+        const SourceNode& source = model.nodes[node];
 
         EntityId e = scene.createEntity();
         scene.add(e, source.local);
         scene.add(e, makeName(source.name.empty() ? "node" : source.name.c_str()));
         HierarchyOperations::setParent(scene, e, parent);
-        nodeEntity[node] = e;
+        spawned.nodeEntity[node] = e;
 
         for (const uint32_t mi : source.meshes) {
             MeshHandle mh = meshFor(mi);
             if (!mh) continue;
-            MaterialHandle mat = materialFor(model->meshes[mi].material);
+            MaterialHandle mat = materialFor(model.meshes[mi].material);
             // Its own entity: it moves onto the rig, and its node's children must not move with it.
-            const bool skinned = !model->meshes[mi].bones.empty();
+            const bool skinned = !model.meshes[mi].bones.empty();
             if (source.meshes.size() == 1 && !skinned) {
                 scene.add(e, Mesh{mh, mat});
             } else {
@@ -746,31 +798,65 @@ ModelImport importModelIntoScene(const std::string& path, ResourceManager& resou
                 scene.add(sub, makeName(("mesh" + std::to_string(mi)).c_str()));
                 scene.add(sub, Mesh{mh, mat});
                 HierarchyOperations::setParent(scene, sub, e);
-                if (skinned) skinnedMeshes.push_back(sub);
+                if (skinned) spawned.skinnedMeshes.push_back(sub);
             }
         }
         for (const uint32_t child : source.children) spawn(child, e);
     };
-    for (const uint32_t child : model->nodes.front().children) spawn(child, root);
+    for (const uint32_t child : model.nodes.front().children) spawn(child, spawned.root);
+    return spawned;
+}
 
+/**
+ * @brief Put the rig's Animator on the entity its bones are composed in, and its skinned meshes under it.
+ *
+ * @param scene     Holds the spawned entities.
+ * @param model     The parsed file.
+ * @param rig       buildRig's answer, not empty.
+ * @param animation Its assets.
+ * @param spawned   The entities its nodes became.
+ */
+void attachAnimator(
+    Scene& scene,
+    const SourceModel& model,
+    const Rig& rig,
+    const RigAssets& animation,
+    const SpawnedNodes& spawned
+) {
     // The root bone's parent: buildRig keeps bone 0's local transform, so poses are in the space
     // the root sits in. Anywhere else offsets the pose.
-    if (rigHandle) {
-        const int32_t rigFrame = model->nodes[static_cast<size_t>(rig.rootNode)].parent;
-        const auto it = rigFrame >= 0 ? nodeEntity.find(static_cast<uint32_t>(rigFrame)) : nodeEntity.end();
-        const EntityId rigEntity = (it != nodeEntity.end()) ? it->second : root;
-        Animator animator;
-        animator.skeleton = rigHandle;
-        animator.clip     = firstClip;
-        scene.add(rigEntity, animator);
+    const auto& nodes = spawned.nodeEntity;
+    const int32_t rigFrame = model.nodes[static_cast<size_t>(rig.rootNode)].parent;
+    const auto it = rigFrame >= 0 ? nodes.find(static_cast<uint32_t>(rigFrame)) : nodes.end();
+    const EntityId rigEntity = (it != nodes.end()) ? it->second : spawned.root;
+    Animator animator;
+    animator.skeleton = animation.skeleton;
+    animator.clip     = animation.firstClip;
+    scene.add(rigEntity, animator);
 
-        // Skinned vertices resolve into rig space via the inverse binds; parenting at identity keeps
-        // them from being transformed twice.
-        for (EntityId skinned : skinnedMeshes) {
-            HierarchyOperations::setParent(scene, skinned, rigEntity);
-            scene.get<Transform>(skinned) = Transform{};
-        }
+    // Skinned vertices resolve into rig space via the inverse binds; parenting at identity keeps
+    // them from being transformed twice.
+    for (EntityId skinned : spawned.skinnedMeshes) {
+        HierarchyOperations::setParent(scene, skinned, rigEntity);
+        scene.get<Transform>(skinned) = Transform{};
     }
+}
+
+} // namespace
+
+ModelImport importModelIntoScene(const std::string& path, ResourceManager& resources, Scene& scene) {
+    PROFILE_SCOPE("ModelImport");
+    const std::string ref = Roots::toProjectRelative(path);
+
+    const std::shared_ptr<const SourceModel> model = modelFor(ref);
+    if (!model) return {};
+    if (model->meshes.empty()) return importClipsOnly(*model, ref, resources);
+
+    // The rig and clips belong to the file, not a node.
+    const Rig rig = buildRig(*model, ref);
+    const RigAssets animation = addRigAssets(*model, ref, rig, resources);
+    const SpawnedNodes spawned = spawnNodes(*model, ref, rig.skeleton, resources, scene);
+    if (animation.skeleton) attachAnimator(scene, *model, rig, animation, spawned);
 
     LOG_INFO(
         "Imported model '%s' (%zu meshes, %zu materials, %zu bones, %u clips)",
@@ -778,9 +864,9 @@ ModelImport importModelIntoScene(const std::string& path, ResourceManager& resou
         model->meshes.size(),
         model->materials.size(),
         rig.skeleton.bones.size(),
-        clips
+        animation.clips
     );
-    return {root, clips, true};
+    return {spawned.root, animation.clips, true};
 }
 
 } // namespace Vkm::Engine

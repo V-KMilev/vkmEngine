@@ -15,17 +15,17 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "cook/cook_key.h"
-#include "cook/mesh_processing.h"
-#include "cook/texture_bake.h"
-#include "core/fnv1a.h"
-#include "core/reflect.h"
-#include "io/asset/asset_cook.h"
-#include "io/asset/asset_factory.h"
+#include "cook/mesh_gpu_order.h"
+#include "cook/texture/texture_bake.h"
+#include "base/reflect/enum_names.h"
+#include "io/asset/cooked/asset_cook.h"
+#include "io/asset/recipe/asset_factory.h"
 #include "io/asset/asset_library.h"
-#include "io/asset/asset_serializer.h"
+#include "io/asset/recipe/material_recipe.h"
+#include "io/project/roots.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
@@ -34,9 +34,9 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
-#include "platform/threading/thread_pool.h"
-#include "system/async/async_loader_system.h"
-#include "resource/asset_source_kind.h"
+#include "vkm_platform/threading/thread_pool.h"
+#include "system/async_loader/async_loader_system.h"
+#include "io/asset/recipe/asset_source.h"
 
 namespace Vkm::Engine::AssetCooker {
 
@@ -75,7 +75,7 @@ RecipeKey keySources(const nlohmann::json& recipe) {
     for (std::string& file : sourceFiles(recipe.value(AssetSourceKey::ROUGHNESS_NORMAL, std::string{}))) {
         key.sources.push_back(std::move(file));
     }
-    key.hash    = fnv1a64(recipe.dump());
+    key.hash = AssetRecord::documentHashOf(recipe);
     for (const std::string& file : key.sources) key.hash = foldSourceContent(file, key.hash);
     return key;
 }
@@ -111,8 +111,8 @@ std::unordered_map<uint64_t, RememberedKey> g_thisCookKeys;
 
 // keyRecipe for an asset a cook holds, reading its art only the first time.
 RecipeKey sessionKey(const Resource& asset, const nlohmann::json& recipe) {
-    const uint64_t recipeHash = fnv1a64(recipe.dump());
-    const auto     last       = g_lastCookKeys.find(asset.uid());
+    const uint64_t recipeHash = AssetRecord::documentHashOf(recipe);
+    const auto last = g_lastCookKeys.find(asset.uid());
     RememberedKey  remembered;
     if (last != g_lastCookKeys.end() && last->second.version == asset.version()
         && last->second.recipe == recipeHash) {
@@ -161,7 +161,7 @@ void bakeInBackground(
         const std::lock_guard<std::mutex> lock(g_bakingMutex);
         if (!g_baking.insert(path).second) return;
     }
-    ThreadPool::get().addTask([path, previous, write = std::move(write)]() {
+    Platform::ThreadPool::get().addTask([path, previous, write = std::move(write)]() {
         if (write(path)) {
             std::error_code ec;
             if (previous != path) std::filesystem::remove(previous, ec);
@@ -174,9 +174,10 @@ void bakeInBackground(
     });
 }
 
-// A material's recipe IS its runtime form, so nothing is written where its cookedPath() points.
+// A material's recipe and a terrain's file are their runtime forms, so nothing is written where their
+// cookedPath() points.
 template<typename Asset>
-constexpr bool WRITES_BINARY = !std::is_same_v<Asset, MaterialAsset>;
+constexpr bool WRITES_BINARY = COOKED_KIND<Asset> != 0;
 
 // Whether a kind's bake may run on the ThreadPool: the two that take seconds. The rest are copies.
 template<typename Asset>
@@ -233,10 +234,21 @@ bool pairedNormal(const TextureAsset& source, TextureAsset& normal) {
     return true;
 }
 
+// What a background bake would otherwise resolve against the project root, which the main thread may
+// move under it: a texture's paired normal map, made absolute before the bake is queued.
+void resolveForWorker(TextureAsset& texture) {
+    nlohmann::json& source = texture.sourceJson();
+    const std::string ref  = source.value(AssetSourceKey::ROUGHNESS_NORMAL, std::string{});
+    if (ref.empty()) return;
+    source[AssetSourceKey::ROUGHNESS_NORMAL] = Roots::resolveProjectPath(ref).generic_string();
+}
+template<typename Asset>
+void resolveForWorker(Asset&) {}
+
 // The asset keeps its decoded pixels; the file gets the mip chain and blocks.
 bool writeCooked(const std::filesystem::path& path, const TextureAsset& source) {
     TextureAsset normal;
-    const bool   paired = pairedNormal(source, normal);
+    const bool paired = pairedNormal(source, normal);
     TextureAsset baked;
     if (!bakeTexture(source, baked, paired ? &normal : nullptr) || !AssetCook::writeTexture(path, baked)) {
         return false;
@@ -265,17 +277,6 @@ bool writeCooked(const std::filesystem::path& path, const AnimationClipAsset& cl
         clip.name().c_str(),
         static_cast<double>(clip.duration),
         clip.bones.size()
-    );
-    return true;
-}
-
-bool writeCooked(const std::filesystem::path& path, const TerrainAsset& terrain) {
-    if (!AssetCook::writeTerrain(path, terrain)) return false;
-    LOG_INFO(
-        "Cooked terrain '%s' (%u vertices a side, %.0f m)",
-        terrain.name().c_str(),
-        terrain.resolution,
-        static_cast<double>(terrain.size)
     );
     return true;
 }
@@ -309,8 +310,9 @@ template<typename Asset>
 bool cookThrough(const Asset& asset, const nlohmann::json& recipe, Bake bake) {
     constexpr AssetType TYPE = ASSET_TYPE<Asset>;
     const std::string& name = asset.name();
-    RecipeKey          key  = sessionKey(asset, recipe);
-    const uint64_t     hash = key.hash;
+    RecipeKey key = sessionKey(asset, recipe);
+    const uint64_t hash     = key.hash;
+    const uint64_t document = AssetRecord::documentHashOf(recipe);
 
     if (isUpToDate(TYPE, name, hash, WRITES_BINARY<Asset>)) return true;
 
@@ -325,14 +327,17 @@ bool cookThrough(const Asset& asset, const nlohmann::json& recipe, Bake bake) {
     const std::filesystem::path previousPath = previous
         ? AssetLibrary::cookedPath(TYPE, name, previous->recipeHash)
         : cookedPath;
-    AssetLibrary::get().upsert({TYPE, name, hash, std::move(key.sources)});
+    AssetLibrary::get().upsert({TYPE, name, hash, std::move(key.sources), document});
 
     if constexpr (!WRITES_BINARY<Asset>) {
-        LOG_INFO("Cooked material '%s'", name.c_str());
+        LOG_INFO("Recorded %s '%s'", Reflect::enumName(TYPE), name.c_str());
     } else if (!now) {
-        bakeInBackground(cookedPath, previousPath, [baked = asset](const std::filesystem::path& path) {
+        Asset baked = asset;
+        resolveForWorker(baked);
+        const auto write = [baked = std::move(baked)](const std::filesystem::path& path) {
             return writeCooked(path, baked);
-        });
+        };
+        bakeInBackground(cookedPath, previousPath, write);
     } else if (previousPath != cookedPath) {
         std::error_code ec;
         std::filesystem::remove(previousPath, ec);
@@ -355,8 +360,8 @@ bool cookThrough(const Asset& asset, const nlohmann::json& recipe, Bake bake) {
  */
 template<typename Asset>
 bool cookAsset(const Asset& asset, const ResourceManager& resources, Bake bake) {
-    if constexpr (!WRITES_BINARY<Asset>) {
-        return cookThrough(asset, AssetSerializer::materialToRecipe(asset, resources), bake);
+    if constexpr (std::is_same_v<Asset, MaterialAsset>) {
+        return cookThrough(asset, materialToRecipe(asset, resources), bake);
     } else {
         constexpr AssetType TYPE = ASSET_TYPE<Asset>;
         if (!asset.hasSource() || isCookedPlaceholder(asset.sourceJson())) {
@@ -375,22 +380,31 @@ bool cookAsset(const Asset& asset, const ResourceManager& resources, Bake bake) 
     }
 }
 
+/**
+ * @brief Which loaded assets a cook writes.
+ */
+enum class Scope {
+    All,        ///< Every one whose output is not current.
+    Unrecorded  ///< Only those the library has no record of; a recorded one is left as it is.
+};
+
 // Every asset of one kind and one side of the derived split; how many failed.
 template<typename Asset>
-size_t cookEach(const ResourceManager& resources, bool derived, Bake bake) {
+size_t cookEach(const ResourceManager& resources, bool derived, Bake bake, Scope scope) {
     size_t failed = 0;
     resources.forEachOfType<Asset>([&](Handle<Asset>, const Asset& asset) {
         if (asset.isHidden() || asset.name().empty()) return;
         if ((asset.hasSource() && isDecimated(asset.sourceJson())) != derived) return;
+        if (scope == Scope::Unrecorded && AssetLibrary::get().find(ASSET_TYPE<Asset>, asset.name())) return;
         if (!cookAsset(asset, resources, bake)) ++failed;
     });
     return failed;
 }
 
-size_t cookPass(AssetType type, bool derived, const ResourceManager& resources, Bake bake) {
+size_t cookPass(AssetType type, bool derived, const ResourceManager& resources, Bake bake, Scope scope) {
     switch (type) {
-#define VKM_COOK_PASS(tag, Asset, kindName, dir) \
-        case AssetType::tag: return cookEach<Asset>(resources, derived, bake);
+#define VKM_COOK_PASS(tag, Asset, kindName, dir, cooked) \
+        case AssetType::tag: return cookEach<Asset>(resources, derived, bake, scope);
         VKM_ASSET_KINDS(VKM_COOK_PASS)
 #undef VKM_COOK_PASS
         case AssetType::Count: break;
@@ -407,16 +421,18 @@ void inDependencyOrder(Pass&& pass) {
     }
 }
 
-} // namespace
-
-bool cookAllAssets(ResourceManager& resources, Bake bake) {
-    LOG_INFO("Cooking assets into the library...");
-    g_lastCookKeys = std::move(g_thisCookKeys);
-    g_thisCookKeys.clear();
+// cookAllAssets over the assets @p scope names.
+bool cookLoaded(ResourceManager& resources, Bake bake, Scope scope) {
+    // A cook of some keeps what the last cook of all remembered of the rest.
+    if (scope == Scope::All) {
+        LOG_INFO("Cooking assets into the library...");
+        g_lastCookKeys = std::move(g_thisCookKeys);
+        g_thisCookKeys.clear();
+    }
 
     size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
     inDependencyOrder([&](AssetType type, bool derived) {
-        failed += cookPass(type, derived, resources, bake);
+        failed += cookPass(type, derived, resources, bake, scope);
     });
 
     // A failed asset writes no record this cook; whatever it had recorded before stands.
@@ -434,6 +450,16 @@ bool cookAllAssets(ResourceManager& resources, Bake bake) {
     return failed == 0 && saved;
 }
 
+} // namespace
+
+bool cookAllAssets(ResourceManager& resources, Bake bake) {
+    return cookLoaded(resources, bake, Scope::All);
+}
+
+bool recordNewAssets(ResourceManager& resources) {
+    return cookLoaded(resources, Bake::InBackground, Scope::Unrecorded);
+}
+
 namespace {
 
 // One asset the sweep re-imports.
@@ -443,27 +469,29 @@ struct StaleAsset {
     nlohmann::json recipe;
 };
 
-// Run the recipe through the host's import, filed under the manifest's (the scene's) name.
+// Run the recipe through the host's import, filed under the manifest's (the scene's) name. A kind with
+// no cooked file is never stale.
 template<typename Asset>
 bool importAs(const StaleAsset& stale, ResourceManager& resources) {
-    const RecipeImport<Asset> import = recipeImport<Asset>();
-    if (!import) return false;
-    const Handle<Asset> handle = import(stale.recipe, resources);
-    if (!handle) return false;
-    resources.rename(handle, stale.name);
-    return true;
+    if constexpr (COOKED_KIND<Asset> == 0) {
+        return false;
+    } else {
+        const RecipeImport<Asset> import = recipeImport<Asset>();
+        if (!import) return false;
+        const Handle<Asset> handle = import(stale.recipe, resources);
+        if (!handle) return false;
+        resources.rename(handle, stale.name);
+        return true;
+    }
 }
 
 bool importRecipe(const StaleAsset& stale, ResourceManager& resources) {
     switch (stale.type) {
-        case AssetType::Mesh:          return importAs<MeshAsset>(stale, resources);
-        case AssetType::Texture:       return importAs<TextureAsset>(stale, resources);
-        case AssetType::Skeleton:      return importAs<SkeletonAsset>(stale, resources);
-        case AssetType::AnimationClip: return importAs<AnimationClipAsset>(stale, resources);
-        case AssetType::AudioClip:     return importAs<AudioClipAsset>(stale, resources);
-        case AssetType::Terrain:       return importAs<TerrainAsset>(stale, resources);
-        case AssetType::Material:      // its recipe is its runtime form; never stale
-        case AssetType::Count:         break;
+#define VKM_IMPORT_RECIPE(tag, Asset, kindName, dir, cooked) \
+        case AssetType::tag: return importAs<Asset>(stale, resources);
+        VKM_ASSET_KINDS(VKM_IMPORT_RECIPE)
+#undef VKM_IMPORT_RECIPE
+        case AssetType::Count: break;
     }
     return false;
 }
@@ -479,9 +507,9 @@ bool cookStaleAssets() {
     std::set<std::pair<AssetType, std::string>> dependencyNames;
 
     // In dependency order: a derived asset is stale when its base is, as its key folds the base's.
-    // A material has no binary to re-bake.
+    // A material or a terrain has no binary to re-bake.
     const auto sweep = [&](AssetType type, bool derived) {
-        if (type == AssetType::Material) return;
+        if (cookedKindOf(type) == 0) return;
         for (const std::string& name : library.namesOf(type)) {
             nlohmann::json recipe;
             if (!AssetLibrary::readRecipe(type, name, recipe)) {
@@ -494,8 +522,8 @@ bool cookStaleAssets() {
             }
             if (isDecimated(recipe) != derived) continue;
 
-            const uint64_t recorded   = library.find(type, name)->recipeHash;
-            const Dependency depends  = dependencyOf(recipe);
+            const uint64_t recorded = library.find(type, name)->recipeHash;
+            const Dependency depends = dependencyOf(recipe);
             const bool baseMoved      = staleNames.count({depends.type, depends.name}) > 0;
             const bool recipeMoved    = keyRecipe(recipe).hash != recorded;
             const bool artifactMissed = !AssetCook::isCookedCurrent(

@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "import/material_loaders.h"
+#include "import/material_import.h"
 
 #include <algorithm>
 #include <cctype>
@@ -10,11 +10,12 @@
 #include <system_error>
 #include <vector>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "io/project_paths.h"
+#include "io/project/roots.h"
 #include "resource/resource_manager.h"
-#include "import/texture_loaders.h"
+#include "import/import_formats.h"
+#include "import/texture_import.h"
 
 namespace Vkm::Engine {
 
@@ -52,16 +53,15 @@ bool nameMatchesPattern(const std::string& filename, const std::string& pattern)
     return false;
 }
 
-// The file matching the earliest of @p patterns with one of @p extensions. Patterns outermost and
+// The image (IMAGE_EXTENSIONS) matching the earliest of @p patterns. Patterns outermost and
 // candidates sorted, so the answer (frozen into the cooked recipe) never follows
 // directory_iterator's unspecified order.
 std::optional<std::string> findTexture(
     const std::string& folderPath,
-    const std::vector<std::string>& patterns,
-    const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
+    const std::vector<std::string>& patterns
 ) {
     namespace fs = std::filesystem;
-    const fs::path folder = ProjectPaths::resolveProjectPath(folderPath);
+    const fs::path folder = Roots::resolveProjectPath(folderPath);
     std::error_code ec;
     if (!fs::is_directory(folder, ec)) {
         return std::nullopt;
@@ -74,12 +74,9 @@ std::optional<std::string> findTexture(
         // Not the walk's error_code: one unstattable entry would end the scan early.
         std::error_code entryEc;
         if (!entry.is_regular_file(entryEc)) continue;
-        const std::string extensionLower = toLower(entry.path().extension().string());
-        for (const auto& ext : extensions) {
-            if (extensionLower != toLower(ext)) continue;
-            candidates.push_back(entry.path());
-            break;
-        }
+        const std::string extension = lowercaseExtension(entry.path());
+        const auto named = std::find(IMAGE_EXTENSIONS.begin(), IMAGE_EXTENSIONS.end(), extension);
+        if (named != IMAGE_EXTENSIONS.end()) candidates.push_back(entry.path());
     }
     std::sort(candidates.begin(), candidates.end());
 
@@ -88,7 +85,7 @@ std::optional<std::string> findTexture(
         for (const std::filesystem::path& candidate : candidates) {
             if (!nameMatchesPattern(toLower(candidate.filename().string()), patternLower)) continue;
             // The reference, not the absolute path: it becomes the name and recipe path.
-            return ProjectPaths::toProjectRelative(candidate.string());
+            return Roots::toProjectRelative(candidate.string());
         }
     }
 
@@ -104,7 +101,7 @@ TextureHandle loadMap(
     if (texturePath.empty()) return TextureHandle{};
 
     std::error_code ec;
-    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(texturePath), ec)) {
+    if (!std::filesystem::exists(Roots::resolveProjectPath(texturePath), ec)) {
         LOG_WARNING("Texture file not found: '%s'; the map is left out", texturePath.c_str());
         return TextureHandle{};
     }
@@ -117,9 +114,9 @@ TextureHandle loadMap(
 
 // Assemble the material a folder's maps describe. Each list is lowercase, tried in order.
 MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager& resourceManager) {
-    const std::string albedoPath = findTexture(folderRef, {"color", "albedo", "diffuse"}).value_or("");
-    const std::string normalPath = findTexture(folderRef, {"normal", "norm"}).value_or("");
-    const std::string metallicPath = findTexture(folderRef, {"metallic", "metalness", "metal"}).value_or("");
+    const std::string albedoPath    = findTexture(folderRef, {"color", "albedo", "diffuse"}).value_or("");
+    const std::string normalPath    = findTexture(folderRef, {"normal", "norm"}).value_or("");
+    const std::string metallicPath  = findTexture(folderRef, {"metallic", "metalness", "metal"}).value_or("");
     const std::string roughnessPath = findTexture(folderRef, {"roughness", "rough"}).value_or("");
     // Kept apart: ORM's red is occlusion, the glTF packing's is unused.
     // ORM: Occlusion-Roughness-Metallic.
@@ -151,10 +148,6 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
         folderRef,
         {"emission", "emissive", "emit", "glow"}
     ).value_or("");
-    const std::string heightPath = findTexture(
-        folderRef,
-        {"height", "displacement", "disp", "parallax"}
-    ).value_or("");
 
     // The shader multiplies each factor by its map where one is bound, so a found map's factor is
     // 1; a missing map leaves its slot empty and the factor as the material reads unmapped - no
@@ -175,11 +168,11 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
     if (ormTex) {
         // R = occlusion, G = roughness, B = metallic; the separate AO map is left off below.
         material.aoMetallicRoughnessTexture = ormTex;
-        material.metallic = 1.0f;
+        material.metallic                   = 1.0f;
     } else if (mrTex) {
         // G = roughness, B = metallic: the separate slots read everything from .r.
         material.metallicRoughnessTexture = mrTex;
-        material.metallic = 1.0f;
+        material.metallic                 = 1.0f;
     } else {
         const TextureUsage data = TextureUsage::Data;
         material.metallicTexture  = loadMap(metallicPath, resourceManager, data, generateMipmaps);
@@ -192,21 +185,18 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
     material.emissionTexture = loadMap(emissionPath, resourceManager, TextureUsage::Color, generateMipmaps);
     if (material.emissionTexture) material.emission = glm::vec3(1.0f);
 
-    material.heightTexture = loadMap(heightPath, resourceManager, TextureUsage::Data, generateMipmaps);
-
     // Names the metal/rough shape taken, or a packed map reads as "metallic = none".
     const char* metalRough = ormTex ? "orm"
         : mrTex ? "packed"
         : (!metallicPath.empty() || !roughnessPath.empty()) ? "separate"
         : "none";
     LOG_VERBOSE(
-        "Material created: albedo=%s, normal=%s, metal/rough=%s, ao=%s, emission=%s, height=%s",
+        "Material created: albedo=%s, normal=%s, metal/rough=%s, ao=%s, emission=%s",
         !albedoPath.empty() ? "custom" : "none",
         !normalPath.empty() ? "custom" : "none",
         metalRough,
         ormTex ? "orm" : !aoPath.empty() ? "custom" : "none",
-        !emissionPath.empty() ? "custom" : "none",
-        !heightPath.empty() ? "custom" : "none"
+        !emissionPath.empty() ? "custom" : "none"
     );
 
     return resourceManager.add(std::move(material));
@@ -215,12 +205,12 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
 } // namespace
 
 MaterialHandle loadMaterialFromFolder(const std::string& folderPath, ResourceManager& resourceManager) {
-    // Relativised first, or one folder named two ways becomes two materials.
-    const std::string ref = ProjectPaths::toProjectRelative(folderPath);
+    // Relativized first, or one folder named two ways becomes two materials.
+    const std::string ref = Roots::toProjectRelative(folderPath);
     if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(ref)) return loaded;
 
     std::error_code ec;
-    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(ref), ec)) {
+    if (!std::filesystem::exists(Roots::resolveProjectPath(ref), ec)) {
         LOG_ERROR("Material folder not found: '%s'", ref.c_str());
         return MaterialHandle{};
     }

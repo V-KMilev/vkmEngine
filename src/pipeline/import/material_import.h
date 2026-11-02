@@ -3,7 +3,7 @@
 #include <string>
 
 #include "resource/asset/material_asset.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 
 namespace Vkm::Engine {
 
@@ -13,7 +13,7 @@ class ResourceManager;
  * @brief Load a PBR material from a texture folder with automatic file detection.
  *
  * Searches the folder for the common PBR naming patterns - Color/Albedo/Diffuse
- * and Emission/Emissive (colour), Normal (a normal), and Roughness, Metallic,
+ * and Emission/Emissive (color), Normal (a normal), and Roughness, Metallic,
  * AO, Height and packed MetallicRoughness/ORM (data) - across .jpg, .jpeg, .png,
  * .tga and .bmp.
  *
