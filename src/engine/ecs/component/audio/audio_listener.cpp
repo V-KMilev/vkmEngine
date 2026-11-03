@@ -1,7 +1,7 @@
 #include "ecs/component/audio/audio_listener.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Vkm::Engine {
 
