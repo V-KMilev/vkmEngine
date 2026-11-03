@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/asset/skeleton_asset.h"
-#include "system/animation/pose_buffer.h"
+#include "core/frame/pose_buffer.h"
 
 namespace Vkm::Engine {
 
@@ -19,15 +19,16 @@ struct Ragdoll;
  * not touch the scene.
  */
 struct RagdollBodyPose {
-    glm::mat4 world = glm::mat4(1.0f);  ///< The body's world matrix
-    bool simulated = false;             ///< False: the bone follows its parent
+    glm::mat4 world     = glm::mat4(1.0f);  ///< The body's world matrix
+    bool      simulated = false;            ///< False: the bone follows its parent
 };
 
 /**
  * @brief Read every bone body's world pose for one ragdoll.
  *
  * Walks the hierarchy itself: HierarchySystem resolves WorldTransform after the pose is composed. A
- * bone whose body is dead or missing is marked unsimulated.
+ * bone whose body is dead or missing is marked unsimulated. A live, pinned ragdoll's are read
+ * relative to its root as pinned, not as the root stands now.
  *
  * @param scene Scene holding the bodies.
  * @param ragdoll Mapping from bones to bodies.

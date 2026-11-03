@@ -1,4 +1,4 @@
-#include "system/animation/pose_evaluator.h"
+#include "system/animation/pose/clip_pose.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,9 +6,11 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "ecs/component/core/transform.h"
+#include "base/math/rotation.h"
+#include "ecs/component/scene/transform.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "system/animation/playback.h"
 
 namespace Vkm::Engine {
 
@@ -35,7 +37,7 @@ KeyPair locateKeys(const std::vector<float>& times, const ClipChannel& channel, 
         return {last, last, 0.0f};
     }
 
-    const auto b = static_cast<uint32_t>(it - times.begin());
+    const auto b     = static_cast<uint32_t>(it - times.begin());
     const uint32_t a = b - 1;
     const float span = times[b] - times[a];
     return {a, b, span > 0.0f ? (time - times[a]) / span : 0.0f};
@@ -64,7 +66,7 @@ void sampleBone(const AnimationClipAsset& clip, uint32_t bone, float time, Trans
  *
  * The model-space adjustment is brought through the parent's composed matrix: the rotation conjugated
  * by the parent's rotation, the offset through the inverse of its upper 3x3 so a scaled parent does not
- * scale the metre. Exact under uniform scale; non-uniform scale turns about a slightly sheared axis.
+ * scale the meter. Exact under uniform scale; non-uniform scale turns about a slightly sheared axis.
  *
  * @param local The bone's local TRS, adjusted in place.
  * @param adjust What to add, or what to set.
@@ -73,103 +75,45 @@ void sampleBone(const AnimationClipAsset& clip, uint32_t bone, float time, Trans
 void adjustBone(Transform& local, const BoneAdjust& adjust, const glm::mat4* parentGlobal) {
     local.scale *= adjust.scale;
     if (!parentGlobal) {
-        local.rotation  = adjust.absolute ? adjust.rotation : adjust.rotation * local.rotation;
+        local.rotation = adjust.absolute ? adjust.rotation : adjust.rotation * local.rotation;
         local.position += adjust.offset;
         return;
     }
 
-    const glm::mat3 parentAxes(*parentGlobal);
-    const glm::mat3 parentBasis(
-        glm::normalize(parentAxes[0]),
-        glm::normalize(parentAxes[1]),
-        glm::normalize(parentAxes[2])
-    );
-    const glm::quat parentRotation = glm::normalize(glm::quat_cast(parentBasis));
-
+    const glm::quat parentRotation = Math::worldRotationOf(*parentGlobal);
     local.rotation = adjust.absolute
         ? glm::inverse(parentRotation) * adjust.rotation
         : glm::inverse(parentRotation) * adjust.rotation * parentRotation * local.rotation;
-    local.position += glm::inverse(parentAxes) * adjust.offset;
+    // A parent scaled to nothing holds its children at its origin, whatever the offset.
+    const glm::mat3 parentAxes(*parentGlobal);
+    if (glm::determinant(parentAxes) != 0.0f) local.position += glm::inverse(parentAxes) * adjust.offset;
 }
 
 } // namespace
 
-bool advanceHead(float& time, float duration, float delta, bool looping) {
-    time += delta;
-    if (duration <= 0.0f) return true;
-
-    if (looping) {
-        time -= std::floor(time / duration) * duration;
-    } else if (time >= duration) {
-        time = duration;
-        return false;
-    } else if (time < 0.0f) {
-        time = 0.0f;
-        return false;
-    }
-    return true;
-}
-
-void rewindSpentHead(float& time, float duration, float delta, bool looping) {
-    if (looping || duration <= 0.0f) return;
-    if (delta < 0.0f && time <= 0.0f) {
-        time = duration;
-    } else if (delta > 0.0f && time >= duration) {
-        time = 0.0f;
-    }
-}
-
-PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta) {
-    if (simDelta <= 0.0f) return PlaybackStep{animator.time, animator.time, 0.0f};
-
-    if (animator.playOnStart && !animator.started) {
-        animator.started = true;
-        animator.playing = true;
+PoseSample sampleAhead(
+    const Animator& animator,
+    const AnimationClipAsset* clip,
+    const AnimationClipAsset* from,
+    float seconds
+) {
+    PlaybackHeads heads = PlaybackHeads::of(animator);
+    if (seconds > 0.0f) {
+        advanceHeads(animator, heads, clip ? clip->duration : 0.0f, from ? from->duration : 0.0f, seconds);
     }
 
-    // Rewound before the sweep is measured, so it starts where playing starts.
-    const float delta = simDelta * animator.speed;
-    if (animator.playing) rewindSpentHead(animator.time, duration, delta, animator.looping);
-
-    PlaybackStep step{animator.time, animator.time, 0.0f};
-    if (animator.playing) {
-        if (!advanceHead(animator.time, duration, delta, animator.looping)) animator.playing = false;
-        step.to = animator.time;
-        // Subtracting misreads a wrapped head: a loop covers what was asked, a clamp what it allowed.
-        step.travel = animator.looping ? delta : animator.time - step.from;
-    }
-
-    // Not gated on `playing`: a one-shot ending mid-blend would strand the fade at a weight no field names.
-    if (animator.fadeRemaining <= 0.0f) return step;
-
-    advanceHead(animator.fadeTime, fromDuration, delta, animator.fadeLooping);
-
-    animator.fadeRemaining -= simDelta;
-    if (animator.fadeRemaining > 0.0f) return step;
-
-    animator.fadeFrom      = {};
-    animator.fadeTime      = 0.0f;
-    animator.fadeRemaining = 0.0f;
-    animator.fadeDuration  = 0.0f;
-    return step;
-}
-
-bool crossesMarker(const PlaybackStep& step, float marker, float duration) {
-    if (step.travel == 0.0f || duration <= 0.0f) return false;
-
-    if (std::abs(step.travel) >= duration) return true;
-
-    // Otherwise the wrap branches read a sub-resolution move as a full lap.
-    if (step.from == step.to) return false;
-
-    if (step.travel > 0.0f) {
-        return (step.from < step.to)
-            ? (marker > step.from && marker <= step.to)   // straight through
-            : (marker > step.from || marker <= step.to);  // wrapped past the end
-    }
-    return (step.to < step.from)
-        ? (marker >= step.to && marker < step.from)
-        : (marker >= step.to || marker < step.from);      // wrapped past the start
+    PoseSample sample;
+    sample.clip        = clip;
+    sample.time        = heads.time;
+    sample.from        = from;
+    sample.fromTime    = heads.fadeTime;
+    sample.adjust      = animator.adjust.data();
+    sample.adjustCount = static_cast<uint32_t>(animator.adjust.size());
+    // A spent fade is all the playing clip.
+    sample.weight = (animator.fadeDuration > 0.0f && heads.fadeRemaining > 0.0f)
+        ? 1.0f - heads.fadeRemaining / animator.fadeDuration
+        : 1.0f;
+    return sample;
 }
 
 void composePose(const SkeletonAsset& skeleton, const PoseSample& sample, const PoseWrite& out) {
@@ -179,11 +123,11 @@ void composePose(const SkeletonAsset& skeleton, const PoseSample& sample, const 
     const bool blending = sample.from && weight < 1.0f;
 
     for (uint32_t i = 0; i < count; ++i) {
-        Transform local = skeleton.bindPose[i];
+        Transform local = Transform::fromPose(skeleton.bindPose[i]);
         if (sample.clip) sampleBone(*sample.clip, i, sample.time, local);
 
         if (blending) {
-            Transform leaving = skeleton.bindPose[i];
+            Transform leaving = Transform::fromPose(skeleton.bindPose[i]);
             sampleBone(*sample.from, i, sample.fromTime, leaving);
             local.position = glm::mix(leaving.position, local.position, weight);
             local.rotation = glm::slerp(leaving.rotation, local.rotation, weight);

@@ -1,9 +1,9 @@
-#include "system/animation/ragdoll_pose.h"
+#include "system/animation/pose/ragdoll_pose.h"
 
 #include <vector>
 
 #include "ecs/scene.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/hierarchy_operations.h"
 
@@ -18,11 +18,18 @@ thread_local std::vector<const RagdollBodyPose*> t_pose;
 } // namespace
 
 void gatherRagdollBodies(const Scene& scene, const Ragdoll& ragdoll, std::vector<RagdollBodyPose>& out) {
+    // Live, the bodies are read as they lay when the tick pinned the root (Ragdoll::pinnedWorld): a
+    // move of the character since does not carry them.
+    glm::mat4 unmoved(1.0f);
+    if (ragdoll.active && ragdoll.pinned && scene.has<Transform>(ragdoll.root)) {
+        const glm::mat4 rootNow = HierarchyOperations::computeWorldMatrix(scene, ragdoll.root);
+        unmoved = ragdoll.pinnedWorld * glm::inverse(rootNow);
+    }
     for (const RagdollBone& bone : ragdoll.bones) {
         RagdollBodyPose& pose = out.emplace_back();
         // has() is total: it answers no for a destroyed body too.
         if (!scene.has<Transform>(bone.body)) continue;
-        pose.world     = HierarchyOperations::computeWorldMatrix(scene, bone.body);
+        pose.world     = unmoved * HierarchyOperations::computeWorldMatrix(scene, bone.body);
         pose.simulated = true;
     }
 }
@@ -54,8 +61,8 @@ void composeRagdollPose(
         if (entry && t_pose[i]->simulated) {
             out.global[i] = toRig * t_pose[i]->world * entry->bodyFromBone;
         } else {
-            const glm::mat4 local = Transform::computeModelMatrix(skeleton.bindPose[i]);
-            const int32_t parent = skeleton.bones[i].parent;
+            const glm::mat4 local = Transform::computeModelMatrix(Transform::fromPose(skeleton.bindPose[i]));
+            const int32_t parent  = skeleton.bones[i].parent;
             out.global[i] = parent >= 0 ? out.global[parent] * local : local;
         }
 

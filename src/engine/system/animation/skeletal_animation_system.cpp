@@ -8,25 +8,27 @@
 
 #include <glm/gtc/epsilon.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "core/clock.h"
-#include "core/event/event_bus.h"
-#include "debug/profiler.h"
+#include "base/event/event_bus.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/hierarchy_operations.h"
-#include "platform/threading/thread_pool.h"
+#include "vkm_platform/threading/thread_pool.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
 #include "system/animation/animation_events.h"
-#include "system/animation/pose_evaluator.h"
+#include "system/animation/pose/clip_pose.h"
+#include "system/animation/playback.h"
 #include "ecs/component/physics/ragdoll.h"
-#include "system/animation/ragdoll_pose.h"
+#include "system/animation/pose/ragdoll_pose.h"
+#include "core/frame/seconds_ahead.h"
 
 namespace Vkm::Engine {
 
@@ -45,6 +47,15 @@ bool isIdentity(const Transform& transform) {
         && std::abs(std::abs(transform.rotation.w) - 1.0f) <= IDENTITY_EPSILON;
 }
 
+/// The ragdoll driving the rig at @p rig: its own or an ancestor's, while active with bones; else null.
+const Ragdoll* drivingRagdoll(const Scene& scene, EntityId rig) {
+    // Upward: importModelIntoScene can put the Animator a node or two below the Ragdoll's entity.
+    const EntityId owner = HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene, rig);
+    if (!owner) return nullptr;
+    const Ragdoll& ragdoll = scene.get<Ragdoll>(owner);
+    return ragdoll.active && !ragdoll.bones.empty() ? &ragdoll : nullptr;
+}
+
 } // namespace
 
 void SkeletalAnimationSystem::update(FrameContext& ctx) {
@@ -54,9 +65,50 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
     ctx.poses = &m_poses;
 
     // A replaced world reuses the old one's slots, so the old map would pose new entities from wrong slices.
-    if (!ctx.clock.isPaused() && ctx.scene.epoch() == m_epoch) return;
+    // An active ragdoll's tick composed it before physics moved its bodies: composed again from them.
+    // A clip's rig is drawn where the frame falls, as a moving body is.
+    if (!ctx.clock.isPaused() && ctx.scene.epoch() == m_epoch && reposeRagdolls(ctx)) {
+        poseAhead(ctx, secondsAhead(ctx.clock, ctx.window));
+        return;
+    }
     const bool announceMarkers = false;
     run(ctx, 0.0f, announceMarkers);
+}
+
+bool SkeletalAnimationSystem::reposeRagdolls(FrameContext& ctx) {
+    const Scene& scene = ctx.scene;
+    bool any = false;
+    for (RigWork& work : m_work) {
+        const EntityId rig = scene.entityAt(work.entityIndex);
+        const Animator* animator = scene.tryGet<Animator>(rig);
+        if (!animator || !ctx.resources.isAlive(animator->skeleton)) return false;
+        const SkeletonAsset& skeleton = ctx.resources.get(animator->skeleton);
+        const Ragdoll* ragdoll = drivingRagdoll(scene, rig);
+        if (&skeleton != work.skeleton || (ragdoll != nullptr) != (work.ragdoll != nullptr)) return false;
+        work.ragdoll = ragdoll;
+        any          = any || ragdoll;
+    }
+    if (!any) return true;
+
+    m_ragdollBodies.clear();
+    for (RigWork& work : m_work) {
+        if (!work.ragdoll) continue;
+        const EntityId rig = scene.entityAt(work.entityIndex);
+        work.firstBody = static_cast<uint32_t>(m_ragdollBodies.size());
+        gatherRagdollBodies(scene, *work.ragdoll, m_ragdollBodies);
+        work.rigWorld = HierarchyOperations::computeWorldMatrix(scene, rig);
+    }
+    for (const RigWork& work : m_work) {
+        if (!work.ragdoll) continue;
+        composeRagdollPose(
+            *work.ragdoll,
+            m_ragdollBodies.data() + work.firstBody,
+            *work.skeleton,
+            work.rigWorld,
+            m_poses.writeTo(work.slice)
+        );
+    }
+    return true;
 }
 
 void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
@@ -69,7 +121,7 @@ void SkeletalAnimationSystem::run(FrameContext& ctx, float step, bool announceMa
     m_poses.clear();
     m_work.clear();
     m_ragdollBodies.clear();
-    m_epoch = ctx.scene.epoch();
+    m_epoch   = ctx.scene.epoch();
     ctx.poses = &m_poses;
 
     poseRigs(ctx, step);
@@ -112,17 +164,10 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, float step) {
 
         // Read here, because the parallel pass never touches the scene; nothing is added or removed between.
         const EntityId rigEntity = scene.entityAt(work.entityIndex);
-
-        // Upward: importModelIntoScene can put the Animator a node or two below the Ragdoll's entity.
-        const EntityId ragdollEntity =
-            HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene, rigEntity);
-        if (ragdollEntity) {
-            const Ragdoll& ragdoll = scene.get<Ragdoll>(ragdollEntity);
-            if (ragdoll.active && !ragdoll.bones.empty()) {
-                work.ragdoll   = &ragdoll;
-                work.firstBody = static_cast<uint32_t>(m_ragdollBodies.size());
-                gatherRagdollBodies(scene, ragdoll, m_ragdollBodies);
-            }
+        if (const Ragdoll* ragdoll = drivingRagdoll(scene, rigEntity)) {
+            work.ragdoll   = ragdoll;
+            work.firstBody = static_cast<uint32_t>(m_ragdollBodies.size());
+            gatherRagdollBodies(scene, *ragdoll, m_ragdollBodies);
         }
         // Walked like the bodies, not read off WorldTransform, which is a frame behind: mixing them drifts.
         if (work.ragdoll) {
@@ -152,15 +197,15 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, float step) {
     }
 
     const float simDelta = step;
-    const size_t grain = (totalBones < MIN_PARALLEL_BONES)
-        ? m_work.size()
-        : std::max<size_t>(1, m_work.size() / (ThreadPool::get().threadCount() + 1));
+    // Split by rig, and only once the rigs pose enough bones between them to pay for it.
+    const size_t grain =
+        totalBones < MIN_PARALLEL_BONES ? m_work.size() : Platform::parallelGrain(m_work.size());
 
     {
         // Each iteration writes one Animator and one disjoint slice; no slice is allocated past here.
         PROFILE_SCOPE("SkeletalAnimation/Evaluate");
-        parallelFor(m_work.size(), grain, [&](size_t i) {
-            RigWork& work      = m_work[i];
+        Platform::parallelFor(m_work.size(), grain, [&](size_t i) {
+            RigWork& work = m_work[i];
             Animator& animator = animators->dataAt(work.animatorIndex);
 
             // A ragdoll takes the clock too: the head does not move and markers (from work.step) do not fire.
@@ -173,18 +218,6 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, float step) {
                 );
             }
 
-            PoseSample sample;
-            sample.clip     = work.clip;
-            sample.time     = animator.time;
-            sample.from     = work.fadeClip;
-            sample.fromTime = animator.fadeTime;
-            // advancePlayback clears a spent fade, so zero means nothing left to blend.
-            sample.weight   = (animator.fadeDuration > 0.0f)
-                ? 1.0f - animator.fadeRemaining / animator.fadeDuration
-                : 1.0f;
-            sample.adjust      = animator.adjust.data();
-            sample.adjustCount = static_cast<uint32_t>(animator.adjust.size());
-
             // Ragdoll bodies are not blended with a clip: that drags limbs between two unrelated poses.
             if (work.ragdoll) {
                 composeRagdollPose(
@@ -195,10 +228,40 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, float step) {
                     m_poses.writeTo(work.slice)
                 );
             } else {
+                const PoseSample sample = sampleAhead(animator, work.clip, work.fadeClip, 0.0f);
                 composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
             }
         });
     }
+}
+
+void SkeletalAnimationSystem::poseAhead(FrameContext& ctx, float seconds) {
+    if (seconds <= 0.0f) return;
+
+    // Resolved again: a behavior's frame may have changed the clip since the tick.
+    Scene& scene = ctx.scene;
+    m_ahead.clear();
+    size_t totalBones = 0;
+    for (RigWork& work : m_work) {
+        if (work.ragdoll) continue;
+        const Animator& animator = scene.get<Animator>(scene.entityAt(work.entityIndex));
+        if (!animator.playing && animator.fadeRemaining <= 0.0f && animator.adjust.empty()) continue;
+        work.clip     = resolveClip(ctx.resources, animator.clip, *work.skeleton);
+        work.fadeClip = resolveClip(ctx.resources, animator.fadeFrom, *work.skeleton);
+        m_ahead.push_back(&work);
+        totalBones += work.skeleton->bones.size();
+    }
+    if (m_ahead.empty()) return;
+
+    PROFILE_SCOPE("SkeletalAnimation/Ahead");
+    const size_t grain =
+        totalBones < MIN_PARALLEL_BONES ? m_ahead.size() : Platform::parallelGrain(m_ahead.size());
+    Platform::parallelFor(m_ahead.size(), grain, [&](size_t i) {
+        const RigWork& work = *m_ahead[i];
+        const Animator& animator = scene.get<Animator>(scene.entityAt(work.entityIndex));
+        const PoseSample sample = sampleAhead(animator, work.clip, work.fadeClip, seconds);
+        composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
+    });
 }
 
 void SkeletalAnimationSystem::publishMarkers(FrameContext& ctx) {
@@ -235,9 +298,8 @@ const AnimationClipAsset* SkeletalAnimationSystem::resolveClip(
 ) {
     if (!handle || !resources.isAlive(handle)) return nullptr;
 
-    // A clip's per-bone table is bound at cook time to one rig's name and length.
     const AnimationClipAsset& clip = resources.get(handle);
-    if (clip.skeleton != skeleton.name() || clip.bones.size() != skeleton.bones.size()) {
+    if (!clipFitsRig(clip, skeleton)) {
         if (m_clipMismatch.report()) {
             LOG_WARNING(
                 "Clip '%s' (rig '%s', %zu bones) does not fit rig '%s' (%zu bones) - "

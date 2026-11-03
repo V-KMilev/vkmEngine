@@ -38,7 +38,7 @@ struct PoseWrite {
 };
 
 /**
- * @brief Every rig's pose for one frame, published on FrameContext::poses.
+ * @brief Every rig's pose for one frame, published on FrameProducts::poses.
  *
  * A per-frame product, not a component: rebuilt whenever the rigs are posed, authored by no one, and
  * read by several mesh entities per rig. `global` is the pose in rig model space; `palette` is
@@ -92,8 +92,10 @@ class PoseBuffer {
         /**
          * @brief The slice driving @p entity.
          *
-         * Keyed on the whole id, not the slot: the map is read every frame until the next tick, and a
-         * slot reused in between must not skin a new entity from another rig's matrices.
+         * It answers for the rig entity and every descendant, up to a nested Animator, which owns
+         * its subtree and its own slice. Keyed on the whole id, not the slot: the map is read every
+         * frame until the next tick, and a slot reused in between must not skin a new entity from
+         * another rig's matrices.
          *
          * @param entity Entity to look up.
          * @return The slice, or nullptr when nothing poses that entity.
@@ -114,8 +116,8 @@ class PoseBuffer {
         };
 
     private:
-        std::vector<glm::mat4> m_global;   ///< Model-space bone transforms: the pose.
-        std::vector<glm::mat4> m_palette;  ///< global[b] * inverseBind[b], parallel to m_global.
+        std::vector<glm::mat4> m_global;         ///< Model-space bone transforms: the pose.
+        std::vector<glm::mat4> m_palette;        ///< global[b] * inverseBind[b], parallel to m_global.
         std::vector<PoseSlice> m_slices;
         std::vector<Mapping>   m_sliceOfEntity;  ///< By entity slot; a null entity where nothing is posed.
 };

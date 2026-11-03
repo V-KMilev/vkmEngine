@@ -1,37 +1,8 @@
 #pragma once
 
 #include "ecs/component/animation/animator.h"
-#include "system/animation/pose_buffer.h"
 
 namespace Vkm::Engine {
-
-struct AnimationClipAsset;
-struct SkeletonAsset;
-
-/**
- * @brief The clips a rig reads this frame, how much of each, and what a behavior adds on top.
- *
- * Two clips while a crossfade is in flight, each at its own playback head, so a blend between two moving
- * poses does not freeze a foot.
- */
-struct PoseSample {
-    const AnimationClipAsset* clip = nullptr;  ///< Clip playing; null holds the bind pose.
-    float time = 0.0f;                         ///< Its playback head, seconds.
-
-    const AnimationClipAsset* from = nullptr;  ///< Clip being left; null when nothing is fading.
-    float fromTime = 0.0f;                     ///< Its own playback head.
-
-    float weight = 1.0f;  ///< 0 is all `from`, 1 is all `clip`.
-
-    /**
-     * @brief The Animator's adjustments, applied after the blend; none when null.
-     *
-     * A view of the component's list: nothing may write that Animator while the sample is read
-     * (see SkeletalAnimationSystem::poseRigs).
-     */
-    const BoneAdjust* adjust      = nullptr;
-    uint32_t          adjustCount = 0;
-};
 
 /**
  * @brief The sweep a playback head made this frame.
@@ -74,11 +45,46 @@ bool advanceHead(float& time, float duration, float delta, bool looping);
 void rewindSpentHead(float& time, float duration, float delta, bool looping);
 
 /**
+ * @brief What a tick moves of an Animator: the playing head, whether it plays on, the fade's head and time
+ *        left.
+ */
+struct PlaybackHeads {
+    float time          = 0.0f;
+    bool  playing       = false;
+    float fadeTime      = 0.0f;
+    float fadeRemaining = 0.0f;  ///< At or below 0 the fade is spent.
+
+    /// @p animator's heads as they stand.
+    static PlaybackHeads of(const Animator& animator) {
+        return {animator.time, animator.playing, animator.fadeTime, animator.fadeRemaining};
+    }
+};
+
+/**
+ * @brief Move @p heads on by @p simDelta at @p animator's speed and looping: the one rule both a tick
+ *        (advancePlayback) and a frame drawn between ticks (sampleAhead) move them by.
+ *
+ * @param animator Gives the speed and whether each clip loops.
+ * @param heads Moved in place.
+ * @param duration Length of the playing clip, seconds; 0 disables wrapping.
+ * @param fromDuration Length of the clip being faded out of; 0 disables its wrapping.
+ * @param simDelta Simulation seconds to advance by, above 0.
+ * @return The sweep the playing head made.
+ */
+PlaybackStep advanceHeads(
+    const Animator& animator,
+    PlaybackHeads& heads,
+    float duration,
+    float fromDuration,
+    float simDelta
+);
+
+/**
  * @brief Move @p animator's playback head(s) on by one frame and run down any fade in flight.
  *
  * Nothing moves while simulation time is stopped, so a time authored while paused survives. The
  * outgoing clip advances by the same delta, never stops the animator, and holds its last frame if it
- * runs out. The fade counts down in unscaled simulation seconds. `Animator::playOnStart` is honoured
+ * runs out. The fade counts down in unscaled simulation seconds. `Animator::playOnStart` is honored
  * here, on the first frame with time to spend, so a rig starts on Play and holds in an open scene.
  *
  * @param animator Animator to advance, in place.
@@ -104,21 +110,5 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
  * @return True when the marker should be announced this frame.
  */
 bool crossesMarker(const PlaybackStep& step, float marker, float duration);
-
-/**
- * @brief Sample @p sample's clips and compose the rig's pose, palette and bounds into @p out, in one
- *        forward sweep over the bones.
- *
- * `parent < index` (findSkeletonFault) means a bone's parent is composed first, so no local array is
- * kept. A crossfade blends the local TRS before composition, because blending composed matrices shortens
- * limbs. A BoneAdjust lands on that local TRS after the blend; the parent's final matrix brings its
- * model-space parts into the bone's frame.
- *
- * @param skeleton Rig being posed; must pass findSkeletonFault, which is not re-checked here.
- * @param sample One clip, or two and a weight. Each must be this rig's and pass findClipFault, or be
- *               null; not re-checked here.
- * @param out Slice to write, sized for the skeleton's bone count.
- */
-void composePose(const SkeletonAsset& skeleton, const PoseSample& sample, const PoseWrite& out);
 
 } // namespace Vkm::Engine

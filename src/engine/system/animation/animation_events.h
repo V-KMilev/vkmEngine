@@ -9,14 +9,8 @@ namespace Vkm::Engine {
 /**
  * @brief A rig's playback head crossed one of its clip's markers this tick.
  *
- * Enqueued on the EventBus by SkeletalAnimationSystem; a Behavior subscribes:
- *
- *   subscribe([this](const AnimationEvent& e) {
- *       if (e.entity == m_player && e.marker == "footstep") playFootstep();
- *   });
- *
- * Once per crossing, either direction, and only for the clip the Animator is playing, so a crossfade
- * cannot double a footstep.
+ * Enqueued on the EventBus by SkeletalAnimationSystem and heard by subscribing to it. When a marker
+ * counts as crossed: docs/reference/animation.md, "Animation events".
  */
 struct AnimationEvent {
     EntityId    entity;  ///< The entity carrying the Animator.

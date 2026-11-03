@@ -6,18 +6,18 @@
 
 #include <glm/glm.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
-#include "system/animation/pose_buffer.h"
+#include "core/frame/pose_buffer.h"
 
 namespace Vkm::Engine {
 
@@ -29,27 +29,37 @@ const char* nameOf(const Scene& scene, EntityId entity) {
 }
 
 /**
- * @brief Resolve a socket's bone index, memoising it on the socket.
+ * @brief Resolve a socket's bone index, memoizing it on the socket.
  *
- * Failure is memoised too, so a missing name is not rescanned every frame.
+ * Failure is memoized too, so a missing name is not rescanned every frame.
  *
- * @param socket Socket whose boneIndex is brought up to date.
- * @param rig Skeleton the index is resolved against.
- * @param skeleton The asset @p rig names.
+ * @param socket   Socket whose boneIndex is brought up to date.
+ * @param skeleton The rig's skeleton, the index resolved against.
  */
-void resolveBone(BoneSocket& socket, SkeletonHandle rig, const SkeletonAsset& skeleton) {
-    if (socket.resolvedRig == rig && socket.resolvedName == socket.bone) return;
+void resolveBone(BoneSocket& socket, const SkeletonAsset& skeleton) {
+    const bool same = socket.resolvedUid == skeleton.uid() && socket.resolvedVersion == skeleton.version()
+        && socket.resolvedName == socket.bone;
+    if (same) return;
 
-    socket.resolvedRig  = rig;
-    socket.resolvedName = socket.bone;
-    socket.boneIndex    = socket.bone.empty() ? -1 : skeleton.indexOf(socket.bone);
+    socket.resolvedUid     = skeleton.uid();
+    socket.resolvedVersion = skeleton.version();
+    socket.resolvedName    = socket.bone;
+    socket.boneIndex       = socket.bone.empty() ? -1 : skeleton.indexOf(socket.bone);
 }
 
 } // namespace
 
+void BoneSocketSystem::fixedUpdate(FrameContext& ctx) {
+    PROFILE_SCOPE("BoneSocketSystem::fixed");
+    place(ctx);
+}
+
 void BoneSocketSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BoneSocketSystem");
+    place(ctx);
+}
 
+void BoneSocketSystem::place(FrameContext& ctx) {
     placeSockets(ctx);
 
     // Here rather than in placeSockets, so every exit it takes closes the pass.
@@ -141,7 +151,7 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx) {
         const PoseSlice* slice = ctx.poses->sliceOf(rig);
         if (!slice) continue;
 
-        resolveBone(socket, animator->skeleton, skeleton);
+        resolveBone(socket, skeleton);
 
         if (socket.boneIndex < 0 || static_cast<uint32_t>(socket.boneIndex) >= slice->count) {
             if (!m_noBone.report()) continue;
