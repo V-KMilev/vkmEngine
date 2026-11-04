@@ -1,17 +1,22 @@
 #include "net/replication/names.h"
 
-#include "core/memory/slot_allocator.h"
+#include "base/container/slot_allocator.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 
 namespace Vkm::Engine {
 
 void NetNames::adoptWorld(const Scene& scene) {
-    m_world.clear();
-    m_claimed.clear();
-    m_ended.clear();
+    clear();
     m_epoch = scene.epoch();
     scene.forEachEntity([&](EntityId entity) { m_world.emplace(entity.slot(), entity); });
+}
+
+bool NetNames::names(const Scene& scene, EntityId entity) const {
+    if (!entity) return false;
+    const auto     claimed = m_server.find(entity.slot());
+    const uint32_t slot    = claimed != m_server.end() ? claimed->second : entity.slot();
+    return find(scene, slot) == entity;
 }
 
 EntityId NetNames::find(const Scene& scene, uint32_t slot) const {
@@ -32,19 +37,26 @@ EntityId NetNames::claim(Scene& scene, uint32_t slot) {
         made = scene.createEntity();
     }
     m_claimed[slot] = made;
-    m_epoch         = scene.epoch();
+    m_server[made.slot()] = slot;
+    m_epoch = scene.epoch();
     return made;
 }
 
 void NetNames::forget(Scene& scene, uint32_t slot) {
     // The subtree goes too: an instance's children have no name on the wire.
-    if (const EntityId named = find(scene, slot)) HierarchyOperations::destroyHierarchy(scene, named);
+    if (const EntityId named = find(scene, slot)) {
+        m_server.erase(named.slot());
+        HierarchyOperations::destroyHierarchy(scene, named);
+    }
     m_claimed.erase(slot);
     m_world.erase(slot);
 }
 
 void NetNames::endSession() {
-    for (const auto& [slot, entity] : m_claimed) m_ended.push_back(entity);
+    for (const auto& [slot, entity] : m_claimed) {
+        m_ended.push_back(entity);
+        m_server.erase(entity.slot());
+    }
     m_claimed.clear();
 }
 
@@ -61,6 +73,7 @@ void NetNames::sweepEnded(Scene& scene) {
 void NetNames::clear() {
     m_world.clear();
     m_claimed.clear();
+    m_server.clear();
     m_ended.clear();
 }
 

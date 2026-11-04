@@ -2,111 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <vector>
 
-#include "net/wire/bit_stream.h"
+#include "net/latency/command_packet.h"
 #include "platform/input/input_command.h"
 
 namespace Vkm::Engine {
-
-/**
- * @brief How many ticks a command goes on being resent for.
- *
- * An axis recovers from a lost packet; an edge (`pressed`) is true for one
- * command only and would be lost for good. So a command rides every packet
- * until the server has it or this many newer exist. A retransmit would arrive
- * after its tick had passed.
- */
-constexpr uint32_t NET_COMMAND_REDUNDANCY = 12;
-
-/**
- * @brief The most commands one packet carries.
- *
- * More than the redundancy window, since one frame can run more ticks and
- * every one must go out. Sixteen of the widest commands still fit a datagram, as
- * command.cpp asserts.
- */
-constexpr uint32_t NET_MAX_PACKET_COMMANDS = 16;
-
-/**
- * @brief Commands a client holds while waiting to hear they were run.
- *
- * A backstop: the server's acknowledgements normally empty the list. Also
- * bounds what a replay can correct: past this many ticks of round trip the
- * oldest needed command is gone and the prediction goes uncorrected.
- */
-constexpr uint32_t NET_COMMAND_MEMORY = 64;
-
-/**
- * @brief Bits of a command packet's share of a tick past the server tick it draws.
- *
- * The packet opens with that tick, whole, and then this, in 255ths: when the client saw what it
- * aimed at, for the server's rewind.
- */
-constexpr uint32_t NET_DRAWN_FRACTION_BITS = 8;
-
-/// The drawn tick a command packet opens with, whole and its fraction.
-constexpr uint32_t NET_DRAWN_TICK_BITS = 32 + NET_DRAWN_FRACTION_BITS;
-
-/**
- * @brief Bits an axis is carried in.
- *
- * 1/127 of full deflection either side of an exact centre (Quantize::toSigned),
- * finer than a stick reports.
- */
-constexpr uint32_t NET_AXIS_BITS = 8;
-
-/**
- * @brief Where the next command packet starts in @p unconfirmed.
- *
- * Every command of the newest NET_COMMAND_REDUNDANCY the server has not
- * heard, and before those any command no packet has carried yet, however old:
- * one is never skipped for age, or the server never runs it.
- *
- * The window moves with the newest command, not with replies: anchored on a
- * reply, a long round trip would starve the server of input. @p heard only
- * stops resending what has arrived.
- *
- * @param unconfirmed Every command the server has not yet run, oldest first.
- * @param heard       Newest sequence the server has said it received; zero
- *                    for none, which no command carries.
- * @param sent        Newest sequence a packet has carried; zero for none.
- * @return Index of the first command to write.
- */
-size_t firstCommandToSend(const std::vector<InputCommand>& unconfirmed, uint32_t heard, uint32_t sent);
-
-/**
- * @brief Write @p commands from @p first, oldest first, for @p actionCount
- *        defined actions.
- *
- * The action count comes from the project; a disagreement is refused at join.
- * Only an unbroken run goes (each one sequence and one tick after the last),
- * so only the first's numbers are written. It stops at the first gap or
- * NET_MAX_PACKET_COMMANDS; the rest goes in the next packet.
- *
- * @param out         Stream to write into.
- * @param commands    Oldest first.
- * @param first       Index of the first to write.
- * @param actionCount Action slots in use.
- * @return How many were written.
- */
-size_t writeCommands(
-    BitWriter& out,
-    const std::vector<InputCommand>& commands,
-    size_t first,
-    uint32_t actionCount
-);
-
-/**
- * @brief Read back what writeCommands wrote.
- *
- * @param in          Stream to read from.
- * @param actionCount Action slots in use.
- * @param out         Filled with the commands, oldest first.
- * @return False when the packet is malformed.
- */
-bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>& out);
 
 /**
  * @brief The commands one player has sent that the server has not yet run.
@@ -122,32 +23,22 @@ bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>
  */
 class NetCommandBuffer {
     public:
-        /**
-         * @brief Commands the queue may hold before the oldest are skipped, all at once.
-         *
-         * A queue is input delay. Skipped edges are folded in; the same number
-         * bounds how far repeats may stand in, so the two cannot drift apart.
-         * NetPacing sets the standing depth; this is for a burst after a
-         * stall, set above the pacing cushion by its jitter again so a
-         * jittering link is never trimmed.
-         */
-        static constexpr size_t MAX_DEPTH = 10;
+        static constexpr size_t MAX_DEPTH = 10;  ///< Commands the queue may hold before the oldest are
+                                                 ///< skipped, all at once; a queue is input delay. Skipped
+                                                 ///< edges are folded in, and the same number bounds how far
+                                                 ///< repeats may stand in, so the two cannot drift apart.
+                                                 ///< NetPacing sets the standing depth; this is for a burst
+                                                 ///< after a stall, above the pacing cushion by its jitter
+                                                 ///< again, so a jittering link is never trimmed.
 
-        /**
-         * @brief Most commands held at once, however fast they arrive.
-         *
-         * Nothing else bounds what arrives between two take()s, and accept() is
-         * linear in it. Many packets' worth.
-         */
-        static constexpr size_t MAX_QUEUED = 256;
+        static constexpr size_t MAX_QUEUED = 256;  ///< Most commands held at once, however fast they arrive.
+                                                   ///< Nothing else bounds what arrives between two take()s,
+                                                   ///< and accept() is linear in it. Many packets' worth.
 
-        /**
-         * @brief Ticks a repeat may stand in for before it stops moving the body.
-         *
-         * Twice the redundancy window: that long with nothing means every copy
-         * of every recent command was lost, a link gone rather than jittering.
-         */
         static constexpr uint32_t REPEAT_TICKS = NET_COMMAND_REDUNDANCY * 2;
+            ///< Ticks a repeat may stand in for before it stops moving the body: twice the redundancy window,
+            ///< as that long with nothing means every copy of every recent command was lost, a link gone
+            ///< rather than jittering.
 
     public:
         NetCommandBuffer() = default;
@@ -156,8 +47,8 @@ class NetCommandBuffer {
         NetCommandBuffer(const NetCommandBuffer& other) = delete;
         NetCommandBuffer& operator=(const NetCommandBuffer& other) = delete;
 
-        NetCommandBuffer(NetCommandBuffer && other) = delete;
-        NetCommandBuffer& operator=(NetCommandBuffer && other) = delete;
+        NetCommandBuffer(NetCommandBuffer && other) = default;
+        NetCommandBuffer& operator=(NetCommandBuffer && other) = default;
 
     public:
         /// Take one command, ignoring a sequence already seen.
@@ -252,8 +143,8 @@ class NetCommandBuffer {
         uint32_t                  m_repeatedTicks    = 0;  ///< Ticks run on a repeat, since clear().
         uint32_t                  m_skippedCommands  = 0;  ///< Commands never run, since clear().
 
-        /// Fewest waiting at a take since the last restart; the largest size_t for none yet.
         size_t                    m_lowWater = std::numeric_limits<size_t>::max();
+            ///< Fewest waiting at a take since the last restart; the largest size_t for none yet.
 
         bool                      m_ranReal = false;  ///< Whether m_ranCommandTick means anything yet.
         bool                      m_started = false;

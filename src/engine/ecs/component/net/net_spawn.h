@@ -4,7 +4,7 @@
 #include <map>
 #include <string>
 
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Vkm::Engine {
 
@@ -20,9 +20,9 @@ struct NetSpawn {
     std::string prefab;  ///< Project-relative prefab path.
     Transform   at;      ///< Build pose, exact: a static body is never described again.
 
-    /// Where the server built each entity below the root, by PrefabEntity uid
-    /// (Prefab::BuiltSlots); empty for an instance too large to say it all.
-    std::map<uint32_t, uint32_t> slots;
+    std::map<uint32_t, uint32_t> slots;  ///< Where the server built each entity below the root, by
+                                         ///< PrefabEntity uid (Prefab::BuiltSlots); empty for an instance too
+                                         ///< large to say it all.
 };
 
 } // namespace Vkm::Engine

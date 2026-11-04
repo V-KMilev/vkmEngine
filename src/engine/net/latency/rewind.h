@@ -7,7 +7,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
-#include "net/prediction/sample_track.h"
+#include "net/latency/sample_track.h"
 
 namespace Vkm::Engine {
 
@@ -20,13 +20,9 @@ namespace Vkm::Engine {
  */
 class NetRewind {
     public:
-        /**
-         * @brief Ticks of history kept per player.
-         *
-         * A second at Config::DEFAULT_TICK_RATE, covering a 400 ms round trip
-         * plus the interpolation delay.
-         */
-        static constexpr size_t HISTORY_TICKS = 64;
+        static constexpr size_t HISTORY_TICKS = 64;  ///< Ticks of history kept per player. A second at
+                                                     ///< Config::DEFAULT_TICK_RATE, covering a 400 ms round
+                                                     ///< trip plus the interpolation delay.
 
     public:
         NetRewind() = default;

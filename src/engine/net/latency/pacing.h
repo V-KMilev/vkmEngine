@@ -2,19 +2,16 @@
 
 #include <cstdint>
 
-#include "net/prediction/command.h"
+#include "net/latency/command_buffer.h"
 
 namespace Vkm::Engine {
 
-/**
- * @brief Bits a snapshot spends saying how low its reader's command queue ran.
- *
- * Enough to say a depth past NetCommandBuffer::MAX_DEPTH; deeper is said as the largest.
- */
-constexpr uint32_t NET_QUEUE_DEPTH_BITS = 4;
+constexpr uint32_t NET_QUEUE_DEPTH_BITS = 4;  ///< Bits a snapshot spends saying how low its reader's command
+                                              ///< queue ran. Enough to say a depth past
+                                              ///< NetCommandBuffer::MAX_DEPTH; deeper is said as the largest.
 
-/// The largest depth a snapshot can say.
 constexpr uint32_t NET_QUEUE_DEPTH_MAX = (1u << NET_QUEUE_DEPTH_BITS) - 1u;
+    ///< The largest depth a snapshot can say.
 
 static_assert(
     NET_QUEUE_DEPTH_MAX > NetCommandBuffer::MAX_DEPTH,
@@ -38,13 +35,10 @@ static_assert(
  */
 class NetPacing {
     public:
-        /**
-         * @brief The most the pacing bends either way.
-         *
-         * Covers clock drift and a frame loop running a little short, under
-         * what a player notices in their character's speed.
-         */
-        static constexpr float MAX_DILATION = 0.05f;
+        static constexpr float MAX_DILATION = 0.05f;  ///< The most the pacing bends either way: covering
+                                                      ///< clock drift and a frame loop running a little
+                                                      ///< short, under what a player notices in their
+                                                      ///< character's speed.
 
     public:
         NetPacing() = default;
@@ -84,10 +78,10 @@ class NetPacing {
         void clear() { *this = NetPacing{}; }
 
     private:
-        float m_depth  = 0.0f;  ///< Smoothed low water.
-        float m_spread = 0.0f;  ///< Smoothed distance of a reading from it.
-        float m_drift  = 0.0f;  ///< The integral: the steady bend a drifting clock needs.
-        float m_scale  = 1.0f;
+        float m_depth   = 0.0f;  ///< Smoothed low water.
+        float m_spread  = 0.0f;  ///< Smoothed distance of a reading from it.
+        float m_drift   = 0.0f;  ///< The integral: the steady bend a drifting clock needs.
+        float m_scale   = 1.0f;
         bool  m_started = false;
 };
 

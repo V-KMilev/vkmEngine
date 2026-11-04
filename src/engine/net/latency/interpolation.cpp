@@ -1,9 +1,10 @@
-#include "net/prediction/interpolation.h"
+#include "net/latency/interpolation.h"
 
 #include <algorithm>
 #include <cmath>
 
-#include "ecs/component/core/transform.h"
+#include "ecs/component/physics/ragdoll.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/scene.h"
 #include "net/replication/silence.h"
 
@@ -11,42 +12,24 @@ namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief How far the render clock may drift before it is moved outright rather than eased.
- *
- * A gap this large is a stall or a reconnection.
- */
-constexpr double SNAP_TICKS = 20.0;
+constexpr double SNAP_TICKS = 20.0;  ///< How far the render clock may drift before it is moved outright
+                                     ///< rather than eased. A gap this large is a stall or a reconnection.
 
-/**
- * @brief How much a tick of error bends the rate the render clock runs at.
- *
- * Moving it would jump every body at once; nudging it toward a receding target
- * never arrives.
- */
-constexpr float CATCH_UP = 0.05f;
+constexpr float CATCH_UP = 0.05f;  ///< How much a tick of error bends the rate the render clock runs at.
+                                   ///< Moving it would jump every body at once; nudging it toward a receding
+                                   ///< target never arrives.
 
-/**
- * @brief The most the world may be shown speeded up or slowed down while the clock
- * catches up.
- *
- * Under what a player notices on a moving body.
- */
-constexpr float MAX_DILATION = 0.10f;
+constexpr float MAX_DILATION = 0.10f;  ///< The most the world may be shown speeded up or slowed down while
+                                       ///< the clock catches up. Under what a player notices on a moving
+                                       ///< body.
 
-/**
- * @brief How much of each arrival the measured jitter takes.
- *
- * One late packet moves it a little; a link that keeps jittering, all the way.
- */
-constexpr float JITTER_SMOOTHING = 0.1f;
+constexpr float JITTER_SMOOTHING = 0.1f;  ///< How much of each arrival the measured jitter takes. One late
+                                          ///< packet moves it a little; a link that keeps jittering, all the
+                                          ///< way.
 
-/**
- * @brief How many times the measured jitter the delay allows a snapshot to be late by.
- *
- * An arrival rarely strays further than twice the mean from when it was due.
- */
-constexpr float JITTER_MARGIN = 2.0f;
+constexpr float JITTER_MARGIN = 2.0f;  ///< How many times the measured jitter the delay allows a snapshot to
+                                       ///< be late by. An arrival rarely strays further than twice the mean
+                                       ///< from when it was due.
 
 } // namespace
 
@@ -68,11 +51,11 @@ void NetInterpolation::record(
 
 void NetInterpolation::heard(uint32_t tick, float tickRate) {
     // Against the last arrival, not a running estimate: a lost snapshot costs
-    // nothing, and the two clocks' drift cancels between neighbours.
+    // nothing, and the two clocks' drift cancels between neighbors.
     if (m_heardAny && tickRate > 0.0f) {
-        const double due      = static_cast<double>(static_cast<int64_t>(tick) - m_heardTick)
+        const double due = static_cast<double>(static_cast<int64_t>(tick) - m_heardTick)
             / static_cast<double>(tickRate);
-        const float  strayed  = static_cast<float>(std::abs((m_seconds - m_heardAt) - due));
+        const float strayed = static_cast<float>(std::abs((m_seconds - m_heardAt) - due));
         m_jitter += (strayed - m_jitter) * JITTER_SMOOTHING;
     }
     m_heardAt   = m_seconds;
@@ -160,15 +143,7 @@ void NetInterpolation::forget(EntityId entity) {
 }
 
 void NetInterpolation::clear() {
-    m_tracks.clear();
-    m_renderTick = 0.0;
-    m_newestTick = 0;
-    m_started    = false;
-    m_seconds    = 0.0;
-    m_heardAt    = 0.0;
-    m_heardTick  = 0;
-    m_jitter     = 0.0f;
-    m_heardAny   = false;
+    *this = NetInterpolation{};
 }
 
 } // namespace Vkm::Engine

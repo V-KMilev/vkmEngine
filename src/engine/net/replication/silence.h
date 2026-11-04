@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "system/physics/ragdoll_system.h"
 
 namespace Vkm::Engine {
 
@@ -14,8 +13,8 @@ class Scene;
  * @brief Is @p entity a body that stays where the scene file put it?
  *
  * Such a body never moves, so both ends hold the scene file's exact value;
- * describing it would replace that with a quantised copy, whose angle error
- * grows with size - ten centimetres across a sixty-metre floor.
+ * describing it would replace that with a quantized copy, whose angle error
+ * grows with size - ten centimeters across a sixty-meter floor.
  *
  * @param scene  World holding the entity.
  * @param entity Entity to test.
@@ -24,10 +23,22 @@ class Scene;
 bool isStaticBody(const Scene& scene, EntityId entity);
 
 /**
+ * @brief Is @p entity a mesh that says it never moves, with no body to move it?
+ *
+ * As a static body, it stays where the scene file put it; a quantized copy would move it, and the
+ * cull, which keeps what it worked out of a fixed mesh, would take that for a broken promise.
+ *
+ * @param scene  World holding the entity.
+ * @param entity Entity to test.
+ * @return True when its Mesh has Mesh::movable off and it carries no Rigidbody.
+ */
+bool isFixedMesh(const Scene& scene, EntityId entity);
+
+/**
  * @brief Why an entity is not described on the wire, or None when it is.
  *
- * NetLocal, Prefab::isInsideInstance, isPosedByAnimation and isStaticBody, asked in one
- * place so the snapshot and what an author is told cannot disagree.
+ * NetLocal, Prefab::isInsideInstance, isPosedByAnimation, isStaticBody and isFixedMesh, asked in
+ * one place so the snapshot and what an author is told cannot disagree.
  */
 enum class NetSilence : uint8_t {
     None,                  ///< It is on the wire.
@@ -43,8 +54,8 @@ enum class NetSilence : uint8_t {
     InsidePrefabInstance,
     PosedByAnimation,      ///< Both ends work it out; see isPosedByAnimation.
     StaticBody,            ///< It cannot move, and the scene file is exact.
+    FixedMesh,             ///< Its mesh says it never moves, and the scene file is exact.
     Local,                 ///< It or an ancestor is NetLocal: each end runs its own.
-    Count
 };
 
 /**
@@ -95,11 +106,19 @@ class NetSilenceMap {
 };
 
 /**
+ * @brief What an author is told about one reason an entity is off the wire.
+ */
+struct NetSilenceText {
+    const char* label       = nullptr;  ///< A few words, to follow "Off the wire: ".
+    const char* explanation = nullptr;  ///< Why that keeps it off, in full.
+};
+
+/**
  * @brief What to tell an author about @p reason.
  *
  * @param reason Why the entity is not described.
- * @return The explanation, or nullptr when the entity replicates.
+ * @return The label and explanation; both nullptr when the entity replicates.
  */
-const char* toString(NetSilence reason);
+NetSilenceText explain(NetSilence reason);
 
 } // namespace Vkm::Engine

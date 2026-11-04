@@ -4,40 +4,41 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <random>
 #include <type_traits>
 #include <utility>
 
 #include <glm/gtc/constants.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/memory/slot_allocator.h"
-#include "ecs/component/core/net_local.h"
-#include "ecs/component/prefab/net_spawn.h"
+#include "base/container/slot_allocator.h"
+#include "ecs/component/net/net_local.h"
+#include "ecs/component/net/net_spawn.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
+#include "ecs/prefab_instances.h"
 #include "io/scene/prefab.h"
-#include "net/net_session.h"
-#include "net/wire/codecs.h"
+#include "net/message_bodies.h"
+#include "net/net_core.h"
+#include "net/replication/snapshot.h"
+#include "net/wire/project_path.h"
+#include "net/wire/protocol.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief Predicted positions kept, in ticks.
- *
- * Longer than NET_COMMAND_MEMORY, a replay's reach, so an answer too old to
- * replay is still measured and reported as the link outrunning the replay,
- * rather than going uncorrected in silence.
- */
-constexpr size_t PREDICTION_HISTORY = 200;
+constexpr size_t PREDICTION_HISTORY = 200;  ///< Predicted positions kept, in ticks: longer than
+                                            ///< NET_COMMAND_MEMORY, a replay's reach, so an answer too old to
+                                            ///< replay is still measured and reported as the link outrunning
+                                            ///< the replay, not left uncorrected in silence.
 static_assert(
     PREDICTION_HISTORY > NET_COMMAND_MEMORY,
-    "an answer older than a replay can reach has to be recognised as one"
+    "an answer older than a replay can reach has to be recognized as one"
 );
 
 static_assert(
@@ -45,30 +46,27 @@ static_assert(
     "NetSpawn carries the prefab's own record of where an instance was built"
 );
 
-/**
- * @brief How long a lease outlives the last tick it was reported on.
- *
- * Must outlive a bounce and not the push.
- */
-constexpr uint32_t LEASE_TICKS = 32;
+constexpr uint32_t LEASE_TICKS = 32;  ///< How long a lease outlives the last tick it was reported on. Must
+                                      ///< outlive a bounce and not the push.
 
-/**
- * @brief Below this a disagreement is quantisation plus float noise, not worth a replay.
- */
-constexpr float CORRECTION_FLOOR = 0.003f;
+constexpr float CORRECTION_FLOOR = 0.003f;  ///< Below this a disagreement is quantization plus float noise,
+                                            ///< not worth a replay.
 
-/**
- * @brief How fast what is drawn catches up with what is simulated, per second.
- *
- * Slow enough not to read as a jump, fast enough that nobody shoots where the
- * character is not.
- */
-constexpr float DRAW_CATCH_UP = 6.0f;
+constexpr float DRAW_CATCH_UP = 6.0f;  ///< How fast what is drawn catches up with what is simulated, per
+                                       ///< second. Slow enough not to read as a jump, fast enough that nobody
+                                       ///< shoots where the character is not.
 
-/**
- * @brief Past this the error is a teleport or a respawn, drawn at once rather than eased.
- */
-constexpr float DRAW_SNAP = 4.0f;
+constexpr float DRAW_SNAP = 4.0f;  ///< Past this the error is a teleport or a respawn, drawn at once rather
+                                   ///< than eased.
+
+/// A token for the first Hello, drawn from the operating system and never zero, so a Challenge or a Refuse
+/// forged by someone who never saw the Hello can neither echo it nor carry it.
+uint64_t drawToken() {
+    std::random_device device;
+    uint64_t token = 0;
+    while (token == 0) token = (static_cast<uint64_t>(device()) << 32) | static_cast<uint64_t>(device());
+    return token;
+}
 
 } // namespace
 
@@ -79,9 +77,10 @@ NetClient::NetClient(NetCore& core)
 
 NetClient::~NetClient() = default;
 
-void NetClient::open(const NetAddress& server) {
-    m_connection = std::make_unique<NetConnection>();
+void NetClient::open(const Network::Address& server) {
+    m_connection = std::make_unique<Network::Connection>();
     m_connection->open(server);
+    m_token = drawToken();
 }
 
 void NetClient::close() {
@@ -97,6 +96,9 @@ void NetClient::close() {
     m_prediction.clear();
     m_interpolation.clear();
     m_outbox.clear();
+    // A world it was told to load is the session's, and a later one's first move would be taken
+    // for it.
+    m_world = WorldToLoad{};
 }
 
 bool NetClient::sendMessage(const uint8_t* bytes, size_t size) {
@@ -166,9 +168,12 @@ void NetClient::forgetWorld() {
     m_names.clear();
 }
 
-void NetClient::lease(const std::vector<EntityId>& entities) {
+void NetClient::lease(const Scene& scene, const std::vector<EntityId>& entities) {
     for (EntityId entity : entities) {
         if (!entity || entity == m_localEntity) continue;
+        // What this end runs already: leased, a replay would run it again.
+        if (!m_names.names(scene, entity)) continue;
+        if (HierarchyOperations::findInSelfOrAncestors<NetLocal>(scene, entity)) continue;
 
         const auto found = std::find_if(
             m_prediction.leases.begin(),
@@ -193,8 +198,14 @@ void NetClient::restoreHeld(Scene& scene) {
         Transform* at = scene.tryGet<Transform>(held.entity);
         if (!at) continue;
         *at = held.transform;
-        if (!held.hasBody) continue;
-        if (Rigidbody* body = scene.tryGet<Rigidbody>(held.entity)) *body = held.body;
+        if (held.hasBody) {
+            if (Rigidbody* body = scene.tryGet<Rigidbody>(held.entity)) *body = held.body;
+        }
+        if (held.hasController) {
+            if (CharacterController* controller = scene.tryGet<CharacterController>(held.entity)) {
+                *controller = held.controller;
+            }
+        }
     }
 }
 
@@ -329,11 +340,12 @@ void NetClient::interpolate(Scene& scene, float deltaTime) {
         before.push_back(at ? at->position + drawOffsetFor(entity) : glm::vec3(0.0f));
     }
 
-    m_interpolation.apply(scene, deltaTime, static_cast<float>(m_core.tickRate), NET_SNAPSHOT_RATE);
+    const auto ticks = static_cast<float>(m_core.tickRate);
+    m_interpolation.apply(scene, deltaTime, ticks, snapshotRate(m_core.tickRate));
 
     for (size_t i = 0; i < m_prediction.released.size(); ++i) {
         const EntityId entity = m_prediction.released[i];
-        const Transform* at = scene.tryGet<Transform>(entity);
+        const Transform* at   = scene.tryGet<Transform>(entity);
         if (!at) continue;
         correctDraw(entity, before[i], at->position);
     }
@@ -341,32 +353,32 @@ void NetClient::interpolate(Scene& scene, float deltaTime) {
 }
 
 bool NetClient::receive(Scene& scene, ResourceManager& resources) {
-    NetAddress from;
+    Network::Address from;
     // Bounded rather than drained - see NetCore::MAX_READS_PER_FRAME.
     for (size_t read = 0; read < NetCore::MAX_READS_PER_FRAME; ++read) {
         if (!m_core.socket.receive(m_core.datagram, from)) break;
         if (!m_connection || !(from == m_connection->peer())) continue;
 
         // Checked before the connection sees it: a server address is as easy to forge.
-        BitReader       reader  = receivedPayload(m_core);
-        NetMessage      message = NetMessage::Hello;
-        uint64_t        token   = 0;
-        const NetSender sender  = readMessageHeader(reader, message, token);
+        Network::BitReader reader = receivedPayload(m_core);
+        NetMessage message = NetMessage::Hello;
+        uint64_t token = 0;
+        const NetSender sender = readMessageHeader(reader, message, token);
         if (sender == NetSender::Unknown) continue;
 
-        // All another build can say that this end understands is a refusal.
-        if (sender == NetSender::OtherBuild) {
-            if (message != NetMessage::Refuse || m_localPlayer != NO_PLAYER || token != m_token) {
-                continue;
-            }
-            return onRefuse(reader);
+        // The token Hellos echo, from a server of any build, taken only from a Challenge echoing the one
+        // this end holds: else a forger could pick it, and refuse this end in the server's name. The
+        // connection does not see it, since nothing proves the sender.
+        if (message == NetMessage::Challenge) {
+            const uint64_t echo = reader.u64();
+            if (m_localPlayer == NO_PLAYER && !reader.failed() && echo == m_token) m_token = token;
+            continue;
         }
 
-        // The token Hellos echo. The connection does not see it, since nothing
-        // proves the sender; a forged one costs one Hello and a fresh Challenge.
-        if (message == NetMessage::Challenge) {
-            if (m_localPlayer == NO_PLAYER) m_token = token;
-            continue;
+        // All else another build says that this end understands is a refusal.
+        if (sender == NetSender::OtherBuild) {
+            if (m_localPlayer != NO_PLAYER || message != NetMessage::Refuse || token != m_token) continue;
+            return onRefuse(reader);
         }
         if (token != m_token) continue;
 
@@ -374,7 +386,6 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
         const bool accepted = m_connection->accept(
             m_core.datagram.data(),
             m_core.datagram.size(),
-            m_core.scratch,
             m_core.acknowledged
         );
         if (!accepted) continue;
@@ -385,6 +396,7 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
             case NetMessage::Refuse:   open = onRefuse(reader);         break;
             case NetMessage::Goodbye:  open = onGoodbye();              break;
             case NetMessage::Snapshot: onSnapshot(scene, reader);       break;
+            case NetMessage::World:    open = onWorld(reader);          break;
             default: break;
         }
         if (!open) return false;
@@ -392,7 +404,7 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
 
     if (m_connection && m_connection->timedOut()) {
         m_core.lastError = "the server stopped answering";
-        LOG_ERROR("Lost the server: nothing heard for %.0f seconds", NetConnection::TIMEOUT_SECONDS);
+        LOG_ERROR("Lost the server: nothing heard for %.0f seconds", Network::Connection::TIMEOUT_SECONDS);
         return false;
     }
 
@@ -401,33 +413,101 @@ bool NetClient::receive(Scene& scene, ResourceManager& resources) {
     return true;
 }
 
-bool NetClient::onWelcome(Scene& scene, BitReader& reader) {
-    const PlayerId player = static_cast<PlayerId>(reader.u16());
-    const uint32_t slot   = reader.u32();
+bool NetClient::onWelcome(Scene& scene, Network::BitReader& reader) {
+    // The server says it again until a command shows it arrived: the first one seated this end.
+    if (m_localPlayer != NO_PLAYER) return true;
+
+    WelcomeBody welcome;
+    welcome.read(reader);
 
     // Else this end would report itself playing with no entity to play.
-    if (reader.failed() || player == NO_PLAYER) {
+    if (reader.failed() || welcome.player == NO_PLAYER) {
         m_core.lastError = "the server's welcome did not say who this end is";
         LOG_ERROR("Welcome ended early or named no player; not joining");
         return false;
     }
+    // Whether the world it loaded is the one the server holds; if not, which to load comes next.
+    const uint8_t generation = welcome.worldGeneration;
+    m_core.worldGeneration = welcome.current ? generation : static_cast<uint8_t>(generation - 1);
 
-    m_localPlayer = player;
-    m_localEntity = m_names.claim(scene, slot);
-    if (!m_localEntity) {
-        m_core.lastError = "the server named an entity this world cannot hold";
-        LOG_ERROR(
-            "Welcome named slot %u; the wire may name up to %u",
-            slot,
-            SlotAllocator::MAX_CLAIMED_INDEX
-        );
-        return false;
+    m_localPlayer = welcome.player;
+    // The slot names an entity of the server's world: until this end has loaded it (completeWorld),
+    // it drives nothing.
+    if (!welcome.current) {
+        LOG_INFO("Joined as player %u; loading the server's world", m_localPlayer);
+        return true;
     }
-    LOG_INFO("Joined as player %u, driving entity %u", m_localPlayer, slot);
+    if (!claimLocalEntity(scene, welcome.slot)) return false;
+    LOG_INFO("Joined as player %u, driving entity %u", m_localPlayer, welcome.slot);
     return true;
 }
 
-bool NetClient::onRefuse(BitReader& reader) {
+bool NetClient::onWorld(Network::BitReader& reader) {
+    WorldBody world;
+    world.read(reader);
+    if (reader.failed()) return true;
+    if (world.generation == m_core.worldGeneration) return true;  // held already, or the news is late
+
+    // Opened on the server's say-so: only a scene inside the project.
+    if (!isProjectJsonPath(world.path)) {
+        m_core.lastError = "the server named a world this end will not open";
+        LOG_ERROR(
+            "The server moved to '%s', which is no scene inside the project; leaving",
+            world.path.c_str()
+        );
+        return false;
+    }
+    if (m_world.named && m_world.generation == world.generation) return true;
+    m_world = WorldToLoad{
+        std::move(world.path),
+        world.fingerprint,
+        world.slot,
+        world.generation,
+        true,
+        false
+    };
+    LOG_INFO("The server moved to '%s'; loading it", m_world.path.c_str());
+    return true;
+}
+
+std::string NetClient::takeSceneToLoad() {
+    if (!m_world.named || m_world.taken) return {};
+    m_world.taken = true;
+    return m_world.path;
+}
+
+bool NetClient::completeWorld(Scene& scene) {
+    const WorldToLoad world = m_world;
+    m_world = WorldToLoad{};
+    if (world.fingerprint != 0 && m_core.world != 0 && world.fingerprint != m_core.world) {
+        m_core.lastError = "the world this end loaded is not the server's";
+        LOG_ERROR(
+            "Loaded '%s', but not as the server has it (%016llx here, %016llx there); leaving",
+            world.path.c_str(),
+            static_cast<unsigned long long>(m_core.world),
+            static_cast<unsigned long long>(world.fingerprint)
+        );
+        return false;
+    }
+    if (!claimLocalEntity(scene, world.slot)) return false;
+    m_core.worldGeneration = world.generation;
+    LOG_INFO("Playing on in '%s', driving entity %u", world.path.c_str(), world.slot);
+    return true;
+}
+
+bool NetClient::claimLocalEntity(Scene& scene, uint32_t slot) {
+    m_localEntity = m_names.claim(scene, slot);
+    if (m_localEntity) return true;
+    m_core.lastError = "the server named an entity this world cannot hold";
+    LOG_ERROR(
+        "The server named slot %u for this end; the wire may name up to %u",
+        slot,
+        SlotAllocator::MAX_CLAIMED_INDEX
+    );
+    return false;
+}
+
+bool NetClient::onRefuse(Network::BitReader& reader) {
     const auto reason = static_cast<NetRefusal>(reader.u8());
     m_core.lastError = toString(reason);
     LOG_ERROR("Refused: %s", m_core.lastError.c_str());
@@ -459,6 +539,10 @@ void NetClient::holdPredicted(Scene& scene, std::vector<DrawnFrom>& takenFrom) {
         if (const Rigidbody* body = scene.tryGet<Rigidbody>(entity)) {
             held.hasBody = true;
             held.body    = *body;
+        }
+        if (const CharacterController* controller = scene.tryGet<CharacterController>(entity)) {
+            held.hasController = true;
+            held.controller    = *controller;
         }
         m_prediction.held.push_back(held);
     };
@@ -501,12 +585,11 @@ bool NetClient::adoptServerTick(uint32_t serverTick) {
     return true;
 }
 
-void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
-    const uint32_t serverTick    = reader.u32();
-    const uint32_t confirmedTick = reader.u32();
-    const uint32_t heard         = reader.u32();
-    const uint32_t lowWater      = reader.bits(NET_QUEUE_DEPTH_BITS);
-    const uint16_t messages      = reader.u16();
+void NetClient::onSnapshot(Scene& scene, Network::BitReader& reader) {
+    SnapshotHeader header;
+    header.read(reader);
+    // Of a world this end does not hold - the last, or the next before it is loaded.
+    if (!reader.failed() && header.worldGeneration != m_core.worldGeneration) return;
 
     // A header cut short reads as zeros, and a server tick of zero switches
     // the jump guard off.
@@ -514,11 +597,12 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
         m_connection->refuse();
         return;
     }
-    if (!adoptServerTick(serverTick)) return;
-    m_interpolation.heard(serverTick, static_cast<float>(m_core.tickRate));
-    m_prediction.heard = heard;
-    m_outbox.acknowledge(messages);
-    m_prediction.pacing.report(lowWater, m_connection->roundTrip(), static_cast<float>(m_core.tickRate));
+    if (!adoptServerTick(header.serverTick)) return;
+    const float tickRate = static_cast<float>(m_core.tickRate);
+    m_interpolation.heard(header.serverTick, tickRate);
+    m_prediction.heard = header.heard;
+    m_outbox.acknowledge(header.messages);
+    m_prediction.pacing.report(header.lowWater, m_connection->roundTrip(), tickRate);
 
     std::vector<DrawnFrom> takenFrom;
     holdPredicted(scene, takenFrom);
@@ -552,7 +636,7 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
         if (entity == m_localEntity) continue;
         const Transform* at = scene.tryGet<Transform>(entity);
         if (!at) continue;
-        m_interpolation.record(entity, serverTick, at->position, at->rotation);
+        m_interpolation.record(entity, header.serverTick, at->position, at->rotation);
     }
 
     // A body just taken keeps the server's word and eases across the handover.
@@ -564,38 +648,36 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
     m_prediction.acquired.clear();
 
     // After the body is read: the snapshot may have reported this end's entity gone.
-    if (scene.has<Transform>(m_localEntity)) reconcile(scene, confirmedTick);
+    if (scene.has<Transform>(m_localEntity)) reconcile(scene, header.confirmedTick);
     else                                     restoreHeld(scene);
 }
 
 void NetClient::send() {
     if (!m_connection) return;
 
-    // Not before the first tick: a behavior sets the action count the hello carries.
-    if (!m_core.ticked) return;
-
     std::vector<uint8_t>& payload = m_core.payload;
-    BitWriter writer(payload, NetConnection::MAX_PAYLOAD);
-    // Zero on the first Hello, then the Challenge's token, proving this end hears.
+    Network::BitWriter writer(payload, Network::Connection::MAX_PAYLOAD);
+    // Drawn for the first Hello, then the Challenge's token, proving this end hears.
     const NetMessage message = m_localPlayer == NO_PLAYER ? NetMessage::Hello : NetMessage::Command;
     writeMessageHeader(writer, message, m_token);
     if (m_localPlayer == NO_PLAYER) {
         // Repeated every send until answered, so a lost Hello or Challenge
         // needs no retry timer.
-        writer.u32(NetSchema::get().fingerprint());
-        writer.u8(static_cast<uint8_t>(m_core.actionCount));
-        writer.u64(m_core.actionNames);
-        writer.u64(m_core.world);
-        writer.u16(static_cast<uint16_t>(m_core.tickRate));
+        HelloBody hello;
+        hello.schema      = NetSchema::get().fingerprint();
+        hello.actions     = static_cast<uint8_t>(m_core.actionCount);
+        hello.actionNames = m_core.actionNames;
+        hello.world       = m_core.world;
+        hello.tickRate    = static_cast<uint16_t>(m_core.tickRate);
+        hello.write(writer);
     } else {
-        // The server tick being drawn, before the commands so it reads without any.
-        const double   drawn = m_interpolation.renderTick();
-        const uint32_t whole = drawn > 0.0 ? static_cast<uint32_t>(drawn) : 0u;
-        writer.u32(whole);
-        const double   past  = drawn - static_cast<double>(whole);
-        writer.bits(static_cast<uint32_t>(past * 255.0), NET_DRAWN_FRACTION_BITS);
+        // Before the commands, so it reads without any.
+        CommandPreamble preamble;
+        preamble.worldGeneration = m_core.worldGeneration;
+        preamble.drawnTick       = m_interpolation.renderTick();
+        preamble.write(writer);
 
-        const size_t first   = firstCommandToSend(
+        const size_t first = firstCommandToSend(
             m_prediction.unacknowledged,
             m_prediction.heard,
             m_prediction.sent
@@ -609,7 +691,7 @@ void NetClient::send() {
         }
 
         // In the room the commands left: they are for this tick, the messages for whenever.
-        m_outbox.write(writer, 8u * NetConnection::MAX_PAYLOAD - writer.bitCount());
+        m_outbox.write(writer, 8u * Network::Connection::MAX_PAYLOAD - writer.bitCount());
     }
     writer.finish();
 
@@ -676,7 +758,7 @@ void NetClient::buildInto(Scene& scene, ResourceManager& resources, EntityId roo
         const NetType& row = schema.types()[type];
         if (!row.has(scene, root)) continue;
         std::vector<uint8_t> bytes;
-        BitWriter writer(bytes, UdpSocket::MAX_DATAGRAM);
+        Network::BitWriter writer(bytes, Network::UdpSocket::MAX_DATAGRAM);
         row.encode(scene, root, writer);
         writer.finish();
         said.emplace_back(type, std::move(bytes));
@@ -694,7 +776,7 @@ void NetClient::buildInto(Scene& scene, ResourceManager& resources, EntityId roo
     }
 
     for (const auto& [type, bytes] : said) {
-        BitReader reader(bytes.data(), bytes.size());
+        Network::BitReader reader(bytes.data(), bytes.size());
         schema.types()[type].decode(scene, root, reader);
     }
 

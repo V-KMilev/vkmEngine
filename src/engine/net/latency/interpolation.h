@@ -8,7 +8,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
-#include "net/prediction/sample_track.h"
+#include "net/latency/sample_track.h"
 
 namespace Vkm::Engine {
 
@@ -24,31 +24,19 @@ class Scene;
  */
 class NetInterpolation {
     public:
-        /**
-         * @brief The least that is drawn behind the newest news, in snapshots.
-         *
-         * With one, a single lost packet leaves nothing to interpolate toward
-         * and the world stalls. Jitter grows the delay past this (delayTicks()).
-         * The snapshot rate sets what it costs in milliseconds.
-         */
-        static constexpr float SNAPSHOTS_BEHIND = 2.0f;
+        static constexpr float SNAPSHOTS_BEHIND = 2.0f;  ///< The least that is drawn behind the newest news,
+                                                         ///< in snapshots: with one, a single lost packet
+                                                         ///< leaves nothing to interpolate toward and the
+                                                         ///< world stalls. Jitter grows the delay past this
+                                                         ///< (delayTicks()); the snapshot rate sets its cost
+                                                         ///< in milliseconds.
 
-        /**
-         * @brief Samples kept per entity.
-         *
-         * Enough to cross a lost packet or two; past that a body is better
-         * snapped than guessed at.
-         */
-        static constexpr size_t HISTORY = 8;
+        static constexpr size_t HISTORY = 8;  ///< Samples kept per entity. Enough to cross a lost packet or
+                                              ///< two; past that a body is better snapped than guessed at.
 
-        /**
-         * @brief The most that is drawn behind the newest news, in snapshots,
-         *        however badly the link jitters.
-         *
-         * Half of HISTORY, so samples either side of the moment drawn survive
-         * a further loss or two.
-         */
         static constexpr float MAX_SNAPSHOTS_BEHIND = static_cast<float>(HISTORY) / 2.0f;
+            ///< The most that is drawn behind the newest news, in snapshots, however badly the link jitters.
+            ///< Half of HISTORY, so samples either side of the moment drawn survive a further loss or two.
 
         static_assert(
             SNAPSHOTS_BEHIND <= MAX_SNAPSHOTS_BEHIND,
@@ -62,8 +50,8 @@ class NetInterpolation {
         NetInterpolation(const NetInterpolation& other) = delete;
         NetInterpolation& operator=(const NetInterpolation& other) = delete;
 
-        NetInterpolation(NetInterpolation && other) = delete;
-        NetInterpolation& operator=(NetInterpolation && other) = delete;
+        NetInterpolation(NetInterpolation && other) = default;
+        NetInterpolation& operator=(NetInterpolation && other) = default;
 
     public:
         /**
@@ -168,7 +156,9 @@ class NetInterpolation {
         }
 
     private:
-        /// One entity's samples, plus whether this end has taken over drawing it.
+        /**
+         * @brief One entity's samples, plus whether this end has taken over drawing it.
+         */
         struct Track {
             EntityId             entity;  ///< Which occupant of the slot these describe.
             SampleTrack<HISTORY> history;
@@ -184,8 +174,7 @@ class NetInterpolation {
     private:
         std::unordered_map<uint32_t, Track> m_tracks;
 
-        /// Which slots inactive ragdolls pose, marked once per call.
-        std::vector<bool> m_posed;
+        std::vector<bool> m_posed;  ///< Which slots inactive ragdolls pose, marked once per call.
 
         double   m_renderTick = 0.0;
         uint32_t m_newestTick = 0;

@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "net/wire/protocol.h"
+#include "net/player_id.h"
 
 namespace Vkm::Engine {
 

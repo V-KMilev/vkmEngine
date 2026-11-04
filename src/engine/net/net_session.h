@@ -1,19 +1,24 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "ecs/component/core/transform.h"
+#include "vkm_network/bit_stream.h"
+#include "vkm_network/connection.h"
+#include "vkm_network/udp_socket.h"
+
+#include "ecs/component/scene/transform.h"
 #include "ecs/entity.h"
 #include "net/net_client.h"
+#include "net/net_core.h"
 #include "net/net_server.h"
-#include "net/prediction/command.h"
-#include "net/transport/connection.h"
-#include "net/wire/bit_stream.h"
+#include "net/latency/command_packet.h"
 #include "net/wire/protocol.h"
-#include "platform/net/udp_socket.h"
+#include "net/player_id.h"
+#include "net/net_role.h"
 
 namespace Vkm::Engine {
 
@@ -21,90 +26,6 @@ class Clock;
 class EventBus;
 class Scene;
 class ResourceManager;
-
-/**
- * @brief How often the world goes out, in packets a second, independent of frame rate.
- *
- * Decides how late another player looks: the interpolation delay is counted in
- * snapshots, two of them 31 ms at this rate.
- */
-constexpr float NET_SNAPSHOT_RATE = 64.0f;
-
-/**
- * @brief How often input goes up, in packets a second.
- *
- * Decides how stale the server's picture of a player's input may be; a tick
- * the server has no command for is a tick the player did not get.
- */
-constexpr float NET_COMMAND_RATE = 64.0f;
-
-/**
- * @brief The fastest tick rate a networked session runs at: two commands to a
- *        command packet.
- *
- * NetCommandBuffer::MAX_DEPTH, NET_COMMAND_REDUNDANCY and the pacing cushion
- * are counted in commands and sized for this; faster, one packet fills the
- * queue up to the trim. host() and connect() refuse a faster rate.
- */
-constexpr uint32_t NET_MAX_TICK_RATE = static_cast<uint32_t>(2.0f * NET_COMMAND_RATE);
-
-/**
- * @brief What a session's server and client halves share: the socket, what the two
- *        ends agreed, and the buffers a datagram is built in.
- */
-struct NetCore {
-    /**
-     * @brief Datagrams read in one frame.
-     *
-     * Draining until empty would make the frame's cost the sender's choice. What
-     * is left waits.
-     */
-    static constexpr size_t MAX_READS_PER_FRAME = 512;
-
-    UdpSocket socket;
-    uint32_t  tickRate = 0;  ///< Fixed for the session.
-
-    uint32_t actionCount = 0;
-
-    /// Which action has which slot: this end's own, or, on a server that has not
-    /// ticked yet, its first player's.
-    uint64_t actionNames = 0;
-    bool     ticked      = false;  ///< A tick has run, so the count is real.
-
-    uint64_t world = 0;  ///< Which world this end loaded, or zero for none.
-
-    /// The authority's tick: its own count on a server; on a client, the newest a
-    /// snapshot carried, since the two clocks are unrelated.
-    uint32_t serverTick = 0;
-
-    std::string lastError;
-
-    std::vector<uint8_t>  scratch;
-    std::vector<uint8_t>  payload;   ///< What an outgoing message is written into.
-    std::vector<uint8_t>  datagram;  ///< The datagram last received, or last framed to send.
-    std::vector<uint16_t> acknowledged;
-};
-
-/**
- * @brief Send @p message, which carries nothing past its header, on @p connection.
- *
- * @param core       Its socket sends, and its buffers build the datagram.
- * @param connection Frames it, and names where it goes.
- * @param message    What it is: a Goodbye or a Challenge.
- * @param token      The token it carries.
- */
-void sendBare(NetCore& core, NetConnection& connection, NetMessage message, uint64_t token);
-
-/**
- * @brief The payload of the datagram last received, past the connection's header.
- *
- * Empty for a datagram too short to carry that header, so its message header
- * reads as NetSender::Unknown.
- *
- * @param core Holds the datagram last received.
- * @return A reader over the payload.
- */
-BitReader receivedPayload(const NetCore& core);
 
 /**
  * @brief One end of a game, whether it is the authority or a guest.
@@ -146,6 +67,7 @@ class NetSession {
             private:
                 NetSession& m_session;
                 Scene&      m_scene;
+                uint64_t    m_epoch;  ///< Scene::epoch() as the scope began.
         };
 
         /**
@@ -154,6 +76,8 @@ class NetSession {
          * A scope rather than a wrapped query, so it serves any query; offline and
          * on a client it does nothing. Read inside the braces, act outside: what was
          * moved is restored exactly on the way out, discarding anything written to it.
+         * Only players are rewound, and only a player's root: its bones follow it, but a crouch
+         * or lean is the present one; a platform or a thrown crate is judged in the present.
          */
         class Rewind {
             public:
@@ -203,10 +127,31 @@ class NetSession {
          * now is what both ends share; a client names those entities by their own
          * slots, and makes whatever else the server names where it has room.
          *
-         * @param fingerprint What fingerprintScene said of the entry scene.
+         * A world replaced while a session is live is the next of the session's worlds, which a
+         * server tells each client to load by @p path: docs/reference/networking.md, "Changing scene".
+         *
+         * @param fingerprint What fingerprintScene said of the scene's file.
          * @param scene       The world, just opened.
+         * @param path        The scene it was loaded from, project-relative: what a server tells
+         *                    its clients to load when it changes world. Empty for none.
          */
-        void setWorld(uint64_t fingerprint, const Scene& scene);
+        void setWorld(uint64_t fingerprint, const Scene& scene, const std::string& path = {});
+
+        /**
+         * @brief The scene the server has moved to and this end should load, once; empty if none.
+         *
+         * A host's scene loading takes it (BehaviorSystem), and once the world it loaded is in
+         * place this end plays on in it.
+         *
+         * @return The project-relative path, or empty.
+         */
+        std::string takeSceneToLoad();
+
+        /**
+         * @brief The scene takeSceneToLoad named did not load: this end cannot play on in the world
+         *        it left, so it leaves, with lastError saying why.
+         */
+        void worldFailed();
 
         /**
          * @brief Take players on @p port.
@@ -217,20 +162,39 @@ class NetSession {
          * @param maxPlayers Seats; a connection past the last is refused, and
          *                   zero is refused.
          * @param tickRate   The clock's ticks a second; at most NET_MAX_TICK_RATE.
+         * @param actionCount Action slots the project defines: every command's width, so a client
+         *                   must list as many.
+         * @param actionNames InputMap::actionFingerprint, which a client's must match.
          * @return False when the port could not be bound, @p maxPlayers is
          *         zero, or @p tickRate is too fast.
          */
-        bool host(uint16_t port, uint32_t maxPlayers, uint32_t tickRate);
+        bool host(
+            uint16_t port,
+            uint32_t maxPlayers,
+            uint32_t tickRate,
+            uint32_t actionCount,
+            uint64_t actionNames
+        );
 
         /**
          * @brief Join the game at @p server.
          *
-         * @param server   Where the game is.
-         * @param tickRate The clock's ticks a second; at most NET_MAX_TICK_RATE.
+         * Says nothing yet: the frame loop says hello, repeated at the command rate until
+         * answered.
+         *
+         * @param server      Where the game is.
+         * @param tickRate    The clock's ticks a second; at most NET_MAX_TICK_RATE.
+         * @param actionCount Action slots the project defines, which the server's must equal.
+         * @param actionNames InputMap::actionFingerprint, which the server's must equal.
          * @return False when the socket cannot be opened or @p tickRate is too
          *         fast. A refusal arrives later, as a state change.
          */
-        bool connect(const NetAddress& server, uint32_t tickRate);
+        bool connect(
+            const Network::Address& server,
+            uint32_t tickRate,
+            uint32_t actionCount,
+            uint64_t actionNames
+        );
 
         /**
          * @brief Say goodbye and go back to Offline. Safe to call when already offline.
@@ -260,6 +224,9 @@ class NetSession {
         /// Why the last attempt to join ended, or an empty string.
         const std::string& lastError() const { return m_core.lastError; }
 
+        /// The scene this end's world was loaded from, project-relative; empty for none.
+        const std::string& worldPath() const { return m_core.worldPath; }
+
         PlayerId localPlayer() const { return m_client.localPlayer(); }
 
         /**
@@ -267,7 +234,7 @@ class NetSession {
          *
          * @return The bound address.
          */
-        NetAddress localAddress() const { return m_core.socket.localAddress(); }
+        Network::Address localAddress() const { return m_core.socket.localAddress(); }
 
         /**
          * @brief The entity this end drives; null on a server.
@@ -317,10 +284,13 @@ class NetSession {
          * back and forth. Re-reporting refreshes, so pass the whole island
          * every tick.
          *
-         * @param entities Bodies to simulate; null ids and this end's own
-         *                 entity are skipped.
+         * @param scene    The world the bodies are in.
+         * @param entities Bodies to simulate; null ids, this end's own entity and what it runs
+         *                 already (the server names it not, or it is NetLocal) are skipped.
          */
-        void lease(const std::vector<EntityId>& entities) { m_client.lease(entities); }
+        void lease(const Scene& scene, const std::vector<EntityId>& entities) {
+            m_client.lease(scene, entities);
+        }
 
         /**
          * @brief Send the server something it must have: a move, a name, a choice in a lobby.
@@ -333,9 +303,9 @@ class NetSession {
          * tell: the game is its own authority and applies the choice where it makes it.
          *
          * @param bytes The message; the game's own bytes.
-         * @param size  1 to NET_MESSAGE_MAX_BYTES of them.
+         * @param size  1 to Network::MAX_MESSAGE_BYTES of them.
          * @return False, sending nothing, unless this end is a client playing, the message
-         *         fits, and fewer than NET_MESSAGE_WINDOW are still unacknowledged.
+         *         fits, and fewer than Network::MESSAGE_WINDOW are still unacknowledged.
          */
         bool sendMessage(const uint8_t* bytes, size_t size) {
             return m_role == NetRole::Client && m_client.sendMessage(bytes, size);
@@ -356,6 +326,15 @@ class NetSession {
          *         client, and for nothing on a server.
          */
         bool isMine(EntityId entity) const;
+
+        /**
+         * @brief Whether a seated player drives @p entity, so a spawn can seat a player on a
+         *        character no one else has.
+         *
+         * @param entity Character a spawn is about to hand out.
+         * @return True on a server for an entity a seated player drives; false in every other role.
+         */
+        bool isDriven(EntityId entity) const;
 
         /**
          * @brief What the server's @p slot names on this end.
@@ -446,21 +425,12 @@ class NetSession {
         /**
          * @brief Take the command this tick runs under.
          *
-         * Inside the fixed step, after InputMap::beginTick. Both ends must agree
-         * on the action count (it sizes the encoding) and on which action has
-         * which slot (the fingerprint).
+         * Inside the fixed step, after InputMap::beginTick.
          *
-         * @param tick        The tick about to run.
-         * @param command     What the local player did on it.
-         * @param actionCount Action slots the project defines.
-         * @param actionNames InputMap::actionFingerprint.
+         * @param tick    The tick about to run.
+         * @param command What the local player did on it.
          */
-        void beginTick(
-            uint32_t tick,
-            const InputCommand& command,
-            uint32_t actionCount,
-            uint64_t actionNames
-        );
+        void beginTick(uint32_t tick, const InputCommand& command);
 
         /// Send what this frame produced. Called once a frame, after the ticks.
         void send(Scene& scene, uint32_t tick);
@@ -471,7 +441,7 @@ class NetSession {
          * On a server the root gets a NetSpawn, which replicates so every
          * client, and every later joiner, builds the same file into it. Offline
          * it is an ordinary instantiate. Undone by destroying the root's subtree
-         * (HierarchyOperations::destroyHierarchy or Behavior::destroy). Authority
+         * (HierarchyOperations::destroyHierarchy or BehaviorBase::destroy). Authority
          * only: refused on a client, as the server would never hear of what it built;
          * a client's own entity is an ordinary Prefab::instantiate.
          *
@@ -528,10 +498,12 @@ class NetSession {
          * the sea it floated on; the two clocks are otherwise unrelated, and a client that has
          * lost its server goes back to its own.
          *
-         * @param clock The engine's clock.
+         * @param tick  The engine clock's tick (Clock::getTick).
+         * @param alpha How far past it the frame falls, in ticks (Clock::getFixedAlpha).
+         * @param step  A tick's seconds (Clock::getFixedStep).
          * @return Seconds of the authority's simulated time.
          */
-        double worldTime(const Clock& clock) const;
+        double worldTime(uint32_t tick, float alpha, float step) const;
 
         /**
          * @brief How much faster than the wall clock this end should run its ticks.
@@ -547,7 +519,7 @@ class NetSession {
          * @brief How far this end's prediction of its own entity was out, last time the
          *        server said.
          *
-         * @return The error in metres; zero on a server and offline.
+         * @return The error in meters; zero on a server and offline.
          */
         float predictionError() const { return m_client.predictionError(); }
 
@@ -602,19 +574,18 @@ class NetSession {
         NetClient m_client;
         NetRole   m_role = NetRole::Offline;
 
-        /// What the local player does this tick, offline and on a client.
-        InputCommand m_currentCommand;
+        InputCommand m_currentCommand;  ///< What the local player does this tick, offline and on a client.
 
-        /// Real seconds owed toward the next send; starts full so the first goes at once.
-        float m_sendAccumulator = 1.0f;
+        float m_sendAccumulator = 1.0f;   ///< Real seconds owed toward the next send; starts full so the
+                                          ///< first goes at once.
         bool  m_tickOpen        = false;  ///< Between beginTick and endTick: worldTime is the tick's.
 
         uint32_t m_rewindDepth = 0;  ///< Open scopes; only the outermost moves anything.
         EntityId m_rewoundFor;       ///< Whose moment the open scope is.
 
-        /// Which world the halves' entity ids name; none seen yet is its own value, as a world
-        /// built in code and never loaded is epoch zero.
-        uint64_t m_worldEpoch = NO_WORLD;
+        uint64_t m_worldEpoch = NO_WORLD;  ///< Which world the halves' entity ids name; none seen yet is its
+                                           ///< own value, as a world built in code and never loaded is epoch
+                                           ///< zero.
 };
 
 } // namespace Vkm::Engine

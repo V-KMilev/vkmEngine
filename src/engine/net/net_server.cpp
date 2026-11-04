@@ -7,14 +7,27 @@
 #include <limits>
 #include <utility>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "ecs/scene.h"
-#include "net/net_session.h"
+#include "net/latency/command_buffer.h"
+#include "net/latency/pacing.h"
+#include "net/message_bodies.h"
+#include "net/net_core.h"
+#include "net/replication/silence.h"
 #include "net/wire/codecs.h"
+#include "net/wire/project_path.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+constexpr float LOADING_TIMEOUT_SECONDS = 30.0f;  ///< How long a player loading the scene the session moved
+                                                  ///< to may be silent: a load can hold its frames, and with
+                                                  ///< them every packet it would send.
+
+} // namespace
 
 /**
  * @brief One seated player, from the server's side.
@@ -24,29 +37,30 @@ namespace Vkm::Engine {
  * deltas against a world they never held.
  */
 struct NetServer::Peer {
-    NetConnection    connection;
-    NetBaseline      baseline;
-    NetCommandBuffer commands;
-    NetInbox         inbox;              ///< This player's messages, each handed on once.
-    InputCommand     current;            ///< What this player's entity runs this tick.
-    PlayerId         id = NO_PLAYER;     ///< Never NO_PLAYER once made.
-    EntityId         entity;
-    const char*      leaving = nullptr;  ///< Why this peer is going, once it is.
-    uint64_t         token = 0;          ///< What proves a packet is this player's.
+    Network::Connection connection;
+    NetBaseline         baseline;
+    NetCommandBuffer    commands;
+    Network::Inbox      inbox;                ///< This player's messages, each handed on once.
+    InputCommand        current;              ///< What this player's entity runs this tick.
+    PlayerId            id      = NO_PLAYER;  ///< Never NO_PLAYER once made.
+    EntityId            entity;
+    const char*         leaving = nullptr;    ///< Why this peer is going, once it is.
+    uint64_t            token   = 0;          ///< What proves a packet is this player's.
 
-    /// Whether a Command has come back, which says the Welcome arrived.
-    bool             answered = false;
+    bool                answered = false;  ///< Whether a Command has come back, which says the Welcome arrived.
 
-    /**
-     * @brief Which server tick this client said it was drawing, when it had just
-     *        made the command numbered drewAtCommand.
-     *
-     * In this server's clock, which the client's interpolation runs in. A
-     * running command was aimed at this, less how many ticks older it is than
-     * drewAtCommand.
-     */
-    double           renderTick    = 0.0;
-    uint32_t         drewAtCommand = 0;  ///< Client tick of the newest command in that packet.
+    bool                toldTooLarge = false;  ///< Whether this player has been told of, once, as driving an
+                                               ///< entity too large to describe.
+
+    uint8_t             worldGeneration = 0;  ///< Which of the session's worlds this client last said it holds
+                                              ///< (NetCore::worldGeneration).
+
+    double              renderTick    = 0.0;  ///< Which server tick this client said it was drawing when it had
+                                              ///< just made the command numbered drewAtCommand, in this server's
+                                              ///< clock, which the client's interpolation runs in. A running
+                                              ///< command was aimed at this, less how many ticks older it is
+                                              ///< than drewAtCommand.
+    uint32_t            drewAtCommand = 0;    ///< Client tick of the newest command in that packet.
 };
 
 NetServer::NetServer(NetCore& core)
@@ -63,7 +77,8 @@ void NetServer::onSpawn(SpawnPlayer spawn, DespawnPlayer despawn) {
 
 void NetServer::open(uint32_t maxPlayers) {
     m_maxPlayers = maxPlayers;
-    m_cookie.rekey();
+    // The clock starts again at zero, so under the last key the last session's tokens would prove a join.
+    m_cookie = Network::JoinCookie{};
 }
 
 void NetServer::close() {
@@ -113,50 +128,62 @@ void NetServer::forgetWorld() {
 
     // Baselines are keyed by entity id too, so would delta against a gone world.
     for (auto& peer : m_peers) peer->baseline.clear();
+    m_loaded.clear();
+}
+
+void NetServer::adoptWorld(const Scene& scene) {
+    // Classified in one pass: netSilence alone walks every ragdoll's bodies for each entity.
+    m_silence.build(scene);
+    m_loaded.clear();
+    scene.forEachEntity([&](EntityId entity) {
+        if (m_silence.of(entity) != NetSilence::Local) m_loaded.push_back(entity);
+    });
+}
+
+template <typename Log>
+void NetServer::refuseMismatch(const Network::Address& from, NetRefusal reason, uint64_t token, Log&& log) {
+    if (m_refusedMismatch == 0) log();
+    ++m_refusedMismatch;
+    refuse(from, reason, token);
 }
 
 void NetServer::receive(Scene& scene, ResourceManager& resources) {
-    NetAddress from;
+    Network::Address from;
     // Bounded rather than drained - see NetCore::MAX_READS_PER_FRAME.
     for (size_t read = 0; read < NetCore::MAX_READS_PER_FRAME; ++read) {
         if (!m_core.socket.receive(m_core.datagram, from)) break;
 
         // Read before the connection accepts it: accepting moves the window,
         // and one forged datagram numbered far ahead would refuse every real one.
-        BitReader       reader  = receivedPayload(m_core);
-        NetMessage      message = NetMessage::Hello;
-        uint64_t        token   = 0;
-        const NetSender sender  = readMessageHeader(reader, message, token);
+        Network::BitReader reader = receivedPayload(m_core);
+        NetMessage message = NetMessage::Hello;
+        uint64_t token = 0;
+        uint8_t version = 0;
+        const NetSender sender = readMessageHeader(reader, message, token, &version);
         if (sender == NetSender::Unknown) continue;
 
         Peer* peer = findPeer(from);
 
-        // Told, not ignored: an unanswered join looks like a firewall.
+        // Told, not ignored: an unanswered join looks like a firewall. Told only once it echoes its
+        // token, as greet tells any address.
         if (sender == NetSender::OtherBuild) {
             if (message != NetMessage::Hello || peer) continue;
-            if (m_refusedMismatch == 0) {
+            if (!m_cookie.accepts(from, token, m_seconds)) {
+                challenge(from, token, version);
+                continue;
+            }
+            refuseMismatch(from, NetRefusal::Mismatch, token, [&] {
                 LOG_ERROR(
                     "Refusing a join: a different build, speaking another version of "
                         "the wire than this one's %u",
                     NET_PROTOCOL_VERSION
                 );
-            }
-            ++m_refusedMismatch;
-            refuse(from, NetRefusal::Mismatch, token);
+            });
             continue;
         }
         if (!peer || token != peer->token) {
             // The one thing an address without a seat may say.
-            if (message != NetMessage::Hello) continue;
-            if (!peer) {
-                greet(from, token, reader, scene, resources);
-            } else if (!peer->answered && m_cookie.accepts(from, token, m_seconds)) {
-                // Told two tokens across a window's turn, a join can be seated
-                // by one and hold the other; either proves it, so the seat
-                // takes the one it now holds.
-                peer->token = token;
-                welcome(*peer, from);
-            }
+            if (!peer && message == NetMessage::Hello) greet(from, token, reader, scene, resources);
             continue;
         }
 
@@ -164,7 +191,6 @@ void NetServer::receive(Scene& scene, ResourceManager& resources) {
         const bool accepted = peer->connection.accept(
             m_core.datagram.data(),
             m_core.datagram.size(),
-            m_core.scratch,
             m_core.acknowledged
         );
         if (!accepted) continue;
@@ -190,25 +216,32 @@ void NetServer::receive(Scene& scene, ResourceManager& resources) {
 
     // After the read loop, so a leaving peer does not invalidate the list.
     for (size_t i = m_peers.size(); i-- > 0;) {
+        const bool  loading = m_peers[i]->worldGeneration != m_core.worldGeneration;
+        const float allowed = loading ? LOADING_TIMEOUT_SECONDS : Network::Connection::TIMEOUT_SECONDS;
         if (m_peers[i]->leaving) {
             dropPeer(scene, resources, i, m_peers[i]->leaving);
-        } else if (m_peers[i]->connection.timedOut()) {
+        } else if (m_peers[i]->connection.timedOut(allowed)) {
             dropPeer(scene, resources, i, "stopped answering");
         }
     }
 }
 
-void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
-    const uint32_t drawnWhole    = reader.u32();
-    const uint32_t drawnFraction = reader.bits(NET_DRAWN_FRACTION_BITS);
+void NetServer::acceptCommands(Peer& peer, Network::BitReader& reader) {
+    CommandPreamble preamble;
+    preamble.read(reader);
     if (reader.failed()) return;
+    peer.worldGeneration = preamble.worldGeneration;
 
     std::vector<InputCommand>& commands = m_received;
     if (!readCommands(reader, m_core.actionCount, commands)) {
         LOG_ERROR("Player %u sent a command packet that did not decode", peer.id);
         return;
     }
-    for (const InputCommand& command : commands) peer.commands.accept(command);
+    // Made for the world it is leaving, they would drive what the server spawned it in the next.
+    const bool current = preamble.worldGeneration == m_core.worldGeneration;
+    if (current) {
+        for (const InputCommand& command : commands) peer.commands.accept(command);
+    }
 
     // After the commands, in the room they left.
     const bool read = peer.inbox.read(reader, [&](const uint8_t* bytes, size_t size) {
@@ -217,112 +250,90 @@ void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
     if (!read) LOG_ERROR("Player %u sent messages that did not decode", peer.id);
 
     // What the client drew belongs to its newest command; with none it says nothing.
-    if (commands.empty()) return;
-    peer.renderTick    = static_cast<double>(drawnWhole) + static_cast<double>(drawnFraction) / 255.0;
+    if (!current || commands.empty()) return;
+    peer.renderTick    = preamble.drawnTick;
     peer.drewAtCommand = commands.back().tick;
 }
 
 bool NetServer::vetHello(
-    const NetAddress& from,
+    const Network::Address& from,
     uint64_t echoed,
-    BitReader& reader,
-    uint32_t& actions,
-    uint64_t& actionNames
+    Network::BitReader& reader,
+    bool& current
 ) {
-    const uint32_t fingerprint = reader.u32();
-    actions                    = reader.u8();
-    actionNames                = reader.u64();
-    const uint64_t world       = reader.u64();
-    const uint32_t tickRate    = reader.u16();
+    HelloBody hello;
+    hello.read(reader);
     if (reader.failed()) return false;
+    const uint32_t actions  = hello.actions;
+    const uint32_t tickRate = hello.tickRate;
 
-    if (fingerprint != NetSchema::get().fingerprint()) {
-        if (m_refusedMismatch == 0) {
+    if (hello.schema != NetSchema::get().fingerprint()) {
+        refuseMismatch(from, NetRefusal::Mismatch, echoed, [&] {
             LOG_ERROR(
                 "Refusing a join: a different build or project. This end replicates: %s",
                 NetSchema::get().describe().c_str()
             );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::Mismatch, echoed);
+        });
         return false;
     }
 
-    // A generated world says zero and is compared against nothing.
-    if (m_core.world != 0 && world != 0 && world != m_core.world) {
-        if (m_refusedMismatch == 0) {
+    // A generated world says zero and is compared against nothing. A session that moved on to a
+    // scene a client can be told of seats it, and tells it which.
+    current = m_core.world == 0 || hello.world == 0 || hello.world == m_core.world;
+    const bool movedOn = m_core.worldGeneration != 0 && isProjectJsonPath(m_core.worldPath);
+    if (!current && !movedOn) {
+        refuseMismatch(from, NetRefusal::Mismatch, echoed, [&] {
             LOG_ERROR(
                 "Refusing a join: a different world. This end loaded %016llx, the other %016llx",
                 static_cast<unsigned long long>(m_core.world),
-                static_cast<unsigned long long>(world)
+                static_cast<unsigned long long>(hello.world)
             );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::Mismatch, echoed);
+        });
         return false;
     }
 
     // A command is one tick, so rates must match: the pacing bends a clock by
     // at most NetPacing::MAX_DILATION, not by a factor.
     if (tickRate != m_core.tickRate) {
-        if (m_refusedMismatch == 0) {
+        refuseMismatch(from, NetRefusal::TickRate, echoed, [&] {
             LOG_ERROR(
                 "Refusing %s: it ticks at %u a second and this game at %u",
                 from.toString().c_str(),
                 tickRate,
                 m_core.tickRate
             );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::TickRate, echoed);
+        });
         return false;
     }
 
     // The codec bounds it too; a refusal beats every packet being discarded.
     if (actions > MAX_INPUT_ACTIONS) {
-        if (m_refusedMismatch == 0) {
+        refuseMismatch(from, NetRefusal::Mismatch, echoed, [&] {
             LOG_ERROR(
                 "Refusing %s: it claims %u actions and a command holds %u",
                 from.toString().c_str(),
                 actions,
                 MAX_INPUT_ACTIONS
             );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::Mismatch, echoed);
+        });
         return false;
     }
 
-    // The count is every command's field width, so every player must agree.
-    const size_t seated = m_peers.size();
-    if (seated > 0 && actions != m_core.actionCount) {
-        if (m_refusedMismatch == 0) {
+    // The count is every command's field width and the names say what each slot is, so a client
+    // must list this game's actions: both ends take them from project.json before any join.
+    if (actions != m_core.actionCount || hello.actionNames != m_core.actionNames) {
+        refuseMismatch(from, NetRefusal::Mismatch, echoed, [&] {
             LOG_ERROR(
-                "Refusing %s: it defines %u actions and this game has %u",
+                "Refusing %s: it lists %u input actions, or other ones, where this game lists %u",
                 from.toString().c_str(),
                 actions,
                 m_core.actionCount
             );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::Mismatch, echoed);
+        });
         return false;
     }
 
-    // The same count in another order misreads every bit. Zero compares against nothing.
-    if (m_core.actionNames != 0 && actionNames != 0 && actionNames != m_core.actionNames) {
-        if (m_refusedMismatch == 0) {
-            LOG_ERROR(
-                "Refusing %s: it assigns its actions to command slots in a different order",
-                from.toString().c_str()
-            );
-        }
-        ++m_refusedMismatch;
-        refuse(from, NetRefusal::Mismatch, echoed);
-        return false;
-    }
-
-    if (seated >= m_maxPlayers) {
+    if (m_peers.size() >= m_maxPlayers) {
         ++m_refusedFull;
         refuse(from, NetRefusal::Full, echoed);
         return false;
@@ -331,34 +342,31 @@ bool NetServer::vetHello(
 }
 
 void NetServer::greet(
-    const NetAddress& from,
+    const Network::Address& from,
     uint64_t echoed,
-    BitReader& hello,
+    Network::BitReader& hello,
     Scene& scene,
     ResourceManager& resources
 ) {
-    uint32_t actions     = 0;
-    uint64_t actionNames = 0;
-    if (!vetHello(from, echoed, hello, actions, actionNames)) return;
-
-    // A source address is forgeable, so it is seated only when it echoes its
-    // token - a keyed hash of the address, so nothing is held until then.
+    // A source address is forgeable, so nothing is said to it but a Challenge until it echoes its
+    // token - a keyed hash of the address, so nothing is held until then. A refusal sent sooner
+    // would let a forged Hello turn a real client away.
     if (!m_cookie.accepts(from, echoed, m_seconds)) {
-        challenge(from);
+        challenge(from, echoed, NET_PROTOCOL_VERSION);
         return;
     }
+
+    bool current = true;
+    if (!vetHello(from, echoed, hello, current)) return;
 
     // The proving Hello is the connection's first packet, for the Welcome to
     // acknowledge; accepted before any send reuses its buffer.
     auto peer = std::make_unique<Peer>();
     peer->connection.open(from);
+    // What it loaded is what the world was: what has gone since goes from it too.
+    for (const EntityId loaded : m_loaded) peer->baseline.seed(loaded);
     m_core.acknowledged.clear();
-    peer->connection.accept(
-        m_core.datagram.data(),
-        m_core.datagram.size(),
-        m_core.scratch,
-        m_core.acknowledged
-    );
+    peer->connection.accept(m_core.datagram.data(), m_core.datagram.size(), m_core.acknowledged);
 
     // Taken only once the game accepts, so a declined join spends no number.
     const PlayerId id     = freePlayerId();
@@ -373,8 +381,9 @@ void NetServer::greet(
     peer->token  = echoed;
     peer->id     = id;
     peer->entity = entity;
-    m_core.actionCount = actions;
-    if (m_core.actionNames == 0) m_core.actionNames = actionNames;
+    // Any other number: it is told which world to load before anything is described to it.
+    peer->worldGeneration =
+        current ? m_core.worldGeneration : static_cast<uint8_t>(m_core.worldGeneration - 1);
     welcome(*peer, from);
 
     LOG_INFO(
@@ -403,26 +412,87 @@ PlayerId NetServer::freePlayerId() const {
     return NO_PLAYER;
 }
 
-void NetServer::challenge(const NetAddress& to) {
+void NetServer::challenge(const Network::Address& to, uint64_t echo, uint8_t version) {
     m_unseated.open(to);
-    sendBare(m_core, m_unseated, NetMessage::Challenge, m_cookie.issue(to, m_seconds));
+
+    Network::BitWriter writer(m_core.payload, 32);
+    writeMessageHeader(writer, NetMessage::Challenge, m_cookie.issue(to, m_seconds), version);
+    writer.u64(echo);
+    writer.finish();
+
+    m_unseated.frame(m_core.payload.data(), m_core.payload.size(), m_core.datagram);
+    m_core.socket.send(to, m_core.datagram.data(), m_core.datagram.size());
 }
 
-void NetServer::welcome(Peer& peer, const NetAddress& to) {
-    BitWriter writer(m_core.payload, 64);
+void NetServer::welcome(Peer& peer, const Network::Address& to) {
+    WelcomeBody welcome;
+    welcome.player          = peer.id;
+    welcome.slot            = peer.entity.slot();
+    welcome.worldGeneration = m_core.worldGeneration;
+    welcome.current         = peer.worldGeneration == m_core.worldGeneration;
+
+    Network::BitWriter writer(m_core.payload, 64);
     writeMessageHeader(writer, NetMessage::Welcome, peer.token);
-    writer.u16(peer.id);
-    writer.u32(peer.entity.slot());
+    welcome.write(writer);
     writer.finish();
 
     peer.connection.frame(m_core.payload.data(), m_core.payload.size(), m_core.datagram);
     m_core.socket.send(to, m_core.datagram.data(), m_core.datagram.size());
 }
 
-void NetServer::refuse(const NetAddress& from, NetRefusal reason, uint64_t token) {
+void NetServer::sendWorld(Peer& peer) {
+    WorldBody world;
+    world.generation  = m_core.worldGeneration;
+    world.fingerprint = m_core.world;
+    world.slot        = peer.entity.slot();
+    world.path        = m_core.worldPath;
+
+    Network::BitWriter writer(m_core.payload, 64 + NET_PROJECT_PATH_MAX);
+    writeMessageHeader(writer, NetMessage::World, peer.token);
+    world.write(writer);
+    writer.finish();
+
+    peer.connection.frame(m_core.payload.data(), m_core.payload.size(), m_core.datagram);
+    m_core.socket.send(peer.connection.peer(), m_core.datagram.data(), m_core.datagram.size());
+}
+
+void NetServer::changeWorld(Scene& scene, ResourceManager& resources) {
+    if (!isProjectJsonPath(m_core.worldPath)) {
+        LOG_ERROR(
+            "The world was replaced with no scene its players can be told to load ('%s'); they are let go",
+            m_core.worldPath.c_str()
+        );
+    }
+    // Zero is the session's first world, which seats no one whose entry scene differs.
+    if (++m_core.worldGeneration == 0) ++m_core.worldGeneration;
+    // Every entity went with the old world, and what each was still to be told to do. All before
+    // the first spawn: the new world's ids can repeat the old's, and a spawn asks who drives what.
+    for (auto& peer : m_peers) {
+        peer->entity = {};
+        peer->commands.clear();
+    }
+    for (size_t i = m_peers.size(); i-- > 0;) {
+        Peer& peer = *m_peers[i];
+        // It loads the scene file as a joiner does: what goes from it later goes from that peer too.
+        for (const EntityId loaded : m_loaded) peer.baseline.seed(loaded);
+        const EntityId entity = isProjectJsonPath(m_core.worldPath) && m_spawn
+            ? m_spawn(scene, resources, peer.id)
+            : EntityId{};
+        if (!entity) {
+            sendBare(m_core, peer.connection, NetMessage::Goodbye, peer.token);
+            dropPeer(scene, resources, i, "it has no place in the new world");
+            continue;
+        }
+        peer.entity = entity;
+    }
+    const char* path = m_core.worldPath.c_str();
+    LOG_INFO("Moved the session to '%s'; %zu player(s) told to follow", path, m_peers.size());
+}
+
+void NetServer::refuse(const Network::Address& from, NetRefusal reason, uint64_t token) {
     m_unseated.open(from);
 
-    BitWriter writer(m_core.payload, 32);
+    Network::BitWriter writer(m_core.payload, 32);
     writeMessageHeader(writer, NetMessage::Refuse, token);
     writer.u8(static_cast<uint8_t>(reason));
     writer.finish();
@@ -442,7 +512,7 @@ void NetServer::dropPeer(Scene& scene, ResourceManager& resources, size_t index,
     m_peers.erase(m_peers.begin() + static_cast<long>(index));
 }
 
-NetServer::Peer* NetServer::findPeer(const NetAddress& address) {
+NetServer::Peer* NetServer::findPeer(const Network::Address& address) {
     for (auto& peer : m_peers) {
         if (peer->connection.peer() == address) return peer.get();
     }
@@ -463,10 +533,16 @@ void NetServer::send(Scene& scene, uint32_t tick) {
         // client does not know its own entity and would draw it late.
         if (!peer->answered) continue;
 
+        // Until it holds the world, it is told which one, and nothing in it is described.
+        if (peer->worldGeneration != m_core.worldGeneration) {
+            sendWorld(*peer);
+            continue;
+        }
+
         const NetSnapshotStats one = sendSnapshot(scene, schema, *peer, tick);
 
         // Summed over peers, except entities considered, which is the world.
-        frame.entitiesConsidered  = one.entitiesConsidered;
+        frame.entitiesConsidered = one.entitiesConsidered;
         frame.entitiesWritten    += one.entitiesWritten;
         frame.componentsWritten  += one.componentsWritten;
         frame.entitiesDeferred   += one.entitiesDeferred;
@@ -482,30 +558,37 @@ NetSnapshotStats NetServer::sendSnapshot(Scene& scene, const NetSchema& schema, 
     const uint16_t sequence = peer.connection.nextSequence();
 
     std::vector<uint8_t>& payload = m_core.payload;
-    BitWriter writer(payload, NetConnection::MAX_PAYLOAD);
-    writeMessageHeader(writer, NetMessage::Snapshot, peer.token);
-    writer.u32(tick);
-    // The newest command run, which the client reconciles against.
-    writer.u32(peer.commands.newestRunTick());
-    // The newest arrived, run or not, so the client stops resending it.
-    writer.u32(peer.commands.newestSequence());
-    // How low the queue ran since the last snapshot, for the client's pacing.
-    writer.bits(
-        static_cast<uint32_t>(std::min<size_t>(peer.commands.lowWater(), NET_QUEUE_DEPTH_MAX)),
-        NET_QUEUE_DEPTH_BITS
-    );
+    Network::BitWriter writer(payload, Network::Connection::MAX_PAYLOAD);
+    const size_t lowWater = std::min<size_t>(peer.commands.lowWater(), NET_QUEUE_DEPTH_MAX);
     peer.commands.restartLowWater();
-    // The newest message handed on, so the client stops sending it.
-    writer.u16(peer.inbox.acknowledge());
+
+    SnapshotHeader header;
+    header.worldGeneration = m_core.worldGeneration;
+    header.serverTick      = tick;
+    header.confirmedTick   = peer.commands.newestRunTick();
+    header.heard           = peer.commands.newestSequence();
+    header.lowWater        = static_cast<uint32_t>(lowWater);
+    header.messages        = peer.inbox.acknowledge();
+    writeMessageHeader(writer, NetMessage::Snapshot, peer.token);
+    header.write(writer);
 
     // What the headers leave; what does not fit is deferred, never a second datagram.
     NetBudget budget;
-    budget.bytes = static_cast<uint32_t>(NetConnection::MAX_PAYLOAD - writer.byteCount());
+    budget.bytes = static_cast<uint32_t>(Network::Connection::MAX_PAYLOAD - writer.byteCount());
     budget.owner = peer.entity;
 
     const NetSnapshotStats cost =
         writeSnapshot(scene, schema, m_silence, sequence, budget, peer.baseline, writer);
     writer.finish();
+    if (cost.ownerTooLarge && !peer.toldTooLarge) {
+        peer.toldTooLarge = true;
+        LOG_ERROR(
+            "Player %u's entity %u is larger than a snapshot carries, so its state is never sent; "
+            "the rest of the world still is",
+            peer.id,
+            peer.entity.slot()
+        );
+    }
 
     // The budget above is sized so this cannot happen.
     if (writer.overflowed()) {
@@ -558,13 +641,13 @@ void NetServer::rewind(Scene& scene, EntityId shooter) {
     // as the queue is deep.
     const double queued = static_cast<double>(firing->drewAtCommand)
         - static_cast<double>(firing->commands.newestRunTick());
-    const double drawn  = firing->renderTick - queued;
+    const double drawn = firing->renderTick - queued;
 
     // A client's claim, so clamped; past memory is a slow link, not a lie, so
     // it is pulled to the edge rather than refused.
     const double oldest = static_cast<double>(m_core.serverTick)
         - static_cast<double>(NetRewind::HISTORY_TICKS - 1);
-    const double when   = std::max(oldest, std::min(drawn, static_cast<double>(m_core.serverTick)));
+    const double when = std::max(oldest, std::min(drawn, static_cast<double>(m_core.serverTick)));
 
     const auto rewindOne = [&](EntityId entity) {
         if (entity == shooter) return;
@@ -596,10 +679,10 @@ std::vector<PlayerMessageEvent> NetServer::takeMessages() {
 }
 
 std::string NetServer::describe() const {
-    float    worst     = 0.0f;
-    float    worstLoss = 0.0f;
-    uint32_t repeated  = 0;
-    uint32_t skipped   = 0;
+    float worst     = 0.0f;
+    float worstLoss = 0.0f;
+    uint32_t repeated = 0;
+    uint32_t skipped  = 0;
     for (const auto& peer : m_peers) {
         worst     = std::max(worst, peer->connection.roundTrip());
         worstLoss = std::max(worstLoss, peer->connection.lossFraction());
