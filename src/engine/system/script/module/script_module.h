@@ -4,14 +4,13 @@
 #include <memory>
 #include <string>
 
-#include "platform/library/dynamic_library.h"
+#include "vkm_platform/process/dynamic_library.h"
 
 namespace Vkm::Engine {
 
 class BehaviorSystem;
 class EventBus;
 class NetSession;
-class ResourceManager;
 class Scene;
 
 /**
@@ -49,8 +48,10 @@ class ScriptModule {
          * @brief Hot-reload from the same path: serialize, swap module, recreate.
          *
          * The new build is checked before anything is torn down; a refused one leaves the
-         * running module untouched. With none loaded, this is a plain load. @p scene must
-         * hold no component set the outgoing module created (its vtable is module code);
+         * running module untouched. Then each entity's behaviors are saved (type and reflected
+         * fields), every onDestroy runs, the old module goes and the new one's behaviors are
+         * recreated, starting fresh: onStart runs again. With none loaded, this is a plain load.
+         * @p scene must hold no component set the outgoing module created (its vtable is module code);
          * see docs/reference/scripting.md, "Unloading a module".
          *
          * @param scene     Scene whose behaviors are saved across the swap.
@@ -59,15 +60,6 @@ class ScriptModule {
          * @return True if the module reloaded and its behaviors were restored.
          */
         bool reload(Scene& scene, BehaviorSystem& behaviors, EventBus& events);
-
-        /**
-         * @brief Let the module seed @p scene through the optional `vkmBuildScene`, if it has one.
-         *
-         * @param scene Scene to seed.
-         * @param resources Asset graph the built world's assets go into.
-         * @return True if the module had the entry and it ran.
-         */
-        bool buildScene(Scene& scene, ResourceManager& resources);
 
         /**
          * @brief Let the module say what a player is, through the optional `vkmSetupNetwork`.
@@ -110,32 +102,23 @@ class ScriptModule {
 
     private:
         /**
-         * @brief A built module opened and checked, not yet registered.
-         */
-        struct OpenedModule {
-            std::unique_ptr<DynamicLibrary> lib;   ///< Null when it did not open or was refused.
-            std::filesystem::path           copy;  ///< Empty when loaded in place.
-        };
-
-    private:
-        /**
-         * @brief Copy the built module to a fresh name, open it, and check it.
+         * @brief Open a copy of the built module and check it.
          *
          * Touches nothing the running module owns. Refuses a library that will not open,
          * reports another or no engine version, or lacks vkmRegisterBehaviors.
          *
-         * @return The opened module, or one holding no library.
+         * @return The opened library, or null.
          */
-        OpenedModule openBuilt();
+        std::unique_ptr<Platform::DynamicLibrary> openBuilt();
 
         /**
          * @brief Make @p opened the loaded module and call its register entry.
          *
-         * The previous library must already be unloaded: its copy is deleted here.
+         * The previous library must already be unloaded.
          *
-         * @param opened A module openBuilt() returned with a library.
+         * @param opened A library openBuilt() returned.
          */
-        void adopt(OpenedModule opened);
+        void adopt(std::unique_ptr<Platform::DynamicLibrary> opened);
 
         /**
          * @brief Drop everything the loaded module registered, before it is unmapped.
@@ -148,11 +131,9 @@ class ScriptModule {
         void releaseRegistrations(EventBus* events);
 
     private:
-        std::unique_ptr<DynamicLibrary> m_lib = std::make_unique<DynamicLibrary>();
+        std::unique_ptr<Platform::DynamicLibrary> m_lib = std::make_unique<Platform::DynamicLibrary>();
         NetSession*           m_net = nullptr;  ///< Session this module's entry wrote into.
         std::filesystem::path m_modulePath;
-        std::filesystem::path m_loadedCopyPath;
-        int                   m_reloadCounter = 0;
 };
 
 } // namespace Vkm::Engine

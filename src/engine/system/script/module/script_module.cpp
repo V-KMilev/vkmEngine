@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "SCRIPT"
 
-#include "system/script/script_module.h"
+#include "system/script/module/script_module.h"
 
 #include <cstring>
 #include <filesystem>
@@ -11,10 +11,10 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/event/event_bus.h"
-#include "debug/engine_error_log.h"
+#include "base/event/event_bus.h"
+#include "debug/error/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "net/wire/codecs.h"
@@ -30,23 +30,7 @@ namespace {
 
 using RegisterFn     = void (*)();
 using VersionFn      = const char* (*)();
-using BuildSceneFn   = void (*)(Scene&, ResourceManager&);
 using SetupNetworkFn = void (*)(NetSession&);
-
-// Best-effort sweep of stale "<stem>.loaded.*.<ext>" copies a crash left; one still
-// locked by a concurrent editor is skipped.
-void removeStaleCopies(const std::filesystem::path& src) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    const std::string prefix = src.stem().string() + ".loaded.";
-    const std::string ext = src.extension().string();
-    for (fs::directory_iterator it(src.parent_path(), ec), end; !ec && it != end; it.increment(ec)) {
-        const std::string name = it->path().filename().string();
-        if (name.rfind(prefix, 0) == 0 && it->path().extension() == ext) {
-            fs::remove(it->path(), ec);
-        }
-    }
-}
 
 } // namespace
 
@@ -68,12 +52,7 @@ ScriptModule::~ScriptModule() {
     BehaviorRegistry::get().clear();
     NetSchema::get().clear();
 
-    // Unloaded before the delete so the copy is no longer locked.
     m_lib->unload();
-    if (!m_loadedCopyPath.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(m_loadedCopyPath, ec);
-    }
 }
 
 bool ScriptModule::load(const std::filesystem::path& modulePath, EventBus* events) {
@@ -83,13 +62,13 @@ bool ScriptModule::load(const std::filesystem::path& modulePath, EventBus* event
     m_lib->unload();
 
     m_modulePath = modulePath;
-    removeStaleCopies(modulePath);
-    if (OpenedModule opened = openBuilt(); opened.lib) {
+    Platform::DynamicLibrary::sweepCopies(modulePath);
+    if (std::unique_ptr<Platform::DynamicLibrary> opened = openBuilt()) {
         adopt(std::move(opened));
         return true;
     }
 
-    // openBuilt logged the reason; this is the line for the editor's Errors tab.
+    // openBuilt logged the reason; this is the line for the editor Console's Errors.
     reportError(
         "Script",
         modulePath.string(),
@@ -99,53 +78,29 @@ bool ScriptModule::load(const std::filesystem::path& modulePath, EventBus* event
     return false;
 }
 
-ScriptModule::OpenedModule ScriptModule::openBuilt() {
-    namespace fs = std::filesystem;
-
-    const fs::path& src = m_modulePath;
+std::unique_ptr<Platform::DynamicLibrary> ScriptModule::openBuilt() {
+    const std::filesystem::path& src = m_modulePath;
     std::error_code ec;
-    if (!fs::exists(src, ec)) {
+    if (!std::filesystem::exists(src, ec)) {
         LOG_ERROR("Game module not found at '%s'", src.string().c_str());
-        return {};
+        return nullptr;
     }
 
-    // A copy, since Windows locks a loaded DLL; step past names a second editor holds
-    // open. Sixteen is a ceiling, not a dependency.
-    fs::path copy;
-    bool copied = false;
-    for (int attempt = 0; attempt < 16 && !copied; ++attempt) {
-        const std::string suffix = ".loaded." + std::to_string(m_reloadCounter++) + src.extension().string();
-        copy = src.parent_path() / (src.stem().string() + suffix);
-        fs::remove(copy, ec);
-        ec.clear();
-        fs::copy_file(src, copy, fs::copy_options::overwrite_existing, ec);
-        copied = !ec;
+    // A copy, so a rebuild can land while this one runs; in place only from a folder that takes none.
+    auto lib = std::make_unique<Platform::DynamicLibrary>();
+    const Platform::DynamicLibrary::Outcome outcome = lib->loadCopy(src);
+    if (outcome.how == Platform::DynamicLibrary::Loaded::Refused) {
+        LOG_ERROR("Cannot copy the game module aside (%s); not loading it", outcome.error.message().c_str());
+        return nullptr;
     }
-    if (!copied) {
-        // In place only where the directory refuses writes (an installed game's bin/);
-        // otherwise the build would be locked by the module it is meant to replace.
-        const bool readOnly = ec == std::errc::permission_denied
-            || ec == std::errc::read_only_file_system
-            || ec == std::errc::operation_not_permitted;
-        if (!readOnly) {
-            LOG_ERROR("Cannot copy the game module aside (%s); not loading it", ec.message().c_str());
-            return {};
-        }
+    if (outcome.how == Platform::DynamicLibrary::Loaded::InPlace) {
         LOG_INFO(
             "The game module's directory takes no copy (%s); loading '%s' in place",
-            ec.message().c_str(),
+            outcome.error.message().c_str(),
             src.string().c_str()
         );
     }
-
-    auto lib = std::make_unique<DynamicLibrary>();
-    const fs::path& target = copied ? copy : src;
-    const auto refuse = [&]() -> OpenedModule {
-        lib->unload();
-        if (copied) fs::remove(copy, ec);
-        return {};
-    };
-    if (!lib->load(target)) return refuse();
+    if (!lib->isLoaded()) return nullptr;
 
     // A version mismatch is an ABI mismatch, so refuse it, and a missing version, with a
     // sentence rather than a later crash. See docs/reference/scripting.md.
@@ -156,7 +111,7 @@ ScriptModule::OpenedModule ScriptModule::openBuilt() {
             src.string().c_str(),
             VKM_ENGINE_VERSION
         );
-        return refuse();
+        return nullptr;
     }
     if (const char* built = versionFn(); std::strcmp(built, VKM_ENGINE_VERSION) != 0) {
         LOG_ERROR(
@@ -165,24 +120,20 @@ ScriptModule::OpenedModule ScriptModule::openBuilt() {
             built,
             VKM_ENGINE_VERSION
         );
-        return refuse();
+        return nullptr;
     }
     if (!lib->symbol("vkmRegisterBehaviors")) {
         LOG_ERROR("Game module '%s' has no vkmRegisterBehaviors entry", src.string().c_str());
-        return refuse();
+        return nullptr;
     }
 
-    return {std::move(lib), copied ? copy : fs::path{}};
+    return lib;
 }
 
-void ScriptModule::adopt(OpenedModule opened) {
-    // The outgoing library is already unmapped, so its copy is no longer locked.
-    std::error_code ec;
-    if (!m_loadedCopyPath.empty()) std::filesystem::remove(m_loadedCopyPath, ec);
-    m_loadedCopyPath = std::move(opened.copy);
-    m_lib = std::move(opened.lib);
+void ScriptModule::adopt(std::unique_ptr<Platform::DynamicLibrary> opened) {
+    m_lib = std::move(opened);
 
-    auto registerFn = reinterpret_cast<RegisterFn>(m_lib->symbol("vkmRegisterBehaviors"));
+    auto registerFn     = reinterpret_cast<RegisterFn>(m_lib->symbol("vkmRegisterBehaviors"));
     const size_t before = BehaviorRegistry::get().names().size();
     registerFn();
     const size_t registered = BehaviorRegistry::get().names().size() - before;
@@ -192,12 +143,12 @@ void ScriptModule::adopt(OpenedModule opened) {
         registered
     );
 
-    // Usually a behavior missing from vkmRegisterBehaviors, whose instances stay text.
+    // Instances of a type no module registers stay text.
     if (registered == 0) {
         LOG_WARNING(
-            "Game module '%s' registered no behavior types. A behavior "
-            "the scene names but vkmRegisterBehaviors does not is held "
-            "as text and never runs.",
+            "Game module '%s' registered no behavior types: a behavior registers through its "
+            "VKM_BEHAVIOR block and the module's VKM_GAME_MODULE(). One the scene names that no "
+            "module registers is held as text and never runs.",
             m_modulePath.string().c_str()
         );
     }
@@ -213,8 +164,11 @@ bool ScriptModule::reload(Scene& scene, BehaviorSystem& behaviors, EventBus& eve
             "ScriptModule::reload: no module loaded, retrying load of '%s'",
             m_modulePath.string().c_str()
         );
-        OpenedModule opened = openBuilt();
-        if (!opened.lib) return false;
+        std::unique_ptr<Platform::DynamicLibrary> opened = openBuilt();
+        if (!opened) {
+            reportError("Script", m_modulePath.string(), "Reload failed: the module still does not load.");
+            return false;
+        }
         adopt(std::move(opened));
 
         // Behaviors kept as text by a load with no registry are re-read now their types exist.
@@ -226,8 +180,8 @@ bool ScriptModule::reload(Scene& scene, BehaviorSystem& behaviors, EventBus& eve
         return true;
     }
 
-    OpenedModule next = openBuilt();
-    if (!next.lib) {
+    std::unique_ptr<Platform::DynamicLibrary> next = openBuilt();
+    if (!next) {
         reportError(
             "Script",
             m_modulePath.string(),
@@ -274,28 +228,12 @@ void ScriptModule::unload(EventBus& events) {
     releaseRegistrations(&events);
     m_lib->unload();
     m_modulePath.clear();
-
-    std::error_code ec;
-    if (!m_loadedCopyPath.empty()) {
-        std::filesystem::remove(m_loadedCopyPath, ec);
-        m_loadedCopyPath.clear();
-    }
     LOG_INFO("Game module unloaded");
 }
 
 void ScriptModule::expect(const std::filesystem::path& modulePath, EventBus& events) {
     unload(events);
     m_modulePath = modulePath;
-}
-
-bool ScriptModule::buildScene(Scene& scene, ResourceManager& resources) {
-    if (!m_lib->isLoaded()) return false;
-
-    auto buildFn = reinterpret_cast<BuildSceneFn>(m_lib->symbol("vkmBuildScene"));
-    if (!buildFn) return false;  // optional: most projects author a scene instead
-
-    buildFn(scene, resources);
-    return true;
 }
 
 bool ScriptModule::setupNetwork(NetSession& session) {

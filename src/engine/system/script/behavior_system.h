@@ -7,9 +7,9 @@
 
 #include "core/system.h"
 #include "ecs/entity.h"
-#include "ecs/scene_observer.h"
-#include "system/physics/physics_events.h"
-#include "system/script/behavior.h"
+#include "ecs/scene.h"
+#include "core/frame/physics_events.h"
+#include "system/script/behavior_base.h"
 
 namespace Vkm::Engine {
 
@@ -29,11 +29,7 @@ class EventBus;
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:
-        BehaviorSystem() {
-            m_context.pendingDestroy   = &m_pendingDestroy;
-            m_context.pendingSceneLoad = &m_pendingSceneLoad;
-            m_context.pendingRestart   = &m_pendingRestart;
-        }
+        BehaviorSystem() = default;
         ~BehaviorSystem() override = default;
 
         BehaviorSystem(const BehaviorSystem& other) = delete;
@@ -101,7 +97,7 @@ class BehaviorSystem : public System, public ISceneObserver {
          * @param behavior Behavior to start.
          * @param entity   Entity it is attached to.
          */
-        void ensureStarted(Behavior& behavior, EntityId entity);
+        void ensureStarted(BehaviorBase& behavior, EntityId entity);
 
         /**
          * @brief Drive @p hook on every enabled behavior in the scene; the caller drains destroys.
@@ -117,7 +113,7 @@ class BehaviorSystem : public System, public ISceneObserver {
             FrameContext& ctx,
             float dt,
             const char* hookName,
-            void (Behavior::*hook)(float),
+            void (BehaviorBase::*hook)(float),
             bool startIfNeeded
         );
 
@@ -137,8 +133,23 @@ class BehaviorSystem : public System, public ISceneObserver {
             EntityId target,
             const std::remove_reference_t<Arg>& arg,
             const char* hookName,
-            void (Behavior::*hook)(Arg)
+            void (BehaviorBase::*hook)(Arg)
         );
+
+        /**
+         * @brief Count @p behavior's after() calls down by @p step, making those run out.
+         *
+         * @param behavior The behavior whose calls wait.
+         * @param step     Seconds the tick advanced.
+         */
+        void runDue(BehaviorBase& behavior, float step);
+
+        /**
+         * @brief Count destroyAfter's times down by @p step, queueing for destroy those run out.
+         *
+         * @param step Seconds the tick advanced.
+         */
+        void countDownTimedDestroy(float step);
 
         /**
          * @brief Apply queued destroy() requests, after the hook pass so none frees a component mid-walk.
@@ -164,7 +175,7 @@ class BehaviorSystem : public System, public ISceneObserver {
          * @param  fn       Hook body to invoke.
          */
         template<typename Fn>
-        static void guard(Behavior& behavior, const char* hookName, Fn&& fn);
+        static void guard(BehaviorBase& behavior, const char* hookName, Fn&& fn);
 
         /**
          * @brief Fire onDestroy on @p behavior if it started, then drop its subscriptions.
@@ -173,38 +184,34 @@ class BehaviorSystem : public System, public ISceneObserver {
          *
          * @param behavior Behavior to send onDestroy to.
          */
-        static void fireDestroy(Behavior& behavior);
+        static void fireDestroy(BehaviorBase& behavior);
 
     private:
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
-        /// Swapped out of the queues above, since a handler may queue more; members for capacity.
-        std::vector<CollisionEvent> m_dispatchCollisions;
+        std::vector<CollisionEvent> m_dispatchCollisions;  ///< Swapped out of the queues above, since a
+                                                           ///< handler may queue more; members for capacity.
         std::vector<TriggerEvent>   m_dispatchTriggers;
 
-        /// Kept so shutdown can drop them: both capture `this`, and the bus outlives this system.
-        ListenerId m_collisionListener = 0;
+        ListenerId m_collisionListener = 0;  ///< Kept so shutdown can drop them: both capture `this`, and the
+                                             ///< bus outlives this system.
         ListenerId m_triggerListener   = 0;
 
-        /**
-         * @brief Entities to tick this pass, snapshotted before any hook runs.
-         *
-         * A hook adding a ScriptComponent may reallocate the storage, so each entity is
-         * re-resolved from the snapshot. A member for its capacity.
-         */
-        std::vector<EntityId> m_tickList;
+        std::vector<EntityId> m_tickList;  ///< Entities to tick this pass, snapshotted before any hook runs:
+                                           ///< a hook adding a ScriptComponent may reallocate the storage, so
+                                           ///< each is re-resolved from the snapshot. A member for its
+                                           ///< capacity.
 
-        std::vector<EntityId> m_pendingDestroy;
-        /// Walked by drainPendingDestroy; a member for its capacity.
-        std::vector<EntityId> m_destroying;
-        std::string           m_pendingSceneLoad;  ///< Scene a behavior asked for; empty when none.
-        bool                  m_pendingRestart = false;  ///< A behavior asked to start the scene over.
-        std::string           m_loadedScene;   ///< The file loadScene last loaded this session, if any.
-        std::string           m_playedScene;   ///< The file the host began play with; see setPlayedScene.
+        std::vector<EntityId> m_destroying;      ///< Walked by drainPendingDestroy; a member for its
+                                                 ///< capacity.
+        std::string           m_followedScene;   ///< Scene the server moved the session to, until loaded.
+        std::string           m_loadedScene;     ///< The file loadScene last loaded this session, if any.
+        std::string           m_playedScene;     ///< The file the host began play with; see setPlayedScene.
         std::function<void()> m_restartHandler;  ///< The host's restart; see setRestartHandler.
 
-        BehaviorContext m_context;
+        BehaviorContext m_context;  ///< What behaviors reach, and the requests they queue: destroys, a scene
+                                    ///< to load, a restart.
 };
 
 } // namespace Vkm::Engine
