@@ -14,7 +14,7 @@ namespace Vkm::Engine {
  *
  * Each changes the asset in place and returns the grid vertices it touched; the caller commits
  * the asset (ResourceManager::commit), which redraws the touched chunks and rebuilds the terrain's
- * collider and plants. A dab's effect fades from its centre to its rim, so strokes made of many
+ * collider and plants. A dab's effect fades from its center to its rim, so strokes made of many
  * dabs blend.
  */
 namespace TerrainBrush {
@@ -38,19 +38,18 @@ struct Region {
  * @brief One application of a brush: where, how wide, how much.
  */
 struct Dab {
-    glm::vec2 centre{0.0f};     ///< Local metres along X and Z.
-    float     radius   = 4.0f;  ///< Metres.
+    glm::vec2 center{0.0f};     ///< Local meters along X and Z.
+    float     radius   = 4.0f;  ///< Meters.
     float     strength = 1.0f;  ///< How much of the full effect this dab makes, 0 to 1.
-    /// How much of the radius takes the full effect before it fades: 0 fades from the centre, 1
-    /// is a flat disc.
-    float     hardness = 0.3f;
+    float     hardness = 0.3f;  ///< How much of the radius takes the full effect before it fades: 0 fades
+                                ///< from the center, 1 is a flat disc.
 };
 
 /**
- * @brief How much of a dab's effect reaches @p distance from its centre.
+ * @brief How much of a dab's effect reaches @p distance from its center.
  *
  * @param dab      The dab.
- * @param distance Metres from its centre.
+ * @param distance Meters from its center.
  * @return 1 within its hard core, falling smoothly to 0 at its radius.
  */
 float falloff(const Dab& dab, float distance);
@@ -71,10 +70,10 @@ Region reach(const TerrainAsset& terrain, const Dab& dab);
  * thinner than that may pass it.
  *
  * @param terrain   The terrain.
- * @param origin    Local metres.
+ * @param origin    Local meters.
  * @param direction Unit, local.
- * @param range     Metres along it to look.
- * @param[out] t    Metres along it to the surface; untouched on false.
+ * @param range     Meters along it to look.
+ * @param[out] t    Meters along it to the surface; untouched on false.
  * @return False when it meets none within @p range.
  */
 bool hit(
@@ -86,17 +85,17 @@ bool hit(
 );
 
 /**
- * @brief Raise the heights under @p dab, @p metres at its centre; negative lowers.
+ * @brief Raise the heights under @p dab, @p meters at its center; negative lowers.
  *
  * @param terrain The terrain.
  * @param dab     Where.
- * @param metres  How far its centre moves.
+ * @param meters  How far its center moves.
  * @return What it touched.
  */
-Region raise(TerrainAsset& terrain, const Dab& dab, float metres);
+Region raise(TerrainAsset& terrain, const Dab& dab, float meters);
 
 /**
- * @brief Pull each height under @p dab toward its neighbours' mean.
+ * @brief Pull each height under @p dab toward its neighbors' mean.
  *
  * @param terrain The terrain.
  * @param dab     Where; its strength is the share of the way each height moves.
@@ -109,7 +108,7 @@ Region smooth(TerrainAsset& terrain, const Dab& dab);
  *
  * @param terrain The terrain.
  * @param dab     Where; its strength is the share of the way each height moves.
- * @param height  Local metres: the level a path or a plot is cut to.
+ * @param height  Local meters: the level a path or a plot is cut to.
  * @return What it touched.
  */
 Region flatten(TerrainAsset& terrain, const Dab& dab, float height);

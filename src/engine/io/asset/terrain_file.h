@@ -15,29 +15,30 @@ namespace Vkm::Engine {
 class ResourceManager;
 
 /**
- * @brief A terrain as bytes: the .terrain file the editor writes into a project, and the body of its
- *        cooked file.
+ * @brief A terrain as bytes: the .terrain file the editor writes into a project and every host
+ *        reads as it is.
  *
  * Kept by name where the asset holds handles - its layers' materials, its plants' meshes and
  * materials - and resolved again against a graph that holds them (resolve()). The file is the
- * terrain's source: its cook copies the body, so what a project carries is what is drawn.
+ * terrain's source and its runtime form alike, as a scene's is: what a project carries is what is
+ * drawn.
  */
 namespace TerrainFile {
 
-/// The magic a .terrain file starts with, then VERSION.
-inline constexpr char MAGIC[4] = {'V', 'K', 'M', 'T'};
+inline constexpr char MAGIC[4] = {'V', 'K', 'M', 'T'};  ///< The magic a .terrain file starts with, then
+                                                        ///< VERSION.
 
-/// The body's layout; readBody() refuses a file of another.
-inline constexpr uint32_t VERSION = 1;
+inline constexpr uint32_t VERSION = 1;  ///< The body's layout; readBody() refuses a file of another.
 
-/// The longest name a body keeps.
-inline constexpr uint32_t MAX_NAME = 4096;
+inline constexpr uint32_t MAX_NAME = 4096;  ///< The longest name a body keeps.
 
-/// What a body names, in the order resolve() reads it back.
+/**
+ * @brief What a body names, in the order resolve() reads it back.
+ */
 struct Names {
-    std::array<std::string, MaterialAsset::MAX_LAYERS> layers;
-    /// Per foliage layer, per part: its mesh's name, then its material's.
+    std::array<std::string, MaterialAsset::MAX_LAYERS>            layers;
     std::vector<std::vector<std::pair<std::string, std::string>>> plants;
+        ///< Per foliage layer, per part: its mesh's name, then its material's.
 };
 
 /**
@@ -54,7 +55,7 @@ std::vector<uint8_t> encode(const TerrainAsset& terrain, const ResourceManager& 
  *
  * @param bytes What encode() wrote.
  * @param size  How many there are.
- * @param out   Filled when the body is sound.
+ * @param out   A fresh asset, none added: filled whole, identity too, when the body is sound.
  * @param names The names it keeps.
  * @param error Why it is not, when it is not.
  * @return False for a body cut short, too long, or out of a terrain's bounds.
@@ -90,6 +91,19 @@ bool write(const std::filesystem::path& path, const TerrainAsset& terrain, const
  * @return False when it could not.
  */
 bool readBody(const std::filesystem::path& path, std::vector<uint8_t>& body, std::string& error);
+
+/**
+ * @brief Load the .terrain file @p name names into a TerrainAsset, its layers' materials and its
+ *        plants' meshes and materials found by name in @p resources.
+ *
+ * Synchronous. The project-relative path is the terrain's name, as a sound's is.
+ *
+ * @param name      Path to the file, absolute or project-relative.
+ * @param resources The graph the terrain is added to, holding what it names (ASSET_DEPENDENCY_ORDER).
+ * @return The terrain (the one resident under the name, if any), or an invalid handle, having logged,
+ *         when the file does not read.
+ */
+TerrainHandle load(const std::string& name, ResourceManager& resources);
 
 } // namespace TerrainFile
 

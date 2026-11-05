@@ -5,19 +5,25 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "core/system.h"
+#include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
-#include "system/terrain/terrain_frame.h"
+#include "core/frame/terrain_frame.h"
 #include "system/terrain/terrain_plants.h"
 
 namespace Vkm::Engine {
 
+class Scene;
+struct Transform;
+
 /**
  * @brief Makes each Terrain's meshes, layer weights and layered material from its asset, scatters
- *        its plants, and publishes where its chunks and plants lie as FrameContext::terrain, for the
+ *        its plants, and publishes where its chunks and plants lie as FrameProducts::terrain, for the
  *        cull to list.
  *
  * What it makes are private assets (ResourceManager::addPrivate), derived and never saved: the asset
@@ -40,23 +46,27 @@ class TerrainSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        /// What one terrain entity's asset was last made into.
+        /**
+         * @brief What one terrain entity's asset was last made into.
+         */
         struct Made {
-            TerrainHandle terrain;
-            uint64_t      version    = 0;
-            uint32_t      resolution = 0;
-            float         size       = 0.0f;
-            /// Per chunk, its levels: finest first.
+            TerrainHandle                                              terrain;
+            uint64_t                                                   version    = 0;
+            uint32_t                                                   resolution = 0;
+            float                                                      size       = 0.0f;
             std::vector<std::array<MeshHandle, TerrainChunks::LEVELS>> chunks;
-            std::vector<Math::AABB> bounds;   ///< Per chunk, local.
+                ///< Per chunk, its levels: finest first.
+            std::vector<Math::AABB> bounds;              ///< Per chunk, local.
             TextureHandle           weightMap;
             MaterialHandle          material;
-            std::vector<float>      heights;  ///< What the chunks were built from.
-            std::vector<uint8_t>    weights;  ///< What the weight map was made from.
-            std::vector<TerrainPlants::Plant> plants;  ///< Where its plants stand, local, chunk by chunk.
-            std::vector<uint32_t>   plantRuns;  ///< Per chunk, where its plants begin; then their end.
-            glm::mat4               model{1.0f};  ///< Where it lies this frame.
-            EntityId                entity;       ///< The terrain's.
+            std::vector<float>      heights;             ///< What the chunks were built from.
+            std::vector<uint8_t>    weights;             ///< What the weight map was made from.
+            std::vector<TerrainFoliage> foliage;         ///< What the plants were grown from.
+            std::vector<TerrainPlants::Plant> plants;    ///< Where its plants stand, local, chunk by chunk.
+            std::vector<uint32_t>   plantRuns;           ///< Per chunk, where its plants begin; then their
+                                                         ///< end.
+            glm::mat4               model{1.0f};         ///< Where it lies this frame.
+            EntityId                entity;              ///< The terrain's.
             bool                    castShadows = true;  ///< Its Terrain's: no plant casts without it.
             bool                    seen = false;
         };
@@ -94,8 +104,8 @@ class TerrainSystem : public System {
         uint64_t plantsKey(const ResourceManager& resources, const Scene& scene) const;
 
     private:
-        std::unordered_map<uint32_t, Made> m_made;  ///< By terrain entity slot.
-        uint64_t                           m_epoch = 0;  ///< The asset graph m_made's handles are in.
+        std::unordered_map<uint32_t, Made> m_made;           ///< By terrain entity slot.
+        uint64_t                           m_epoch     = 0;  ///< The asset graph m_made's handles are in.
         TerrainFrame                       m_frame;
         uint64_t                           m_plantsKey = 0;  ///< plantsKey() of the plants listed.
 };
