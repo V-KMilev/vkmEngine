@@ -14,7 +14,8 @@ layout(std140, binding = UBO_CAMERA) uniform CameraBlock {
     vec2  viewport;        // render target size in pixels
     float zNear;
     float zFar;
-    mat4  viewmodelViewProjection;  // what a Viewmodel mesh draws through (shaders/viewmodel.glsl)
+    mat4  viewmodelViewProjection;  // what a Viewmodel mesh draws through
+                                    // (shaders/opengl/include/viewmodel.glsl)
 } u_camera;
 
 // The same test CameraData::from makes.
@@ -22,7 +23,7 @@ bool cameraIsPerspective() {
     return u_camera.projection[3][3] == 0.0;
 }
 
-// Whether a window depth lies in the viewmodel's band (shaders/viewmodel.glsl): the nearest
+// Whether a window depth lies in the viewmodel's band (shaders/opengl/include/viewmodel.glsl): the nearest
 // VIEWMODEL_DEPTH_SHARE of the reversed depth. An orthographic camera has none: its linear depth
 // would make the band that share of the whole scene.
 bool inViewmodelBand(float depth01) {
@@ -34,6 +35,13 @@ bool inViewmodelBand(float depth01) {
 vec4 intoViewmodelBand(vec4 clip) {
     if (cameraIsPerspective()) clip.z = mix(NEAR_DEPTH * clip.w, clip.z, VIEWMODEL_DEPTH_SHARE);
     return clip;
+}
+
+// Where @p worldPos lands in clip space, through the viewmodel projection squashed into its band
+// when @p viewmodel, else through the camera's.
+vec4 clipOnLayer(bool viewmodel, vec4 worldPos) {
+    if (!viewmodel) return u_camera.viewProjection * worldPos;
+    return intoViewmodelBand(u_camera.viewmodelViewProjection * worldPos);
 }
 
 // Unit vector from a world point toward the viewer: toward the eye in perspective, back along

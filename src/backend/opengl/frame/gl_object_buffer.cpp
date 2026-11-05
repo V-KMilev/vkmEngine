@@ -4,16 +4,21 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_stream_ring.h"
+#include "vkm_log/assert.h"
+#include "vkm_opengl/buffer/stream_ring.h"
 
 #include "convention/gl_bindings.h"
-#include "debug/profiler.h"
-#include "core/math/bounds.h"
-#include "system/render/data/render_objects.h"
+#include "base/profile/profiler.h"
+#include "frame/draw/gl_draw_list.h"
+#include "base/math/aabb.h"
+#include "core/frame/render_objects.h"
 
 namespace Vkm::Engine {
 
-static_assert(sizeof(Math::AABB) == 6 * sizeof(float), "shaders/objects.glsl reads a box as six floats");
+static_assert(
+    sizeof(Math::AABB) == 6 * sizeof(float),
+    "shaders/opengl/include/objects.glsl reads a box as six floats"
+);
 
 GLObjectBuffer::GLObjectBuffer()  = default;
 GLObjectBuffer::~GLObjectBuffer() = default;
@@ -22,15 +27,17 @@ void GLObjectBuffer::upload(
     const RenderObjects& objects,
     bool posed,
     bool boxed,
-    Vkm::GL::StreamRing& stream
+    Vkm::OpenGL::StreamRing& stream
 ) {
     PROFILE_SCOPE("Objects/Upload");
     const auto count = static_cast<uint32_t>(objects.models.size());
+    VKM_ASSERT(count <= INSTANCE_OBJECT_MASK + 1u, "An instance names an object in INSTANCE_OBJECT_BITS");
 
-    // Runs of consecutive changed objects, each patched into the video-memory copies in place.
+    // Runs of changed objects, each patched into the video-memory copies in place. Changed objects
+    // fewer than PATCH_GAP apart share a run, the unchanged between copied as they stand.
     m_runs.clear();
     for (const uint32_t object : objects.changed) {
-        if (!m_runs.empty() && m_runs.back().second == object) ++m_runs.back().second;
+        if (!m_runs.empty() && object - m_runs.back().second < PATCH_GAP) m_runs.back().second = object + 1;
         else m_runs.emplace_back(object, object + 1);
     }
     const bool whole = objects.allChanged || objects.serial != m_serial + 1 || posed != m_posed
@@ -44,7 +51,9 @@ void GLObjectBuffer::upload(
     // Never empty, so the flags always exist to be bound.
     m_flagScratch.resize(std::max<size_t>(objects.draws.size(), 1), 0u);
     const auto flagOf = [&](uint32_t object) {
-        return objects.draws[object].viewmodel ? INSTANCE_FLAG_VIEWMODEL : 0u;
+        const ObjectDraw& draw  = objects.draws[object];
+        const uint32_t    water = static_cast<uint32_t>(draw.water) << INSTANCE_WATER_SHIFT;
+        return (draw.viewmodel ? INSTANCE_FLAG_VIEWMODEL : 0u) | water;
     };
 
     if (whole) {
@@ -83,8 +92,8 @@ void GLObjectBuffer::upload(
 
 void GLObjectBuffer::bind() const {
     namespace SSBO = GLBindings::SSBOBindingPoints;
-    const auto bind = [](uint32_t point, const Vkm::GL::BufferSpan& span) {
-        if (span) Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, point, span);
+    const auto bind = [](uint32_t point, const Vkm::OpenGL::BufferSpan& span) {
+        if (span) Vkm::OpenGL::bindRange(GL_SHADER_STORAGE_BUFFER, point, span);
     };
     bind(SSBO::INSTANCE_MODELS, m_modelStream.span());
     bind(SSBO::INSTANCE_FLAGS, m_flagStream.span());

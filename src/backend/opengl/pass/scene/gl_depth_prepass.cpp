@@ -1,15 +1,14 @@
-#include "pass/gl_depth_prepass.h"
+#include "pass/scene/gl_depth_prepass.h"
 
 #include <GL/glew.h>
 
-#include "gl_shader.h"
-#include "gl_context.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_frame_context.h"
-#include "gl_target.h"
-#include "gl_view.h"
+#include "pass/gl_frame_context.h"
+#include "storage/gl_target.h"
+#include "asset/gl_asset_mirror.h"
 #include "asset/gl_material.h"
-#include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
@@ -18,8 +17,9 @@
 namespace Vkm::Engine {
 
 GLDepthPrepass::GLDepthPrepass()
-    : m_shader("shaders/forward/prepass")
-    , m_skinnedShader("shaders/forward/prepass_skinned") {}
+    : m_shader("shaders/opengl/scene/forward/prepass")
+    , m_skinnedShader("shaders/opengl/scene/forward/prepass", {"SKINNED"})
+    , m_waterShader("shaders/opengl/scene/forward/prepass/water") {}
 
 GLDepthPrepass::~GLDepthPrepass() = default;
 
@@ -50,22 +50,37 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
 void GLDepthPrepass::drawBatch(GLFrameContext& ctx, GLOcclusionCull::Set set) {
     // A double-sided material's back faces lay depth too, or the forward pass's
     // GLDepth::EYE_TEST_EQUAL would find nothing to draw them against.
-    const Vkm::GL::Shader* boundProgram  = nullptr;
-    const GLMaterial*      boundMaterial = nullptr;
-    for (const InstanceDraw& draw : ctx.opaqueBatch.draws()) {
-        Vkm::GL::Shader& program = draw.skinned ? m_skinnedShader : m_shader;
+    const auto doubleSided = [&](const InstanceDraw& draw) {
+        const GLMaterial* material = ctx.mirror.getMaterial(draw.material);
+        return material && material->doubleSided();
+    };
+    const Vkm::OpenGL::Shader* boundProgram = nullptr;
+    const std::vector<InstanceDraw>& draws  = ctx.opaqueBatch.draws();
+    for (size_t i = 0; i < draws.size();) {
+        const InstanceDraw& draw     = draws[i];
+        Vkm::OpenGL::Shader& program = draw.skinned ? m_skinnedShader : draw.water ? m_waterShader : m_shader;
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
-        // The material too: a `waves` surface moves here exactly as the forward pass moves it.
-        const GLMaterial* material = ctx.resources.getMaterial(draw.material);
-        if (material && material != boundMaterial) {
-            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-            boundMaterial = material;
+        const bool sides = doubleSided(draw);
+        ctx.gl.setFaceCulling(!sides);
+
+        // This pass binds no material, so the draws after this one that need nothing else bound go
+        // out with it, their commands following its own; the occlusion cull keeps a list a draw.
+        InstanceDraw joined = draw;
+        size_t next = i + 1;
+        while (!ctx.occlusion && next < draws.size()) {
+            const InstanceDraw& after = draws[next];
+            const bool alike = after.skinned == draw.skinned && after.water == draw.water
+                && after.mirrored == draw.mirrored && after.mesh->layout() == draw.mesh->layout()
+                && doubleSided(after) == sides;
+            if (!alike) break;
+            joined.count += after.count;
+            ++next;
         }
-        ctx.gl.setFaceCulling(!(material && material->doubleSided()));
-        ctx.drawOpaque(draw, set);
+        ctx.drawOpaque(joined, set);
+        i = next;
     }
     ctx.gl.setFaceCulling(true);
 }

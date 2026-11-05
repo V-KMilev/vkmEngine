@@ -1,15 +1,14 @@
 /**
  * Skybox vertex shader.
  *
- * The view's translation is stripped so the unit cube centres on the camera, and clip z at
- * FAR_DEPTH puts it at the far plane (shaders/depth.glsl), where GLDepth::EYE_TEST_EQUAL passes it
- * only where depth still holds the clear. Projected by u_skyProjection: the camera's own in
- * perspective, a perspective one in orthographic, whose parallel rays would see a single direction
- * of sky.
+ * The view's translation is stripped so the unit cube centers on the camera, and clip z at FAR_DEPTH puts it
+ * at the far plane (shaders/opengl/include/depth.glsl), where GLDepth::EYE_TEST_EQUAL passes it only where
+ * depth still holds the clear. Projected by u_skyProjection: the camera's own in perspective, a perspective
+ * one in orthographic, whose parallel rays would see a single direction of sky.
  */
 layout(location = ATTR_POSITION) in vec3 aPos;
 
-#include "../camera.glsl"
+#include "../../include/camera.glsl"
 
 uniform mat4 u_skyProjection;
 

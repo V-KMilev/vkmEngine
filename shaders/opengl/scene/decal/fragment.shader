@@ -8,16 +8,17 @@
  * environment - probes and volume - through GTAO.
  */
 
-#include "../constants.glsl"
-#include "../scene_gbuffer.glsl"
-#include "../scene_ao.glsl"
-#include "../depth.glsl"
-#include "../camera.glsl"
-#include "../area_light.glsl"    // the cluster's lights (lights.glsl)
-#include "../shadows.glsl"       // each light's shadow
-#include "../fog.glsl"           // fogAt
-#include "../ambient.glsl"       // environmentIrradiance
-#include "../material.glsl"      // the decal's albedo factor and maps
+#include "../../include/constants.glsl"
+#include "../../include/scene_gbuffer.glsl"
+#include "../../include/scene_ao.glsl"
+#include "../../include/depth.glsl"
+#include "../../include/camera.glsl"
+#include "../../include/lights.glsl"        // the cluster's lights
+#include "../../include/cluster_grid.glsl"
+#include "../../include/shadows.glsl"       // each light's shadow
+#include "../../include/fog.glsl"           // fogAt
+#include "../../include/ambient.glsl"       // environmentIrradiance
+#include "../../include/material.glsl"      // the decal's albedo factor and maps
 
 out vec4 FragColor;
 
@@ -35,6 +36,8 @@ void main() {
     vec2  uv = gl_FragCoord.xy / u_camera.viewport;
     float d  = texture(u_sceneDepth, uv).r;
     if (isFarDepth(d)) discard;  // background: nothing to project onto
+    // A viewmodel's squashed depth reads back as a point at the eye, which a box there would paint.
+    if (inViewmodelBand(d)) discard;
 
     vec3 worldPos = worldPosFromDepth(uv, d, u_camera.invViewProjection);
 
@@ -50,27 +53,23 @@ void main() {
     if (fade <= 0.0) discard;
 
     // Each light of its cluster, diffusely, as the forward pass lights the surface beneath: shadowed
-    // by the geometric normal the G-buffer holds, an area light by its form factor.
-    float viewDepth    = linearizeViewDepth(d, u_camera.invProjection);
-    float screenShadow = screenShadowAt(uv);
-    int   ci           = clusterIndex(uv, viewDepth, u_camera.zNear, u_camera.zFar);
-    vec3  direct       = vec3(0.0);
-    uint  count        = u_clusters.clusters[ci].count;
+    // by the geometric normal the G-buffer holds.
+    float viewDepth = linearizeViewDepth(d, u_camera.invProjection);
+    int   ci        = clusterIndex(uv, viewDepth, u_camera.zNear, u_camera.zFar);
+    vec3  direct    = vec3(0.0);
+    uint  count     = u_clusters.clusters[ci].count;
     for (uint k = 0u; k < count; ++k) {
         Light light    = u_lights.lights[u_clusters.clusters[ci].indices[k]];
         vec3  lightCol = light.color.xyz * light.color.w;
         int   type     = int(light.position.w);
 
-        if (type == LIGHT_RECT || type == LIGHT_DISK) {
-            direct += lightCol * areaDiffuse(light, type, worldPos, worldN);
-            continue;
-        }
-
         vec3  L;
         float atten = punctualAttenuation(light, type, worldPos, L);
         float ndotl = dot(worldN, L);
         if (atten <= 0.0 || ndotl <= 0.0) continue;
-        atten *= surfaceShadow(type, int(light.spot.w), worldPos, worldN, ndotl, screenShadow, CSM_SOFT);
+        const int shadowType = shadowTypeOf(light, type);
+        const int slot       = int(light.spot.w);
+        atten *= surfaceShadow(shadowType, slot, worldPos, worldN, ndotl, 1.0);
         direct += lightCol * atten * ndotl / PI;
     }
 

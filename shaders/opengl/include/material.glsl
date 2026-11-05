@@ -1,18 +1,16 @@
 /*
- * The per-draw material UBO. Matches MaterialUBO (gl_material.h) std140
- * layout exactly: vec4 block first, then the scalar tail in the same order;
- * the binding comes from the shader prelude. Any change to
- * gl_material.h lands here, once.
+ * The per-draw material UBO. Matches MaterialUBO (asset/gl_material.h) std140 layout exactly,
+ * each field as its note there says: vec4 block first, then the scalar tail in the same order;
+ * the binding comes from the shader prelude. Any change to gl_material.h lands here, once.
  */
 
 layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
-    vec4 albedo;               // rgb + opacity
-    vec4 emission;             // rgb + emissiveStrength
-    vec4 anisotropyDirection;  // xyz tangent-space direction
-    vec4 sheenColor;           // rgb + sheenRoughness
-    vec4 subsurfaceColor;      // rgb
-    vec4 attenuationColor;     // rgb + attenuationDistance
-    vec4 uvTransform;          // uvScale in xy, uvOffset in zw
+    vec4 albedo;
+    vec4 emission;
+    vec4 sheenColor;
+    vec4 subsurfaceColor;
+    vec4 attenuationColor;
+    vec4 uvTransform;
 
     float metallic;
     float roughness;
@@ -21,24 +19,20 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     float normalScale;
     float clearcoat;
     float clearcoatRoughness;
-    float anisotropy;
     float subsurface;
     float transmission;
     float thicknessFactor;
-    float heightScale;
     float alphaCutoff;
     int   type;
     int   textureFlags;
-    int   waves;  // 1: the scene's ocean moves the surface (ocean.glsl)
-    float boxMapping;  // metres a repeat when box-mapped; 0 reads the mesh's UVs
-    float pad0;
-    float pad1;
-    float pad2;
+    float boxMapping;
+    float _pad0;
+    float _pad1;
 
     // A layered material's layers (MaterialAsset::layers), read by the LAYERED programs alone.
-    vec4 layerTint[MATERIAL_MAX_LAYERS];     // albedo factor; w the normal scale
-    vec4 layerUV[MATERIAL_MAX_LAYERS];       // uvScale in xy, uvOffset in zw
-    vec4 layerSurface[MATERIAL_MAX_LAYERS];  // ao, roughness and metallic factors
+    vec4 layerTint[MATERIAL_MAX_LAYERS];
+    vec4 layerUV[MATERIAL_MAX_LAYERS];
+    vec4 layerSurface[MATERIAL_MAX_LAYERS];
 } u_material;
 
 // Where a mesh's uv reads the material's maps: repeated by uvScale, slid by uvOffset.

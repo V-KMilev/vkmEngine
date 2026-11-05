@@ -1,8 +1,8 @@
 /*
- * What the passes agree on about a linear colour.
+ * What the passes agree on about a linear color.
  */
 
-// Rec. 709 relative luminance of a linear RGB colour.
+// Rec. 709 relative luminance of a linear RGB color.
 float luma(vec3 c) {
     return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }

@@ -1,24 +1,25 @@
-#include "pass/gl_grid_pass.h"
+#include "pass/overlay/gl_grid_pass.h"
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
-#include "gl_context.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
+
 #include "gl_screen_triangle.h"
 
-#include "gl_frame_context.h"
-#include "gl_target.h"
+#include "pass/gl_frame_context.h"
+#include "storage/gl_target.h"
 #include "convention/gl_bindings.h"
-#include "core/math/axes.h"
+#include "debug/draw/debug_palette.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/// How near a view's axis must come to a world axis, as a cosine, to count as looking down it.
-constexpr float ALIGNED_COS = 0.9998f;  // about a degree
+constexpr float ALIGNED_COS = 0.9998f;  ///< How near a view's axis must come to a world axis, as a cosine, to
+                                        ///< count as looking down it: about a degree.
 
 /**
  * @brief The planes the grid draws, by normal (ZY, XZ, XY), for this view.
@@ -31,7 +32,7 @@ constexpr float ALIGNED_COS = 0.9998f;  // about a degree
  * @param camera The view's camera.
  * @return 1 for each plane drawn.
  */
-glm::ivec3 planesShown(const RenderSettings& s, const CameraData& camera) {
+glm::ivec3 planesShown(const HostChrome::Display& s, const CameraData& camera) {
     const glm::ivec3 planes(
         s.gridAxisY && s.gridAxisZ,
         s.gridAxisX && s.gridAxisZ,
@@ -53,12 +54,12 @@ glm::ivec3 planesShown(const RenderSettings& s, const CameraData& camera) {
 } // namespace
 
 GLGridPass::GLGridPass()
-    : m_shader("shaders/grid") {}
+    : m_shader("shaders/opengl/overlay/grid") {}
 
 GLGridPass::~GLGridPass() = default;
 
 void GLGridPass::execute(GLFrameContext& ctx) {
-    const RenderSettings& s = ctx.view.settings;
+    const HostChrome::Display& s = ctx.view.display;
     if (!s.gridShown()) return;
 
     bindBackbufferViewport(ctx);
@@ -72,7 +73,7 @@ void GLGridPass::execute(GLFrameContext& ctx) {
 
     static const char* const COLOR_NAMES[3] = {"u_axisColor[0]", "u_axisColor[1]", "u_axisColor[2]"};
     for (int axis = 0; axis < 3; ++axis) {
-        const Math::AxisColor c = Math::AXIS_COLORS[axis];
+        const DebugPalette::Color c = DebugPalette::AXES[axis];
         m_shader.setUniform3f(COLOR_NAMES[axis], c.r / 255.0f, c.g / 255.0f, c.b / 255.0f);
     }
     m_shader.setUniform3iv("u_axisShown", glm::ivec3(s.gridAxisX, s.gridAxisY, s.gridAxisZ));

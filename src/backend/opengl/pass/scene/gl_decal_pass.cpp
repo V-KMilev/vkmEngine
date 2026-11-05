@@ -1,38 +1,36 @@
-#include "pass/gl_decal_pass.h"
+#include "pass/scene/gl_decal_pass.h"
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
-#include "gl_context.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_frame_context.h"
-#include "gl_target.h"
-#include "gl_view.h"
+#include "pass/gl_frame_context.h"
+#include "storage/gl_target.h"
+#include "asset/gl_asset_mirror.h"
 #include "convention/gl_bindings.h"
 #include "asset/gl_material.h"
 #include "asset/gl_mesh.h"
-#include "storage/gl_shadow_atlas.h"
-#include "storage/gl_cluster_grid.h"
-#include "core/math/rotation.h"
+#include "storage/light/gl_shadow_atlas.h"
+#include "storage/light/gl_cluster_grid.h"
+#include "base/math/rotation.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 GLDecalPass::GLDecalPass()
-    : m_shader("shaders/decal") {}
+    : m_shader("shaders/opengl/scene/decal") {}
 
 GLDecalPass::~GLDecalPass() = default;
 
 void GLDecalPass::execute(GLFrameContext& ctx) {
-    const RenderView& view   = ctx.view;
-    const GLView&     glView = ctx.resources;
-    if (view.decals.empty()) return;
+    const RenderView& view = ctx.view;
+    const GLAssetMirror& mirror = ctx.mirror;
+    if (view.lists.decals.empty()) return;
 
-    // Blends into the colour chain while sampling the geometry target's depth +
-    // G-buffer - a different FBO, so no read-while-write feedback.
-    promoteColorChain(ctx);
-    ctx.colorSrc->bind(ctx.gl);
+    // Blends into the scene's color while sampling the geometry target's depth and G-buffer.
+    ctx.colorSrc->bindColorAlone(ctx.gl);
 
     ctx.gl.setDepthTest(false);
     ctx.gl.setBlending(true);
@@ -46,23 +44,25 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, GLBindings::PostTextureSlots::SCENE_GBUFFER);
     // Every light of a decal's cluster, through its shadow, so a decal agrees with the surface
-    // under it: the 2D maps and the cubes, each compared on one unit and raw on another for the
-    // soft path's blocker search.
+    // under it: the 2D maps and the cubes.
     ctx.clusters.bind();
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
-    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
     ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
-    ctx.shadowAtlas.bindCubesRaw(GLBindings::ShadowTextureSlots::CUBE_RAW);
 
     // The environment's light as the surface under the decal takes it, occlusion included.
     bindAmbient(ctx, m_shader);
     bindAO(ctx, m_shader);
 
-    for (const DecalData& decal : view.decals) {
-        const GLMaterial* material = glView.getMaterial(decal.material);
+    const GLMaterial* bound = nullptr;
+    for (const DecalData& decal : view.lists.decals) {
+        const GLMaterial* material = mirror.getMaterial(decal.material);
         if (!material) continue;
-        material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-        material->bindTextures(glView);
+        // RenderView keeps a material's decals together, so each binds once.
+        if (material != bound) {
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            material->bindTextures(mirror);
+            bound = material;
+        }
 
         // A decal projects along its forward; a surface facing back up that ray
         // is the one it lands on.

@@ -1,5 +1,5 @@
 /*
- * The BRDF's lobes - GGX, anisotropic GGX and Charlie sheen - their visibility terms, Fresnel and
+ * The BRDF's lobes - GGX and Charlie sheen - their visibility terms, Fresnel and
  * the split-sum energy, shared by shading and the integral bake.
  *
  * distributionGGX takes the GGX ALPHA (perceptual roughness squared); passing
@@ -69,31 +69,6 @@ vec3 fresnelSchlick(float u, vec3 f0) {
     float x2 = x * x;
     float f  = x2 * x2 * x;
     return f0 + (vec3(1.0) - f0) * f;
-}
-
-// Anisotropic GGX (Burley / Filament): at, ab are tangent/bitangent alphas.
-float distributionGGXAniso(float NdotH, float ToH, float BoH, float at, float ab) {
-    float a2 = at * ab;
-    vec3  v  = vec3(ab * ToH, at * BoH, a2 * NdotH);
-    float v2 = dot(v, v);
-    float w2 = a2 / max(v2, 1e-8);
-    return a2 * w2 * w2 * (1.0 / PI);
-}
-
-// The anisotropic lobe's height-correlated Smith visibility.
-float visSmithAniso(
-    float at,
-    float ab,
-    float ToV,
-    float BoV,
-    float NdotV,
-    float ToL,
-    float BoL,
-    float NdotL
-) {
-    float lambdaV = NdotL * length(vec3(at * ToV, ab * BoV, NdotV));
-    float lambdaL = NdotV * length(vec3(at * ToL, ab * BoL, NdotL));
-    return 0.5 / max(lambdaV + lambdaL, 1e-5);
 }
 
 // Specular occlusion (Lagarde): AO weighted by view angle and roughness, since

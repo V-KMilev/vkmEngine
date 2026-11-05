@@ -1,5 +1,5 @@
 /*
- * Jimenez's Call of Duty 13-tap bloom downsample: wide enough that a chain blurs smoothly, not in
+ * Jimenez's 13-tap bloom downsample: wide enough that a chain blurs smoothly, not in
  * blocks. Reads src's level 0, so the source is bound alone.
  *
  * The taps fall in five overlapping 2x2 groups. karisAverage also divides each group's weight by its
@@ -48,7 +48,7 @@ DownsampleGroups downsampleGroups(sampler2D src, vec2 uv) {
     return out_;
 }
 
-// The filter's own weights: the centre group half, the four corners an eighth each.
+// The filter's own weights: the center group half, the four corners an eighth each.
 vec3 downsample13(DownsampleGroups t) {
     return t.g[4] * 0.5 + (t.g[0] + t.g[1] + t.g[2] + t.g[3]) * 0.125;
 }

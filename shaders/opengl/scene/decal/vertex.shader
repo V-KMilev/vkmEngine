@@ -5,7 +5,7 @@
  */
 layout(location = ATTR_POSITION) in vec3 aPos;
 
-#include "../camera.glsl"
+#include "../../include/camera.glsl"
 
 uniform mat4 u_model;
 

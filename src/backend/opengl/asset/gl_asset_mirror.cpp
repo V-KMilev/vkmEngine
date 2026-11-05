@@ -1,20 +1,21 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "gl_view.h"
+#include "asset/gl_asset_mirror.h"
 
 #include <algorithm>
+#include <cstring>
 #include <type_traits>
 #include <vector>
 
 #include <GL/glew.h>
 
-#include "logger.h"
-#include "debug/profiler.h"
+#include "vkm_log/logger.h"
+#include "vkm_opengl/shader/compute_shader.h"
+#include "vkm_opengl/texture/texture.h"
 
-#include "gl_compute_shader.h"
-#include "gl_texture.h"
+#include "base/profile/profiler.h"
 
-#include "core/fnv1a.h"
+#include "base/hash/fnv1a.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
@@ -25,7 +26,7 @@
 namespace Vkm::Engine {
 
 template <typename GLT, typename AssetT>
-bool GLView::ensure(
+bool GLAssetMirror::ensure(
     GLResourceTable<GLT>& table,
     const Handle<AssetT>& handle,
     const ResourceManager& resources
@@ -59,43 +60,44 @@ bool GLView::ensure(
     } else {
         uploaded = false;
     }
-    // A texture built since the filtering last moved takes it now; nothing
+    // A texture built since the anisotropy last moved takes it now; nothing
     // walks the table again until the setting does. Font atlases keep their own.
     if constexpr (std::is_same_v<AssetT, TextureAsset>) {
-        if (uploaded) slot.gl->applyFiltering(m_filtering, m_anisotropy);
+        if (uploaded) slot.gl->applyFiltering(m_anisotropy);
     }
     slot.checked = m_syncStamp;
     return true;
 }
 
 template <typename GLT, typename AssetT>
-const GLT* GLView::find(const GLResourceTable<GLT>& table, const Handle<AssetT>& handle) const {
+const GLT* GLAssetMirror::find(const GLResourceTable<GLT>& table, const Handle<AssetT>& handle) const {
     if (!handle || handle.id() >= table.slots.size()) return nullptr;
     const auto& slot = table.slots[handle.id()];
     return slot.generation == handle.key.generation ? slot.gl.get() : nullptr;
 }
 
-void GLView::invalidate() {
+void GLAssetMirror::invalidate() {
     // m_reportedMissing goes too: a name failing again in the new graph deserves a fresh warning.
     m_meshes.slots.clear();
     m_materials.slots.clear();
     m_textures.slots.clear();
     m_fontAtlases.slots.clear();
     m_reportedMissing.clear();
+    m_charts.clear();
     m_syncedRevision = 0;
+    m_levelsSerial   = 0;
 }
 
-void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
-    if (mode == m_filtering && maxAnisotropy == m_anisotropy) return;
-    m_filtering  = mode;
+void GLAssetMirror::setTextureAnisotropy(float maxAnisotropy) {
+    if (maxAnisotropy == m_anisotropy) return;
     m_anisotropy = maxAnisotropy;
     for (auto& slot : m_textures.slots) {
         if (!slot.gl) continue;
-        slot.gl->applyFiltering(mode, maxAnisotropy);
+        slot.gl->applyFiltering(maxAnisotropy);
     }
 }
 
-void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& resources) {
+void GLAssetMirror::ensureTexture(const TextureHandle& handle, const ResourceManager& resources) {
     if (!handle) return;
     // Asked between syncs, for the texture as it is now, not as the last sync saw it.
     ++m_syncStamp;
@@ -103,7 +105,18 @@ void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& r
     reportIfMissing(handle, resources);
 }
 
-void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
+void GLAssetMirror::ensureDrawn(
+    const MeshHandle& mesh,
+    const MaterialHandle& material,
+    const ResourceManager& resources
+) {
+    // Asked between syncs, for the assets as they are now, not as the last sync saw them.
+    ++m_syncStamp;
+    ensure(m_meshes, mesh, resources);
+    ensureMaterial(material, resources);
+}
+
+void GLAssetMirror::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
     // Still in flight is not a failure; the placeholder covers the gap.
     if (asset.loading || getTexture(handle)) return;
@@ -114,7 +127,7 @@ void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager&
     LOG_WARNING("Texture '%s' has no pixels - drawing the missing-texture placeholder", asset.name().c_str());
 }
 
-void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
+void GLAssetMirror::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
     // Its maps were checked with it the first time this stamp reached it.
     if (!ensure(m_materials, handle, resources)) return;
 
@@ -127,7 +140,11 @@ void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager&
     if (material->layered()) readyLayers(resources.get(handle), *material, resources);
 }
 
-void GLView::readyLayers(const MaterialAsset& asset, GLMaterial& material, const ResourceManager& resources) {
+void GLAssetMirror::readyLayers(
+    const MaterialAsset& asset,
+    GLMaterial& material,
+    const ResourceManager& resources
+) {
     std::array<const MaterialAsset*, MaterialAsset::MAX_LAYERS>  values{};
     std::array<GLLayerMaps::Layer, MaterialAsset::MAX_LAYERS>    maps{};
     uint64_t key = fnv1a64Bytes(nullptr, 0);
@@ -140,8 +157,8 @@ void GLView::readyLayers(const MaterialAsset& asset, GLMaterial& material, const
         // Its maps upload with it; a layer's own layers, were it layered, are not read.
         ensureMaterial(layer, resources);
         const MaterialAsset& value   = resources.get(layer);
-        const TextureHandle  combined = value.aoMetallicRoughnessTexture;
-        const TextureHandle  surface  = combined ? combined : value.metallicRoughnessTexture;
+        const TextureHandle combined = value.aoMetallicRoughnessTexture;
+        const TextureHandle surface  = combined ? combined : value.metallicRoughnessTexture;
         values[i] = &value;
         maps[i]   = {
             getTexture(value.albedoTexture),
@@ -154,11 +171,15 @@ void GLView::readyLayers(const MaterialAsset& asset, GLMaterial& material, const
         mix(textureUploadId(value.normalTexture));
         mix(textureUploadId(surface));
     }
-    if (!m_layerCopy) m_layerCopy = std::make_unique<Vkm::GL::ComputeShader>("shaders/material/layer_copy");
+    if (!m_layerCopy) buildPrograms();
     material.updateLayers(asset, values, maps, key, *m_layerCopy);
 }
 
-void GLView::sync(const RenderView& view, const ResourceManager& resources) {
+void GLAssetMirror::buildPrograms() {
+    m_layerCopy = std::make_unique<Vkm::OpenGL::ComputeShader>("shaders/opengl/offline/layer_maps");
+}
+
+void GLAssetMirror::sync(const RenderView& view, const ResourceManager& resources) {
     // Naming every RenderView member keeps the walk below complete: add one and this stops
     // compiling until someone says whether it carries an asset handle.
     [[maybe_unused]] const auto& [
@@ -169,14 +190,29 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         surfaceWidth,
         surfaceHeight,
         frameSeconds,
+        bakeBudget,
         worldSeconds,
+        worldArriving,
         camera,
         hasCamera,
         objects,
+        lists,
+        settings,
+        display,
+        environment,
+        ui,
+        splash,
+        cover,
+        loading,
+        pointer,
+        worldEpoch
+    ] = view;
+    [[maybe_unused]] const auto& [
         lights,
+        keyIndex,
         probes,
-        planarReflectors,
         decals,
+        outlines,
         particlesAdditive,
         particlesAlpha,
         particlesDistortion,
@@ -187,14 +223,10 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         particleTextures,
         irradianceVolume,
         hasIrradianceVolume,
-        ocean,
+        waves,
         skinMatrices,
-        settings,
-        environment,
-        ui,
-        splash,
-        worldEpoch
-    ] = view;
+        debug
+    ] = view.lists;
 
     // A new stamp, so each asset is checked once however many objects share it.
     ++m_syncStamp;
@@ -214,10 +246,34 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
                 runMaterial = draw.material;
             }
         };
+        // A fixed object's given mesh too, whatever level the eye picked: the lightmap bake draws it,
+        // and the level reads the bake only through charts laid out as its.
+        const std::vector<MeshHandle>& bases = objects->bases;
         {
             PROFILE_SCOPE("SyncAssets/Drawables");
-            for (const uint32_t object : objects->visible) ensureDraw(draws[object]);
+            // Across a hand-over the eye draws the next level too (RenderObjects::fades), which reads
+            // a fixed object's bake as the level does only through the same charts.
+            const std::vector<ObjectFade>& fades = objects->fades;
+            for (const uint32_t object : objects->visible) {
+                ensureDraw(draws[object]);
+                const MeshHandle next = object < fades.size() ? fades[object].next : MeshHandle{};
+                if (!next) continue;
+                ensure(m_meshes, next, resources);
+                if (draws[object].fixed && object < bases.size()) checkCharts(next, bases[object], resources);
+            }
         }
+        MeshHandle runBase;
+        const auto ensureObject = [&](uint32_t object) {
+            ensureDraw(draws[object]);
+            if (!draws[object].fixed || object >= bases.size()) return;
+            const MeshHandle& given = bases[object];
+            if (given == draws[object].mesh) return;
+            if (given != runBase) {
+                ensure(m_meshes, given, resources);
+                runBase = given;
+            }
+            checkCharts(draws[object].mesh, given, resources);
+        };
 
         // The whole scene's meshes and materials, not only what the camera sees, so an object first
         // turned to uploads nothing that frame. Walked whole when the objects or the assets changed
@@ -228,10 +284,31 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
                 || resources.revision() != m_syncedRevision;
             m_syncedSerial = objects->serial;
             if (whole) {
-                for (const uint32_t object : objects->scene) ensureDraw(draws[object]);
+                for (const uint32_t object : objects->scene) ensureObject(object);
+                // And what the graph holds that nothing draws yet, so a level first picked or a prefab
+                // first spawned uploads nothing that frame.
+                resources.forEachOfType<MeshAsset>([&](const MeshHandle& mesh, const MeshAsset&) {
+                    ensure(m_meshes, mesh, resources);
+                });
+                resources.forEachOfType<MaterialAsset>([&](const MaterialHandle& held, const MaterialAsset&) {
+                    ensureMaterial(held, resources);
+                });
+                resources.forEachOfType<TextureAsset>([&](const TextureHandle& texture, const TextureAsset&) {
+                    ensure(m_textures, texture, resources);
+                });
                 m_syncedRevision = resources.revision();
             } else {
-                for (const uint32_t object : objects->changed) ensureDraw(draws[object]);
+                for (const uint32_t object : objects->changed) ensureObject(object);
+            }
+        }
+
+        // Before the eye picks one: a camera cut picks many levels at once.
+        if (objects->fixedSerial != m_levelsSerial) {
+            PROFILE_SCOPE("SyncAssets/Levels");
+            m_levelsSerial = objects->fixedSerial;
+            for (const ObjectLevel& level : objects->levels) {
+                ensure(m_meshes, level.mesh, resources);
+                checkCharts(level.mesh, level.given, resources);
             }
         }
     }
@@ -247,9 +324,10 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     }
 
     // Font atlases live inside FontAssets, so ensure them off the text commands; images are
-    // ordinary textures.
-    if (ui) {
-        for (const UIDrawCmd& cmd : ui->commands) {
+    // ordinary textures. The cover is drawn as the UI is.
+    for (const UIDrawData* overlay : {ui, cover}) {
+        if (!overlay) continue;
+        for (const UIDrawCmd& cmd : overlay->commands) {
             ensure(m_fontAtlases, cmd.font, resources);
             if (!cmd.image) continue;
             ensure(m_textures, cmd.image, resources);
@@ -258,38 +336,86 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     }
 }
 
-const GLMesh* GLView::getMesh(const MeshHandle& handle) const {
+void GLAssetMirror::checkCharts(
+    const MeshHandle& drawn,
+    const MeshHandle& given,
+    const ResourceManager& resources
+) {
+    // readsChartsOf answers a mesh of itself.
+    if (drawn == given) return;
+    const GLMesh* drawnMesh = getMesh(drawn);
+    const GLMesh* givenMesh = getMesh(given);
+    if (!drawnMesh || !givenMesh) return;
+    ChartsCheck& check = m_charts[(static_cast<uint64_t>(drawn.id()) << 32) | given.id()];
+    if (check.drawnUpload == drawnMesh->uploadId() && check.givenUpload == givenMesh->uploadId()) return;
+    check.drawnUpload = drawnMesh->uploadId();
+    check.givenUpload = givenMesh->uploadId();
+
+    // Bit for bit: a decimation keeps the coordinates of the vertices it keeps, and a terrain chunk's
+    // levels lay one grid out alike.
+    const MeshAsset* reader = resources.tryGet(drawn);
+    const MeshAsset* source = resources.tryGet(given);
+    check.reads = false;
+    if (!reader || !source || reader->lightmapUVs.empty()) return;
+    static_assert(sizeof(glm::vec2) == sizeof(uint64_t), "a coordinate is compared as its bits");
+    const auto bitsOf = [](const glm::vec2& uv) {
+        uint64_t bits = 0;
+        std::memcpy(&bits, &uv, sizeof(bits));
+        return bits;
+    };
+    std::vector<uint64_t> charts(source->lightmapUVs.size());
+    std::transform(source->lightmapUVs.begin(), source->lightmapUVs.end(), charts.begin(), bitsOf);
+    std::sort(charts.begin(), charts.end());
+    const auto inCharts = [&](const glm::vec2& uv) {
+        return std::binary_search(charts.begin(), charts.end(), bitsOf(uv));
+    };
+    check.reads = std::all_of(reader->lightmapUVs.begin(), reader->lightmapUVs.end(), inCharts);
+}
+
+bool GLAssetMirror::readsChartsOf(const MeshHandle& drawn, const MeshHandle& given) const {
+    if (drawn == given) return true;
+    const GLMesh* drawnMesh = getMesh(drawn);
+    const GLMesh* givenMesh = getMesh(given);
+    if (!drawnMesh || !givenMesh) return false;
+    const auto found = m_charts.find((static_cast<uint64_t>(drawn.id()) << 32) | given.id());
+    if (found == m_charts.end()) return false;
+    const ChartsCheck& check = found->second;
+    return check.reads && check.drawnUpload == drawnMesh->uploadId()
+        && check.givenUpload == givenMesh->uploadId();
+}
+
+const GLMesh* GLAssetMirror::getMesh(const MeshHandle& handle) const {
     return find(m_meshes, handle);
 }
 
-const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
+const GLMaterial* GLAssetMirror::getMaterial(const MaterialHandle& handle) const {
     return find(m_materials, handle);
 }
 
-const Vkm::GL::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
+const Vkm::OpenGL::Texture2D* GLAssetMirror::getTexture(const TextureHandle& handle) const {
     // Pixels never arrived: absent, so the caller substitutes the placeholder.
-    const GLTexture* texture = find(m_textures, handle);
+    const GLAssetTexture* texture = find(m_textures, handle);
     return texture && texture->hasPixels() ? &texture->getTexture() : nullptr;
 }
 
-bool GLView::holdsPixels(const TextureHandle& handle, uint64_t version) const {
+bool GLAssetMirror::holdsPixels(const TextureHandle& handle, uint64_t version) const {
     return getTexture(handle) && m_textures.slots[handle.id()].version == version;
 }
 
-uint64_t GLView::textureUploadId(const TextureHandle& handle) const {
+uint64_t GLAssetMirror::textureUploadId(const TextureHandle& handle) const {
     if (!getTexture(handle)) return 0;
     return m_textures.slots[handle.id()].gl->uploadId();
 }
 
-const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
-    const GLTexture* atlas = find(m_fontAtlases, handle);
+const Vkm::OpenGL::Texture2D* GLAssetMirror::getFontAtlas(const FontHandle& handle) const {
+    const GLAssetTexture* atlas = find(m_fontAtlases, handle);
     return atlas && atlas->hasPixels() ? &atlas->getTexture() : nullptr;
 }
 
-const Vkm::GL::Texture2D& GLView::missingTexture() const {
+const Vkm::OpenGL::Texture2D& GLAssetMirror::missingTexture() const {
     if (m_missingTexture) return *m_missingTexture;
 
-    // Magenta because nothing in a PBR scene is legitimately that colour; a checker because a
+    // Magenta because nothing in a PBR scene is legitimately that color; a checker because a
     // flat fill can pass for an authored material.
     constexpr uint32_t SIZE  = 8;
     constexpr uint32_t CHECK = 2;   // pixels per square
@@ -297,7 +423,7 @@ const Vkm::GL::Texture2D& GLView::missingTexture() const {
     for (uint32_t y = 0; y < SIZE; ++y) {
         for (uint32_t x = 0; x < SIZE; ++x) {
             const bool lit = ((x / CHECK) + (y / CHECK)) % 2 == 0;
-            uint8_t* p = &pixels[(y * SIZE + x) * 4];
+            uint8_t* p     = &pixels[(y * SIZE + x) * 4];
             p[0] = lit ? 255 : 0;
             p[1] = 0;
             p[2] = lit ? 255 : 0;
@@ -305,21 +431,21 @@ const Vkm::GL::Texture2D& GLView::missingTexture() const {
         }
     }
 
-    Vkm::GL::Texture2DParams params;
+    Vkm::OpenGL::Texture2DParams params;
     params.width           = SIZE;
     params.height          = SIZE;
-    params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as colour, like any albedo map
+    params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as color, like any albedo map
     params.format          = GL_RGBA;
     params.type            = GL_UNSIGNED_BYTE;
-    params.wrapS           = Vkm::GL::TextureWrap::Repeat;
-    params.wrapT           = Vkm::GL::TextureWrap::Repeat;
+    params.wrapS           = Vkm::OpenGL::TextureWrap::Repeat;
+    params.wrapT           = Vkm::OpenGL::TextureWrap::Repeat;
     // Nearest, no mips: a hard-edged grid at every distance, not flat magenta far away.
-    params.minFilter       = Vkm::GL::TextureMinFilter::Nearest;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::Nearest;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Nearest;
     params.generateMipmaps = false;
     params.data            = pixels.data();
 
-    m_missingTexture = std::make_unique<Vkm::GL::Texture2D>("missing", params);
+    m_missingTexture = std::make_unique<Vkm::OpenGL::Texture2D>("missing", params);
     return *m_missingTexture;
 }
 

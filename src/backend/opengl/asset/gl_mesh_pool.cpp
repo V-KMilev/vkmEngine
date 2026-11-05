@@ -5,18 +5,19 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <vector>
 
 #include <GL/glew.h>
 
-#include "logger.h"
-
-#include "gl_error_handle.h"
-#include "gl_vertex_buffer.h"
+#include "vkm_log/logger.h"
+#include "vkm_opengl/buffer/vertex_buffer.h"
 
 #include "convention/gl_bindings.h"
 #include "resource/asset/mesh_asset.h"
 
 namespace Vkm::Engine {
+
+using Vkm::OpenGL::DrawElementsIndirectCommand;
 
 namespace {
 
@@ -25,6 +26,7 @@ namespace Attr = GLBindings::VertexAttributes;
 // Vertex buffer binding points, a namespace apart from the locations.
 constexpr uint32_t VERTEX_BINDING   = 0;
 constexpr uint32_t SKIN_BINDING     = 1;
+constexpr uint32_t LIGHTMAP_BINDING = 2;
 constexpr uint32_t INSTANCE_BINDING = 4;
 
 // What a stream starts at the first time anything is put in it, in elements:
@@ -33,6 +35,7 @@ constexpr uint32_t MIN_VERTICES = 1u << 16;
 constexpr uint32_t MIN_INDICES  = 1u << 18;
 
 constexpr size_t SKINNED = static_cast<size_t>(VertexLayout::Skinned);
+constexpr size_t STATIC  = static_cast<size_t>(VertexLayout::Static);
 
 std::optional<uint32_t> take(SpanList& list, uint32_t count) {
     for (auto span = list.free.begin(); span != list.free.end(); ++span) {
@@ -76,11 +79,9 @@ void give(SpanList& list, uint32_t offset, uint32_t count) {
 }
 
 // Replace @p buffer with one of @p newBytes holding its first @p oldBytes.
-void growBuffer(std::unique_ptr<Vkm::GL::VertexBuffer>& buffer, uint32_t oldBytes, uint32_t newBytes) {
-    auto bigger = std::make_unique<Vkm::GL::VertexBuffer>(nullptr, newBytes, GL_STATIC_DRAW);
-    if (buffer && oldBytes > 0) {
-        VKM_GL_CHECK(glCopyNamedBufferSubData(buffer->getID(), bigger->getID(), 0, 0, oldBytes));
-    }
+void growBuffer(std::unique_ptr<Vkm::OpenGL::VertexBuffer>& buffer, uint32_t oldBytes, uint32_t newBytes) {
+    auto bigger = std::make_unique<Vkm::OpenGL::VertexBuffer>(nullptr, newBytes, GL_STATIC_DRAW);
+    if (buffer && oldBytes > 0) bigger->copyFrom(*buffer, 0, 0, oldBytes);
     buffer = std::move(bigger);
 }
 
@@ -121,40 +122,30 @@ std::optional<uint32_t> reserve(
 
 GLMeshPool::GLMeshPool() {
     const uint32_t zero = 0;
-    m_noObject = std::make_unique<Vkm::GL::VertexBuffer>(&zero, static_cast<uint32_t>(sizeof(zero)));
+    m_noObject = std::make_unique<Vkm::OpenGL::VertexBuffer>(&zero, static_cast<uint32_t>(sizeof(zero)));
 
     for (size_t layout = 0; layout < static_cast<size_t>(VertexLayout::Count); ++layout) {
-        const GLuint vao       = m_arrays[layout].getID();
-        const auto   attribute = [vao](uint32_t index, GLint count, uint32_t at) {
-            VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, index));
-            VKM_GL_CHECK(glVertexArrayAttribFormat(vao, index, count, GL_FLOAT, GL_FALSE, at));
-            VKM_GL_CHECK(glVertexArrayAttribBinding(vao, index, VERTEX_BINDING));
-        };
-        attribute(Attr::POSITION, 3, offsetof(Vertex, position));
-        attribute(Attr::NORMAL,   3, offsetof(Vertex, normal));
-        attribute(Attr::UV,       2, offsetof(Vertex, uv));
-        attribute(Attr::TANGENT,  4, offsetof(Vertex, tangent));
+        using Kind = Vkm::OpenGL::AttributeKind;
+        Vkm::OpenGL::VertexArray& vao = m_arrays[layout];
+        vao.setAttribute(Attr::POSITION, VERTEX_BINDING, 3, GL_FLOAT, offsetof(Vertex, position));
+        vao.setAttribute(Attr::NORMAL, VERTEX_BINDING, 3, GL_FLOAT, offsetof(Vertex, normal));
+        vao.setAttribute(Attr::UV, VERTEX_BINDING, 2, GL_FLOAT, offsetof(Vertex, uv));
+        vao.setAttribute(Attr::TANGENT, VERTEX_BINDING, 4, GL_FLOAT, offsetof(Vertex, tangent));
 
-        // The object index: an integer attribute (the float entry point would
-        // convert it and lose slots past 2^24), stepping once per instance.
-        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::INSTANCE));
-        VKM_GL_CHECK(glVertexArrayAttribIFormat(vao, Attr::INSTANCE, 1, GL_UNSIGNED_INT, 0));
-        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::INSTANCE, INSTANCE_BINDING));
-        VKM_GL_CHECK(glVertexArrayBindingDivisor(vao, INSTANCE_BINDING, 1));
-        VKM_GL_CHECK(
-            glVertexArrayVertexBuffer(vao, INSTANCE_BINDING, m_noObject->getID(), 0, sizeof(uint32_t))
-        );
+        // The object index: an integer, stepping once per instance.
+        vao.setAttribute(Attr::INSTANCE, INSTANCE_BINDING, 1, GL_UNSIGNED_INT, 0, Kind::Integer);
+        vao.setDivisor(INSTANCE_BINDING, 1);
+        vao.setVertexBuffer(INSTANCE_BINDING, *m_noObject, 0, sizeof(uint32_t));
 
+        if (layout == STATIC) {
+            vao.setAttribute(Attr::LIGHTMAP_UV, LIGHTMAP_BINDING, 2, GL_FLOAT, 0);
+        }
         if (layout != SKINNED) continue;
         // Bone indices stay integers; weights arrive as unorm8 summing to 1.0.
-        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::BONES));
-        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::WEIGHTS));
-        const auto bones   = static_cast<GLuint>(offsetof(SkinVertex, bones));
-        const auto weights = static_cast<GLuint>(offsetof(SkinVertex, weights));
-        VKM_GL_CHECK(glVertexArrayAttribIFormat(vao, Attr::BONES, 4, GL_UNSIGNED_SHORT, bones));
-        VKM_GL_CHECK(glVertexArrayAttribFormat(vao, Attr::WEIGHTS, 4, GL_UNSIGNED_BYTE, GL_TRUE, weights));
-        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::BONES, SKIN_BINDING));
-        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::WEIGHTS, SKIN_BINDING));
+        const auto bones   = static_cast<uint32_t>(offsetof(SkinVertex, bones));
+        const auto weights = static_cast<uint32_t>(offsetof(SkinVertex, weights));
+        vao.setAttribute(Attr::BONES, SKIN_BINDING, 4, GL_UNSIGNED_SHORT, bones, Kind::Integer);
+        vao.setAttribute(Attr::WEIGHTS, SKIN_BINDING, 4, GL_UNSIGNED_BYTE, weights, Kind::Normalized);
     }
 }
 
@@ -168,8 +159,7 @@ MeshRange GLMeshPool::add(const MeshAsset& mesh) {
     const auto vertexCount = static_cast<uint32_t>(mesh.vertices.size());
     const auto indexCount  = static_cast<uint32_t>(mesh.indices.size());
     if (vertexCount == 0 || indexCount == 0) return MeshRange{range.layout};
-    // The skin stream is uploaded a vertex's worth per vertex: a shorter one
-    // would be read past its end.
+    // The streams are uploaded a vertex's worth per vertex: a shorter one would be read past its end.
     if (!mesh.skin.empty() && mesh.skin.size() != mesh.vertices.size()) {
         LOG_ERROR(
             "A skinned mesh has %zu skin entries for %u vertices; it is not drawn",
@@ -178,8 +168,16 @@ MeshRange GLMeshPool::add(const MeshAsset& mesh) {
         );
         return MeshRange{range.layout};
     }
+    if (!mesh.lightmapUVs.empty() && mesh.lightmapUVs.size() != mesh.vertices.size()) {
+        LOG_ERROR(
+            "A mesh has %zu lightmap coordinates for %u vertices; it is not drawn",
+            mesh.lightmapUVs.size(),
+            vertexCount
+        );
+        return MeshRange{range.layout};
+    }
 
-    std::unique_ptr<Vkm::GL::VertexBuffer>& vertices = m_vertices[layout];
+    std::unique_ptr<Vkm::OpenGL::VertexBuffer>& vertices = m_vertices[layout];
     const std::optional<uint32_t> firstVertex = reserve(
         m_vertexSpans[layout],
         vertexCount,
@@ -188,6 +186,7 @@ MeshRange GLMeshPool::add(const MeshAsset& mesh) {
         [&](uint32_t from, uint32_t to) {
             growBuffer(vertices, from * sizeof(Vertex), to * sizeof(Vertex));
             if (layout == SKINNED) growBuffer(m_skin, from * sizeof(SkinVertex), to * sizeof(SkinVertex));
+            if (layout == STATIC)  growBuffer(m_lightmap, from * sizeof(glm::vec2), to * sizeof(glm::vec2));
         }
     );
     const std::optional<uint32_t> firstIndex = reserve(
@@ -224,6 +223,11 @@ MeshRange GLMeshPool::add(const MeshAsset& mesh) {
             vertexCount * sizeof(SkinVertex),
             range.firstVertex * sizeof(SkinVertex)
         );
+    } else {
+        // Zero for a mesh with none: the space may hold a removed mesh's.
+        const std::vector<glm::vec2> none(mesh.lightmapUVs.empty() ? vertexCount : 0, glm::vec2(0.0f));
+        const glm::vec2* uvs = mesh.lightmapUVs.empty() ? none.data() : mesh.lightmapUVs.data();
+        m_lightmap->update(uvs, vertexCount * sizeof(glm::vec2), range.firstVertex * sizeof(glm::vec2));
     }
     m_indices->update(
         mesh.indices.data(),
@@ -240,60 +244,41 @@ void GLMeshPool::remove(const MeshRange& range) {
 
 void GLMeshPool::draw(const MeshRange& range) const {
     if (range.indexCount == 0) return;
-    bind(range.layout, Vkm::GL::BufferSpan{m_noObject->getID(), 0, m_noObject->getSize()});
-    VKM_GL_CHECK(
-        glDrawElementsBaseVertex(
-            GL_TRIANGLES,
-            static_cast<GLsizei>(range.indexCount),
-            GL_UNSIGNED_INT,
-            reinterpret_cast<const void*>(uintptr_t{range.firstIndex} * sizeof(uint32_t)),
-            static_cast<GLint>(range.firstVertex)
-        )
-    );
+    bind(range.layout, Vkm::OpenGL::BufferSpan{m_noObject->getID(), 0, m_noObject->getSize()});
+    const Vkm::OpenGL::VertexArray& vao = m_arrays[static_cast<size_t>(range.layout)];
+    const auto base = static_cast<int32_t>(range.firstVertex);
+    vao.drawElementsBaseVertex(GL_TRIANGLES, range.indexCount, range.firstIndex, base);
 }
 
 void GLMeshPool::drawIndirect(
     VertexLayout layout,
-    const Vkm::GL::BufferSpan& instances,
-    const Vkm::GL::BufferSpan& commands,
+    const Vkm::OpenGL::BufferSpan& instances,
+    const Vkm::OpenGL::BufferSpan& commands,
     uint32_t first,
     uint32_t count
 ) const {
     if (count == 0 || !m_indices) return;
     bind(layout, instances);
-    VKM_GL_CHECK(glBindBuffer(GL_DRAW_INDIRECT_BUFFER, commands.buffer));
-    const uintptr_t at = uintptr_t{commands.offset} + uintptr_t{first} * sizeof(DrawCommand);
-    VKM_GL_CHECK(
-        glMultiDrawElementsIndirect(
-            GL_TRIANGLES,
-            GL_UNSIGNED_INT,
-            reinterpret_cast<const void*>(at),
-            static_cast<GLsizei>(count),
-            0
-        )
-    );
+    const auto at    = static_cast<uint32_t>(commands.offset + first * sizeof(DrawElementsIndirectCommand));
+    const auto bytes = count * static_cast<uint32_t>(sizeof(DrawElementsIndirectCommand));
+    const Vkm::OpenGL::BufferSpan from{commands.buffer, at, bytes};
+    m_arrays[static_cast<size_t>(layout)].multiDrawElementsIndirect(GL_TRIANGLES, from, count);
 }
 
-void GLMeshPool::bind(VertexLayout layout, const Vkm::GL::BufferSpan& instances) const {
-    const Vkm::GL::VertexArray& vao = m_arrays[static_cast<size_t>(layout)];
+void GLMeshPool::bind(VertexLayout layout, const Vkm::OpenGL::BufferSpan& instances) const {
+    Vkm::OpenGL::VertexArray& vao = m_arrays[static_cast<size_t>(layout)];
     vao.bind();
-    const auto offset = static_cast<GLintptr>(instances.offset);
-    VKM_GL_CHECK(
-        glVertexArrayVertexBuffer(vao.getID(), INSTANCE_BINDING, instances.buffer, offset, sizeof(uint32_t))
-    );
+    vao.setVertexBuffer(INSTANCE_BINDING, instances, sizeof(uint32_t));
 }
 
 void GLMeshPool::wire() {
     for (size_t layout = 0; layout < static_cast<size_t>(VertexLayout::Count); ++layout) {
         if (!m_vertices[layout]) continue;
-        const GLuint vao = m_arrays[layout].getID();
-        const GLuint vertices = m_vertices[layout]->getID();
-        VKM_GL_CHECK(glVertexArrayVertexBuffer(vao, VERTEX_BINDING, vertices, 0, sizeof(Vertex)));
-        if (layout == SKINNED) {
-            const GLuint skin = m_skin->getID();
-            VKM_GL_CHECK(glVertexArrayVertexBuffer(vao, SKIN_BINDING, skin, 0, sizeof(SkinVertex)));
-        }
-        if (m_indices) VKM_GL_CHECK(glVertexArrayElementBuffer(vao, m_indices->getID()));
+        Vkm::OpenGL::VertexArray& vao = m_arrays[layout];
+        vao.setVertexBuffer(VERTEX_BINDING, *m_vertices[layout], 0, sizeof(Vertex));
+        if (layout == SKINNED) vao.setVertexBuffer(SKIN_BINDING, *m_skin, 0, sizeof(SkinVertex));
+        if (layout == STATIC) vao.setVertexBuffer(LIGHTMAP_BINDING, *m_lightmap, 0, sizeof(glm::vec2));
+        if (m_indices) vao.setIndexBuffer(*m_indices);
     }
 }
 

@@ -8,7 +8,7 @@
  * with no sky it is the prepass's black, still fogged.
  */
 
-#include "../fog.glsl"
+#include "../../include/fog.glsl"
 
 in vec3 vDir;
 
@@ -33,11 +33,11 @@ uniform float u_moonCosInner;
 uniform float u_moonIntensity;
 uniform float u_moonHalo;       // radiance of the glow around the moon
 uniform vec3  u_nightRadiance;  // the skyglow floor
-uniform float u_starIntensity;  // 0 disables the star field
+uniform float u_starIntensity;
 uniform float u_starDensity;
 
-#include "../atmosphere.glsl"
-#include "../sky.glsl"
+#include "../../include/atmosphere.glsl"
+#include "../../include/night_sky.glsl"
 
 // The sky-view table along @p dir: its azimuth is measured from the sun's, which overhead has
 // none, and then any azimuth reads the same sky.
@@ -51,11 +51,11 @@ vec3 skyView(vec3 dir) {
 }
 
 void main() {
-    vec3 dir   = normalize(vDir);
-    vec3 color = vec3(0.0);
+    vec3  dir   = normalize(vDir);
+    vec3  color = vec3(0.0);
+    float night = skyNightFactor(u_sunDir);
     if (u_hasSky == 1) {
         if (u_skyView == 1) {
-            float night = skyNightFactor(u_sunDir);
             color = skyView(dir) + skyNightGlow(dir, u_moonDir, u_nightRadiance, u_moonHalo, night);
         } else {
             color = texture(u_envCube, dir).rgb;
@@ -64,8 +64,6 @@ void main() {
     }
 
     if (u_hasSky == 1 && u_hasSun == 1) {
-        float night = skyNightFactor(u_sunDir);
-
         // Fades with the daylight, or it would burn through the night sky from below the horizon.
         float sun = skyDisc(dir, u_sunDir, u_sunCosOuter, u_sunCosInner);
         color += sun * (1.0 - night) * u_sunDiscIntensity * u_sunColor;

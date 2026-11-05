@@ -3,6 +3,8 @@
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 
+#include "vkm_opengl/texture/texture.h"
+
 namespace Vkm::Engine {
 
 /**
@@ -12,7 +14,7 @@ namespace Vkm::Engine {
  * eyeProjection: the near plane at depth 1, the far at 0, into a float depth buffer, which then
  * spends its precision where perspective took it away - distant surfaces do not fight. A shadow
  * map goes through shadowProjection and keeps near 0, far 1: most are orthographic, whose depth is
- * linear and gains nothing reversed. The shaders' side is shaders/depth.glsl.
+ * linear and gains nothing reversed. The shaders' side is shaders/opengl/include/depth.glsl.
  */
 namespace GLDepth {
     inline constexpr float  EYE_NEAR        = 1.0f;         ///< The eye's near plane.
@@ -23,6 +25,12 @@ namespace GLDepth {
 
     inline constexpr float  SHADOW_CLEAR    = 1.0f;         ///< A shadow map's far plane.
     inline constexpr GLenum SHADOW_TEST     = GL_LESS;
+    inline constexpr float  FARTHEST_CLEAR  = 0.0f;         ///< A shadow map's near plane: what a map keeping
+                                                            ///< what lies farthest clears to.
+    inline constexpr GLenum FARTHEST_TEST   = GL_GREATER;   ///< Keeps what lies farthest, in a shadow map's
+                                                            ///< depth.
+    inline constexpr Vkm::OpenGL::TextureCompare SHADOW_COMPARE = Vkm::OpenGL::TextureCompare::LessEqual;
+        ///< How a sampler compares a shadow map's depth: lit where nearer, as SHADOW_TEST drew it.
 
     /**
      * @brief @p projection with clip z remapped by @p zFromW and @p zFromZ, in double.
@@ -54,17 +62,6 @@ namespace GLDepth {
     }
 
     /**
-     * @brief The eye's window depth of a point glm's projection put at clip @p z, @p w.
-     *
-     * @param z Clip z, in -w..w.
-     * @param w Clip w.
-     * @return eyeProjection's depth of it: 1 near, 0 far.
-     */
-    inline float eyeDepth(float z, float w) {
-        return 0.5f - 0.5f * z / w;
-    }
-
-    /**
      * @brief A projection (or any matrix ending in one) as a shadow map draws: depth 0 near, 1 far.
      *
      * @param projection glm's, clip z in -w..w.
@@ -73,6 +70,13 @@ namespace GLDepth {
     inline glm::mat4 shadowProjection(const glm::mat4& projection) {
         return remapClipZ(projection, 0.5, 0.5);
     }
+
+    inline constexpr float VIEWMODEL_SHARE = 0.05f;  ///< The share of the depth range nearest the eye a
+                                                     ///< viewmodel object's depth is squashed into, under a
+                                                     ///< perspective camera only: an orthographic one draws
+                                                     ///< it at its own depth. Put and found by
+                                                     ///< shaders/opengl/include/camera.glsl's
+                                                     ///< intoViewmodelBand and inViewmodelBand.
 } // namespace GLDepth
 
 } // namespace Vkm::Engine

@@ -5,14 +5,18 @@
 #include <utility>
 #include <vector>
 
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
+#include "core/frame/render_readiness.h"
+
+namespace Vkm::Platform {
+class WindowManager;
+} // namespace Vkm::Platform
 
 namespace Vkm::Engine {
 
 struct RenderView;
 struct TextureAsset;
 class ResourceManager;
-class WindowManager;
 class EditorRenderHooks;
 
 /**
@@ -25,14 +29,23 @@ struct BackendInfo {
     std::string device;  ///< The GPU, as its driver names it.
 };
 
-/// The widest texture edge every backend takes, in texels: one that cannot refuses to init, so a
-/// bake may count on it.
-inline constexpr uint32_t BACKEND_MIN_TEXTURE_EDGE = 16384;
+/**
+ * @brief A frame read back from the GPU: 8-bit RGB, top row first, rows packed tight.
+ */
+struct FramePixels {
+    uint32_t             width  = 0;
+    uint32_t             height = 0;
+    std::vector<uint8_t> rgb;         ///< width * height * 3 bytes.
+};
+
+inline constexpr uint32_t BACKEND_MIN_TEXTURE_EDGE = 16384;  ///< The widest texture edge every backend takes,
+                                                             ///< in texels: one that cannot refuses to init,
+                                                             ///< so a bake may count on it.
 
 /**
  * @brief The frame's seam between the engine and the graphics API.
  *
- * The backend gets one POD RenderView per frame and owns all GPU state below
+ * The backend gets one RenderView per frame and owns all GPU state below
  * this line; the window owns the API context and Engine::run presents. Nothing
  * above holds an API object.
  */
@@ -57,7 +70,7 @@ class RenderBackend {
          * @param window The window whose context the backend draws into.
          * @return True when the backend can draw.
          */
-        virtual bool init(WindowManager& window) = 0;
+        virtual bool init(Platform::WindowManager& window) = 0;
 
         /**
          * @brief Draw one frame into the window's back buffer, for the engine loop to present.
@@ -65,36 +78,36 @@ class RenderBackend {
          * The view carries the viewport and surface size; a backend detects a
          * resize by comparing against its own cached values.
          *
-         * @param view      What to draw this frame.
+         * @param view      What to draw this frame; nothing of it is read once this returns, as
+         *                  what it points at is rewritten for the next.
          * @param resources Resolves the view's handles; only changed data is uploaded.
          */
         virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
 
         /**
-         * @brief Read back the frame render() last drew, as the window shows it.
+         * @brief Start reading back the frame render() last drew, as the window shows it, without
+         *        waiting for the GPU to finish drawing it: takeFrame hands it over once it has.
          *
          * The viewport after every pass, UI included. Called right after render()
          * in the same frame, so a backend presenting in render() reads first.
          * Leaves no API state behind.
          *
-         * @param view   The view render() was handed; its viewport is the rect read.
-         * @param pixels Replaced with tightly packed 8-bit RGB, top row first.
-         * @return False, with @p pixels empty, when the viewport is empty.
+         * @param view The view render() was handed; its viewport is the rect read.
+         * @return False, reading nothing, when the viewport is empty.
          */
-        virtual bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) = 0;
+        virtual bool readFrame(const RenderView& view) = 0;
 
         /**
-         * @brief Recompile shaders whose source changed on disk - a dev hook.
+         * @brief Hand over the oldest frame readFrame started, once the GPU has written it.
          *
-         * Cheap enough per frame (a directory scan and timestamp compare). A
-         * failing edit keeps the old program and logs. A no-op without sources on disk.
-         *
-         * @return Number of shaders recompiled.
+         * @param frame Replaced with it.
+         * @param wait  Wait for it rather than answer false while it is on its way: for a host closing.
+         * @return False when no read is waiting, or, without @p wait, the oldest has not landed.
          */
-        virtual uint32_t reloadChangedShaders() = 0;
+        virtual bool takeFrame(FramePixels& frame, bool wait) = 0;
 
         /**
-         * @brief The highest anisotropic-filtering degree this backend can honour.
+         * @brief The highest anisotropic-filtering degree this backend can honor.
          *
          * What the driver reports; a setting should offer nothing above it.
          *
@@ -119,6 +132,14 @@ class RenderBackend {
          * @return Hooks the editor may use, or null.
          */
         virtual EditorRenderHooks* editorHooks() = 0;
+
+        /**
+         * @brief How far the startup programs, a world drawn whole behind the loading screen, and the
+         *        bakes the frames so far started or hold have come.
+         *
+         * @return After the last render(); ready when nothing is owed.
+         */
+        virtual RenderReadiness readiness() const = 0;
 
     public:
         BackendInfo info() const { return m_info; }

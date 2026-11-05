@@ -1,8 +1,8 @@
 #pragma once
 
-#include "gl_shader.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
 namespace Vkm::Engine {
 
@@ -31,7 +31,7 @@ class GLSkyboxPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        Vkm::GL::Shader m_shader;
+        Vkm::OpenGL::Shader m_shader;
 };
 
 } // namespace Vkm::Engine

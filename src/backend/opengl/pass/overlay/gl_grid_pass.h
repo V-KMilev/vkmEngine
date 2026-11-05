@@ -1,8 +1,8 @@
 #pragma once
 
-#include "gl_shader.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
 namespace Vkm::Engine {
 
@@ -10,9 +10,9 @@ namespace Vkm::Engine {
  * @brief Draws the editor's world grid: grids on the XZ, XY and ZY planes, and the axis lines.
  *
  * One fullscreen draw after Composite, so it blends in display space and the axes keep
- * Math::AXIS_COLORS as the gizmos show them. Each pixel finds its ray's point on each plane
+ * DebugPalette::AXES as the gizmos show them. Each pixel finds its ray's point on each plane
  * and its nearest point on each axis, and tests them against the geometry target's depth.
- * Drawn while RenderSettings::gridShown: a line for each axis on, and the plane of each
+ * Drawn while HostChrome::Display::gridShown: a line for each axis on, and the plane of each
  * two; an orthographic view down an axis draws the plane facing it instead.
  */
 class GLGridPass : public GLPass {
@@ -30,7 +30,7 @@ class GLGridPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        Vkm::GL::Shader m_shader;
+        Vkm::OpenGL::Shader m_shader;
 };
 
 } // namespace Vkm::Engine

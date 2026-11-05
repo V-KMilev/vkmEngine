@@ -1,33 +1,25 @@
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
-#include <GL/glew.h>
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
+#include "vkm_opengl/target/frame_buffer.h"
 
-#include "gl_context.h"
-#include "gl_error_handle.h"
-#include "gl_frame_buffer.h"
-#include "gl_shader.h"
-
-#include "gl_frame_context.h"
-#include "gl_target.h"
+#include "pass/gl_frame_context.h"
+#include "storage/gl_target.h"
 #include "convention/gl_bindings.h"
-#include "storage/gl_atmosphere.h"
-#include "storage/gl_fog_volume.h"
-#include "storage/gl_ibl.h"
-#include "storage/gl_irradiance_volume.h"
+#include "storage/light/gl_atmosphere.h"
+#include "storage/light/gl_fog_volume.h"
+#include "storage/light/gl_ibl.h"
+#include "storage/light/gl_irradiance_volume.h"
+#include "ecs/settings/environment.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
-void GLPass::promoteColorChain(GLFrameContext& ctx) const {
-    if (ctx.colorSrc != &ctx.sceneHDR) return;
-    ctx.colorDst->blitColorFrom(*ctx.colorSrc);
-    ctx.flipColor();
-}
-
 void GLPass::bindBackbufferViewport(GLFrameContext& ctx) const {
     const RenderView& view   = ctx.view;
     const int32_t     height = static_cast<int32_t>(view.viewportHeight);
-    Vkm::GL::FrameBuffer::bindDefault();
+    Vkm::OpenGL::FrameBuffer::bindDefault();
     ctx.gl.setViewport(
         static_cast<int32_t>(view.viewportX),
         backbufferBottom(view, 0, height),
@@ -40,7 +32,7 @@ int32_t GLPass::backbufferBottom(const RenderView& view, int32_t top, int32_t he
     return static_cast<int32_t>(view.surfaceHeight) - static_cast<int32_t>(view.viewportY) - top - height;
 }
 
-void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air) const {
+void GLPass::bindFog(GLFrameContext& ctx, const Vkm::OpenGL::Shader& shader, bool air) const {
     if (ctx.fogReady) {
         ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FOG_VOLUME);
         shader.setUniform1f("u_fogDepth", ctx.fog.depth());
@@ -55,37 +47,33 @@ void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool ai
     shader.setUniform1i("u_hasAir", ctx.aerialPerspectiveReady ? 1 : 0);
 }
 
-void GLPass::bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled) const {
-    const bool hasAO           = sampled && ctx.aoReady;
-    const bool hasScreenShadow = sampled && ctx.screenShadowReady;
-    if (hasAO || hasScreenShadow) {
-        ctx.ao.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::AO);
-    }
+void GLPass::bindAO(GLFrameContext& ctx, const Vkm::OpenGL::Shader& shader, bool sampled) const {
+    const bool hasAO = sampled && ctx.aoReady;
+    if (hasAO) ctx.ao.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::AO);
     shader.setUniform1i("u_hasAO", hasAO ? 1 : 0);
-    shader.setUniform1i("u_hasScreenShadow", hasScreenShadow ? 1 : 0);
 }
 
-void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader, bool probes) const {
+void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::OpenGL::ShaderBase& shader, bool probes) const {
     const RenderView& view = ctx.view;
 
     const bool hasIBL = ctx.ibl.isReady();
     if (hasIBL) ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::IRRADIANCE);
     shader.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-    shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
-    shader.setUniform1i("u_probeCount", (probes && view.settings.probes) ? ctx.probeCount : 0);
+    shader.setUniform1f("u_iblIntensity", view.environment->sky.intensity);
+    shader.setUniform1i("u_probeCount", probes ? ctx.probeCount : 0);
 
     // The baked SH volume, and the box that places a point in its grid.
-    if (ctx.irradiance.isReady() && view.hasIrradianceVolume) {
-        ctx.irradiance.bindForShading(shader, view.irradianceVolume);
+    if (ctx.irradiance.isReady() && view.lists.hasIrradianceVolume) {
+        ctx.irradiance.bindForShading(shader, ctx.irradiance.placed(view.lists.irradianceVolume));
     } else {
         shader.setUniform1i("u_hasIrradianceVolume", 0);
     }
 }
 
-void GLPass::setReflectRoughnessWritable(bool writable) const {
+void GLPass::setReflectRoughnessWritable(Vkm::OpenGL::Context& gl, bool writable) const {
     // A draw-buffer index, which is the output location.
-    constexpr GLuint WEIGHT = GLBindings::FragmentOutputs::REFLECT_WEIGHT;
-    VKM_GL_CHECK(glColorMaski(WEIGHT, GL_TRUE, GL_TRUE, GL_TRUE, writable ? GL_TRUE : GL_FALSE));
+    constexpr uint32_t WEIGHT = GLBindings::FragmentOutputs::REFLECT_WEIGHT;
+    gl.setColorMask(WEIGHT, true, true, true, writable);
 }
 
 } // namespace Vkm::Engine

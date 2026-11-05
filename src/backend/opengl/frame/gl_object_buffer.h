@@ -4,22 +4,17 @@
 #include <utility>
 #include <vector>
 
-#include "gl_stream_ring.h"
+#include "vkm_opengl/buffer/stream_ring.h"
 
 namespace Vkm::Engine {
 
 struct RenderObjects;
 
-/// An object's bit in its INSTANCE_FLAGS word: drawn through the viewmodel projection (ObjectDraw).
-inline constexpr uint32_t INSTANCE_FLAG_VIEWMODEL = 1u;
-
-/**
- * @brief The share of the depth range nearest the eye a viewmodel object's depth is squashed into.
- *
- * A perspective camera's only: an orthographic one draws a viewmodel at its own depth. The band
- * is put and found by shaders/camera.glsl's intoViewmodelBand and inViewmodelBand.
- */
-inline constexpr float VIEWMODEL_DEPTH_SHARE = 0.05f;
+inline constexpr uint32_t INSTANCE_FLAG_VIEWMODEL = 1u;  ///< An object's bit in its INSTANCE_FLAGS word:
+                                                         ///< drawn through the viewmodel projection
+                                                         ///< (ObjectDraw).
+inline constexpr uint32_t INSTANCE_WATER_SHIFT = 16u;    ///< Where in its INSTANCE_FLAGS word an object's
+                                                         ///< ObjectDraw::water lies: the bits from here up.
 
 /**
  * @brief Every object's model matrix, its flags, its first bone when the frame posed and its world
@@ -50,9 +45,9 @@ class GLObjectBuffer {
          * @param objects The objects this frame's index lists address.
          * @param posed   Whether the frame has a bone palette; without one no first bone is read.
          * @param boxed   Whether the GPU occlusion cull runs; without it no world box is read.
-         * @param stream  The frame's streaming memory (GLView::stream).
+         * @param stream  The frame's streaming memory (GLAssetMirror::stream).
          */
-        void upload(const RenderObjects& objects, bool posed, bool boxed, Vkm::GL::StreamRing& stream);
+        void upload(const RenderObjects& objects, bool posed, bool boxed, Vkm::OpenGL::StreamRing& stream);
 
         /**
          * @brief Bind the buffers to their storage points.
@@ -62,19 +57,23 @@ class GLObjectBuffer {
         void bind() const;
 
     private:
-        /// Past this many runs of changed objects a whole upload is the cheaper: a run is a patch
-        /// per stream.
-        static constexpr size_t MAX_PATCH_RUNS = 64;
+        static constexpr size_t   MAX_PATCH_RUNS = 64;   ///< Past this many runs of changed objects a whole
+                                                         ///< upload is the cheaper: a run is a patch per
+                                                         ///< stream.
+        static constexpr uint32_t PATCH_GAP      = 128;  ///< Changed objects this near patch as one run: a
+                                                         ///< patch costs more than the unchanged objects
+                                                         ///< between copied with it.
 
     private:
         // Read by every pass that draws objects, so kept in video memory.
-        Vkm::GL::DeviceStream m_modelStream;
-        Vkm::GL::DeviceStream m_skinFirstStream;
-        Vkm::GL::DeviceStream m_flagStream;
-        Vkm::GL::DeviceStream m_boxStream;
+        Vkm::OpenGL::DeviceStream m_modelStream;
+        Vkm::OpenGL::DeviceStream m_skinFirstStream;
+        Vkm::OpenGL::DeviceStream m_flagStream;
+        Vkm::OpenGL::DeviceStream m_boxStream;
 
-        std::vector<uint32_t> m_flagScratch;  ///< The flags as uploaded; capacity kept across frames.
-        std::vector<std::pair<uint32_t, uint32_t>> m_runs;  ///< This frame's [first, end) patches.
+        std::vector<uint32_t>                      m_flagScratch;  ///< The flags as uploaded; capacity kept
+                                                                   ///< across frames.
+        std::vector<std::pair<uint32_t, uint32_t>> m_runs;         ///< This frame's [first, end) patches.
 
         uint64_t m_serial = 0;      ///< RenderObjects::serial of the frame the copies are of.
         uint32_t m_count  = 0;      ///< Objects the copies hold.

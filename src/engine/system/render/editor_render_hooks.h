@@ -2,14 +2,16 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
-#include "core/reflect.h"
+#include <glm/glm.hpp>
+
+#include "base/reflect/enum_names.h"
 
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "system/render/render_backend.h"
 
-struct GLFWwindow;
 struct ImDrawData;
 
 namespace Vkm::Engine {
@@ -21,45 +23,64 @@ class ResourceManager;
  */
 enum class PreviewBackground : uint8_t {
     Dark,
-    Grey,  ///< For judging albedo and silhouettes.
+    Gray,  ///< For judging albedo and silhouettes.
     Sky,   ///< The baked environment cubemap; Dark until the IBL bakes.
 
     Count  ///< Enum size marker (reflection); not a backdrop.
 };
 
 /**
- * @brief One editor preview: a mesh with a material under the scene's light, from an orbit camera.
+ * @brief One mesh a preview draws: with what, where in the preview's own space, and how it is posed.
+ */
+struct PreviewDraw {
+    MeshHandle             mesh;
+    MaterialHandle         material;
+    glm::mat4              model = glm::mat4(1.0f);
+    std::vector<glm::mat4> bones = {};  ///< Its skin palette, as PoseBuffer::palette; none is its bind pose.
+};
+
+/**
+ * @brief One editor preview: meshes with their materials under the scene's light, from an orbit
+ *        camera around them.
  *
  * Rendering the same key again overwrites that key's cached target.
  */
 struct PreviewRequest {
-    uint64_t          key      = 0;      ///< Identifies the cached target.
-    uint32_t          size     = 256;    ///< Square edge, pixels.
-    MeshHandle        mesh;
-    MaterialHandle    material;
-    float             yawDeg   = 35.0f;
-    float             pitchDeg = 20.0f;
-    float             distance = 3.0f;   ///< In mesh bounding radii.
-    PreviewBackground background = PreviewBackground::Dark;
-    float             lightYawDeg = 0.0f;  ///< The light's rotation around Y, degrees.
+    static constexpr float FIELD_DEGREES = 40.0f;  ///< The vertical field of view every preview is drawn
+                                                   ///< with, in degrees.
+
+    uint64_t                 key         = 0;     ///< Identifies the cached target.
+    uint32_t                 width       = 256;   ///< Pixels.
+    uint32_t                 height      = 256;   ///< Pixels.
+    std::vector<PreviewDraw> draws;
+    float                    yawDeg      = 35.0f;
+    float                    pitchDeg    = 20.0f;
+    float                    distance    = 3.0f;  ///< From the drawn's center, in its bounding radii.
+    glm::vec2                pan{0.0f};           ///< The center moved across the view, in radii.
+    PreviewBackground        background  = PreviewBackground::Dark;
+    float                    lightYawDeg = 0.0f;  ///< The light's rotation around Y, degrees.
 };
 
 /**
  * @brief A GPU texture, as an opaque id the UI layer can hand back to the backend.
  *
  * Only the backend interprets it; others pass it back or test it against zero
- * ("no texture"). 64 bits so a Vulkan or D3D12 descriptor handle fits.
+ * ("no texture"). 64 bits, as ImGui's ImTextureID is, so any backend's handle fits.
  */
 using GpuTextureId = uint64_t;
 
 /**
  * @brief What a backend may offer an authoring tool beyond drawing the frame.
  *
- * Asset thumbnails, GPU mirrors of textures, the host chrome's images and the
- * renderer of the editor's own ImGui - none of which a shipped game asks for.
+ * Asset thumbnails, GPU mirrors of textures, the host chrome's images, shaders and grading
+ * reloaded as they are saved, and the renderer of the editor's own ImGui - none of which a
+ * shipped game asks for.
  * Here, not in the editor, because the backend implements it. A backend offers it
  * by inheriting this and returning itself from RenderBackend::editorHooks() (null
  * offers none); the editor will not start without it.
+ *
+ * ImGui's renderer alone does nothing here. The backend the editor's host builds overrides it, so
+ * that no other host links ImGui.
  */
 class EditorRenderHooks {
     public:
@@ -86,7 +107,7 @@ class EditorRenderHooks {
         ) = 0;
 
         /**
-         * @brief A digest of what a preview borrows from the scene: its light and grade.
+         * @brief A digest of what a preview borrows from the scene: its light and tonemap.
          *
          * A preview drawn under another digest is stale, though its asset is not.
          *
@@ -152,27 +173,46 @@ class EditorRenderHooks {
         virtual GpuTextureId chromeImage(const std::string& path) = 0;
 
         /**
+         * @brief Recompile shaders whose source changed on disk - a dev hook.
+         *
+         * Cheap enough per frame (a directory scan and timestamp compare). A
+         * failing edit keeps the old program and logs. A no-op without sources on disk.
+         *
+         * @return Number of shaders recompiled.
+         */
+        virtual uint32_t reloadChangedShaders() = 0;
+
+        /**
+         * @brief Read the grading table again if its strip has been saved over since it was read - a
+         *        dev hook, so a grade made in an image editor shows as it is saved.
+         *
+         * @return Whether it was read again.
+         */
+        virtual bool reloadChangedGrading() = 0;
+
+        /**
          * @brief Start ImGui's renderer on @p window, and the platform half that has to know it.
          *
-         * GLFW's ImGui backend is started for a graphics API, so it starts here with the renderer.
+         * ImGui's platform half is started for a graphics API, so it starts here with the renderer.
          * The host draws ImGui after the scene, into the same window. Pairs with shutdownImGui().
          *
          * @param window The window the editor draws into.
          */
-        virtual void initImGui(GLFWwindow* window) = 0;
+        virtual void initImGui(Platform::WindowManager& window) {}
 
         /// Begin the renderer's half of an ImGui frame, before the platform's and ImGui's own.
-        virtual void beginImGuiFrame() = 0;
+        virtual void beginImGuiFrame() {}
 
         /**
-         * @brief Draw ImGui's finished frame into the window.
+         * @brief Draw ImGui's finished frame into the window, and each panel dragged out of it
+         *        into its own.
          *
          * @param data ImGui::GetDrawData() after ImGui::Render().
          */
-        virtual void renderImGui(ImDrawData* data) = 0;
+        virtual void renderImGui(ImDrawData* data) {}
 
         /// Stop the renderer and the platform half initImGui() started.
-        virtual void shutdownImGui() = 0;
+        virtual void shutdownImGui() {}
 };
 
 /**
@@ -187,5 +227,5 @@ inline EditorRenderHooks* editorRenderHooks(RenderBackend* backend) {
 
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::PreviewBackground, "Dark", "Grey", "Sky")
+VKM_ENUM_NAMES(::Vkm::Engine::PreviewBackground, "Dark", "Gray", "Sky")
 

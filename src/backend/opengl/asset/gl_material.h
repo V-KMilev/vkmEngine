@@ -9,14 +9,14 @@
 #include "asset/gl_layer_maps.h"
 #include "resource/asset/material_asset.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class ComputeShader;
     class UniformBuffer;
 }
 
 namespace Vkm::Engine {
 
-class GLView;
+class GLAssetMirror;
 
 /**
  * @brief A texture handle bound to a sampler slot.
@@ -28,7 +28,7 @@ struct TextureBinding {
 
 /**
  * @brief std140 mirror of MaterialAsset - must match MaterialBlock in
- *        shaders/material.glsl field-for-field, in order.
+ *        shaders/opengl/include/material.glsl field-for-field, in order.
  *
  * vec4s first, then the scalar tail. std140 packs consecutive scalars at
  * 4-byte alignment, identical to the C++ layout, so no padding tricks are
@@ -36,13 +36,12 @@ struct TextureBinding {
  * their companion scalar into .w to avoid the unreliable vec3-tail rule.
  */
 struct MaterialUBO {
-    glm::vec4 albedo;               ///< rgb + opacity
-    glm::vec4 emission;             ///< rgb + emissiveStrength in w
-    glm::vec4 anisotropyDirection;  ///< xyz (tangent space), w unused
-    glm::vec4 sheenColor;           ///< rgb + sheenRoughness in w
-    glm::vec4 subsurfaceColor;      ///< rgb, w unused
-    glm::vec4 attenuationColor;     ///< rgb + attenuationDistance in w
-    glm::vec4 uvTransform;          ///< uvScale in xy, uvOffset in zw
+    glm::vec4 albedo;            ///< rgb + opacity
+    glm::vec4 emission;          ///< rgb + emissiveStrength in w
+    glm::vec4 sheenColor;        ///< rgb + sheenRoughness in w
+    glm::vec4 subsurfaceColor;   ///< rgb, w unused
+    glm::vec4 attenuationColor;  ///< rgb + attenuationDistance in w
+    glm::vec4 uvTransform;       ///< uvScale in xy, uvOffset in zw
 
     float metallic;
     float roughness;
@@ -51,24 +50,22 @@ struct MaterialUBO {
     float normalScale;
     float clearcoat;
     float clearcoatRoughness;
-    float anisotropy;
     float subsurface;
     float transmission;
     float thicknessFactor;
-    float heightScale;
     float alphaCutoff;
     int   type;          ///< MaterialType as int (the shader branches on Unlit / AlphaMask)
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
-    int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
-    float boxMapping;    ///< MaterialAsset::boxMapping: metres a repeat, 0 for the mesh's UVs
-    float pad0, pad1, pad2;
+    float boxMapping;    ///< MaterialAsset::boxMapping: meters a repeat, 0 for the mesh's UVs
+    float pad0 = 0.0f;
+    float pad1 = 0.0f;
 
     // A layered material's layers (MaterialAsset::layers); zero for any other.
     glm::vec4 layerTint[MaterialAsset::MAX_LAYERS];     ///< albedo factor; w the normal scale
     glm::vec4 layerUV[MaterialAsset::MAX_LAYERS];       ///< uvScale in xy, uvOffset in zw
     glm::vec4 layerSurface[MaterialAsset::MAX_LAYERS];  ///< ao, roughness and metallic factors
 };
-static_assert(sizeof(MaterialUBO) == 384, "MaterialUBO must match the std140 MaterialBlock layout");
+static_assert(sizeof(MaterialUBO) == 352, "MaterialUBO must match the std140 MaterialBlock layout");
 
 /**
  * @brief GPU copy of a material: the full PBR UBO plus its texture handles.
@@ -103,9 +100,9 @@ class GLMaterial {
          * another object's maps, which reads as a shading bug with nothing
          * pointing at the cause.
          *
-         * @param view Resolves the bindings' handles, and owns the placeholder.
+         * @param mirror Resolves the bindings' handles, and owns the placeholder.
          */
-        void bindTextures(const GLView& view) const;
+        void bindTextures(const GLAssetMirror& mirror) const;
 
         /**
          * @brief The albedo map this material binds, or an empty handle.
@@ -120,7 +117,7 @@ class GLMaterial {
          * @brief Whether its shadow is cut by its alpha.
          *
          * A cutout's at its cutoff, a transparent one's dithered by its opacity
-         * (shaders/shadow/depth_masked), so a see-through part casts none. A transparent one wholly
+         * (shaders/opengl/scene/shadow/masked), so a see-through part casts none. A transparent one wholly
          * opaque - alpha 1, no map to say otherwise - casts as a solid.
          */
         bool cutsItsShadow() const { return m_cutsShadow; }
@@ -128,20 +125,23 @@ class GLMaterial {
         /// Whether both faces draw: the passes leave culling off for its runs.
         bool doubleSided() const { return m_doubleSided; }
 
+        /// Whether light passes through it: a transparent draw of it reads the scene behind it.
+        bool refracts() const { return m_data.transmission > 0.0f; }
+
         /**
          * @brief Whether it uses none of the forward shader's optional features, so draws with the
-         *        program compiled without them (shaders/forward/pbr_plain).
+         *        program compiled without them (shaders/opengl/scene/forward/pbr under PLAIN).
          *
-         * Anisotropy, subsurface, transmission, clearcoat, sheen and parallax: the shader's
-         * FEATURES gates (shaders/forward/pbr/fragment.shader), each tested here. Each must be off
-         * exactly, not below the shader's own threshold: a value the shader would skip anyway
-         * draws the same either way, so the two need not agree on where "off" begins.
+         * Subsurface, transmission, clearcoat and sheen: the shader's FEATURES gates
+         * (shaders/opengl/scene/forward/lobes.glsl), each tested here. Each must be off exactly, not below
+         * the shader's own threshold: a value the shader would skip anyway draws the same either way, so the
+         * two need not agree on where "off" begins.
          */
         bool plain() const { return m_plain; }
 
         /**
          * @brief Whether it blends layers (MaterialAsset::layers), so draws with the LAYERED
-         *        program (shaders/forward/pbr_layered), whatever plain() says.
+         *        program (shaders/opengl/scene/forward/pbr under LAYERED), whatever plain() says.
          */
         bool layered() const { return m_layered; }
 
@@ -150,7 +150,7 @@ class GLMaterial {
          *
          * @param layered The layered material, whose tiling each layer takes.
          * @param layers  Each layer's material, null for none.
-         * @param maps    Each layer's maps, as GLView holds them.
+         * @param maps    Each layer's maps, as GLAssetMirror holds them.
          * @param key     Names what they are built from; equal keys skip the rebuild.
          * @param copy    The layer copy program the arrays are filled with.
          */
@@ -159,7 +159,7 @@ class GLMaterial {
             const std::array<const MaterialAsset*, MaterialAsset::MAX_LAYERS>& layers,
             const std::array<GLLayerMaps::Layer, MaterialAsset::MAX_LAYERS>& maps,
             uint64_t key,
-            const Vkm::GL::ComputeShader& copy
+            const Vkm::OpenGL::ComputeShader& copy
         );
 
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
@@ -172,17 +172,17 @@ class GLMaterial {
         uint64_t uploadId() const { return m_uploadId; }
 
     private:
-        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
-        MaterialUBO                             m_data{};  ///< What m_ubo holds.
-        std::unique_ptr<GLLayerMaps>            m_layerMaps;  ///< A layered one's layers' maps.
-        uint64_t                                m_layersKey = 0;  ///< What m_layerMaps was built from.
-        std::vector<TextureBinding>             m_textureBindings;
-        MaterialType                            m_type = MaterialType::Opaque;
-        bool                                    m_doubleSided = false;
-        bool                                    m_cutsShadow = false;  ///< See cutsItsShadow().
-        bool                                    m_plain = true;        ///< See plain().
-        bool                                    m_layered = false;     ///< See layered().
-        uint64_t                                m_uploadId = 0;
+        std::unique_ptr<Vkm::OpenGL::UniformBuffer> m_ubo;
+        MaterialUBO                                 m_data{};  ///< What m_ubo holds.
+        std::unique_ptr<GLLayerMaps>                m_layerMaps;  ///< A layered one's layers' maps.
+        uint64_t                                    m_layersKey = 0;  ///< What m_layerMaps was built from.
+        std::vector<TextureBinding>                 m_textureBindings;
+        MaterialType                                m_type = MaterialType::Opaque;
+        bool                                        m_doubleSided = false;
+        bool                                        m_cutsShadow = false;  ///< See cutsItsShadow().
+        bool                                        m_plain = true;        ///< See plain().
+        bool                                        m_layered = false;     ///< See layered().
+        uint64_t                                    m_uploadId = 0;
 };
 
 } // namespace Vkm::Engine

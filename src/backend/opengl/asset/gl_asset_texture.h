@@ -4,43 +4,41 @@
 #include <memory>
 #include <string>
 
-#include "resource/texture_format.h"
-#include "system/render/render_settings.h"
-#include "gl_texture.h"
+#include "vkm_opengl/texture/texture.h"
+
+#include "resource/asset/texture_params.h"
 
 namespace Vkm::Engine {
 
 struct TextureAsset;
 struct FontAsset;
+struct DecodedImage;
 
 /**
- * @brief GPU copy of a 2D texture-shaped asset (wraps Vkm::GL::Texture2D).
- *
- * Named for the asset because `gl_texture.h` is vkmGL's, and a flat include
- * cannot tell two headers of one name apart.
+ * @brief GPU copy of a 2D texture-shaped asset (wraps Vkm::OpenGL::Texture2D).
  *
  * Uploads either a TextureAsset or a FontAsset's SDF atlas (fonts carry their
- * atlas as raw pixels, not as a TextureAsset), so GLView can table both behind
+ * atlas as raw pixels, not as a TextureAsset), so GLAssetMirror can table both behind
  * the same GL resource type.
  */
-class GLTexture {
+class GLAssetTexture {
     public:
-        explicit GLTexture(const TextureAsset& texture);
-        explicit GLTexture(const FontAsset& font);
-        ~GLTexture();
+        explicit GLAssetTexture(const TextureAsset& texture);
+        explicit GLAssetTexture(const FontAsset& font);
+        ~GLAssetTexture();
 
-        GLTexture(const GLTexture& other) = delete;
-        GLTexture& operator=(const GLTexture& other) = delete;
+        GLAssetTexture(const GLAssetTexture& other) = delete;
+        GLAssetTexture& operator=(const GLAssetTexture& other) = delete;
 
-        GLTexture(GLTexture && other) = delete;
-        GLTexture& operator=(GLTexture && other) = delete;
+        GLAssetTexture(GLAssetTexture && other) = delete;
+        GLAssetTexture& operator=(GLAssetTexture && other) = delete;
 
     public:
         void update(const TextureAsset& texture);
         void update(const FontAsset& font);
 
         /**
-         * @brief Re-filter this texture for a frame drawn at @p sceneMode.
+         * @brief Re-filter this texture at the frame's anisotropy.
          *
          * The asset's own filter override is kept here from the last upload, so
          * this is where the two claims on a texture's filtering meet and only
@@ -50,12 +48,11 @@ class GLTexture {
          * Forwarded rather than reached through getTexture() so the GL object
          * itself stays const to everything downstream.
          *
-         * @param sceneMode     RenderSettings::textureFiltering for this frame.
          * @param maxAnisotropy Requested degree; the GL layer clamps it.
          */
-        void applyFiltering(TextureFiltering sceneMode, float maxAnisotropy);
+        void applyFiltering(float maxAnisotropy);
 
-        const Vkm::GL::Texture2D& getTexture() const { return *m_texture; }
+        const Vkm::OpenGL::Texture2D& getTexture() const { return *m_texture; }
 
         /**
          * @brief Whether real pixels have ever been uploaded into this texture.
@@ -68,7 +65,7 @@ class GLTexture {
         bool hasPixels() const { return m_hasPixels; }
 
         /**
-         * @brief Which upload this texture's pixels came from, distinct across every GLTexture.
+         * @brief Which upload this texture's pixels came from, distinct across every GLAssetTexture.
          *
          * Changes whenever pixels arrive: the handle names the asset, not the
          * pixels, so a cache keyed on the handle alone misses a re-upload.
@@ -76,27 +73,15 @@ class GLTexture {
         uint64_t uploadId() const { return m_uploadId; }
 
     private:
-        std::unique_ptr<Vkm::GL::Texture2D> m_texture;
-        uint64_t                            m_uploadId = 0;
+        std::unique_ptr<Vkm::OpenGL::Texture2D> m_texture;
+        uint64_t                                m_uploadId = 0;
 
-        /// The asset's half of its filtering, kept from the last upload.
         TextureFilterOverride m_filterOverride = TextureFilterOverride::None;
+            ///< The asset's half of its filtering, kept from the last upload.
         bool                  m_mipmapped      = false;
+        bool                  m_color          = true;  ///< Whether it holds color, not normals or data.
 
         bool m_hasPixels = false;
 };
-
-/**
- * @brief Decode the image at @p path and upload it as sRGB colour, with a mip chain.
- *
- * For a picture the host shows and no asset describes, so it is read straight off disk. The
- * chain keeps an image drawn several times smaller than its pixels from shedding its fine
- * strokes. Rows arrive bottom-up (see decodeImageRGBA); a drawer whose UVs run the other way
- * flips them at the draw.
- *
- * @param path Image file to read.
- * @return The texture, or null when the file does not decode.
- */
-std::unique_ptr<Vkm::GL::Texture2D> uploadImageFile(const std::string& path);
 
 } // namespace Vkm::Engine

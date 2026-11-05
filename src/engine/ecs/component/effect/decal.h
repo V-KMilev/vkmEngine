@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
 
 #include "resource/asset/material_asset.h"
 
@@ -15,21 +15,18 @@ namespace Vkm::Engine {
  */
 struct Decal {
     MaterialHandle material;          ///< Its albedo (with alpha) is projected.
-    /// Fade width as the surface turns away from the projector (0 = hard cut).
-    float          angleFade = 0.5f;
+    float          angleFade = 0.5f;  ///< How wide the fade is as the surface turns from the projector; 0 is
+                                      ///< a hard cut.
     float          opacity   = 1.0f;
 
-    /**
-     * @brief Whether this projector is in the frame at all; off costs nothing.
-     */
-    bool enabled = true;
+    bool enabled = true;  ///< Whether this projector is in the frame at all; off costs nothing.
 };
 
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Decal)
-    VKM_F(material)
-    VKM_F(angleFade)
-    VKM_F(opacity)
-    VKM_F(enabled)
+    VKM_F(material, "Its albedo, with alpha, is what lands on the surface")
+    VKM_F(angleFade, 0.0f, 1.0f, "Fades it where the surface turns away from the projector")
+    VKM_F(opacity, 0.0f, 1.0f, "How much of the material lands")
+    VKM_F(enabled, "Off takes it out of the frame entirely")
 VKM_REFLECT_END()

@@ -15,6 +15,12 @@ void objectBox(uint object, out vec3 lo, out vec3 hi) {
     hi = vec3(b_boxes[at + 3u], b_boxes[at + 4u], b_boxes[at + 5u]);
 }
 
+// The water object @p object is (ObjectDraw::water): its Water's place in b_waterBodies. A water
+// run's object alone.
+uint objectWaterBody(uint object) {
+    return (b_flags[object] >> INSTANCE_WATER_SHIFT) - 1u;
+}
+
 // Whether object @p object is a Viewmodel mesh, drawn through the camera's viewmodel projection.
 bool objectIsViewmodel(uint object) {
     return (b_flags[object] & INSTANCE_FLAG_VIEWMODEL) != 0u;

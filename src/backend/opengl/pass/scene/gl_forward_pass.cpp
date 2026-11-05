@@ -1,45 +1,42 @@
-#include "pass/gl_forward_pass.h"
+#include "pass/scene/gl_forward_pass.h"
 
 #include <algorithm>
 
 #include <GL/glew.h>
 
-#include "gl_shader.h"
-#include "gl_context.h"
-#include "gl_error_handle.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_frame_context.h"
-#include "gl_target.h"
-#include "storage/gl_cluster_grid.h"
-#include "storage/gl_irradiance_volume.h"
-#include "storage/gl_shadow_atlas.h"
-#include "storage/gl_ocean_fields.h"
-#include "gl_view.h"
-#include "core/engine_config.h"
+#include "pass/gl_frame_context.h"
+#include "storage/gl_target.h"
+#include "storage/light/gl_cluster_grid.h"
+#include "storage/light/gl_irradiance_volume.h"
+#include "storage/light/gl_lightmaps.h"
+#include "storage/light/gl_shadow_atlas.h"
+#include "storage/water/gl_wave_fields.h"
+#include "storage/water/gl_water_shore.h"
+#include "asset/gl_asset_mirror.h"
 #include "convention/gl_bindings.h"
 #include "asset/gl_material.h"
-#include "storage/gl_ibl.h"
+#include "storage/light/gl_ibl.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
+#include "core/render_mode.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
-GLForwardPass::GLForwardPass(Vkm::GL::Shader& pbr, Vkm::GL::Shader& layered)
-    : m_shader(pbr)
-    , m_layeredShader(layered)
-    , m_skinnedShader("shaders/forward/pbr_skinned")
-    , m_plainShader("shaders/forward/pbr_plain")
-    , m_plainSkinnedShader("shaders/forward/pbr_plain_skinned") {}
+GLForwardPass::GLForwardPass(GLForwardPrograms& programs)
+    : m_programs(programs) {}
 
 GLForwardPass::~GLForwardPass() = default;
 
 void GLForwardPass::execute(GLFrameContext& ctx) {
-    const RenderView& view   = ctx.view;
-    const GLView&     glView = ctx.resources;
+    const RenderView& view = ctx.view;
+    const GLAssetMirror& mirror = ctx.mirror;
 
     // Camera and lights are bound by the backend. Every bucket writes the reflection inputs
-    // while the target carries them; the transparent one only dims them (see below).
+    // while `ssr` is on; the transparent one only dims them.
     ctx.sceneRender.bindForwardPass(ctx.gl);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
@@ -48,12 +45,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // ShadowBlock carries matrices and slots; only the depth textures bind here. The light loop
     // picks a slot from each light's shadowSlot (GpuLight.spot.w).
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
-    // The soft path searches the tile for blockers, which is a depth read rather
-    // than a compare: the same atlas, on a second unit under a plain sampler.
-    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
-    // The point lights' cubes likewise: compared, and raw for their blocker search.
     ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
-    ctx.shadowAtlas.bindCubesRaw(GLBindings::ShadowTextureSlots::CUBE_RAW);
 
     // The irradiance cube and the volume beside these are bindAmbient's. The
     // LUT is integrated at start, so it is there with or without a sky.
@@ -62,19 +54,22 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 
     ctx.clusters.bind();
     ctx.objects.bind();
-    // The ocean's ripples and shore, if the frame made them; with none its water reads neither.
-    // The static programs alone: a skinned mesh is never moved as water, so has no waterline.
-    ctx.oceanFields.bind();
-    forEachProgram(false, [&](Vkm::GL::Shader& program) {
-        program.setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
-    });
+    if (ctx.lightmaps) ctx.lightmaps->bindPages();
+    // The ripples and the shore, if the frame made them, for the water program alone; a frame
+    // with no water never binds it.
+    if (ctx.waterShown) {
+        ctx.waveFields.bind();
+        ctx.waterShore.bind();
+        m_programs.water().setUniform4fv("u_shore", ctx.waterShore.area());
+        m_programs.water().setUniform1f("u_shoreLevel", ctx.shore.level);
+    }
 
     // With no palette no run is skinned, so the skinned programs are never bound
     // and never told anything.
     const bool posed = ctx.skinPalette.count() > 0;
     if (posed) ctx.skinPalette.bind();
 
-    forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+    forEachProgram(posed, ctx.waterShown, [&](Vkm::OpenGL::Shader& program) {
         bindFrameUniforms(program, ctx);
         bindBucketUniforms(program, ctx, Bucket::Opaque);
     });
@@ -83,21 +78,19 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     drawBatch(ctx, ctx.opaqueBatch);
 
     if (!ctx.alphaMask.empty()) {
-        // GL_SAMPLE_ALPHA_TO_COVERAGE turns the shader's sharpened cutout alpha into
-        // anti-aliased edges under MSAA; at 1 sample it is a hard cutout. Enabled raw:
-        // the Context does not model this one-off state, and the pair is closed below.
+        // Alpha to coverage turns the shader's sharpened cutout alpha into anti-aliased edges
+        // under MSAA; at 1 sample it is a hard cutout.
         ctx.gl.setDepthWrite(true);
-        const bool a2c = ctx.sceneRender.samples() > 1;
-        if (a2c) VKM_GL_CHECK(glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE));
-        forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+        ctx.gl.setAlphaToCoverage(ctx.sceneRender.samples() > 1);
+        forEachProgram(posed, ctx.waterShown, [&](Vkm::OpenGL::Shader& program) {
             bindBucketUniforms(program, ctx, Bucket::AlphaMask);
         });
-        m_batcher.buildGrouped(ctx.alphaMask, *view.objects, glView, ctx.skinPalette.count());
+        m_batcher.buildGrouped(ctx.alphaMask, *view.objects, mirror, ctx.skinPalette.count(), MeshOf::Eye);
         drawBatch(ctx, m_batcher);
-        if (a2c) VKM_GL_CHECK(glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE));
+        ctx.gl.setAlphaToCoverage(false);
     }
 
-    if (view.settings.renderMode == RenderMode::Wireframe) drawWireframe(ctx, posed);
+    if (view.display.mode == RenderMode::Wireframe) drawWireframe(ctx, posed);
 
     if (!ctx.transparent.empty()) {
         // Back-to-front, so alpha blending composes correctly.
@@ -118,12 +111,18 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         m_transparentSorted.reserve(m_transparent.size());
         for (const auto& entry : m_transparent) m_transparentSorted.push_back(entry.second);
 
-        // Copy the opaque + sky scene for transmissive surfaces to refract; blitColorFrom
-        // resolves the multisample colour into the single-sample scratch.
-        ctx.colorDst->blitColorFrom(ctx.sceneRender);
-        ctx.sceneRender.bindForwardPass(ctx.gl);
-        ctx.colorDst->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
-        forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+        // Copy the opaque + sky scene for transmissive surfaces to refract, when one is drawn;
+        // blitColorFrom resolves the multisample color into the single-sample scratch.
+        const auto refracts = [&](uint32_t object) {
+            const GLMaterial* material = mirror.getMaterial(view.objects->draws[object].material);
+            return material && material->refracts();
+        };
+        if (std::any_of(ctx.transparent.begin(), ctx.transparent.end(), refracts)) {
+            ctx.colorDst->blitColorFrom(ctx.sceneRender, ctx.colorDst->pixels());
+            ctx.sceneRender.bindForwardPass(ctx.gl);
+            ctx.colorDst->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
+        }
+        forEachProgram(posed, ctx.waterShown, [&](Vkm::OpenGL::Shader& program) {
             bindBucketUniforms(program, ctx, Bucket::Transparent);
         });
 
@@ -135,20 +134,24 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 
         // A transparent surface does not reflect through the reflection pass;
         // it dims what the surface behind it reflects, by its own opacity.
-        setReflectRoughnessWritable(false);
+        setReflectRoughnessWritable(ctx.gl, false);
 
-        m_batcher.buildSequential(m_transparentSorted, *view.objects, glView, ctx.skinPalette.count());
+        m_batcher.buildSequential(
+            m_transparentSorted,
+            *view.objects,
+            mirror,
+            ctx.skinPalette.count(),
+            MeshOf::Eye
+        );
         drawBatch(ctx, m_batcher, true);
-
-        setReflectRoughnessWritable(true);
     }
 }
 
 void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch, bool blended) {
-    const GLView& glView = ctx.resources;
+    const GLAssetMirror& mirror = ctx.mirror;
 
-    const GLMaterial*      boundMaterial = nullptr;
-    const Vkm::GL::Shader* boundProgram  = nullptr;
+    const GLMaterial* boundMaterial = nullptr;
+    const Vkm::OpenGL::Shader* boundProgram = nullptr;
 
     // The opaque batch draws what the occlusion cull showed, while one runs.
     const bool opaque = &batch == &ctx.opaqueBatch;
@@ -163,12 +166,10 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
     for (const InstanceDraw& draw : batch.draws()) {
         // Grouped batches sort skinned runs together; a sequential (transparent)
         // batch may alternate, to keep its depth order.
-        const GLMaterial* material = glView.getMaterial(draw.material);
-        const bool plain   = drawsPlain(material);
-        const bool layered = material && material->layered() && !draw.skinned;
-        Vkm::GL::Shader& program = draw.skinned
-            ? (plain ? m_plainSkinnedShader : m_skinnedShader)
-            : (layered ? m_layeredShader : plain ? m_plainShader : m_shader);
+        const GLMaterial*    material = mirror.getMaterial(draw.material);
+        Vkm::OpenGL::Shader& program  = draw.water
+            ? m_programs.water()
+            : m_programs.programFor(material, draw.skinned, opaque);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
@@ -176,7 +177,7 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
 
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-            material->bindTextures(glView);
+            material->bindTextures(mirror);
             boundMaterial = material;
             ctx.gl.setFaceCulling(blended || !material->doubleSided());
         }
@@ -191,34 +192,32 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
     ctx.gl.setFaceCulling(true);
 }
 
-bool GLForwardPass::drawsPlain(const GLMaterial* material) {
-    return material && material->plain();
-}
-
 void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
     ctx.gl.setDepthWrite(false);
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    // Raw, as alpha-to-coverage is: the Context does not model these, and they are closed below.
-    VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-    VKM_GL_CHECK(glEnable(GL_POLYGON_OFFSET_LINE));
+    ctx.gl.setPolygonMode(GL_LINE);
     // Toward the eye, which the reversed depth puts at the greater (gl_depth.h).
-    VKM_GL_CHECK(glPolygonOffset(1.0f, 1.0f));
+    ctx.gl.setPolygonOffset(GL_LINE, true, 1.0f, 1.0f);
 
-    forEachProgram(posed, [](Vkm::GL::Shader& program) { program.setUniform1i("u_wirePass", 1); });
+    forEachProgram(posed, ctx.waterShown, [](Vkm::OpenGL::Shader& program) {
+        program.setUniform1i("u_wirePass", 1);
+    });
 
     drawBatch(ctx, ctx.opaqueBatch);
     // Still the alpha-masked batch: the transparent one is built after this.
     if (!ctx.alphaMask.empty()) drawBatch(ctx, m_batcher);
 
-    forEachProgram(posed, [](Vkm::GL::Shader& program) { program.setUniform1i("u_wirePass", 0); });
+    forEachProgram(posed, ctx.waterShown, [](Vkm::OpenGL::Shader& program) {
+        program.setUniform1i("u_wirePass", 0);
+    });
 
-    VKM_GL_CHECK(glDisable(GL_POLYGON_OFFSET_LINE));
-    VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
+    ctx.gl.setPolygonOffset(GL_LINE, false);
+    ctx.gl.setPolygonMode(GL_FILL);
     ctx.gl.setBlending(false);
 }
 
-void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx) const {
+void GLForwardPass::bindFrameUniforms(Vkm::OpenGL::Shader& shader, GLFrameContext& ctx) const {
     const RenderView& view = ctx.view;
 
     // u_hasIBL gates the split-sum ambient in the shader; without a baked
@@ -230,18 +229,25 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
     bindFog(ctx, shader);
 
     shader.setUniform1i("u_useClusters", 1);
-    shader.setUniform1i("u_hardShadows", 0);
-    shader.setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
+    // The baked programs alone read the lightmaps.
+    if (shader.hasUniform("u_hasLightmaps")) {
+        shader.setUniform1i("u_hasLightmaps", ctx.lightmaps && ctx.lightmaps->any() ? 1 : 0);
+    }
+    shader.setUniform1i("u_renderMode", static_cast<int>(view.display.mode));
     shader.setUniform1i("u_wirePass", 0);
 }
 
-void GLForwardPass::bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const {
+void GLForwardPass::bindBucketUniforms(
+    Vkm::OpenGL::Shader& shader,
+    GLFrameContext& ctx,
+    Bucket bucket
+) const {
     // GTAO saw only what the prepass drew.
     bindAO(ctx, shader, bucket == Bucket::Opaque);
     // The plain and layered programs are built without transmission, so have nothing to refract.
-    const bool plain = &shader == &m_plainShader || &shader == &m_plainSkinnedShader
-        || &shader == &m_layeredShader;
-    if (!plain) shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
+    if (shader.hasUniform("u_hasSceneColor")) {
+        shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
+    }
     shader.setUniform1i(
         "u_alphaToCoverage",
         (bucket == Bucket::AlphaMask && ctx.sceneRender.samples() > 1) ? 1 : 0

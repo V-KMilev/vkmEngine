@@ -1,6 +1,7 @@
 #pragma once
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
 
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -38,15 +39,11 @@ struct Mesh {
     bool           castShadows = true;
     SeenBy         seenBy      = SeenBy::All;
 
-    /**
-     * @brief Off: it never moves, changes or hides while the world runs.
-     *
-     * The renderer then keeps its matrix, box and draw from the first frame it sees it rather than
-     * working them out every frame. It checks a share of what it kept each frame and rebuilds,
-     * with a warning, if one did move. A host that may edit the world keeps nothing
-     * (HostChrome::setAuthoring).
-     */
-    bool movable = true;
+    bool movable = true;  ///< Off: it never moves, changes or hides while the world runs, so the renderer
+                          ///< keeps its matrix, box and draw from the first frame it sees it; no material is
+                          ///< read, so editing one keeps it. It checks a share of what it kept each frame and
+                          ///< rebuilds, with a warning, if one did move. A host that may edit the world keeps
+                          ///< nothing (HostChrome::authoring).
 };
 
 } // namespace Vkm::Engine
@@ -56,8 +53,8 @@ VKM_ENUM_NAMES(::Vkm::Engine::SeenBy, "All", "AllButEye", "EyeOnly", "Viewmodel"
 VKM_REFLECT_BEGIN(::Vkm::Engine::Mesh)
     VKM_F(mesh)
     VKM_F(material)
-    VKM_F(visible)
+    VKM_F(visible, "Off hides it, in the game as well")
     VKM_F(castShadows)
-    VKM_F(seenBy)
-    VKM_F(movable)
+    VKM_F(seenBy, "Who draws it through a scene camera; the editor's view draws all")
+    VKM_F(movable, "Off for scenery that never moves: the renderer keeps its work")
 VKM_REFLECT_END()

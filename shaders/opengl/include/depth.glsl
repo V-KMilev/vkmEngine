@@ -9,7 +9,12 @@
  * is the window depth itself; a shadow map's is not. NEAR_DEPTH and FAR_DEPTH are the
  * prelude's GLDepth::EYE_NEAR and GLDepth::EYE_CLEAR: the eye's depth is cleared to
  * the far plane's, and the sky is there.
+ *
+ * Last, a perspective shadow map's depth, both ways, and how it runs over a receiver's plane: the
+ * frame's shadows and the lightmap bake read their maps by the same.
  */
+
+#include "basis.glsl"
 
 // Whether a window depth is the far plane's: nothing was drawn there.
 bool isFarDepth(float depth01) {
@@ -51,7 +56,7 @@ vec3 worldPosFromDepth(vec2 uv, float depth01, mat4 invViewProj) {
 }
 
 // Exponential slice coordinate -> positive linear view depth (slice + 0.5 for a
-// centre, slice + 1.0 for the far bound).
+// center, slice + 1.0 for the far bound).
 float sliceToViewDepth(float slice, float zNear, float zFar, float numSlices) {
     return zNear * pow(zFar / zNear, slice / numSlices);
 }
@@ -62,8 +67,8 @@ float viewDepthToSlice(float viewDepth, float zNear, float zFar, float numSlices
     return log(max(viewDepth, zNear) / zNear) / log(zFar / zNear) * numSlices;
 }
 
-// Aerial-perspective slice coordinate (slice + 0.5 for a centre) -> positive linear view depth.
-// Squared over @p reach, so the near slices are metres deep and the far ones kilometres
+// Aerial-perspective slice coordinate (slice + 0.5 for a center) -> positive linear view depth.
+// Squared over @p reach, so the near slices are meters deep and the far ones kilometers
 // (Hillaire 2020).
 float aerialSliceToViewDepth(float slice, float numSlices, float reach) {
     float w = slice / numSlices;
@@ -73,4 +78,32 @@ float aerialSliceToViewDepth(float slice, float numSlices, float reach) {
 // Positive linear view depth -> continuous aerial-perspective slice coordinate.
 float viewDepthToAerialSlice(float viewDepth, float numSlices, float reach) {
     return sqrt(max(viewDepth, 0.0) / reach) * numSlices;
+}
+
+// The window depth a perspective shadow map stores at a distance along its axis.
+float perspectiveDepth(float nearPlane, float farPlane, float axis) {
+    return farPlane / (farPlane - nearPlane) * (1.0 - nearPlane / axis);
+}
+
+// The distance along a perspective shadow map's axis its window depth @p depth stores: the inverse
+// of perspectiveDepth.
+float perspectiveAxis(float nearPlane, float farPlane, float depth) {
+    return nearPlane * farPlane / (farPlane - depth * (farPlane - nearPlane));
+}
+
+// d(NDC z)/d(NDC xy) of the receiver's plane through @p at facing @p N, in a map drawn through
+// @p viewProj: its depth is affine in its NDC over a plane, so two points of the plane @p eps
+// meters off give it exactly. Zero where the map sees the plane edge on.
+vec2 receiverSlopeNDC(mat4 viewProj, vec3 at, vec3 N, float eps) {
+    vec3 T, B;
+    basisAcross(N, T, B);
+    const vec4 a  = viewProj * vec4(at, 1.0);
+    const vec4 b  = viewProj * vec4(at + T * eps, 1.0);
+    const vec4 c  = viewProj * vec4(at + B * eps, 1.0);
+    const vec3 pa = a.xyz / a.w;
+    const vec3 pb = b.xyz / b.w;
+    const vec3 pc = c.xyz / c.w;
+    const mat2 J  = mat2(pb.xy - pa.xy, pc.xy - pa.xy);
+    if (abs(determinant(J)) < 1e-10) return vec2(0.0);
+    return inverse(transpose(J)) * vec2(pb.z - pa.z, pc.z - pa.z);
 }

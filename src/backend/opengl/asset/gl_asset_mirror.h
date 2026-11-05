@@ -2,21 +2,23 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include "vkm_opengl/buffer/stream_ring.h"
 
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/asset/font_asset.h"
-#include "system/render/render_settings.h"
+#include "io/project/render_settings.h"
 
 #include "asset/gl_mesh.h"
 #include "asset/gl_material.h"
 #include "asset/gl_asset_texture.h"
-#include "gl_stream_ring.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class ComputeShader;
     class Texture2D;
 }
@@ -29,14 +31,14 @@ class ResourceManager;
 /**
  * @brief Versioned, handle-indexed table of one GL resource kind.
  *
- * @tparam GLT The GL resource type stored (GLMesh, GLMaterial, GLTexture).
+ * @tparam GLT The GL resource type stored (GLMesh, GLMaterial, GLAssetTexture).
  */
 template <typename GLT>
 struct GLResourceTable {
     struct Slot {
         std::unique_ptr<GLT> gl;
         uint64_t             version    = 0;
-        uint64_t             checked    = 0;  ///< The GLView sync stamp it was last checked under.
+        uint64_t             checked    = 0;  ///< The GLAssetMirror sync stamp it was last checked under.
         uint32_t             generation = 0;  ///< Handle generation; mismatch == slot recycled.
     };
     std::vector<Slot> slots;  ///< Indexed by handle.id().
@@ -50,25 +52,35 @@ struct GLResourceTable {
  * a new graph restarts handles and versions, so invalidate() runs on the swap (see
  * GLBackend::onWorldReplaced).
  */
-class GLView {
+class GLAssetMirror {
     public:
-        GLView() = default;
-        ~GLView() = default;
+        GLAssetMirror() = default;
+        ~GLAssetMirror() = default;
 
-        GLView(const GLView& other) = delete;
-        GLView& operator=(const GLView& other) = delete;
+        GLAssetMirror(const GLAssetMirror& other) = delete;
+        GLAssetMirror& operator=(const GLAssetMirror& other) = delete;
 
-        GLView(GLView && other) = delete;
-        GLView& operator=(GLView && other) = delete;
+        GLAssetMirror(GLAssetMirror && other) = delete;
+        GLAssetMirror& operator=(GLAssetMirror && other) = delete;
 
     public:
+        /**
+         * @brief Start compiling the program a sync runs (shaders/opengl/offline/layer_maps).
+         *
+         * At startup, with the first frame's: the first sync builds the layered materials, and a
+         * program asked for then would wait behind every other the driver is compiling.
+         */
+        void buildPrograms();
+
         /**
          * @brief Upload / refresh every asset `view` references.
          *
          * Every RenderView list naming a handle is walked: the camera's objects and the
          * scene-wide ones (mesh, material and its textures - every material, so an object first
-         * turned to uploads nothing that frame), decals, particle textures, and the UI's commands
-         * (font atlas, image).
+         * turned to uploads nothing that frame - and a fixed object's given mesh,
+         * RenderObjects::bases, which the lightmap bake draws, and every level it may draw,
+         * RenderObjects::levels), decals, particle textures, and the UI's commands (font atlas,
+         * image). Every mesh and material the asset graph holds goes up with the scene-wide walk.
          *
          * A missing GPU object skips a draw silently, so the walk names every RenderView member:
          * one added there fails to compile here until it has been classified.
@@ -97,16 +109,15 @@ class GLView {
         void invalidate();
 
         /**
-         * @brief Offer the frame's filtering mode and anisotropy to every synced texture.
+         * @brief Offer the frame's anisotropy to every synced texture.
          *
          * Sampler state, so no version gate covers it: a moved setting is pushed over the table
          * here, and a texture built later takes the remembered one in ensure(). Each texture
          * resolves it against its TextureParams::filterOverride; font atlases keep the font's own.
          *
-         * @param mode          Base filter; Nearest and Bilinear pin the degree to 1.
          * @param maxAnisotropy Requested degree; clamped per texture to what the driver reports.
          */
-        void setTextureFiltering(TextureFiltering mode, float maxAnisotropy);
+        void setTextureAnisotropy(float maxAnisotropy);
 
         /**
          * @brief Upload @p handle's texture outside a sync(), for a caller that shows rather than draws it.
@@ -117,6 +128,22 @@ class GLView {
          * @param resources Resolves the handle to its pixels.
          */
         void ensureTexture(const TextureHandle& handle, const ResourceManager& resources);
+
+        /**
+         * @brief Upload @p mesh and @p material, its maps with it, outside a sync().
+         *
+         * For a caller drawing them alone, whose made-up view must not stand in for the frame's:
+         * sync() keeps track of the frame's objects and assets from one call to the next.
+         *
+         * @param mesh      Mesh to upload; an empty handle does nothing.
+         * @param material  Material to upload; the same.
+         * @param resources Resolves both.
+         */
+        void ensureDrawn(
+            const MeshHandle& mesh,
+            const MaterialHandle& material,
+            const ResourceManager& resources
+        );
 
         /**
          * @brief Resolve a handle to its synced GPU object.
@@ -130,8 +157,8 @@ class GLView {
          */
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
-        const Vkm::GL::Texture2D* getTexture(const TextureHandle& handle) const;
-        const Vkm::GL::Texture2D* getFontAtlas(const FontHandle& handle) const;
+        const Vkm::OpenGL::Texture2D* getTexture(const TextureHandle& handle) const;
+        const Vkm::OpenGL::Texture2D* getFontAtlas(const FontHandle& handle) const;
 
         /**
          * @brief Whether the mirror of @p handle holds the pixels of its asset at @p version.
@@ -146,7 +173,7 @@ class GLView {
         bool holdsPixels(const TextureHandle& handle, uint64_t version) const;
 
         /**
-         * @brief Which upload @p handle's pixels came from (GLTexture::uploadId).
+         * @brief Which upload @p handle's pixels came from (GLAssetTexture::uploadId).
          *
          * @param handle The texture asked about.
          * @return The upload, or 0 while getTexture() would answer null.
@@ -173,7 +200,7 @@ class GLView {
          *
          * @return The placeholder texture; never null once the GL context exists.
          */
-        const Vkm::GL::Texture2D& missingTexture() const;
+        const Vkm::OpenGL::Texture2D& missingTexture() const;
 
         /**
          * @brief The pool every mesh of this mirror lives in.
@@ -192,7 +219,7 @@ class GLView {
          *
          * @return The ring; it lives as long as this mirror.
          */
-        Vkm::GL::StreamRing& stream() const { return m_stream; }
+        Vkm::OpenGL::StreamRing& stream() const { return m_stream; }
 
         /**
          * @brief ResourceManager::revision() at the last sync() that walked every scene object.
@@ -204,7 +231,42 @@ class GLView {
          */
         uint64_t syncedRevision() const { return m_syncedRevision; }
 
+        /**
+         * @brief Whether @p drawn reads lightmap coordinates laid out as @p given's are, so what is
+         *        baked into @p given's lightmap can be read through it.
+         *
+         * True of @p given itself, and of a mesh every lightmap coordinate of which is one of
+         * @p given's: a decimation of it, or a terrain chunk's coarser level. A level unwrapped on
+         * its own lays its charts out elsewhere. As sync() last worked it out for a fixed object
+         * drawing @p drawn for @p given (RenderObjects::bases); false for a pair it has not.
+         *
+         * @param drawn The mesh an object draws.
+         * @param given The mesh it was given.
+         * @return Whether the two lay their lightmap coordinates out alike.
+         */
+        bool readsChartsOf(const MeshHandle& drawn, const MeshHandle& given) const;
+
     private:
+        /**
+         * @brief What sync() worked out of one drawn mesh and its given one, as of their uploads.
+         */
+        struct ChartsCheck {
+            uint64_t drawnUpload = 0;
+            uint64_t givenUpload = 0;
+            bool     reads       = false;
+        };
+
+    private:
+        /**
+         * @brief Work out readsChartsOf() for @p drawn and @p given, unless their uploads still
+         *        hold the answer.
+         *
+         * @param drawn     The mesh an object draws.
+         * @param given     The mesh it was given.
+         * @param resources Resolves both to their lightmap coordinates.
+         */
+        void checkCharts(const MeshHandle& drawn, const MeshHandle& given, const ResourceManager& resources);
+
         /**
          * @brief Ready a layered material's layers - each with its maps - and build its arrays from
          *        them (GLMaterial::updateLayers).
@@ -261,31 +323,34 @@ class GLView {
         void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
 
     private:
-        /// Every mesh's vertices and indices; outlives the table below.
-        GLMeshPool                  m_meshPool;
-        GLResourceTable<GLMesh>     m_meshes;
-        GLResourceTable<GLMaterial> m_materials;
-        /// Fills a layered material's arrays (GLLayerMaps); made the first time one is readied.
-        std::unique_ptr<Vkm::GL::ComputeShader> m_layerCopy;
-        GLResourceTable<GLTexture>  m_textures;
-        /// SDF atlases by FontHandle; fonts carry pixels, not TextureAssets.
-        GLResourceTable<GLTexture>  m_fontAtlases;
-        /// The frame's streaming memory; see stream().
-        mutable Vkm::GL::StreamRing m_stream;
+        GLMeshPool                                  m_meshPool;     ///< Every mesh's vertices and indices;
+                                                                    ///< outlives the table below.
+        GLResourceTable<GLMesh>                     m_meshes;
+        GLResourceTable<GLMaterial>                 m_materials;
+        std::unique_ptr<Vkm::OpenGL::ComputeShader> m_layerCopy;    ///< Fills a layered material's arrays
+                                                                    ///< (GLLayerMaps); see buildPrograms.
+        GLResourceTable<GLAssetTexture>             m_textures;
+        GLResourceTable<GLAssetTexture>             m_fontAtlases;  ///< SDF atlases by FontHandle; fonts
+                                                                    ///< carry pixels, not TextureAssets.
+        mutable Vkm::OpenGL::StreamRing             m_stream;       ///< The frame's streaming memory; see
+                                                                    ///< stream().
 
         // Outside the tables: it belongs to no asset, and must survive a graph swap, when things go missing.
-        mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;
+        mutable std::unique_ptr<Vkm::OpenGL::Texture2D> m_missingTexture;
 
-        /// Texture ids that settled with no pixels, each warned about once.
-        std::unordered_set<uint32_t> m_reportedMissing;
+        std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids that settled with no pixels, each
+                                                         ///< warned about once.
 
-        /// The filtering and anisotropy every texture was last given.
-        TextureFiltering m_filtering  = RenderSettings{}.textureFiltering;
-        float            m_anisotropy = static_cast<float>(RenderSettings{}.textureAnisotropy);
+        std::unordered_map<uint64_t, ChartsCheck> m_charts;  ///< readsChartsOf()'s answers, by the two
+                                                             ///< meshes' ids.
+
+        float m_anisotropy = static_cast<float>(RenderSettings{}.textureAnisotropy);
+            ///< The anisotropy every texture was last given.
 
         uint64_t m_syncStamp      = 1;  ///< Bumped by every sync(); a slot checked under it is skipped.
         uint64_t m_syncedRevision = 0;  ///< See syncedRevision().
         uint64_t m_syncedSerial   = 0;  ///< RenderObjects::serial of the last frame synced.
+        uint64_t m_levelsSerial   = 0;  ///< RenderObjects::fixedSerial whose levels were readied.
 };
 
 } // namespace Vkm::Engine

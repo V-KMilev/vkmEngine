@@ -2,7 +2,7 @@
 
 #include <GL/glew.h>
 
-#include "gl_vertex_array.h"
+#include "vkm_opengl/vertex/vertex_array.h"
 
 namespace Vkm::Engine {
 
@@ -24,24 +24,27 @@ namespace Vkm::Engine {
  * core profile needs one bound and one is enough.
  *
  * A rendering idiom built on GL primitives rather than a primitive itself, so
- * it is the backend's, not vkmGL's.
+ * it is the backend's, not vkmOpenGL's.
  */
-class ScreenTriangle {
+class GLScreenTriangle {
     public:
-        ScreenTriangle()  = default;
-        ~ScreenTriangle() = default;
+        GLScreenTriangle()  = default;
+        ~GLScreenTriangle() = default;
 
-        ScreenTriangle(const ScreenTriangle& other) = delete;
-        ScreenTriangle& operator=(const ScreenTriangle& other) = delete;
+        GLScreenTriangle(const GLScreenTriangle& other) = delete;
+        GLScreenTriangle& operator=(const GLScreenTriangle& other) = delete;
 
-        ScreenTriangle(ScreenTriangle && other) = delete;
-        ScreenTriangle& operator=(ScreenTriangle && other) = delete;
+        GLScreenTriangle(GLScreenTriangle && other) = delete;
+        GLScreenTriangle& operator=(GLScreenTriangle && other) = delete;
 
     public:
         /// Bind the empty VAO for subsequent emit() calls.
         void bind() const { m_vao.bind(); }
 
         void unbind() const { m_vao.unbind(); }
+
+        /// The empty VAO, which another attribute-less draw issues through once bind() has bound it.
+        const Vkm::OpenGL::VertexArray& array() const { return m_vao; }
 
         /**
          * @brief Issue the 3-vertex fullscreen draw.
@@ -59,7 +62,7 @@ class ScreenTriangle {
         }
 
     private:
-        Vkm::GL::VertexArray m_vao;
+        Vkm::OpenGL::VertexArray m_vao;
 };
 
 } // namespace Vkm::Engine

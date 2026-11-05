@@ -4,10 +4,10 @@
  * its point on every plane and its nearest point on every axis; each is drawn only where the
  * scene's depth does not hide it, and they blend far to near.
  *
- * A plane's lines follow the zoom in powers of ten from a metre up: each pixel takes the
+ * A plane's lines follow the zoom in powers of ten from a meter up: each pixel takes the
  * level whose cells are at least MIN_CELL_PX wide there, so a grid reads the same from any
  * distance, and the finer of two levels fades as its parent takes over. A plane fades where
- * it is seen nearly edge-on, which no spacing keeps from turning to noise. Colours are
+ * it is seen nearly edge-on, which no spacing keeps from turning to noise. Colors are
  * display values, blended as the gizmos are.
  */
 in vec2 vUV;
@@ -15,10 +15,10 @@ out vec4 FragColor;
 
 layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_sceneDepth;  // geometry target depth
 
-#include "../camera.glsl"
-#include "../depth.glsl"
+#include "../../include/camera.glsl"
+#include "../../include/depth.glsl"
 
-uniform vec3  u_axisColor[3];  // X, Y, Z as Math::AXIS_COLORS gives them, display values
+uniform vec3  u_axisColor[3];  // X, Y, Z as DebugPalette::AXES gives them, display values
 uniform ivec3 u_axisShown;
 uniform ivec3 u_planeShown;    // by the plane's normal: ZY, XZ, XY
 uniform float u_screenHeight;  // the viewport's pixels, which the grid draws at; the scene's may be fewer
@@ -26,12 +26,12 @@ uniform float u_screenHeight;  // the viewport's pixels, which the grid draws at
 const float BASE_EXTENT  = 100.0;  // reach in world units, grown with the log of the distance
 const float MIN_CELL_PX  = 24.0;   // a level fades out as its cells shrink to this
 const float GRAZING      = 0.12;   // sine of the view angle below which a plane fades
-const float MINOR_ALPHA  = 0.45;
-const float MAJOR_ALPHA  = 0.75;
-const vec3  LINE_COLOR   = vec3(0.70);
+const float MINOR_ALPHA  = 0.20;
+const float MAJOR_ALPHA  = 0.35;
+const vec3  LINE_COLOR   = vec3(0.60);
 const float WALL_ALPHA   = 0.6;    // the XY and ZY planes against the ground's lines
-const float AXIS_ALPHA   = 0.9;
-const float AXIS_WIDTH   = 1.5;    // pixels
+const float AXIS_ALPHA   = 0.6;
+const float AXIS_WIDTH   = 1.25;   // pixels
 const float PAST_PLANE   = 0.35;   // an axis's alpha past the plane it pierces, from the camera
 const float DEPTH_SLACK  = 1.0e-3; // relative; a floor at y = 0 does not hide the grid on it
 
@@ -78,7 +78,7 @@ vec4 plane(int n, vec3 origin, vec3 dir, float sceneView, out float depth) {
     depth = viewDepthOf(p);
 
     // The level: world units across MIN_CELL_PX pixels, as a power of ten no finer than a
-    // metre, and how far past it this pixel is - the share by which the finer level has faded.
+    // meter, and how far past it this pixel is - the share by which the finer level has faded.
     float lod   = max(log(max(perPixel.x, perPixel.y) * MIN_CELL_PX) / log(10.0), 0.0);
     float level = floor(lod);
     float fade  = lod - level;

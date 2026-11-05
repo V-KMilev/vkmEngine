@@ -1,4 +1,4 @@
-#include "frame/gl_draw_list.h"
+#include "frame/draw/gl_draw_list.h"
 
 namespace Vkm::Engine {
 
@@ -10,7 +10,7 @@ void GLDrawList::clear() {
     m_commands.clear();
 }
 
-void GLDrawList::upload(Vkm::GL::StreamRing& stream) {
+void GLDrawList::upload(Vkm::OpenGL::StreamRing& stream) {
     const auto bytes = [](const auto& list) { return static_cast<uint32_t>(list.size() * sizeof(list[0])); };
     m_instanceSpan = stream.write(m_instances.data(), bytes(m_instances));
     m_commandSpan  = stream.write(m_commands.data(), bytes(m_commands));
