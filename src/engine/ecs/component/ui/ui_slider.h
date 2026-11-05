@@ -2,7 +2,7 @@
 
 #include <glm/common.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -14,8 +14,9 @@ namespace Vkm::Engine {
  * the pointer is across it and enqueues a UIValueEvent when that changes it. Every
  * frame it lays out the parts named: `fill` grows from the left to the value (the
  * slider owns its UIElement::relativeSize.x) and `knob` stands at it (UIElement::anchor.x).
- * Both are optional, and are best the track's children so they move with it. What
- * either looks like is the project's.
+ * Both are optional, and are best the track's children so they move with it, with
+ * UIElement::blocksPointer off: a part that blocks takes the press from the button. What
+ * either looks like is the project's. A value the game writes shows, and sends no UIValueEvent.
  */
 struct UISlider {
     float value    = 0.0f;  ///< Write it to set the slider; a drag keeps it within min..max.
@@ -41,8 +42,8 @@ struct UISlider {
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::UISlider)
-    VKM_F(value)
-    VKM_F(minValue)
-    VKM_F(maxValue)
-    VKM_F(step)
+    VKM_F(value, "Set by a drag; write it to set the slider")
+    VKM_F(minValue, "The value at the track's left end")
+    VKM_F(maxValue, "The value at its right end")
+    VKM_F(step, "What a drag snaps to; 0 is continuous")
 VKM_REFLECT_END()

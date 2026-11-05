@@ -1,34 +1,29 @@
-#include "system/ui/screen_view.h"
+#include "core/frame/screen_view.h"
 
 #include <glm/gtc/constants.hpp>
 
 #include "core/host_chrome.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
+#include "core/frame_context.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/scene.h"
-#include "platform/window/window_manager.h"
+#include "vkm_platform/window/window_manager.h"
 
 namespace Vkm::Engine {
 
-ScreenView ScreenView::of(const Scene& scene, const WindowManager& window, const HostChrome& chrome) {
+ScreenView ScreenView::of(const FrameContext& ctx) {
     ScreenView view;
-    const HostChrome::ViewportRect rect = chrome.viewport(window);
-    const EntityId                 eye  = findActiveCamera(scene);
-    const Transform*               pose = scene.tryGet<Transform>(eye);
-    const Camera*                  lens = scene.tryGet<Camera>(eye);
-    if (!pose || !lens || rect.width == 0 || rect.height == 0) return view;
+    const HostChrome::ViewportRect rect = ctx.chrome.viewportIn(ctx.window);
+    if (rect.width == 0 || rect.height == 0) return view;
 
-    // Its world pose, a rig's included, and for an auto-aspect lens the view's own aspect.
-    Transform world;
-    world.position = resolvedWorldPosition(scene, eye, *pose);
-    world.rotation = resolvedWorldRotation(scene, eye, *pose);
+    // The frame's view, at the viewport's aspect for an auto-aspect lens.
+    const float aspect = static_cast<float>(rect.width) / static_cast<float>(rect.height);
+    const std::optional<CameraView> seen = viewThrough(ctx.scene, ctx.camera.of(ctx.scene), aspect);
+    if (!seen) return view;
     view.m_origin         = {static_cast<float>(rect.x), static_cast<float>(rect.y)};
     view.m_size           = {static_cast<float>(rect.width), static_cast<float>(rect.height)};
-    const glm::mat4 projection = Camera::computeProjection(*lens, view.m_size.x / view.m_size.y);
-    view.m_viewProjection = projection * Transform::computeView(world);
-    view.m_pointerScale   = window.framebufferScale();
+    view.m_viewProjection = seen->projection * seen->view;
+    view.m_pointerScale   = ctx.window.framebufferScale();
     view.m_valid          = true;
     return view;
 }

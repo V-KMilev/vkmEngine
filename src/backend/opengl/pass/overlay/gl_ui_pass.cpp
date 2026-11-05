@@ -1,4 +1,4 @@
-#include "pass/gl_ui_pass.h"
+#include "pass/overlay/gl_ui_pass.h"
 
 #include <cstddef>
 
@@ -6,85 +6,78 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "gl_shader.h"
-#include "gl_context.h"
-#include "gl_frame_buffer.h"
-#include "gl_vertex_array.h"
-#include "gl_error_handle.h"
-#include "gl_stream_ring.h"
-#include "gl_texture.h"
+#include "vkm_opengl/buffer/stream_ring.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader.h"
+#include "vkm_opengl/target/frame_buffer.h"
+#include "vkm_opengl/texture/texture.h"
+#include "vkm_opengl/vertex/vertex_array.h"
 
-#include "gl_frame_context.h"
-#include "gl_view.h"
+#include "pass/gl_frame_context.h"
+#include "asset/gl_asset_mirror.h"
 #include "convention/gl_bindings.h"
-#include "convention/gl_format_conversion.h"
+#include "asset/gl_texture_conversion.h"
 #include "system/render/render_view.h"
 #include "resource/asset/texture_asset.h"
-#include "system/ui/ui_draw_data.h"
+#include "core/frame/ui_draw_data.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
 // The vertex buffer binding point the attributes read, a namespace apart from their locations.
-constexpr uint32_t VERTEX_BINDING = 0;
+constexpr uint32_t QUAD_BINDING = 0;
 
 } // namespace
 
 GLUIPass::GLUIPass()
-    : m_shader("shaders/ui")
-    , m_vao(std::make_unique<Vkm::GL::VertexArray>())
+    : m_shader("shaders/opengl/overlay/ui")
+    , m_vao(std::make_unique<Vkm::OpenGL::VertexArray>())
 {
     const uint8_t zero = 0;
-    Vkm::GL::Texture2DParams params;
+    Vkm::OpenGL::Texture2DParams params;
     params.width           = 1;
     params.height          = 1;
     params.internalFormat  = GL_R8;
     params.format          = GL_RED;
     params.type            = GL_UNSIGNED_BYTE;
-    params.minFilter       = Vkm::GL::TextureMinFilter::Nearest;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::Nearest;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Nearest;
     params.generateMipmaps = false;
     params.data            = &zero;
-    m_noAtlas = std::make_unique<Vkm::GL::Texture2D>("ui_no_atlas", params);
+    m_noAtlas              = std::make_unique<Vkm::OpenGL::Texture2D>("ui_no_atlas", params);
 
-    // The vertex formats once; each frame's vertices are bound from the frame's stream.
+    // The quad's format once, an instance a quad; each frame's quads are bound from the frame's stream.
     static_assert(
-        sizeof(UIVertex) == (2 + 2 + 4 + 4 + 4 + 1) * sizeof(float),
-        "UIVertex no longer matches the attributes below"
+        sizeof(UIQuad) == (4 + 4 + 4 + 4 + 4 + 3) * sizeof(float),
+        "UIQuad no longer matches the attributes below"
     );
-    const GLuint vao       = m_vao->getID();
-    const auto   attribute = [vao](uint32_t index, GLint count, uint32_t at) {
-        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, index));
-        VKM_GL_CHECK(glVertexArrayAttribFormat(vao, index, count, GL_FLOAT, GL_FALSE, at));
-        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, index, VERTEX_BINDING));
+    const auto attribute = [this](uint32_t index, int32_t count, uint32_t at) {
+        m_vao->setAttribute(index, QUAD_BINDING, count, GL_FLOAT, at);
     };
-    attribute(0, 2, offsetof(UIVertex, pos));
-    attribute(1, 2, offsetof(UIVertex, uv));
-    attribute(2, 4, offsetof(UIVertex, color));
-    attribute(3, 4, offsetof(UIVertex, shape));   // quad size, corner radius, border width
-    attribute(4, 4, offsetof(UIVertex, border));  // border colour
-    attribute(5, 1, offsetof(UIVertex, image));   // whether a solid samples its run's image
+    namespace Attributes = GLBindings::UIAttributes;
+    attribute(Attributes::RECT, 4, offsetof(UIQuad, rect));
+    attribute(Attributes::UV, 4, offsetof(UIQuad, uv));
+    attribute(Attributes::TOP, 4, offsetof(UIQuad, top));
+    attribute(Attributes::BOTTOM, 4, offsetof(UIQuad, bottom));
+    attribute(Attributes::BORDER, 4, offsetof(UIQuad, border));
+    attribute(Attributes::STYLE, 3, offsetof(UIQuad, style));
+    m_vao->setDivisor(QUAD_BINDING, 1);
 }
 
 GLUIPass::~GLUIPass() = default;
 
 void GLUIPass::execute(GLFrameContext& ctx) {
-    const RenderView& view = ctx.view;
-    if (!view.ui || view.ui->vertices.empty() || view.ui->commands.empty()) return;
-    const UIDrawData& ui = *view.ui;
+    draw(ctx, ctx.view.ui);
+}
 
-    const auto                bytes    = static_cast<uint32_t>(ui.vertices.size() * sizeof(UIVertex));
-    const Vkm::GL::BufferSpan vertices = ctx.resources.stream().write(ui.vertices.data(), bytes);
-    VKM_GL_CHECK(
-        glVertexArrayVertexBuffer(
-            m_vao->getID(),
-            VERTEX_BINDING,
-            vertices.buffer,
-            vertices.offset,
-            sizeof(UIVertex)
-        )
-    );
+void GLUIPass::draw(GLFrameContext& ctx, const UIDrawData* list) {
+    if (!list || list->quads.empty() || list->commands.empty()) return;
+    const RenderView& view = ctx.view;
+    const UIDrawData& ui   = *list;
+
+    const auto bytes = static_cast<uint32_t>(ui.quads.size() * sizeof(UIQuad));
+    const Vkm::OpenGL::BufferSpan quads = ctx.mirror.stream().write(ui.quads.data(), bytes);
 
     // Draw into the same backbuffer rect Composite resolved to.
     bindBackbufferViewport(ctx);
@@ -112,26 +105,23 @@ void GLUIPass::execute(GLFrameContext& ctx) {
     for (const UIDrawCmd& cmd : ui.commands) {
         // Text and solids share a run; the vertex says which. An atlas not yet on the GPU reads
         // as no coverage, so its glyphs draw nothing rather than sampling whatever is bound.
-        const Vkm::GL::Texture2D* atlas = ctx.resources.getFontAtlas(cmd.font);
+        const Vkm::OpenGL::Texture2D* atlas = ctx.mirror.getFontAtlas(cmd.font);
         (atlas ? *atlas : *m_noAtlas).bindSlot(GLBindings::OverlayTextureSlots::UI_ATLAS);
         bindImage(ctx, cmd.image);
         setScissorRect(ctx, cmd.clip);
-        m_vao->drawArrays(
-            GL_TRIANGLES,
-            static_cast<int32_t>(cmd.firstVertex),
-            static_cast<int32_t>(cmd.vertexCount)
-        );
+        // The run's quads from its first, a corner of two triangles each vertex (shaders/opengl/overlay/ui).
+        const auto at  = static_cast<uint32_t>(cmd.firstQuad * sizeof(UIQuad));
+        const auto run = static_cast<uint32_t>(cmd.quadCount * sizeof(UIQuad));
+        m_vao->setVertexBuffer(QUAD_BINDING, {quads.buffer, quads.offset + at, run}, sizeof(UIQuad));
+        m_vao->drawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<int32_t>(cmd.quadCount));
     }
-
-    // Not reset between passes, so this pass turns off what it turned on.
-    ctx.gl.enableScissor(false);
 }
 
 void GLUIPass::bindImage(GLFrameContext& ctx, const TextureHandle& image) const {
     // A run with no image still binds something deliberate. A loading or failed image shows
     // the missing-texture checker, as a material's map would.
-    const Vkm::GL::Texture2D* texture = image ? ctx.resources.getTexture(image) : m_noAtlas.get();
-    if (!texture) texture = &ctx.resources.missingTexture();
+    const Vkm::OpenGL::Texture2D* texture = image ? ctx.mirror.getTexture(image) : m_noAtlas.get();
+    if (!texture) texture = &ctx.mirror.missingTexture();
     texture->bindSlot(GLBindings::OverlayTextureSlots::UI_IMAGE);
 
     // The UI blends in display space, so a texture stored as sRGB - whose

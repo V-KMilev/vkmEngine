@@ -4,13 +4,11 @@
 
 #include <glm/glm.hpp>
 
-#include "core/math/bounds.h"
+#include "base/math/ray.h"
 
 namespace Vkm::Engine {
 
-class HostChrome;
-class Scene;
-class WindowManager;
+struct FrameContext;
 struct UICanvas;
 
 /**
@@ -19,7 +17,7 @@ struct UICanvas;
  *
  * What a game needs to turn the pointer into a ray into the world, or a point of the world into a
  * place on a canvas, the way the renderer and the UI themselves see them. The view is the
- * HostChrome's rect, not the window: in the editor's Play panel the two differ, and a game that
+ * HostChrome's rect, not the window: in the editor's Viewport the two differ, and a game that
  * divided by the window would pick beside the cursor and draw its labels off their targets. A
  * host's own view (HostView) is the host's, and not asked.
  */
@@ -38,12 +36,12 @@ class ScreenView {
         /**
          * @brief The view as it stands now.
          *
-         * @param scene  Where the active camera is (findActiveCamera).
-         * @param window The window drawn into; its framebuffer scale converts the pointer.
-         * @param chrome The host's rect for the scene inside it.
+         * @param ctx Supplies the scene, its active camera (FrameContext::camera), the window drawn
+         *            into, whose framebuffer scale converts the pointer, and the host's rect for the
+         *            scene inside it.
          * @return A view; valid() is false with no camera or an empty rect.
          */
-        static ScreenView of(const Scene& scene, const WindowManager& window, const HostChrome& chrome);
+        static ScreenView of(const FrameContext& ctx);
 
         bool valid() const { return m_valid; }
 
@@ -69,10 +67,10 @@ class ScreenView {
         std::optional<glm::vec2> toCanvas(const glm::vec3& world, const UICanvas& canvas) const;
 
     private:
-        bool      m_valid = false;
+        bool      m_valid        = false;
         glm::mat4 m_viewProjection{1.0f};
-        glm::vec2 m_origin{0.0f};  ///< The view's top left in the framebuffer, pixels.
-        glm::vec2 m_size{0.0f};    ///< Its size, framebuffer pixels.
+        glm::vec2 m_origin{0.0f};         ///< The view's top left in the framebuffer, pixels.
+        glm::vec2 m_size{0.0f};           ///< Its size, framebuffer pixels.
         float     m_pointerScale = 1.0f;  ///< Framebuffer pixels per window pixel.
 };
 

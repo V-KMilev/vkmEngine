@@ -1,6 +1,6 @@
 /*
  * UI fragment: solids and text share one program and draw call, alpha-blended over the scene.
- *   Solid - the vertex carries the quad's size, so corners round by a signed-distance box and a
+ *   Solid - the quad carries its size, so corners round by a signed-distance box and a
  *           border is the band inside that distance. With neither it is a flat tint, interpolated
  *           top to bottom for a gradient; an image solid is the picture times the tint.
  *   Text  - a corner radius of UI_TEXT_MARK. The atlas stores distance to the edge (0.5 on it);
@@ -18,7 +18,7 @@ layout(binding = UI_SLOT_ATLAS) uniform sampler2D u_tex;
 layout(binding = UI_SLOT_IMAGE) uniform sampler2D u_image;  // the run's image; rows bottom-up
 uniform int u_imageSrgb;  // it is stored as sRGB, so sampling returns linear light
 
-#include "../color.glsl"
+#include "../../include/color.glsl"
 
 void main() {
     // A solid's radius is never negative and the mark is, so past half way is a glyph, whatever
