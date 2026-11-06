@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Texture3D;
 }
 
@@ -18,8 +18,8 @@ namespace Vkm::Engine {
  * by the injection compute. m_integrated holds the front-to-back accumulated
  * scattering (rgb) + transmittance (a), written by the integration compute and
  * sampled through GLPass::bindFog. GPU-only; allocated lazily by the fog pass
- * on the first fog-enabled frame (and kept - fog toggles must not thrash
- * ~15 MB).
+ * on the first fog-enabled frame, and kept: a fog toggle must not reallocate
+ * both volumes.
  */
 class GLFogVolume {
     public:
@@ -37,8 +37,7 @@ class GLFogVolume {
          * @brief Allocate, or reallocate, the two froxel 3D textures.
          *
          * A no-op when the dimensions already match, so the fog pass may call
-         * it every frame; reallocates when FogSettings::froxelGrid changes. A
-         * live GL context must exist.
+         * it every frame. A live GL context must exist.
          *
          * @param x Froxels across the screen.
          * @param y Froxels down it.
@@ -65,7 +64,7 @@ class GLFogVolume {
         /**
          * @brief Bind the integrated volume for sampling.
          *
-         * @param slot Texture unit shaders/fog.glsl samples (sampler3D).
+         * @param slot Texture unit shaders/opengl/include/fog.glsl samples (sampler3D).
          */
         void bindIntegratedSlot(uint32_t slot) const;
 
@@ -88,14 +87,14 @@ class GLFogVolume {
         /**
          * @brief Record how far this frame's slices reach.
          *
-         * @param depth View depth of the last slice's far bound, in metres.
+         * @param depth View depth of the last slice's far bound, in meters.
          */
         void setDepth(float depth) { m_depth = depth; }
 
     private:
-        std::unique_ptr<Vkm::GL::Texture3D> m_scatter;
-        std::unique_ptr<Vkm::GL::Texture3D> m_integrated;
-        float m_depth = 1.0f;
+        std::unique_ptr<Vkm::OpenGL::Texture3D> m_scatter;
+        std::unique_ptr<Vkm::OpenGL::Texture3D> m_integrated;
+        float                                   m_depth = 1.0f;
 };
 
 } // namespace Vkm::Engine

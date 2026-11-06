@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "core/engine_config.h"
+#include "system/render/render_limits.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class ShaderStorageBuffer;
 }
 
@@ -52,7 +52,7 @@ class GLClusterGrid {
         void bind() const;
 
     private:
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_ssbo;
 };
 
 } // namespace Vkm::Engine

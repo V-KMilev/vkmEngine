@@ -1,12 +1,12 @@
 /*
  * What lies between the eye and a point: the sky's air and, nearer, the froxel fog. Each holds the
  * light it scatters toward the eye (rgb) and the transmittance of the light from behind it (a),
- * the fog per froxel of its integrated volume (shaders/fog/integrate), the air per froxel of the
- * aerial-perspective volume (shaders/atmosphere/aerial_perspective).
+ * the fog per froxel of its integrated volume (shaders/opengl/light/fog/integrate), the air per froxel of the
+ * aerial-perspective volume (shaders/opengl/light/atmosphere/aerial_perspective).
  *
- * A surface is fogged at its own depth: colour * a + rgb, right for an alpha-blended one too, whose
- * blend scales both terms. An additive one, added to fog already behind it, takes only colour * a.
- * The air lies beneath the fog: (colour * T_air + S_air) * T_fog + S_fog.
+ * A surface is fogged at its own depth: color * a + rgb, right for an alpha-blended one too, whose
+ * blend scales both terms. An additive one, added to fog already behind it, takes only color * a.
+ * The air lies beneath the fog: (color * T_air + S_air) * T_fog + S_fog.
  */
 
 #include "bspline.glsl"
@@ -46,7 +46,7 @@ vec4 localFogAt(vec2 uv, float viewDepth) {
 vec4 airAt(vec2 uv, float viewDepth) {
     if (u_hasAir == 0) return vec4(0.0, 0.0, 0.0, 1.0);
 
-    // Each texel holds the air to its slice's centre. Nearer than the first centre the air fades
+    // Each texel holds the air to its slice's center. Nearer than the first center the air fades
     // to none at the eye; past the last, the last slice's.
     float slices = float(textureSize(u_aerialPerspective, 0).z);
     float slice  = viewDepthToAerialSlice(viewDepth, slices, u_airDepth);

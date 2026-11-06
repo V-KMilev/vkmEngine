@@ -1,22 +1,22 @@
-#include "storage/gl_fog_volume.h"
+#include "storage/light/gl_fog_volume.h"
 
-#include "gl_texture_3d.h"
+#include "vkm_opengl/texture/texture_3d.h"
 
 namespace Vkm::Engine {
 
 namespace {
-std::unique_ptr<Vkm::GL::Texture3D> makeVolume(const char* name, uint32_t x, uint32_t y, uint32_t z) {
-    Vkm::GL::Texture3DParams p;
-    p.width  = x;
-    p.height = y;
-    p.depth  = z;
+std::unique_ptr<Vkm::OpenGL::Texture3D> makeVolume(const char* name, uint32_t x, uint32_t y, uint32_t z) {
+    Vkm::OpenGL::Texture3DParams p;
+    p.width          = x;
+    p.height         = y;
+    p.depth          = z;
     p.internalFormat = GL_RGBA16F;
     p.format         = GL_RGBA;
     p.type           = GL_FLOAT;
-    p.minFilter      = Vkm::GL::TextureMinFilter::Linear;
-    p.magFilter      = Vkm::GL::TextureMagFilter::Linear;
-    p.wrap           = Vkm::GL::TextureWrap::ClampToEdge;
-    return std::make_unique<Vkm::GL::Texture3D>(name, p);
+    p.minFilter      = Vkm::OpenGL::TextureMinFilter::Linear;
+    p.magFilter      = Vkm::OpenGL::TextureMagFilter::Linear;
+    p.wrap           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    return std::make_unique<Vkm::OpenGL::Texture3D>(name, p);
 }
 } // namespace
 

@@ -1,4 +1,4 @@
-#include "ecs/component/render/light.h"
+#include "ecs/component/light/light.h"
 
 #include <algorithm>
 #include <cmath>
@@ -7,20 +7,22 @@
 #include <glm/gtc/constants.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/// Wavers a second at the lowest of the three rates: a flame's.
-constexpr double FLICKER_RATE = 6.0;
+constexpr double FLICKER_RATE = 6.0;  ///< Wavers a second at the lowest of the three rates: a flame's.
 
-/// The three rates, over the lowest: no two share a beat.
-constexpr double FLICKER_NOTES[] = {1.0, 2.31, 4.17};
+constexpr double FLICKER_NOTES[] = {1.0, 2.31, 4.17};  ///< The three rates, over the lowest: no two share a
+                                                       ///< beat.
 
-/// Seconds each slot runs ahead of the one before: far from a whole number of any note's period.
-constexpr double SLOT_LEAD = 0.618034;
+constexpr double SLOT_LEAD = 0.618034;  ///< Seconds each slot runs ahead of the one before: far from a whole
+                                        ///< number of any note's period.
+
+// A point or spot light's emitter radius, in meters: a household bulb's.
+constexpr float BULB_RADIUS = 0.03f;
 
 } // namespace
 
@@ -43,6 +45,28 @@ EntityId findKeyLight(const Scene& scene) {
         return light.enabled && light.type == LightType::Directional;
     };
     return findLowestSlot<Light, Transform>(scene, isKey);
+}
+
+Light generateLight(LightType type) {
+    Light light;
+    light.type = type;
+
+    // Only a spot uses cone angles; clear them so others carry no stale defaults.
+    if (type != LightType::Spot) {
+        light.innerConeAngle = 0.0f;
+        light.outerConeAngle = 0.0f;
+    }
+
+    if (type == LightType::Point || type == LightType::Spot) light.sourceRadius = BULB_RADIUS;
+
+    switch (type) {
+        case LightType::Directional: light.radius = 0.0f;  break;  // a sun does not attenuate
+        case LightType::Point:                             break;  // keeps the component's default reach
+        case LightType::Spot:        light.radius = 20.0f; break;
+        case LightType::Count:                             break;
+    }
+
+    return light;
 }
 
 } // namespace Vkm::Engine

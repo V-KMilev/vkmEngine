@@ -9,8 +9,8 @@ in vec2 vUV;
 
 out vec4 FragColor;  // RGBA: GL requires RGBA16F renderable, not RGB16F
 
-#include "../../brdf.glsl"
-#include "../../sampling.glsl"
+#include "../../../include/brdf.glsl"
+#include "../sampling.glsl"
 
 const uint SAMPLE_COUNT = 1024u;
 

@@ -1,14 +1,14 @@
 /*
  * One surfel of the irradiance volume's atlas: the nearest surface a probe sees through one texel
  * of its cube, as the relight lights it (GLIrradianceBaker). An RGBA32UI texel:
- *   x  the colour it bounces, unorm8 rgb, and its material AO in alpha
+ *   x  the color it bounces, unorm8 rgb, and its material AO in alpha
  *   y  its normal, octahedral, two unorm16s
  *   z  its distance from the probe, negated where the probe sees its back
  *   w  the radiance it emits, RGB9E5
  * A zero distance is the sky, the atlas's clear: no surface is nearer than the capture's near plane.
  */
 
-#include "../normal_codec.glsl"
+#include "../../include/normal_codec.glsl"
 
 struct Surfel {
     vec3  bounce;    // what it reflects of the light, diffuse and specular as one: a metal its f0

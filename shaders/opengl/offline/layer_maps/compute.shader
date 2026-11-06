@@ -4,7 +4,7 @@
  */
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
-layout(binding = 0) uniform sampler2D u_source;
+layout(binding = LAYER_SLOT_COPY_SOURCE) uniform sampler2D u_source;
 layout(binding = 0, rgba8) uniform writeonly image2DArray u_dst;
 
 uniform int   u_copy;   // LAYER_COPY_*: what the source is, and what of it is written
@@ -12,7 +12,7 @@ uniform int   u_layer;  // the array layer written
 uniform float u_lod;    // the source level whose texels match the level written
 uniform vec4  u_fill;   // LAYER_COPY_FILL's value
 
-#include "../../color.glsl"
+#include "../../include/color.glsl"
 
 void main() {
     const ivec2 texel = ivec2(gl_GlobalInvocationID.xy);

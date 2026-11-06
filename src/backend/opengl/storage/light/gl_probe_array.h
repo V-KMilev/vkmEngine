@@ -5,11 +5,11 @@
 
 #include <GL/glew.h>
 
-#include "gl_context.h"
-#include "gl_frame_buffer.h"
-#include "gl_texture.h"
-#include "gl_texture_cube.h"
-#include "gl_texture_cube_array.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/target/frame_buffer.h"
+#include "vkm_opengl/texture/texture.h"
+#include "vkm_opengl/texture/texture_cube.h"
+#include "vkm_opengl/texture/texture_cube_array.h"
 
 namespace Vkm::Engine {
 
@@ -73,38 +73,38 @@ class GLProbeArray {
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
         /**
-         * @brief Attach the transient env cube @p face as colour 0 (geometry capture).
+         * @brief Attach the transient env cube @p face as color 0 (geometry capture).
          *
          * @param gl   Live GL context whose viewport is set to the env-capture size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
-        void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
+        void attachEnvFace(const Vkm::OpenGL::Context& gl, int face) const {
             m_fbo->attachLayer(GL_COLOR_ATTACHMENT0, m_env.getID(), 0, face);
             gl.setViewport(0, 0, m_resolution, m_resolution);
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
         /**
-         * @brief Attach one face of irradiance-array @p layer as colour 0.
+         * @brief Attach one face of irradiance-array @p layer as color 0.
          *
          * @param gl    Live GL context whose viewport is set to the irradiance size.
          * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
-         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         * @param face  Cube face index (0..5) attached as the color-0 target.
          */
-        void attachIrradianceFace(const Vkm::GL::Context& gl, int layer, int face) const {
+        void attachIrradianceFace(const Vkm::OpenGL::Context& gl, int layer, int face) const {
             m_fbo->attachLayer(GL_COLOR_ATTACHMENT0, m_irradiance.getID(), 0, layer * 6 + face);
             gl.setViewport(0, 0, irradianceSize(), irradianceSize());
         }
 
         /**
-         * @brief Attach one face/mip of prefilter-array @p layer as colour 0.
+         * @brief Attach one face/mip of prefilter-array @p layer as color 0.
          *
          * @param gl    Live GL context whose viewport is set to the mip's size.
          * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
-         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         * @param face  Cube face index (0..5) attached as the color-0 target.
          * @param mip   Roughness mip level being baked; halves the viewport per level.
          */
-        void attachPrefilterFace(const Vkm::GL::Context& gl, int layer, int face, int mip) const {
+        void attachPrefilterFace(const Vkm::OpenGL::Context& gl, int layer, int face, int mip) const {
             m_fbo->attachLayer(GL_COLOR_ATTACHMENT0, m_prefilter.getID(), mip, layer * 6 + face);
             const int s = prefilterSize() >> mip;
             gl.setViewport(0, 0, s, s);
@@ -135,12 +135,12 @@ class GLProbeArray {
         int irradianceSize() const { return m_resolution / 8; }
 
     private:
-        Vkm::GL::TextureCubeArray m_irradiance;  ///< Diffuse irradiance, 1 mip per cube
-        Vkm::GL::TextureCubeArray m_prefilter;   ///< GGX specular, PREFILTER_MIPS per cube
-        Vkm::GL::TextureCube      m_env;         ///< Transient capture cube (reused per bake)
+        Vkm::OpenGL::TextureCubeArray m_irradiance;  ///< Diffuse irradiance, 1 mip per cube
+        Vkm::OpenGL::TextureCubeArray m_prefilter;   ///< GGX specular, PREFILTER_MIPS per cube
+        Vkm::OpenGL::TextureCube      m_env;         ///< Transient capture cube (reused per bake)
 
-        std::unique_ptr<Vkm::GL::Texture2D>   m_depth;
-        std::unique_ptr<Vkm::GL::FrameBuffer> m_fbo;
+        std::unique_ptr<Vkm::OpenGL::Texture2D>   m_depth;
+        std::unique_ptr<Vkm::OpenGL::FrameBuffer> m_fbo;
 
         int m_capacity   = 0;  ///< Probes the arrays have room for.
         int m_resolution = 0;  ///< Current build's capture face size (0 = not built).

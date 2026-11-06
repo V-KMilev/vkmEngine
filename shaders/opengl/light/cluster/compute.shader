@@ -7,15 +7,16 @@
  * owns its own slot in the grid.
  */
 
-#include "../depth.glsl"
+#include "../../include/depth.glsl"
 
 // This pass fills the grid: take the writeonly cluster-grid variant.
 #define CLUSTER_GRID_WRITE
-#include "../lights.glsl"
+#include "../../include/lights.glsl"
+#include "../../include/cluster_grid.glsl"
 
 layout(local_size_x = GROUP_CLUSTERS) in;
 
-#include "../camera.glsl"
+#include "../../include/camera.glsl"
 
 float sqDistPointAABB(vec3 p, vec3 mn, vec3 mx) {
     vec3 d = max(max(mn - p, p - mx), vec3(0.0));
@@ -23,10 +24,10 @@ float sqDistPointAABB(vec3 p, vec3 mn, vec3 mx) {
 }
 
 // Whether a spot's cone - apex @p apex, axis @p axis, half-angle cos/sin, length @p range -
-// misses the sphere @p centre, @p radius (Wronski, "Cull that cone"): beside the cone, past its
+// misses the sphere @p center, @p radius (Wronski, "Cull that cone"): beside the cone, past its
 // end, or behind its apex.
-bool coneMissesSphere(vec3 apex, vec3 axis, float cosA, float sinA, float range, vec3 centre, float radius) {
-    vec3  v       = centre - apex;
+bool coneMissesSphere(vec3 apex, vec3 axis, float cosA, float sinA, float range, vec3 center, float radius) {
+    vec3  v       = center - apex;
     float along   = dot(v, axis);
     float across  = sqrt(max(dot(v, v) - along * along, 0.0));
     float closest = cosA * across - along * sinA;
@@ -60,7 +61,7 @@ void main() {
     vec3 mn = min(min(p0, p1), min(p2, p3));
     vec3 mx = max(max(p0, p1), max(p2, p3));
 
-    vec3  centre = 0.5 * (mn + mx);
+    vec3  center = 0.5 * (mn + mx);
     float bound  = 0.5 * length(mx - mn);
 
     uint count = 0u;
@@ -78,7 +79,7 @@ void main() {
                 // spot.xy is the cone's scale and offset, -cos(outer) * scale.
                 float cosA = clamp(-L.spot.y / max(L.spot.x, 1e-6), -1.0, 1.0);
                 vec3  axis = normalize(mat3(u_camera.view) * L.direction.xyz);
-                inside = !coneMissesSphere(posV, axis, cosA, sqrt(1.0 - cosA * cosA), radius, centre, bound);
+                inside = !coneMissesSphere(posV, axis, cosA, sqrt(1.0 - cosA * cosA), radius, center, bound);
             }
         }
         if (inside && count < uint(MAX_LIGHTS_PER_CLUSTER)) {

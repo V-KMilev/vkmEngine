@@ -2,8 +2,8 @@
  * Quasi-random sequence + GGX importance sampling.
  */
 
-#include "constants.glsl"
-#include "basis.glsl"
+#include "../../include/constants.glsl"
+#include "../../include/basis.glsl"
 
 float radicalInverseVdC(uint bits) {
     bits = (bits << 16u) | (bits >> 16u);

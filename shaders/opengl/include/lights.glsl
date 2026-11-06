@@ -1,22 +1,14 @@
 /*
- * The GPU light SSBO, the Forward+ cluster grid and lookup, and punctual falloff.
- * Must match GpuLight (gl_lights.h); bindings, MAX_LIGHTS* and LIGHT_* come from
- * the shader prelude.
- *
- * Define CLUSTER_GRID_WRITE before including for a writeonly grid.
+ * The GPU light SSBO and punctual falloff. Light is GpuLight (frame/light/gl_lights.h), each
+ * component as its doc says; bindings, MAX_LIGHTS and LIGHT_* come from the shader prelude.
  */
 
-#include "depth.glsl"
-
 struct Light {
-    vec4 position;   // xyz = world position, w = type
-    vec4 color;      // xyz = rgb,            w = intensity
-    vec4 direction;  // xyz = unit world dir, w = attenuation radius
-    // x, y = cone scale, offset (see spotAttenuation), z = tan of a
-    // directional's disc radius, w = shadowSlot (-1 = none)
+    vec4 position;
+    vec4 color;
+    vec4 direction;
     vec4 spot;
-    vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
-    vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = a point or spot's radius (m)
+    vec4 bake;
 };
 
 layout(std430, binding = SSBO_LIGHTS) readonly buffer LightsBlock {
@@ -24,32 +16,6 @@ layout(std430, binding = SSBO_LIGHTS) readonly buffer LightsBlock {
     int   _lp0; int _lp1; int _lp2;
     Light lights[MAX_LIGHTS];
 } u_lights;
-
-// Forward+ per-cluster light lists.
-struct ClusterLights {
-    uint count;
-    uint indices[MAX_LIGHTS_PER_CLUSTER];
-};
-
-#ifdef CLUSTER_GRID_WRITE
-layout(std430, binding = SSBO_CLUSTER_GRID) writeonly buffer ClusterGrid {
-    ClusterLights clusters[];
-} u_clusters;
-#else
-layout(std430, binding = SSBO_CLUSTER_GRID) readonly buffer ClusterGrid {
-    ClusterLights clusters[];
-} u_clusters;
-#endif
-
-// The cluster a screen position (0..1) at a linear view depth falls in, by the
-// same tiles and slicing as the cull.
-int clusterIndex(vec2 screenUV, float viewDepth, float zNear, float zFar) {
-    uint  tx    = uint(clamp(screenUV.x * float(CLUSTER_X), 0.0, float(CLUSTER_X - 1)));
-    uint  ty    = uint(clamp(screenUV.y * float(CLUSTER_Y), 0.0, float(CLUSTER_Y - 1)));
-    float slice = viewDepthToSlice(viewDepth, zNear, zFar, float(CLUSTER_Z));
-    uint  tz    = uint(clamp(floor(slice), 0.0, float(CLUSTER_Z - 1)));
-    return int(tx + ty * uint(CLUSTER_X) + tz * uint(CLUSTER_X * CLUSTER_Y));
-}
 
 // The smooth window that takes a light to exactly zero at its radius.
 float distanceWindow(float dist, float radius) {
@@ -60,6 +26,12 @@ float distanceWindow(float dist, float radius) {
 // Windowed inverse-square falloff: physically based with a finite range.
 float distanceAttenuation(float dist, float radius) {
     return distanceWindow(dist, radius) / max(dist * dist, 1e-4);
+}
+
+// The type a light's shadow is read as: its own, but a spot too wide for one map casts through a
+// cube as a point light does (bake.y, GpuLight).
+int shadowTypeOf(Light light, int type) {
+    return type == LIGHT_SPOT && light.bake.y > 0.5 ? LIGHT_POINT : type;
 }
 
 // 1 inside the inner angle, 0 past the outer, squared between. spot.xy are

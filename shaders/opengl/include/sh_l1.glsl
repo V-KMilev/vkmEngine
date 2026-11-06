@@ -9,7 +9,7 @@
 
 #include "constants.glsl"
 
-// SH basis constants (real, normalised).
+// SH basis constants (real, normalized).
 const float SH_Y0 = 0.282095;  // Y(0, 0)
 const float SH_Y1 = 0.488603;  // Y(1, -1) / Y(1, 0) / Y(1, 1) scale
 

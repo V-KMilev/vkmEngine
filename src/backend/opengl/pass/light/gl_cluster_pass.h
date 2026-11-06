@@ -1,8 +1,8 @@
 #pragma once
 
-#include "gl_compute_shader.h"
+#include "vkm_opengl/shader/compute_shader.h"
 
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
 namespace Vkm::Engine {
 
@@ -26,7 +26,7 @@ class GLClusterPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        Vkm::GL::ComputeShader m_compute;
+        Vkm::OpenGL::ComputeShader m_compute;
 };
 
 } // namespace Vkm::Engine

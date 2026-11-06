@@ -13,8 +13,8 @@ out vec4 FragColor;
 
 layout(binding = BAKE_SLOT_SOURCE) uniform samplerCube u_envCube;
 
-#include "../../constants.glsl"
-#include "../../sampling.glsl"
+#include "../../../include/constants.glsl"
+#include "../sampling.glsl"
 
 const uint SAMPLE_COUNT = 1024u;
 

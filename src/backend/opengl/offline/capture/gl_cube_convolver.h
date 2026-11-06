@@ -1,13 +1,12 @@
 #pragma once
 
-#include <functional>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
+#include "vkm_opengl/shader/shader.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Context;
 }
 
@@ -18,29 +17,25 @@ class GLMesh;
 /**
  * @brief Shared IBL cube convolution: diffuse irradiance + GGX prefilter.
  *
- * Convolves an environment cubemap into an irradiance cube and a
- * roughness-mipped prefilter cube. Only the destination differs between
- * callers, so each supplies the face-attach as a callback and the loop lives
- * here once. This owns the two convolution programs and the shared projection
- * + face-view basis (computed once), and draws the six faces with the
- * backend's unit cube. One is shared (see GLBackend), so the programs are
- * compiled once.
+ * Convolves an environment cubemap into an irradiance cube and a roughness-mipped prefilter
+ * cube. Only the destination differs between callers, so each supplies a Target and the loop
+ * lives here once. This owns the two convolution programs and the shared projection + face-view
+ * basis (computed once), and draws the six faces with the backend's unit cube. One is shared (see
+ * GLBackend), so the programs are compiled once.
  *
- * The caller owns GL state: bind the capture FBO and set depth/cull/blending
- * off first; these methods set uniforms, run the caller's attach, and draw.
- * slices() cuts a convolution into steps for a bake spread over frames, and run()
- * takes one into a Target: the mirror level, an irradiance face, or a band of a prefilter
- * level's face, which it scissors, turning the scissor off again.
+ * The caller binds the capture FBO first. slices() cuts a convolution into steps, and run() takes
+ * one into a Target, with depth, culling and blending off: the mirror level, an irradiance face, or
+ * a band of a prefilter level's face, which it scissors, turning the scissor off again. A bake
+ * spread over frames runs a step a frame; convolve() runs them all.
  */
 class GLCubeConvolver {
     public:
-        using AttachFace    = std::function<void(int face)>;
-        using AttachMipFace = std::function<void(int face, int mip)>;
+        static constexpr int BAND_TEXELS = 128 * 256;  ///< The most texels of a prefilter level's face one
+                                                       ///< step draws; a larger face takes bands.
 
-        /// The most texels of a prefilter level's face one step draws; a larger face takes bands.
-        static constexpr int BAND_TEXELS = 128 * 256;
-
-        /// One frame's share of a convolution spread over frames.
+        /**
+         * @brief One frame's share of a convolution spread over frames.
+         */
         struct Step {
             enum class Kind {
                 Mirror,      ///< The prefilter's mirror level, every face.
@@ -57,7 +52,9 @@ class GLCubeConvolver {
             int  parts = 1;  ///< Bands in the face.
         };
 
-        /// What a convolution spread over frames reads and draws into; run() decides when.
+        /**
+         * @brief What a convolution reads and draws into; run() decides when.
+         */
         class Target {
             public:
                 Target() = default;
@@ -74,9 +71,9 @@ class GLCubeConvolver {
                 virtual void makeSourceMips() = 0;
                 /// Bind the source cube at BakeTextureSlots::SOURCE.
                 virtual void bindSource() = 0;
-                /// Attach irradiance face @p face as colour 0.
+                /// Attach irradiance face @p face as color 0.
                 virtual void attachIrradiance(int face) = 0;
-                /// Attach prefilter face @p face of level @p mip as colour 0.
+                /// Attach prefilter face @p face of level @p mip as color 0.
                 virtual void attachPrefilter(int face, int mip) = 0;
         };
 
@@ -106,48 +103,17 @@ class GLCubeConvolver {
         }
 
         /**
-         * @brief How many steps slices() cuts a convolution into.
-         *
-         * @param prefilterSize The prefilter's mirror-level face size in texels.
-         * @param mips          Its levels.
-         * @return The mirror level, six irradiance faces and every prefilter band past the mirror.
-         */
-        static constexpr int sliceCount(int prefilterSize, int mips) {
-            int prefilter = 0;
-            for (int mip = 1; mip < mips; ++mip) prefilter += bands(prefilterSize >> mip);
-            return 1 + 6 + 6 * prefilter;
-        }
-
-        /**
          * @brief Cut the convolution of a prefilter of @p prefilterSize and @p mips into steps.
          *
          * @param prefilterSize The prefilter's mirror-level face size in texels.
          * @param mips          Its levels.
-         * @return sliceCount() steps, in the order they must run: the mirror level first.
+         * @return The mirror level, six irradiance faces and every prefilter band past the mirror, in
+         *         the order they must run.
          */
         static std::vector<Step> slices(int prefilterSize, int mips);
 
         /**
-         * @brief Convolve the env cube into six diffuse-irradiance faces.
-         *
-         * The caller has bound the env cube at BakeTextureSlots::SOURCE.
-         *
-         * @param attach Callback that attaches the destination face as colour 0.
-         */
-        void irradiance(const AttachFace& attach);
-
-        /**
-         * @brief GGX prefilter into six faces per mip, roughness 0..1 across @p mips.
-         *
-         * The caller has bound the env cube at BakeTextureSlots::SOURCE.
-         *
-         * @param mips   Mip levels to fill, from mirror-smooth to fully rough.
-         * @param attach Callback that attaches the destination face + mip as colour 0.
-         */
-        void prefilter(int mips, const AttachMipFace& attach);
-
-        /**
-         * @brief Take one step of a convolution spread over frames into @p target.
+         * @brief Take one step of a convolution into @p target.
          *
          * The mirror step makes the source's mips first, which every step after it reads.
          *
@@ -155,7 +121,17 @@ class GLCubeConvolver {
          * @param step   One of slices()'s steps.
          * @param target What the step reads and draws into.
          */
-        void run(Vkm::GL::Context& gl, const Step& step, Target& target);
+        void run(Vkm::OpenGL::Context& gl, const Step& step, Target& target);
+
+        /**
+         * @brief Run every step of a convolution into @p target, at once.
+         *
+         * @param gl            Live GL context.
+         * @param prefilterSize The prefilter's mirror-level face size in texels.
+         * @param mips          Its levels, from mirror-smooth to fully rough.
+         * @param target        What the convolution reads and draws into.
+         */
+        void convolve(Vkm::OpenGL::Context& gl, int prefilterSize, int mips, Target& target);
 
         /**
          * @brief The unit cube each face is drawn with.
@@ -170,42 +146,42 @@ class GLCubeConvolver {
 
     private:
         /**
-         * @brief Convolve one irradiance face, as irradiance() draws it.
+         * @brief Convolve one irradiance face.
          *
          * The caller has bound the env cube at BakeTextureSlots::SOURCE.
          *
          * @param face   Cube face index (0..5).
-         * @param attach Callback that attaches the destination face as colour 0.
+         * @param target Attaches the destination face.
          */
-        void irradianceFace(int face, const AttachFace& attach);
+        void irradianceFace(int face, Target& target);
 
         /**
-         * @brief Prefilter one band of rows of one face and level, as prefilter() draws them.
+         * @brief Prefilter one band of rows of one face and level.
          *
          * The caller has bound the env cube at BakeTextureSlots::SOURCE.
          *
          * @param gl     Live GL context the band is scissored through.
          * @param face   Cube face index (0..5).
-         * @param mip    The level, whose roughness is prefilter()'s for it.
+         * @param mip    The level, whose roughness is roughnessOf()'s for it.
          * @param mips   The levels the whole prefilter fills.
          * @param size   The level's face size in texels.
          * @param band   Which band of rows, from 0.
          * @param bands  How many bands the level's face is drawn in.
-         * @param attach Callback that attaches the destination face + mip as colour 0.
+         * @param target Attaches the destination face and level.
          */
         void prefilterBand(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             int face,
             int mip,
             int mips,
             int size,
             int band,
             int bands,
-            const AttachMipFace& attach
+            Target& target
         );
 
         /**
-         * @brief The roughness prefilter() gives level @p mip of @p mips.
+         * @brief The roughness the prefilter gives level @p mip of @p mips.
          *
          * @param mip  The level.
          * @param mips The levels the prefilter fills.
@@ -214,13 +190,13 @@ class GLCubeConvolver {
         static float roughnessOf(int mip, int mips);
 
     private:
-        Vkm::GL::Shader m_irradiance;
-        Vkm::GL::Shader m_prefilter;
+        Vkm::OpenGL::Shader m_irradiance;
+        Vkm::OpenGL::Shader m_prefilter;
 
         const GLMesh& m_cube;  ///< The backend's unit cube.
 
-        glm::mat4 m_projection;     ///< convolveProjection(), once.
-        glm::mat4 m_faceViews[6];   ///< Origin-eye face views, once.
+        glm::mat4 m_projection;    ///< convolveProjection(), once.
+        glm::mat4 m_faceViews[6];  ///< Origin-eye face views, once.
 };
 
 } // namespace Vkm::Engine

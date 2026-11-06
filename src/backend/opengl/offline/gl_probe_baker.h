@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include "offline/gl_cube_convolver.h"
+#include "offline/capture/gl_cube_convolver.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Context;
 }
 
@@ -14,7 +14,7 @@ class GLIBL;
 class GLIrradianceVolume;
 class GLProbeArray;
 class GLSceneCapture;
-class GLView;
+class GLAssetMirror;
 struct ProbeData;
 struct RenderView;
 
@@ -37,8 +37,8 @@ struct RenderView;
  */
 class GLProbeBaker {
     public:
-        /// A refresh's steps before the convolution's: one a cube face.
-        static constexpr int CAPTURE_STEPS = 6;
+        static constexpr int CAPTURE_STEPS = 6;  ///< A refresh's steps before the convolution's: one a cube
+                                                 ///< face.
 
     public:
         /**
@@ -67,18 +67,18 @@ class GLProbeBaker {
          * @param layer     The probe's layer in them.
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
-         * @param glView    GPU mirror the capture draws from.
+         * @param mirror    GPU mirror the capture draws from.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The baked irradiance volume, at the view's box, lighting the captured
          *                  surfaces it covers; null for none.
          */
         void bake(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             GLProbeArray& arr,
             int layer,
             const ProbeData& probe,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -93,14 +93,6 @@ class GLProbeBaker {
         void beginRefresh(const GLProbeArray& arr);
 
         /**
-         * @brief How many advance() calls a refresh takes for a probe asking @p resolution.
-         *
-         * @param resolution The capture resolution asked for, clamped as the arrays clamp it.
-         * @return CAPTURE_STEPS and the convolution's steps.
-         */
-        static int refreshSteps(int resolution);
-
-        /**
          * @brief Take the next step of the refresh beginRefresh() started.
          *
          * @param gl        Live GL context the step draws through.
@@ -108,18 +100,18 @@ class GLProbeBaker {
          * @param layer     The probe's layer, which the finished refresh replaces.
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
-         * @param glView    GPU mirror the capture draws from.
+         * @param mirror    GPU mirror the capture draws from.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          * @return Whether that was the last step, and @p layer now holds the refresh.
          */
         bool advance(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             GLProbeArray& arr,
             int layer,
             const ProbeData& probe,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -141,40 +133,40 @@ class GLProbeBaker {
          * @param arr       The shared arrays, whose resolution is the face size.
          * @param probe     The probe captured.
          * @param view      Supplies the scene and its lights.
-         * @param glView    GPU mirror the capture draws from.
+         * @param mirror    GPU mirror the capture draws from.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          */
         void beginCapture(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             const GLProbeArray& arr,
             const ProbeData& probe,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
 
         void captureFaces(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             GLProbeArray& arr,
             const ProbeData& probe,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
 
-        void convolve(Vkm::GL::Context& gl, GLProbeArray& arr, int layer);
+        void convolve(Vkm::OpenGL::Context& gl, GLProbeArray& arr, int layer);
 
     private:
         GLSceneCapture&  m_capture;    ///< Scene -> the six env-cube faces.
         GLCubeConvolver& m_convolver;  ///< Env cube -> irradiance + prefilter.
 
-        /// The refresh's convolution, after its CAPTURE_STEPS.
-        std::vector<GLCubeConvolver::Step> m_steps;
-        /// The refresh's next step, the faces first; idle() when none runs.
-        int m_next = CAPTURE_STEPS;
+        std::vector<GLCubeConvolver::Step> m_steps;                 ///< The refresh's convolution, after its
+                                                                    ///< CAPTURE_STEPS.
+        int                                m_next = CAPTURE_STEPS;  ///< The refresh's next step, the faces
+                                                                    ///< first; idle() when none runs.
 };
 
 } // namespace Vkm::Engine

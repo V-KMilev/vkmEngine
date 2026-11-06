@@ -9,27 +9,28 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "logger.h"
-
-#include "gl_context.h"
-#include "gl_texture.h"
+#include "vkm_log/logger.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/texture/texture.h"
 
 #include "convention/gl_bindings.h"
-#include "offline/gl_cube_convolver.h"
-#include "storage/gl_atmosphere.h"
-#include "storage/gl_ibl.h"
+#include "offline/capture/gl_cube_convolver.h"
+#include "storage/light/gl_atmosphere.h"
+#include "storage/light/gl_ibl.h"
 #include "asset/gl_mesh.h"
 
-#include "loader/environment_loaders.h"
+#include "hdr_image.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/// A bake's convolution, from the back env cube into the back targets.
+/**
+ * @brief The convolution, from the back env cube into the back targets.
+ */
 class BackTarget final : public GLCubeConvolver::Target {
     public:
-        BackTarget(Vkm::GL::Context& gl, GLIBL& ibl) : m_gl(gl), m_ibl(ibl) {}
+        BackTarget(Vkm::OpenGL::Context& gl, GLIBL& ibl) : m_gl(gl), m_ibl(ibl) {}
         ~BackTarget() override = default;
 
         BackTarget(const BackTarget& other) = delete;
@@ -45,23 +46,23 @@ class BackTarget final : public GLCubeConvolver::Target {
         void attachPrefilter(int face, int mip) override { m_ibl.attachPrefilterFace(m_gl, face, mip); }
 
     private:
-        Vkm::GL::Context& m_gl;
-        GLIBL&            m_ibl;
+        Vkm::OpenGL::Context& m_gl;
+        GLIBL&                m_ibl;
 };
 
 // Half floats with levels, since a source wider than the faces is minified and would alias;
 // wrapped in longitude, where the image's edges meet behind -X.
-Vkm::GL::Texture2DParams equirectParams(const HDRImage& image) {
-    Vkm::GL::Texture2DParams params;
+Vkm::OpenGL::Texture2DParams equirectParams(const HDRImage& image) {
+    Vkm::OpenGL::Texture2DParams params;
     params.width           = image.width;
     params.height          = image.height;
     params.internalFormat  = GL_RGB16F;
     params.format          = GL_RGB;
     params.type            = GL_FLOAT;
-    params.wrapS           = Vkm::GL::TextureWrap::Repeat;
-    params.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
-    params.minFilter       = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Linear;
+    params.wrapS           = Vkm::OpenGL::TextureWrap::Repeat;
+    params.wrapT           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::LinearMipmapLinear;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Linear;
     params.generateMipmaps = true;
     params.data            = image.pixels.data();
     return params;
@@ -69,7 +70,7 @@ Vkm::GL::Texture2DParams equirectParams(const HDRImage& image) {
 
 // A bake runs in whatever state the last draw left, so it states what it relies on: blending left
 // on would accumulate into the faces. Nothing is restored; GLBackend::render resets it per pass.
-void bakeState(Vkm::GL::Context& gl) {
+void bakeState(Vkm::OpenGL::Context& gl) {
     gl.setDepthTest(false);
     gl.setFaceCulling(false);
     gl.setBlending(false);
@@ -87,18 +88,16 @@ int GLIBLBaker::stepsFor(const SkyParams& asked, const SkyParams& shown) {
 }
 
 GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
-    : m_equirect("shaders/ibl/equirect")
-    , m_sky("shaders/ibl/sky")
-    , m_transmittance("shaders/atmosphere/transmittance")
-    , m_multiScattering("shaders/atmosphere/multiscatter")
-    , m_brdf("shaders/ibl/brdf")
+    : m_equirect("shaders/opengl/offline/ibl/equirect")
+    , m_sky("shaders/opengl/offline/ibl/sky")
+    , m_brdf("shaders/opengl/offline/ibl/brdf")
     , m_convolver(convolver)
     , m_steps(GLCubeConvolver::slices(GLIBL::PREFILTER_SIZE, GLIBL::PREFILTER_MIPS))
     , m_next(idle()) {}
 
 GLIBLBaker::~GLIBLBaker() = default;
 
-void GLIBLBaker::captureFace(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& source, int face) {
+void GLIBLBaker::captureFace(Vkm::OpenGL::Context& gl, GLIBL& ibl, Vkm::OpenGL::Shader& source, int face) {
     // The env capture shares the convolver's unit cube and 90deg face projection.
     source.setUniformMatrix4fv("u_projection", m_convolver.projection());
     source.setUniformMatrix4fv("u_view", m_convolver.faceView(face));
@@ -106,7 +105,7 @@ void GLIBLBaker::captureFace(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& 
     m_convolver.cube().draw();
 }
 
-void GLIBLBaker::integrateBrdf(Vkm::GL::Context& gl, GLIBL& ibl) {
+void GLIBLBaker::integrateBrdf(Vkm::OpenGL::Context& gl, GLIBL& ibl) {
     ibl.createBrdf();
     bakeState(gl);
 
@@ -117,67 +116,30 @@ void GLIBLBaker::integrateBrdf(Vkm::GL::Context& gl, GLIBL& ibl) {
     ibl.unbindCaptureFbo();
 }
 
-void GLIBLBaker::bakeAir(
-    Vkm::GL::Context& gl,
-    GLAtmosphere& atmosphere,
-    const Atmosphere::Coefficients& air
-) {
-    atmosphere.createAir();
-    bakeState(gl);
-
-    atmosphere.bindFbo();
-    m_transmittance.bind();
-    GLAtmosphere::setExtinction(m_transmittance, air);
-    atmosphere.attachTransmittance(gl);
-    m_lutTri.draw();
-
-    m_multiScattering.bind();
-    GLAtmosphere::setAir(m_multiScattering, air);
-    atmosphere.bindTransmittance(GLBindings::BakeTextureSlots::TRANSMITTANCE);
-    atmosphere.attachMultiScattering(gl);
-    m_lutTri.draw();
-    atmosphere.unbindFbo();
-}
-
-void GLIBLBaker::bakeFrom(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& source) {
+void GLIBLBaker::bakeFrom(Vkm::OpenGL::Context& gl, GLIBL& ibl, Vkm::OpenGL::Shader& source) {
     ibl.createTargets();
     bakeState(gl);
 
     ibl.bindCaptureFbo();
     for (int face = 0; face < 6; ++face) captureFace(gl, ibl, source, face);
-    ibl.generateEnvMips();
-
-    ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-    m_convolver.irradiance([&](int face) { ibl.attachIrradianceFace(gl, face); });
-    m_convolver.prefilter(
-        GLIBL::PREFILTER_MIPS,
-        [&](int face, int mip) { ibl.attachPrefilterFace(gl, face, mip); }
-    );
+    BackTarget target(gl, ibl);
+    m_convolver.convolve(gl, GLIBL::PREFILTER_SIZE, GLIBL::PREFILTER_MIPS, target);
     ibl.unbindCaptureFbo();
 
     ibl.swap();
 }
 
-void GLIBLBaker::bake(Vkm::GL::Context& gl, GLIBL& ibl, const std::string& path) {
+void GLIBLBaker::bake(Vkm::OpenGL::Context& gl, GLIBL& ibl, const HDRImage& image, const std::string& name) {
     m_next = idle();
 
-    // Whatever the cubes held was another sky's, so a load that fails leaves none.
-    ibl.markUnready();
-
-    HDRImage img = loadHDRImage(path);
-    if (!img.isValid()) {
-        LOG_ERROR("GLIBLBaker: could not load '%s' - IBL stays off", path.c_str());
-        return;
-    }
-
     // Read by nothing after the capture, so it goes with the bake rather than staying resident.
-    const Vkm::GL::Texture2D equirect("ibl_equirect", equirectParams(img));
+    const Vkm::OpenGL::Texture2D equirect("ibl_equirect", equirectParams(image));
     equirect.bindSlot(GLBindings::BakeTextureSlots::SOURCE);
 
     m_equirect.bind();
     bakeFrom(gl, ibl, m_equirect);
 
-    LOG_INFO("IBL baked from '%s'", path.c_str());
+    LOG_INFO("IBL baked from '%s'", name.c_str());
 }
 
 void GLIBLBaker::bindSky(const GLAtmosphere& atmosphere, const SkyParams& sky) {
@@ -192,7 +154,7 @@ void GLIBLBaker::bindSky(const GLAtmosphere& atmosphere, const SkyParams& sky) {
 }
 
 void GLIBLBaker::bakeProcedural(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     GLIBL& ibl,
     const GLAtmosphere& atmosphere,
     const SkyParams& sky
@@ -212,7 +174,7 @@ void GLIBLBaker::beginProcedural(const SkyParams& sky) {
     m_target = sky;
 }
 
-bool GLIBLBaker::advance(Vkm::GL::Context& gl, GLIBL& ibl, const GLAtmosphere& atmosphere) {
+bool GLIBLBaker::advance(Vkm::OpenGL::Context& gl, GLIBL& ibl, const GLAtmosphere& atmosphere) {
     if (!baking()) return false;
 
     const int step = m_next++;

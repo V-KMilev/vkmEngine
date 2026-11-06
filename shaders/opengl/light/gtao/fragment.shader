@@ -5,8 +5,10 @@
  * prefilter/compute.shader), and integrates the cosine-weighted visible arc.
  * Writes the raw integral (visibility.glsl) and bent normal; denoise/compute.shader
  * averages and shapes it.
+ *
+ * Drawn at half the scene's size: each pixel stands for the scene texel at the corner of its 2x2,
+ * whose depth, normal and place it takes, and upsample/compute.shader widens the result.
  */
-in vec2 vUV;
 
 out vec4 FragColor;  // r = encoded visibility, gb = octahedral bent normal (view space)
 
@@ -20,17 +22,17 @@ uniform float u_radius;  // world-space sample radius
 const int SLICES = 2;
 const int STEPS  = 4;
 
-// Taken off each horizon cosine so a flat surface's own depth steps (quantised
+// Taken off each horizon cosine so a flat surface's own depth steps (quantized
 // depth, coarse mips) never self-occlude. A guard, not a look: not a setting.
 const float HORIZON_BIAS = 0.03;
 
-#include "../constants.glsl"
-#include "../basis.glsl"
-#include "../depth.glsl"
-#include "../noise.glsl"
-#include "../camera.glsl"
+#include "../../include/constants.glsl"
+#include "../../include/basis.glsl"
+#include "../../include/depth.glsl"
+#include "../../include/noise.glsl"
+#include "../../include/camera.glsl"
 
-#include "../scene_gbuffer.glsl"
+#include "../../include/scene_gbuffer.glsl"
 #include "visibility.glsl"
 
 // Closed-form cosine-weighted visibility between V and a horizon at signed
@@ -59,21 +61,37 @@ float gtaoFalloff(float len) {
     return clamp((u_radius - len) / (u_radius * (1.0 - FALLOFF_START)), 0.0, 1.0);
 }
 
+// One side's horizon cosine @p best once the step at @p at, read at @p mip, is taken: raised to the
+// step's cosine from @p P along @p V as far as its falloff lets it count, from @p low. A step off
+// the screen leaves it.
+float horizonAt(vec2 at, float mip, vec3 P, vec3 V, float low, float best) {
+    if (!(all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0))))) return best;
+    const float p00  = u_camera.projection[0][0];
+    const float p11  = u_camera.projection[1][1];
+    const float z    = textureLod(u_depthMips, at, mip).r;
+    const vec3  sh   = viewPosFromLinearDepth(at, z, p00, p11, cameraIsPerspective()) - P;
+    const float len  = length(sh);
+    const float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
+    return max(best, mix(low, c, gtaoFalloff(len)));
+}
+
 void main() {
     // The projection's scales, for viewToUV and viewPosFromLinearDepth.
     float proj00      = u_camera.projection[0][0];
     float proj11      = u_camera.projection[1][1];
     bool  perspective = cameraIsPerspective();
 
-    float z = texelFetch(u_depthMips, ivec2(gl_FragCoord.xy), 0).r;
+    const ivec2 texel = ivec2(gl_FragCoord.xy) * 2;
+    const vec2  uv    = (vec2(texel) + 0.5) / vec2(textureSize(u_depthMips, 0));
+    float z = texelFetch(u_depthMips, texel, 0).r;
     // The sky: nothing to occlude.
     if (z >= SKY_DEPTH) { FragColor = vec4(encodeVisibility(1.0), 0.0, 0.0, 1.0); return; }
 
-    vec3 P = viewPosFromLinearDepth(vUV, z, proj00, proj11, perspective);
-    vec3 N = sceneNormalAt(vUV);
+    vec3 P = viewPosFromLinearDepth(uv, z, proj00, proj11, perspective);
+    vec3 N = sceneNormalAt(texel);
     vec3 V = perspective ? normalize(-P) : vec3(0.0, 0.0, 1.0);
 
-    // Slices turn evenly about V itself, not about the screen's axis: off the centre of a
+    // Slices turn evenly about V itself, not about the screen's axis: off the center of a
     // perspective view, directions even on the screen bunch about V, and an open wall at a wide
     // view's edge would read occluded. Two vectors across V carry them.
     vec3 across1, across2;
@@ -94,7 +112,7 @@ void main() {
         const vec3  reached  = P + dir3 * u_radius;
         const bool  pastEye  = perspective && reached.z > -1e-5;
         const vec3  aim      = pastEye ? P + dir3 * (0.01 * -P.z) : reached;
-        vec2        radiusUV = viewToUV(aim, proj00, proj11, perspective) - vUV;
+        vec2        radiusUV = viewToUV(aim, proj00, proj11, perspective) - uv;
         const float reach    = length(radiusUV * u_camera.viewport);
         if (reach < 1e-6 || (!pastEye && reach < 1e-3)) continue;
         radiusUV *= pastEye ? cap / reach : min(1.0, cap / reach);
@@ -123,24 +141,8 @@ void main() {
             // puts the first coarser level at about ten pixels.
             float mip = clamp(log2(length(off * u_camera.viewport)) - 3.3, 0.0, u_maxMip);
 
-            vec2 uvP = vUV + off;
-            if (all(greaterThanEqual(uvP, vec2(0.0))) && all(lessThanEqual(uvP, vec2(1.0)))) {
-                float zP   = textureLod(u_depthMips, uvP, mip).r;
-                vec3  sh   = viewPosFromLinearDepth(uvP, zP, proj00, proj11, perspective) - P;
-                float len  = length(sh);
-                float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
-                float fall = gtaoFalloff(len);
-                cHorizon2  = max(cHorizon2, mix(low2, c, fall));
-            }
-            vec2 uvN = vUV - off;
-            if (all(greaterThanEqual(uvN, vec2(0.0))) && all(lessThanEqual(uvN, vec2(1.0)))) {
-                float zN   = textureLod(u_depthMips, uvN, mip).r;
-                vec3  sh   = viewPosFromLinearDepth(uvN, zN, proj00, proj11, perspective) - P;
-                float len  = length(sh);
-                float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
-                float fall = gtaoFalloff(len);
-                cHorizon1  = max(cHorizon1, mix(low1, c, fall));
-            }
+            cHorizon2 = horizonAt(uv + off, mip, P, V, low2, cHorizon2);
+            cHorizon1 = horizonAt(uv - off, mip, P, V, low1, cHorizon1);
         }
 
         // Horizon cosines to signed angles, clamped to the normal's hemisphere.

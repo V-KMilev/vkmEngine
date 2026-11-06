@@ -1,5 +1,6 @@
 /*
- * Irradiance volume - what a probe sees, kept as surfaces to light (shaders/irradiance/surfel.glsl).
+ * Irradiance volume - what a probe sees, kept as surfaces to light
+ * (shaders/opengl/offline/irradiance/surfel.glsl).
  *
  * Drawn a cube face at a time into the probe's tile of the surfel atlas, culling off and the
  * depth test on, so each texel is the surface nearest the probe in its direction. Culling off is
@@ -8,8 +9,8 @@
  * averages away over a texel this coarse, and in the SH-L1 the probe keeps.
  */
 
-#include "../../surface.glsl"
-#include "../../camera.glsl"
+#include "../../../include/surface.glsl"
+#include "../../../include/camera.glsl"
 #include "../surfel.glsl"
 
 in vec3 vWorldPos;

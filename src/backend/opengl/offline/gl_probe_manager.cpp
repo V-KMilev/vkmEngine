@@ -1,18 +1,20 @@
-#include "storage/gl_probe_manager.h"
+#include "offline/gl_probe_manager.h"
 
 #include <algorithm>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/round.hpp>
 
-#include "gl_buffer_upload.h"
-#include "gl_uniform_buffer.h"
+#include "vkm_opengl/buffer/buffer_upload.h"
+#include "vkm_opengl/buffer/uniform_buffer.h"
 
 #include "gl_profiler.h"
 #include "convention/gl_bindings.h"
 #include "offline/gl_probe_baker.h"
-#include "offline/gl_scene_capture.h"
-#include "storage/gl_irradiance_volume.h"
-#include "storage/gl_probe_array.h"
+#include "offline/capture/gl_scene_capture.h"
+#include "storage/light/gl_irradiance_volume.h"
+#include "storage/light/gl_lightmaps.h"
+#include "storage/light/gl_probe_array.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
@@ -23,22 +25,34 @@ GLProbeManager::~GLProbeManager() = default;
 void GLProbeManager::init(GLSceneCapture& capture, GLCubeConvolver& convolver) {
     m_baker = std::make_unique<GLProbeBaker>(capture, convolver);
     m_array = std::make_unique<GLProbeArray>();
-    m_array->createTargets(
-        static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES),
-        GLProbeArray::DEFAULT_RESOLUTION
-    );
+    m_array->createTargets(1, GLProbeArray::DEFAULT_RESOLUTION);
+}
+
+int GLProbeManager::capacity() const {
+    return m_array ? m_array->capacity() : 0;
 }
 
 void GLProbeManager::assignLayers(const RenderView& view) {
+    // Room for the probes there are, doubled as more come, up to MAX_PROBES: an array holds all its
+    // layers whatever is used, so one sized for the most a scene may hold costs every scene that.
+    // Grown, the arrays are new, and every bake goes with the old.
+    const auto   most   = static_cast<size_t>(GLBindings::ProbeTextureSlots::MAX_PROBES);
+    const size_t wanted = std::min(view.lists.probes.size(), most);
+    if (wanted > static_cast<size_t>(m_array->capacity())) {
+        const size_t grown = std::min<size_t>(glm::ceilPowerOfTwo(wanted), most);
+        m_array->createTargets(static_cast<int>(grown), m_array->resolution());
+        for (BakeState& st : m_state) st.baked = false;
+        m_baker->endRefresh();
+    }
     const size_t capacity = static_cast<size_t>(m_array->capacity());
     m_state.resize(capacity);
     m_seen.assign(capacity, 0);
-    m_layerOf.assign(view.probes.size(), -1);
+    m_layerOf.assign(view.lists.probes.size(), -1);
 
     // Probes that already hold a layer keep it.
-    for (size_t i = 0; i < view.probes.size(); ++i) {
+    for (size_t i = 0; i < view.lists.probes.size(); ++i) {
         for (size_t layer = 0; layer < capacity; ++layer) {
-            if (!m_state[layer].owned || m_state[layer].owner != view.probes[i].entitySlot) continue;
+            if (!m_state[layer].owned || m_state[layer].owner != view.lists.probes[i].entitySlot) continue;
             m_layerOf[i]  = static_cast<int>(layer);
             m_seen[layer] = 1;
             break;
@@ -52,52 +66,52 @@ void GLProbeManager::assignLayers(const RenderView& view) {
 
     // New probes take the free layers, unbaked, in list order.
     size_t nextFree = 0;
-    for (size_t i = 0; i < view.probes.size(); ++i) {
+    for (size_t i = 0; i < view.lists.probes.size(); ++i) {
         if (m_layerOf[i] >= 0) continue;
         while (nextFree < capacity && m_state[nextFree].owned) ++nextFree;
         if (nextFree == capacity) break;
         m_state[nextFree].owned = true;
-        m_state[nextFree].owner = view.probes[i].entitySlot;
-        m_layerOf[i] = static_cast<int>(nextFree);
+        m_state[nextFree].owner = view.lists.probes[i].entitySlot;
+        m_layerOf[i]            = static_cast<int>(nextFree);
     }
 }
 
-int GLProbeManager::bind(const RenderView& view) {
+int GLProbeManager::bind(const RenderView& view, const GLLightmaps& lightmaps) {
     if (!m_array) return 0;
 
     // Baked probes, each at its entity's layer, smallest box first (the shader's blend order),
     // whatever their scene order. MAX_PROBES layers, the same bound as the shader's blend loop.
     assignLayers(view);
     m_active.clear();
-    for (size_t i = 0; i < view.probes.size(); ++i) {
+    for (size_t i = 0; i < view.lists.probes.size(); ++i) {
         const int layer = m_layerOf[i];
         if (layer < 0 || !m_state[static_cast<size_t>(layer)].baked) continue;
         m_active.push_back(static_cast<uint32_t>(i));
     }
     const auto volume = [&](uint32_t i) {
-        const glm::vec3 h = view.probes[i].halfExtents;
+        const glm::vec3 h = view.lists.probes[i].halfExtents;
         return h.x * h.y * h.z;
     };
     std::sort(m_active.begin(), m_active.end(), [&](uint32_t a, uint32_t b) {
         if (volume(a) != volume(b)) return volume(a) < volume(b);
-        return view.probes[a].entitySlot < view.probes[b].entitySlot;
+        return view.lists.probes[a].entitySlot < view.lists.probes[b].entitySlot;
     });
 
-    // params.z carries the cube-array layer. The upload is skipped when the block matches last
-    // frame's, so a still scene costs no GPU write.
+    // params.z carries the cube-array layer, params.w the sky the probe's center sees. The upload
+    // is skipped when the block matches last frame's, so a still scene costs no GPU write.
     ProbeBlock block{};
     for (size_t p = 0; p < m_active.size(); ++p) {
-        const ProbeData& pd = view.probes[m_active[p]];
+        const ProbeData& pd = view.lists.probes[m_active[p]];
         block.probes[p].center  = glm::vec4(pd.position, 0.0f);
         block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
         block.probes[p].params  = glm::vec4(
             pd.falloff,
             pd.intensity,
             static_cast<float>(m_layerOf[m_active[p]]),
-            0.0f
+            lightmaps.probeSky(pd.entitySlot)
         );
     }
-    Vkm::GL::uploadIfChanged(m_ubo, m_lastBlock, block);
+    Vkm::OpenGL::uploadIfChanged(m_ubo, m_lastBlock, block);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::PROBES);
 
     m_array->bindIrradiance(GLBindings::ProbeTextureSlots::IRRADIANCE);
@@ -106,9 +120,9 @@ int GLProbeManager::bind(const RenderView& view) {
 }
 
 void GLProbeManager::update(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     const RenderView& view,
-    GLView& glView,
+    GLAssetMirror& mirror,
     const GLIBL& ibl,
     const GLIrradianceVolume* volume,
     const CaptureLighting& lighting
@@ -118,7 +132,7 @@ void GLProbeManager::update(
     m_seconds += view.frameSeconds;
 
     // The layers bind() assigned this frame, from this same view.
-    const size_t n = std::min(view.probes.size(), m_layerOf.size());
+    const size_t n = std::min(view.lists.probes.size(), m_layerOf.size());
 
     // Array textures force one face size across every layer, so the shared arrays take
     // the highest resolution any active probe asks for; changing it drops every bake.
@@ -126,7 +140,7 @@ void GLProbeManager::update(
     bool any     = false;
     for (size_t i = 0; i < n; ++i) {
         if (m_layerOf[i] < 0) continue;
-        desired = std::max(desired, static_cast<int>(view.probes[i].resolution));
+        desired = std::max(desired, static_cast<int>(view.lists.probes[i].resolution));
         any     = true;
     }
     desired = GLProbeArray::clampResolution(desired);
@@ -142,12 +156,12 @@ void GLProbeManager::update(
     m_lighting.assign(n, lighting);
     for (size_t i = 0; i < n; ++i) {
         if (m_layerOf[i] < 0) continue;
-        const ProbeData& pd = view.probes[i];
+        const ProbeData& pd = view.lists.probes[i];
         m_state[static_cast<size_t>(m_layerOf[i])].seen.see({pd.position, pd.halfExtents});
-        const float      half  = glm::max(pd.halfExtents.x, glm::max(pd.halfExtents.y, pd.halfExtents.z));
-        const glm::vec3  reach = pd.halfExtents + glm::vec3(half);
+        const float half = glm::max(pd.halfExtents.x, glm::max(pd.halfExtents.y, pd.halfExtents.z));
+        const glm::vec3 reach = pd.halfExtents + glm::vec3(half);
         const Math::AABB within{pd.position - reach, pd.position + reach};
-        m_lighting[i].lights = lightingDigest(view.lights, &within);
+        m_lighting[i].lights = lightingDigest(view.lists.lights, &within);
     }
 
     // Throttled so several probes changing at once don't hitch the frame.
@@ -157,17 +171,17 @@ void GLProbeManager::update(
     for (size_t i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {
         const int layer = m_layerOf[i];
         if (layer < 0) continue;
-        const ProbeData& pd = view.probes[i];
-        BakeState&       st = m_state[static_cast<size_t>(layer)];
+        const ProbeData& pd = view.lists.probes[i];
+        BakeState& st = m_state[static_cast<size_t>(layer)];
         const Placement here{pd.position, pd.halfExtents};
-        const bool      moved  = st.placed != here;
-        const bool      forced = st.version != pd.bakeVersion;
-        const bool      relit  = st.volumeBake != volumeBake;
+        const bool moved  = st.placed != here;
+        const bool forced = st.version != pd.bakeVersion;
+        const bool relit  = st.volumeBake != volumeBake;
 
         // A probe being moved or resized bakes once it holds still; a new version is a request
         // to bake now, and a new lighting or a first bake does not wait either.
         if (st.baked && !forced && !relit && !(moved && st.seen.settled())) continue;
-        m_baker->bake(gl, *m_array, layer, pd, view, glView, ibl, volume);
+        m_baker->bake(gl, *m_array, layer, pd, view, mirror, ibl, volume);
         st.baked      = true;
         st.placed     = here;
         st.version    = pd.bakeVersion;
@@ -179,22 +193,22 @@ void GLProbeManager::update(
 
     // A bake is the frame's capture, and ended any refresh (GLProbeBaker::bake).
     if (rebakes > 0) return;
-    refresh(gl, view, glView, ibl, volume);
+    refresh(gl, view, mirror, ibl, volume);
 }
 
 void GLProbeManager::refresh(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     const RenderView& view,
-    GLView& glView,
+    GLAssetMirror& mirror,
     const GLIBL& ibl,
     const GLIrradianceVolume* volume
 ) {
-    const size_t n = std::min(view.probes.size(), m_layerOf.size());
+    const size_t n = std::min(view.lists.probes.size(), m_layerOf.size());
 
     // Where it was captured: one away from there - riding a platform, being dragged - is not
     // refreshed, or its faces would come from as many places.
     const auto inPlace = [&](size_t i, const BakeState& st) {
-        return st.placed == Placement{view.probes[i].position, view.probes[i].halfExtents};
+        return st.placed == Placement{view.lists.probes[i].position, view.lists.probes[i].halfExtents};
     };
 
     // The probe whose refresh is under way, while it still holds its layer and its place.
@@ -222,7 +236,7 @@ void GLProbeManager::refresh(
             if (!st.baked || st.lighting == m_lighting[i] || !inPlace(i, st)) continue;
             if (m_seconds - st.refreshed < REFRESH_REST) continue;
             const float waited   = static_cast<float>(m_frame - st.captured);
-            const float distance = glm::distance(view.camera.position, view.probes[i].position);
+            const float distance = glm::distance(view.camera.position, view.lists.probes[i].position);
             const float score    = waited / (1.0f + distance / REFRESH_NEAR);
             if (score > best) {
                 best  = score;
@@ -237,21 +251,33 @@ void GLProbeManager::refresh(
 
     PROFILE_SCOPE("Render/ProbeRefresh");
     PROFILE_GPU_SCOPE("Render/ProbeRefresh");
-    const ProbeData& pd = view.probes[probe];
-    if (!m_baker->advance(gl, *m_array, m_refreshLayer, pd, view, glView, ibl, volume)) return;
+    const ProbeData& pd = view.lists.probes[probe];
+    if (!m_baker->advance(gl, *m_array, m_refreshLayer, pd, view, mirror, ibl, volume)) return;
 
     // Under the light it began under: one that changed since takes another refresh.
     BakeState& refreshed = m_state[static_cast<size_t>(m_refreshLayer)];
     refreshed.lighting  = m_refreshLighting;
     refreshed.captured  = m_frame;
     refreshed.refreshed = m_seconds;
-    m_refreshLayer = -1;
+    m_refreshLayer      = -1;
 }
 
 void GLProbeManager::invalidate() {
     for (BakeState& st : m_state) st.baked = false;
     if (m_baker) m_baker->endRefresh();
     m_refreshLayer = -1;
+}
+
+uint32_t GLProbeManager::ownedLayers() const {
+    return static_cast<uint32_t>(std::count_if(m_state.begin(), m_state.end(), [](const BakeState& st) {
+        return st.owned;
+    }));
+}
+
+uint32_t GLProbeManager::bakedLayers() const {
+    return static_cast<uint32_t>(std::count_if(m_state.begin(), m_state.end(), [](const BakeState& st) {
+        return st.owned && st.baked;
+    }));
 }
 
 } // namespace Vkm::Engine

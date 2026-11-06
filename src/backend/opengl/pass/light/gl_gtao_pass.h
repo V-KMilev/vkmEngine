@@ -2,12 +2,13 @@
 
 #include <cstdint>
 
-#include "gl_compute_shader.h"
-#include "gl_mip_chain_texture.h"
-#include "gl_shader.h"
+#include "vkm_opengl/shader/compute_shader.h"
+#include "vkm_opengl/shader/shader.h"
+#include "vkm_opengl/texture/mip_chain_texture.h"
 
-#include "gl_pass.h"
-#include "gl_target.h"
+#include "pass/gl_pass.h"
+#include "pass/light/gl_rate_cap.h"
+#include "storage/gl_target.h"
 
 namespace Vkm::Engine {
 
@@ -15,11 +16,17 @@ namespace Vkm::Engine {
  * @brief Ground-Truth Ambient Occlusion (horizon-slice integral).
  *
  * Integrates cosine-weighted visibility over a few screen-space slices of the prepass's depth
- * and G-buffer, giving the AO factor and the bent normal (octahedral, view space). An edge-aware
- * 5x5 spatial blur takes the raw result into the frame's AO target. Runs after the prepass and
- * before the forward draw.
+ * and G-buffer, giving the AO factor and the bent normal (octahedral, view space). Searched and
+ * blurred, edge-aware over 5x5, at half the scene's size, each pixel standing for the scene texel
+ * at its 2x2's corner, then widened by depth into the frame's AO target. Runs after the prepass
+ * and before the forward draw.
  */
 class GLGTAOPass : public GLPass {
+    public:
+        static constexpr float RADIUS    = 0.6f;  ///< World-space sample radius.
+        static constexpr float INTENSITY = 1.0f;  ///< Occlusion strength.
+        static constexpr float POWER     = 1.5f;  ///< Contrast curve.
+
     public:
         GLGTAOPass();
         ~GLGTAOPass() override;
@@ -40,24 +47,24 @@ class GLGTAOPass : public GLPass {
          * Full resolution down to a few texels: the search picks a level by a step's reach in
          * pixels, at most a quarter of the screen.
          *
-         * @param width  Viewport width in pixels.
-         * @param height Viewport height in pixels.
+         * @param width  The scene's width in pixels (RenderView::sceneWidth).
+         * @param height The scene's height in pixels.
          */
         void ensureDepthMips(uint32_t width, uint32_t height);
 
     private:
-        Vkm::GL::ComputeShader m_prefilter;  ///< The scene depth, linearised and folded into the chain.
-        Vkm::GL::Shader        m_shader;
-        Vkm::GL::ComputeShader m_denoise;    ///< The raw result, blurred on its own surface.
+        Vkm::OpenGL::ComputeShader m_prefilter;  ///< The scene depth, linearized and folded into the chain.
+        Vkm::OpenGL::Shader        m_shader;
+        Vkm::OpenGL::ComputeShader m_denoise;    ///< The raw result, blurred on its own surface.
+        Vkm::OpenGL::ComputeShader m_upsample;   ///< The blurred result, widened to the scene's size.
+        GLRateCap m_cap{0.0f};      ///< In step with a moved eye; the fog's is half a draw out.
+        bool      m_drawn = false;  ///< Whether a frame's target holds one to read.
 
-        /**
-         * @brief Linear view depth as a mip chain; nothing outside this pass reads it.
-         */
-        Vkm::GL::MipChainTexture m_depthMips;
-        uint32_t m_depthMipsWidth  = 0;
-        uint32_t m_depthMipsHeight = 0;
+        Vkm::OpenGL::MipChainTexture m_depthMips;  ///< Linear view depth as a mip chain; nothing outside this
+                                                   ///< pass reads it.
 
-        GLTarget m_raw{GLTarget::Layout::Color, GL_RGBA8};  ///< The search's result, before the denoise.
+        GLTarget m_raw{GLTarget::Layout::Color, GL_RGBA8};      ///< The search's result, half size.
+        GLTarget m_blurred{GLTarget::Layout::Color, GL_RGBA8};  ///< The denoise's, half size.
 };
 
 } // namespace Vkm::Engine

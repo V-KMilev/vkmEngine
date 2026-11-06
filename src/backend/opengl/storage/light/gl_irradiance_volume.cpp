@@ -1,9 +1,9 @@
-#include "storage/gl_irradiance_volume.h"
+#include "storage/light/gl_irradiance_volume.h"
 
 #include <utility>
 
-#include "gl_shader_base.h"
-#include "gl_texture_3d.h"
+#include "vkm_opengl/shader/shader_base.h"
+#include "vkm_opengl/texture/texture_3d.h"
 
 #include "convention/gl_bindings.h"
 #include "system/render/data/irradiance_volume_data.h"
@@ -18,19 +18,19 @@ void GLIrradianceVolume::resize(uint32_t x, uint32_t y, uint32_t z) {
     if (m_sh[0] && x == m_sh[0]->getWidth() && y == m_sh[0]->getHeight() && z == m_sh[0]->getDepth()) return;
 
     for (int i = 0; i < SH_COEFFS; ++i) {
-        Vkm::GL::Texture3DParams p;
-        p.width  = x;
-        p.height = y;
-        p.depth  = z;
+        Vkm::OpenGL::Texture3DParams p;
+        p.width          = x;
+        p.height         = y;
+        p.depth          = z;
         p.internalFormat = GL_RGBA16F;
         p.format         = GL_RGBA;
         p.type           = GL_FLOAT;
-        // Linear so the lookup blends between neighbouring probes; clamp so a
+        // Linear so the lookup blends between neighboring probes; clamp so a
         // sample at the box edge holds the border probe instead of wrapping.
-        p.minFilter = Vkm::GL::TextureMinFilter::Linear;
-        p.magFilter = Vkm::GL::TextureMagFilter::Linear;
-        p.wrap      = Vkm::GL::TextureWrap::ClampToEdge;
-        m_sh[i] = std::make_unique<Vkm::GL::Texture3D>("irradiance_sh", p);
+        p.minFilter = Vkm::OpenGL::TextureMinFilter::Linear;
+        p.magFilter = Vkm::OpenGL::TextureMagFilter::Linear;
+        p.wrap      = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        m_sh[i]     = std::make_unique<Vkm::OpenGL::Texture3D>("irradiance_sh", p);
     }
 
     // Contents are undefined until a bake fills every cell.
@@ -42,30 +42,23 @@ void GLIrradianceVolume::release() {
     m_ready = false;
 }
 
-void GLIrradianceVolume::setBaked(bool baked) {
-    m_ready = baked;
-    if (baked) ++m_bakeId;
+void GLIrradianceVolume::setBaked(const IrradianceVolumeData& box) {
+    m_ready       = true;
+    m_center      = box.center;
+    m_halfExtents = box.halfExtents;
+    ++m_bakeId;
+}
+
+IrradianceVolumeData GLIrradianceVolume::placed(const IrradianceVolumeData& asked) const {
+    IrradianceVolumeData box = asked;
+    box.center      = m_center;
+    box.halfExtents = m_halfExtents;
+    return box;
 }
 
 void GLIrradianceVolume::swapGrid(GLIrradianceVolume& other) {
     for (int i = 0; i < SH_COEFFS; ++i) std::swap(m_sh[i], other.m_sh[i]);
     ++m_lightId;
-}
-
-uint32_t GLIrradianceVolume::cellCount() const {
-    return m_sh[0] ? m_sh[0]->getWidth() * m_sh[0]->getHeight() * m_sh[0]->getDepth() : 0;
-}
-
-void GLIrradianceVolume::download(ProbeGridSH& sh) const {
-    const size_t cells = cellCount();
-    for (int i = 0; i < SH_COEFFS; ++i) {
-        if (cells == 0 || !m_sh[i]) {
-            sh[i].clear();
-            continue;
-        }
-        sh[i].resize(cells);
-        m_sh[i]->download(sh[i].data(), static_cast<uint32_t>(cells * sizeof(sh[i][0])));
-    }
 }
 
 void GLIrradianceVolume::bindImage(int i, uint32_t unit, GLenum access) const {
@@ -77,7 +70,7 @@ void GLIrradianceVolume::bindSlot(int i, uint32_t slot) const {
 }
 
 void GLIrradianceVolume::bindForShading(
-    const Vkm::GL::ShaderBase& shader,
+    const Vkm::OpenGL::ShaderBase& shader,
     const IrradianceVolumeData& box
 ) const {
     bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);

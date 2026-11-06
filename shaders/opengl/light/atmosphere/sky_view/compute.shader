@@ -1,6 +1,6 @@
 /**
  * The sky-view table (Hillaire 2020, section 5.3): the sky's radiance from the eye for every
- * view, drawn each frame for the skybox, in skyViewUnit's latitude/longitude parameterisation.
+ * view, drawn each frame for the skybox, in skyViewUnit's latitude/longitude parameterization.
  *
  * Built in a frame whose sun lies in the XY plane: the sky is symmetric about the sun's vertical
  * plane, so the table's azimuth is measured from the sun's and covers half the circle.
@@ -14,7 +14,7 @@ layout(binding = 0, rgba16f) uniform writeonly image2D u_skyView;
 uniform float u_sunZenithCos;    // the sun's elevation, as the cosine of its zenith angle
 uniform vec3  u_sunIlluminance;  // above the air: the scene's sunlight before the air dims it
 
-#include "../../atmosphere.glsl"
+#include "../../../include/atmosphere.glsl"
 
 void main() {
     ivec2 texel = ivec2(gl_GlobalInvocationID.xy);

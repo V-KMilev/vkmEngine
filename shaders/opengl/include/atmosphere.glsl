@@ -1,20 +1,19 @@
 /**
- * The procedural atmosphere (Hillaire 2020): the air at an altitude, its two tables'
- * parameterisations (shaders/atmosphere/transmittance, shaders/atmosphere/multiscatter), the
- * sky-view table's (shaders/atmosphere/sky_view), and integrateAir, the march along a view ray.
+ * The procedural atmosphere (Hillaire 2020): the air at an altitude, its two tables' parameterizations
+ * (shaders/opengl/offline/atmosphere/transmittance, shaders/opengl/offline/atmosphere/multiscatter), the
+ * sky-view table's (shaders/opengl/light/atmosphere/sky_view), and integrateAir, the march along a view ray.
  *
  * Geometry, ozone and ground are the prelude's ATMOSPHERE_*, the scattering coefficients these
  * uniforms (Atmosphere::coefficients), all from system/sky/atmosphere.h; the table sizes are the
- * prelude's too, from GLAtmosphere. Lengths are in metres; the planet's centre is the origin and
+ * prelude's too, from GLAtmosphere. Lengths are in meters; the planet's center is the origin and
  * up is +Y.
  */
 
 #include "constants.glsl"
 
-uniform vec3  u_rayleighScattering;  // per metre at sea level; Rayleigh absorbs nothing
+uniform vec3  u_rayleighScattering;  // per meter at sea level; Rayleigh absorbs nothing
 uniform vec3  u_mieScattering;
 uniform vec3  u_mieExtinction;       // scattering plus absorption
-uniform float u_mieG;                // Mie phase asymmetry: higher is a tighter glow round the sun
 
 // Where the eye stands: the origin of everything seen from the scene.
 const vec3 ATMOSPHERE_EYE = vec3(0.0, ATMOSPHERE_PLANET_RADIUS + ATMOSPHERE_EYE_ALTITUDE, 0.0);
@@ -31,7 +30,7 @@ vec2 raySphere(vec3 o, vec3 d, float r) {
 }
 
 // How far along @p dir from @p p, at or above the ground, the planet is; negative when the
-// ray misses it. A ray leaving the planet's centre never meets it, however rounding falls.
+// ray misses it. A ray leaving the planet's center never meets it, however rounding falls.
 float distanceToGround(vec3 p, vec3 dir) {
     if (dot(p, dir) >= 0.0) return -1.0;
     vec2 t = raySphere(p, dir, ATMOSPHERE_PLANET_RADIUS);
@@ -67,7 +66,7 @@ float miePhase(float mu, float g) {
         / ((2.0 + g * g) * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
 }
 
-// A unit coordinate to the texel centres of an @p size LUT, and back: the end texels hold the
+// A unit coordinate to the texel centers of an @p size LUT, and back: the end texels hold the
 // range's ends rather than half a texel inside them.
 vec2 lutUv(vec2 unit, vec2 size) {
     return (0.5 + unit * (size - 1.0)) / size;
@@ -78,7 +77,7 @@ vec2 lutUnit(vec2 uv, vec2 size) {
 }
 
 /**
- * Bruneton's transmittance parameterisation: radius @p r and the cosine @p mu of the view's
+ * Bruneton's transmittance parameterization: radius @p r and the cosine @p mu of the view's
  * zenith angle to a unit square, spending its resolution near the horizon. Covers the rays that
  * leave the atmosphere without meeting the planet; one below the horizon reads the horizon's.
  */
@@ -129,7 +128,7 @@ float airPathLength(vec3 origin, vec3 dir, out float ground) {
     return ground >= 0.0 ? ground : raySphere(origin, dir, ATMOSPHERE_TOP_RADIUS).y;
 }
 
-// The sun's light reaching @p p, @p r from the planet's centre with the sun @p muSun from its
+// The sun's light reaching @p p, @p r from the planet's center with the sun @p muSun from its
 // zenith, per unit of its illuminance above the air: none where the planet hides it.
 vec3 sunlightAt(sampler2D transmittanceLut, vec3 p, vec3 sunDir, float r, float muSun) {
     return distanceToGround(p, sunDir) >= 0.0 ? vec3(0.0) : transmittanceToTop(transmittanceLut, r, muSun);
@@ -153,7 +152,7 @@ vec3 groundRadiance(sampler2D transmittanceLut, vec3 origin, vec3 dir, float gro
  * Each of @p steps steps is integrated over its length against the transmittance falling across
  * it (Hillaire's energy-conserving step), so a long one neither overshoots nor darkens.
  * @p quadratic spaces them short in the dense air near the origin and long far out, where a
- * horizon ray runs a thousand kilometres. @p throughput returns the whole path's transmittance.
+ * horizon ray runs a thousand kilometers. @p throughput returns the whole path's transmittance.
  */
 vec3 integrateAir(
     sampler2D transmittanceLut,
@@ -168,7 +167,7 @@ vec3 integrateAir(
 ) {
     float mu     = dot(dir, sunDir);
     float phaseR = rayleighPhase(mu);
-    float phaseM = miePhase(mu, u_mieG);
+    float phaseM = miePhase(mu, ATMOSPHERE_MIE_G);
 
     vec3  radiance = vec3(0.0);
     float tPrev    = 0.0;
@@ -239,7 +238,7 @@ float horizonZenithAngle() {
 }
 
 /**
- * Hillaire's sky-view parameterisation: the cosine of a view's zenith angle and the cosine of
+ * Hillaire's sky-view parameterization: the cosine of a view's zenith angle and the cosine of
  * its azimuth from the sun's to a unit square.
  *
  * The sky is symmetric about the sun's vertical plane, so x runs from toward the sun to away

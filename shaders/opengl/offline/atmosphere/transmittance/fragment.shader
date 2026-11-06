@@ -1,14 +1,14 @@
 /**
  * The atmosphere's transmittance table.
  *
- * Each texel is a radius and a view angle (transmittanceUnit in shaders/atmosphere.glsl); it
+ * Each texel is a radius and a view angle (transmittanceUnit in shaders/opengl/include/atmosphere.glsl); it
  * holds the transmittance from there to the top of the atmosphere.
  */
 in vec2 vUV;
 
 out vec4 FragColor;
 
-#include "../../atmosphere.glsl"
+#include "../../../include/atmosphere.glsl"
 
 void main() {
     vec2  params = transmittanceParams(lutUnit(vUV, TRANSMITTANCE_LUT_SIZE));

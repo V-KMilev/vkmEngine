@@ -1,23 +1,23 @@
-#include "pass/gl_cluster_pass.h"
+#include "pass/light/gl_cluster_pass.h"
 
 #include <GL/glew.h>
 
-#include "gl_compute_shader.h"
-#include "gl_error_handle.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/compute_shader.h"
 
-#include "gl_frame_context.h"
+#include "pass/gl_frame_context.h"
 #include "convention/gl_bindings.h"
-#include "storage/gl_cluster_grid.h"
+#include "storage/light/gl_cluster_grid.h"
 
 namespace Vkm::Engine {
 
 GLClusterPass::GLClusterPass()
-    : m_compute("shaders/cluster") {}
+    : m_compute("shaders/opengl/light/cluster") {}
 
 GLClusterPass::~GLClusterPass() = default;
 
 void GLClusterPass::execute(GLFrameContext& ctx) {
-    // Lights and camera are bound by the backend; this binds the grid the dispatch writes.
+    // Lights and camera are bound by the caller; this binds the grid the dispatch writes.
     ctx.clusters.bind();
 
     m_compute.bind();
@@ -27,7 +27,7 @@ void GLClusterPass::execute(GLFrameContext& ctx) {
     m_compute.dispatch(Groups::covering(GLClusterGrid::NUM_CLUSTERS, Groups::CLUSTERS));
 
     // Make the grid writes visible to later SSBO reads.
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT));
+    Vkm::OpenGL::memoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 } // namespace Vkm::Engine

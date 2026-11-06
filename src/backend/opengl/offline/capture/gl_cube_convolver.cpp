@@ -1,67 +1,66 @@
-#include "offline/gl_cube_convolver.h"
+#include "offline/capture/gl_cube_convolver.h"
 
 #include <GL/glew.h>
+#include <glm/gtc/matrix_transform.hpp>
 
-#include "gl_context.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/texture/cube_faces.h"
 
 #include "asset/gl_mesh.h"
-#include "offline/gl_cubemap.h"
 
 namespace Vkm::Engine {
 
+namespace {
+
+/**
+ * @brief The 90deg, square projection a unit cube is convolved through.
+ *
+ * A scene capture uses its own near and far planes (see GLSceneCapture).
+ *
+ * @return The projection.
+ */
+glm::mat4 convolveProjection() {
+    return glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+}
+
+} // namespace
+
 GLCubeConvolver::GLCubeConvolver(const GLMesh& cube)
-    : m_irradiance("shaders/ibl/irradiance")
-    , m_prefilter("shaders/ibl/prefilter")
+    : m_irradiance("shaders/opengl/offline/ibl/irradiance")
+    , m_prefilter("shaders/opengl/offline/ibl/prefilter")
     , m_cube(cube)
-    , m_projection(GLCubemap::convolveProjection())
+    , m_projection(convolveProjection())
 {
     // Direction-only views (the convolution integrates over directions, so the
     // cube is sampled about the origin). Constant per face - compute once.
-    for (int face = 0; face < 6; ++face) m_faceViews[face] = GLCubemap::faceView(face, glm::vec3(0.0f));
+    for (int face = 0; face < 6; ++face) m_faceViews[face] = Vkm::OpenGL::cubeFaceView(face, glm::vec3(0.0f));
 }
 
 GLCubeConvolver::~GLCubeConvolver() = default;
 
-void GLCubeConvolver::irradiance(const AttachFace& attach) {
-    for (int face = 0; face < 6; ++face) irradianceFace(face, attach);
-}
-
-void GLCubeConvolver::prefilter(int mips, const AttachMipFace& attach) {
-    m_prefilter.bind();
-    m_prefilter.setUniformMatrix4fv("u_projection", m_projection);
-    for (int mip = 0; mip < mips; ++mip) {
-        m_prefilter.setUniform1f("u_roughness", roughnessOf(mip, mips));
-        for (int face = 0; face < 6; ++face) {
-            m_prefilter.setUniformMatrix4fv("u_view", m_faceViews[face]);
-            attach(face, mip);
-            m_cube.draw();
-        }
-    }
-}
-
-void GLCubeConvolver::irradianceFace(int face, const AttachFace& attach) {
+void GLCubeConvolver::irradianceFace(int face, Target& target) {
     m_irradiance.bind();
     m_irradiance.setUniformMatrix4fv("u_projection", m_projection);
     m_irradiance.setUniformMatrix4fv("u_view", m_faceViews[face]);
-    attach(face);
+    target.attachIrradiance(face);
     m_cube.draw();
 }
 
 void GLCubeConvolver::prefilterBand(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     int face,
     int mip,
     int mips,
     int size,
     int band,
     int bands,
-    const AttachMipFace& attach
+    Target& target
 ) {
     m_prefilter.bind();
     m_prefilter.setUniformMatrix4fv("u_projection", m_projection);
     m_prefilter.setUniformMatrix4fv("u_view", m_faceViews[face]);
     m_prefilter.setUniform1f("u_roughness", roughnessOf(mip, mips));
-    attach(face, mip);
+    target.attachPrefilter(face, mip);
 
     const int first = size * band / bands;
     gl.enableScissor(true);
@@ -87,26 +86,31 @@ std::vector<GLCubeConvolver::Step> GLCubeConvolver::slices(int prefilterSize, in
     return steps;
 }
 
-void GLCubeConvolver::run(Vkm::GL::Context& gl, const Step& step, Target& target) {
-    // One reference each, so neither allocates.
-    const AttachFace    irradiance = [&target](int face) { target.attachIrradiance(face); };
-    const AttachMipFace prefilter  = [&target](int face, int mip) { target.attachPrefilter(face, mip); };
+void GLCubeConvolver::run(Vkm::OpenGL::Context& gl, const Step& step, Target& target) {
+    // Blending left on would accumulate into the faces.
+    gl.setDepthTest(false);
+    gl.setFaceCulling(false);
+    gl.setBlending(false);
     if (step.kind == Step::Kind::Mirror) target.makeSourceMips();
     target.bindSource();
     switch (step.kind) {
         case Step::Kind::Mirror:
             // Every face of it, whole: a mirror is one read a texel.
             for (int face = 0; face < 6; ++face) {
-                prefilterBand(gl, face, 0, step.mips, step.size, 0, 1, prefilter);
+                prefilterBand(gl, face, 0, step.mips, step.size, 0, 1, target);
             }
             break;
         case Step::Kind::Irradiance:
-            irradianceFace(step.face, irradiance);
+            irradianceFace(step.face, target);
             break;
         case Step::Kind::Prefilter:
-            prefilterBand(gl, step.face, step.mip, step.mips, step.size, step.part, step.parts, prefilter);
+            prefilterBand(gl, step.face, step.mip, step.mips, step.size, step.part, step.parts, target);
             break;
     }
+}
+
+void GLCubeConvolver::convolve(Vkm::OpenGL::Context& gl, int prefilterSize, int mips, Target& target) {
+    for (const Step& step : slices(prefilterSize, mips)) run(gl, step, target);
 }
 
 float GLCubeConvolver::roughnessOf(int mip, int mips) {

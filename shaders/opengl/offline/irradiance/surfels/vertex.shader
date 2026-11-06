@@ -3,9 +3,9 @@ layout(location = ATTR_POSITION) in vec3 aPos;
 layout(location = ATTR_NORMAL) in vec3 aNormal;
 layout(location = ATTR_UV) in vec2 aUV;
 
-#include "../../instancing.glsl"
-#include "../../material.glsl"
-#include "../../camera.glsl"
+#include "../../../include/instancing.glsl"
+#include "../../../include/material.glsl"
+#include "../../../include/camera.glsl"
 
 out vec3 vWorldPos;
 out vec3 vNormal;

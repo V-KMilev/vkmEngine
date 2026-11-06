@@ -4,13 +4,10 @@
 
 namespace Vkm::Engine {
 
-/**
- * @brief Frames a moved or resized capture holds still before it bakes again.
- *
- * A bake is costly and a box being dragged changes every frame: until it settles, the last bake
- * stands.
- */
-inline constexpr uint32_t CAPTURE_SETTLE_FRAMES = 8;
+inline constexpr uint32_t CAPTURE_SETTLE_FRAMES = 8;  ///< Frames a moved or resized capture holds still
+                                                      ///< before it bakes again: a bake is costly and a box
+                                                      ///< being dragged changes every frame, so until it
+                                                      ///< settles the last bake stands.
 
 /**
  * @brief What a capture is asked for, and for how many frames running it has been the same.

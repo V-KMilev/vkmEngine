@@ -2,7 +2,7 @@
  * IBL bake - the procedural atmosphere (Hillaire 2020), as linear sky radiance for the cube
  * direction.
  *
- * The air's light along the view ray (skyRadiance in shaders/atmosphere.glsl), from the
+ * The air's light along the view ray (skyRadiance in shaders/opengl/include/atmosphere.glsl), from the
  * atmosphere's two tables. The sun disc and stars are skybox/fragment.shader's (the stars are too
  * fine to survive the cube's mips); night adds only what lights the scene, the skyglow floor and
  * the moon's halo, so a night world is dark rather than black.
@@ -20,8 +20,8 @@ uniform vec3  u_nightRadiance;   // skyglow the scene is lit by once the sun is 
 uniform vec3  u_moonDir;         // direction TO the moon, normalized
 uniform float u_moonHalo;        // radiance of the glow immediately around the moon
 
-#include "../../atmosphere.glsl"
-#include "../../sky.glsl"
+#include "../../../include/atmosphere.glsl"
+#include "../../../include/night_sky.glsl"
 
 void main() {
     vec3 dir    = normalize(vLocalPos);

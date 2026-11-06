@@ -5,9 +5,10 @@
 
 #include <glm/glm.hpp>
 
-#include "core/engine_config.h"
+#include "storage/light/gl_light_slots.h"
+#include "system/render/render_limits.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class ShaderStorageBuffer;
 }
 
@@ -16,20 +17,7 @@ namespace Vkm::Engine {
 struct LightData;
 
 /**
- * @brief A read-only view of the per-light shadow slots GLShadowData assigned.
- *
- * Two members rather than std::span because the engine is C++17.
- */
-struct LightSlots {
-    const int* slots = nullptr;
-    uint32_t   count = 0;
-
-    /// @return The slot of the light at @p index, or -1 when it has none.
-    int operator[](uint32_t index) const { return index < count ? slots[index] : -1; }
-};
-
-/**
- * @brief std430 layout - must match Light in shaders/lights.glsl.
+ * @brief std430 layout - must match Light in shaders/opengl/include/lights.glsl.
  *
  * Every slot is a vec4 to avoid drivers that fail to pack a trailing scalar
  * into a vec3's 4-byte tail (spec-legal but unreliable in practice).
@@ -40,21 +28,17 @@ struct LightSlots {
  *  - spot:      xy = the cone as a scale and offset on cos(angle to the axis):
  *               x = 1 / (cos inner - cos outer), y = -cos outer * x;
  *               z = tan of LightData::sourceRadius (directional; 0 otherwise),
- *               w = shadowSlot (-1 = no shadow)
- *  - axisU:     xyz = half-right world axis (Rect/Disk), w = twoSided (0/1)
- *  - axisV:     xyz = half-up    world axis (Rect/Disk),
- *               w = sourceRadius (Point/Spot; 0 otherwise)
- *
- * For punctual lights (Directional / Point / Spot) the axes' xyz are zero; the
- * shader's area-light branch is gated on type.
+ *               w = shadowSlot (-1 = no shadow): a cube's for a spot that casts through one
+ *  - bake:      x = the lightmap mask channel its shadow on fixed meshes is read from, -1 for
+ *               none (GLLightmaps); y = 1 for a spot that casts through a cube
+ *               (spotCastsThroughCube); z = sourceRadius (Point/Spot; 0 otherwise); w unused
  */
 struct GpuLight {
     glm::vec4 position;
     glm::vec4 color;
     glm::vec4 direction;
     glm::vec4 spot;
-    glm::vec4 axisU;
-    glm::vec4 axisV;
+    glm::vec4 bake;
 };
 
 struct LightsBuffer {
@@ -87,18 +71,25 @@ class GLLights {
         /**
          * @brief Upload the frame's light list, tagging each with its shadow slot.
          *
-         * @param lights      The frame's lights, capped at Config::MAX_LIGHTS.
-         * @param shadowSlots Each light's slot in the shadow atlas; a default one
-         *                    means "none of them cast".
-         * @param steady      For a capture: a flickering light shines steady, and a transient one
-         *                    with nothing, keeping its place, so what a probe bakes holds after
-         *                    the flash has gone and whatever the flame was doing.
+         * @param lights       The frame's lights, capped at Config::MAX_LIGHTS.
+         * @param shadowSlots  Each light's slot in the shadow atlas; a default one
+         *                     means "none of them cast".
+         * @param steady       For a capture: a flickering light shines steady, and one not in
+         *                     captures (LightData::inCaptures) with nothing, keeping its place, so
+         *                     what a probe bakes holds whatever the flame or the flash was doing.
+         * @param maskChannels Each light's lightmap mask channel (GLLightmaps::channels); a default
+         *                     one means none.
          */
-        void update(const std::vector<LightData>& lights, LightSlots shadowSlots = {}, bool steady = false);
+        void update(
+            const std::vector<LightData>& lights,
+            LightSlots shadowSlots = {},
+            bool steady = false,
+            LightSlots maskChannels = {}
+        );
 
     private:
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;
-        LightsBuffer                                 m_last{};
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_ssbo;
+        LightsBuffer                                      m_last{};
 };
 
 } // namespace Vkm::Engine

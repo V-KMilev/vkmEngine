@@ -4,36 +4,38 @@
 #include <utility>
 #include <vector>
 
-#include "gl_compute_shader.h"
-#include "gl_frame_buffer.h"
-#include "gl_shader_storage_buffer.h"
-#include "gl_texture.h"
+#include "vkm_opengl/buffer/readback_buffer.h"
+#include "vkm_opengl/buffer/shader_storage_buffer.h"
+#include "vkm_opengl/shader/compute_shader.h"
+#include "vkm_opengl/target/frame_buffer.h"
+#include "vkm_opengl/texture/texture.h"
 
 #include "offline/gl_baked_from.h"
 #include "offline/gl_capture_lighting.h"
 #include "offline/gl_capture_settle.h"
-#include "storage/gl_irradiance_volume.h"
+#include "storage/light/gl_irradiance_volume.h"
 #include "system/render/data/irradiance_volume_data.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Context;
+    class RenderBuffer;
 }
 
 namespace Vkm::Engine {
 
 class GLIBL;
 class GLSceneCapture;
-class GLView;
+class GLAssetMirror;
 struct RenderView;
 
 /**
  * @brief Bakes an irradiance volume, and lights it again when the lights or the sky change.
  *
  * The bake captures what every grid probe sees as surfaces, not as light: a small cube of
- * surfels (shaders/irradiance/surfel.glsl) - the nearest surface through each texel, the colour
+ * surfels (shaders/opengl/offline/irradiance/surfel.glsl) - the nearest surface through each texel, the color
  * it bounces, its normal, distance and emission - drawn into the probe's tile of an atlas that
  * stays on the GPU. A compute pass then lights every surfel as the forward pass lights a diffuse
- * surface and projects what each probe sees to SH-L1 (shaders/irradiance/relight). Light is a
+ * surface and projects what each probe sees to SH-L1 (shaders/opengl/offline/irradiance/relight). Light is a
  * step apart from geometry, so a sun that moves, a lamp switched on or a sky that changes takes
  * that pass alone - relight() - never the scene drawn around every probe again.
  *
@@ -44,12 +46,13 @@ struct RenderView;
  * casts through GLCaptureShadow's map.
  *
  * A probe seeing the backs of surfaces over more of its sphere than BACKFACE_LIMIT
- * (shaders/irradiance/relight) is inside geometry, and what it sees is the room on the far side.
- * The bake's first gather judges every probe, and as the verdicts depend on where probes stand,
- * not on the light, the blend that replaces each refused probe by its trusted neighbours
- * (probeFillWeights) is found once and applied on the GPU after every gather of every relight. A
- * volume where no probe could be trusted is not marked ready (see GLPass::bindAmbient), so the
- * global IBL stands in rather than a grid of guesses.
+ * (shaders/opengl/offline/irradiance/relight) is inside geometry, and what it sees is the room on the far
+ * side. The bake's first gather judges every probe, and as the verdicts depend on where probes stand, not on
+ * the light, the blend that replaces each refused probe by its trusted neighbors (probeFillWeights) is found
+ * once and applied on the GPU after every gather of every relight. The verdicts come back through a fence, so
+ * the frame never waits for them: the bake ends on the first frame after they land, and the grid shown until
+ * then is the last bake's. A volume where no probe could be trusted is not marked ready (see
+ * GLPass::bindAmbient), so the global IBL stands in rather than a grid of guesses.
  *
  * The surfel cubes are deliberately small: the result is a 4-coefficient spherical average, so
  * face resolution buys almost nothing while multiplying the atlas by the probe count.
@@ -62,8 +65,15 @@ class GLIrradianceBaker {
     public:
         static constexpr int FACE_SIZE = 16;  ///< Per-face surfel resolution.
 
-        /// Gathers per lighting: the most times light reaching a probe has bounced off a surface.
-        static constexpr int BOUNCES = 6;
+        // The words of the relight's light list, as shaders/opengl/offline/irradiance/relight reads them
+        // (RELIGHT_* there): each list a count and where it begins, for the directional lights,
+        // for those reaching out of the box, then one a cell.
+        static constexpr int RELIGHT_DIRECTIONAL_HEAD = 0;
+        static constexpr int RELIGHT_OUTSIDE_HEAD     = 2;
+        static constexpr int RELIGHT_CELL_HEADS       = 4;
+
+        static constexpr int BOUNCES = 6;  ///< Gathers per lighting: the most times light reaching a probe
+                                           ///< has bounced off a surface.
 
         /**
          * @brief Compile the relight and fill programs, capturing through @p capture.
@@ -91,27 +101,50 @@ class GLIrradianceBaker {
          * @param gl        Live GL context the captures draw through.
          * @param volume    The grid the frame reads, resized to a bake's.
          * @param view      Frame snapshot supplying the volume, the geometry and the lights.
-         * @param glView    GPU resource mirror for material/mesh lookups.
+         * @param mirror    GPU resource mirror for material/mesh lookups.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          * @param lighting  What lights the surfels now.
          */
         void update(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             GLIrradianceVolume& volume,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL,
             const CaptureLighting& lighting
         );
 
         /**
-         * @brief Forget what the volume was baked from, so the next update() bakes it.
+         * @brief Forget what the volume was baked from, so the next update() bakes it, and stop
+         *        showing @p volume meanwhile.
          *
          * For a replaced world: the same box and grid, a different scene.
          */
-        void invalidate() { m_bakedFrom.invalidate(); }
+        void invalidate(GLIrradianceVolume& volume) {
+            m_bakedFrom.invalidate();
+            volume.setUnbaked();
+        }
+
+        /// Whether a bake is under way: capturing a slice a frame, or waiting on its verdicts.
+        bool baking() const { return m_bake != Bake::None; }
+
+        /// Steps a bake under way has taken, of bakeSteps(): its probes captured.
+        uint32_t stepsTaken() const { return m_captured; }
+
+        /// Steps the bake under way takes in all: a capture a probe, then the verdicts' return; 0 with
+        /// none under way.
+        uint32_t bakeSteps() const { return baking() ? m_cells + 1 : 0; }
 
     private:
+        /**
+         * @brief Where a bake is.
+         */
+        enum class Bake : uint8_t {
+            None,       ///< No bake is under way.
+            Capturing,  ///< Its probes' surfels, a slice a frame.
+            Judging,    ///< Its first gather's verdicts on their way back.
+        };
+
         /**
          * @brief Everything a bake depends on.
          */
@@ -137,21 +170,55 @@ class GLIrradianceBaker {
 
     private:
         /**
-         * @brief Capture every probe of @p data and light the grid into @p volume.
+         * @brief Start a bake of @p data: size the grids and the atlas and clear it, for
+         *        captureSlice() to fill.
+         *
+         * @param gl     Live GL context.
+         * @param volume Destination SH volume; what it shows stays until the bake trades its grid in.
+         * @param data   The volume's world box + grid resolution, kept for the slices.
+         */
+        void beginBake(
+            Vkm::OpenGL::Context& gl,
+            GLIrradianceVolume& volume,
+            const IrradianceVolumeData& data
+        );
+
+        /**
+         * @brief Capture the bake's next probes, for up to @p budget seconds, and once the last is in
+         *        take the first gather and send its verdicts back (Bake::Judging).
+         *
+         * A probe's capture draws the scene six times, so a whole grid can take seconds: a slice a
+         * frame keeps frames coming, a loading screen's among them. At least one probe a call.
          *
          * @param gl        Live GL context the captures draw through.
-         * @param volume    Destination SH volume (resized to the grid by the caller).
-         * @param data      The volume's world box + grid resolution.
          * @param view      Frame snapshot supplying the geometry + lights to capture.
-         * @param glView    GPU resource mirror for material/mesh lookups.
+         * @param mirror    GPU resource mirror for material/mesh lookups.
+         * @param globalIBL Baked environment: lights the surfels + fills the background.
+         * @param budget    Seconds this call may capture for; 0 or less captures every probe left.
+         */
+        void captureSlice(
+            Vkm::OpenGL::Context& gl,
+            const RenderView& view,
+            GLAssetMirror& mirror,
+            const GLIBL& globalIBL,
+            float budget
+        );
+
+        /**
+         * @brief Once the verdicts have landed, light the captured surfels into @p volume, and say
+         *        how it went.
+         *
+         * @param gl        Live GL context.
+         * @param volume    The grid that takes the light.
+         * @param view      Frame snapshot supplying the lights and the shadowed sun's casters.
+         * @param mirror    GPU resource mirror for the casters' meshes.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          */
-        void bake(
-            Vkm::GL::Context& gl,
+        void finishBake(
+            Vkm::OpenGL::Context& gl,
             GLIrradianceVolume& volume,
-            const IrradianceVolumeData& data,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL
         );
 
@@ -169,15 +236,15 @@ class GLIrradianceBaker {
          * @param volume    The grid the bake filled.
          * @param data      The box + grid the bake captured.
          * @param view      Frame snapshot supplying the lights and the shadowed sun's casters.
-         * @param glView    GPU resource mirror for the casters' meshes.
+         * @param mirror    GPU resource mirror for the casters' meshes.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          */
         void relight(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             GLIrradianceVolume& volume,
             const IrradianceVolumeData& data,
             const RenderView& view,
-            GLView& glView,
+            GLAssetMirror& mirror,
             const GLIBL& globalIBL
         );
 
@@ -195,18 +262,8 @@ class GLIrradianceBaker {
         void ensureAtlas(uint32_t probes);
 
         /**
-         * @brief Draw every probe's surfel cube into its tile of the atlas.
-         *
-         * @param gl   Live GL context the captures draw through.
-         * @param data The volume's world box + grid resolution.
-         */
-        void captureSurfels(Vkm::GL::Context& gl, const IrradianceVolumeData& data);
-
-        /**
-         * @brief Run every gather over the surfels at once and trade the last into @p volume.
-         *
-         * The first gather's verdicts give the repair; a grid where none was trusted ends the
-         * lighting there.
+         * @brief Repair the first gather by its verdicts, run every gather after it, and trade the
+         *        last into @p volume.
          *
          * @param volume    The grid that takes the light.
          * @param data      The volume's world box + grid resolution.
@@ -244,31 +301,45 @@ class GLIrradianceBaker {
          *
          * @param view   Supplies the lights.
          * @param data   The volume's world box + grid resolution.
-         * @param glView Its stream carries the lists, per-frame data as a relight under a moving
+         * @param mirror Its stream carries the lists, per-frame data as a relight under a moving
          *               sun makes them.
          */
-        void listLights(const RenderView& view, const IrradianceVolumeData& data, GLView& glView);
+        void listLights(const RenderView& view, const IrradianceVolumeData& data, GLAssetMirror& mirror);
 
         /**
-         * @brief Read @p judged's verdicts back and record the repair they call for.
+         * @brief Record the repair the first gather's verdicts, landed, call for.
          *
-         * @param judged The first gather's grid, unrepaired.
-         * @param data   The volume's grid resolution.
+         * @param data The volume's grid resolution.
          * @return How many probes were refused.
          */
-        uint32_t recordRepair(const GLIrradianceVolume& judged, const IrradianceVolumeData& data);
+        uint32_t recordRepair(const IrradianceVolumeData& data);
 
     private:
-        Vkm::GL::ComputeShader m_relight;  ///< Surfels -> SH-L1 coefficients + the probe's verdict.
-        Vkm::GL::ComputeShader m_fill;     ///< Refused probes -> blends of trusted ones.
+        Vkm::OpenGL::ComputeShader m_relight;  ///< Surfels -> SH-L1 coefficients + the probe's verdict.
+        Vkm::OpenGL::ComputeShader m_fill;     ///< Refused probes -> blends of trusted ones.
 
-        std::unique_ptr<Vkm::GL::Texture2D> m_atlas;            ///< Every probe's surfels, a tile each.
-        Vkm::GL::FrameBuffer                m_fbo;
-        uint32_t                            m_tilesPerRow = 0;  ///< Probe tiles across the atlas.
+        std::unique_ptr<Vkm::OpenGL::Texture2D> m_atlas;            ///< Every probe's surfels, a tile each.
+        Vkm::OpenGL::FrameBuffer                m_fbo;
+        uint32_t                                m_tilesPerRow = 0;  ///< Probe tiles across the atlas.
 
-        /// probeFillWeights, as the fill reads it.
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_repair;
-        uint32_t                                      m_refused = 0;  ///< Probes the repair fills.
+        std::unique_ptr<Vkm::OpenGL::RenderBuffer> m_captureDepth;           ///< A depth as large as the
+                                                                             ///< atlas, for a bake's captures
+                                                                             ///< alone: a relight reads the
+                                                                             ///< surfels.
+        IrradianceVolumeData                       m_baking;                 ///< The box and grid the bake
+                                                                             ///< under way captures.
+        uint32_t                                   m_cells    = 0;           ///< Its probes.
+        uint32_t                                   m_captured = 0;           ///< Of them, captured.
+        Bake                                       m_bake     = Bake::None;
+
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_verdicts;      ///< Each probe's last verdict, 1
+                                                                           ///< trusted (VerdictBlock).
+        std::unique_ptr<Vkm::OpenGL::ReadbackBuffer>      m_verdictsBack;  ///< The first gather's, on their
+                                                                           ///< way to the CPU.
+
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_repair;
+            ///< probeFillWeights, as the fill reads it.
+        uint32_t m_refused = 0;  ///< Probes the repair fills.
 
         std::vector<uint32_t>                      m_lightWords;   ///< As listLights() last built them.
         std::vector<uint32_t>                      m_directional;  ///< listLights() scratch, kept.
@@ -282,10 +353,10 @@ class GLIrradianceBaker {
         BakedFrom<Signature>     m_bakedFrom;  ///< What update() last baked.
         CaptureSettle<Signature> m_asked;      ///< What the frames ask a bake for.
 
-        /// The lighting update() last saw; a change asks for a relight.
-        BakedFrom<CaptureLighting> m_litBy;
-        /// The light changed since the last relight began: one is owed.
-        bool                       m_relightAsked = false;
+        BakedFrom<CaptureLighting> m_litBy;                 ///< The lighting update() last saw; a change asks
+                                                            ///< for a relight.
+        bool                       m_relightAsked = false;  ///< The light changed since the last relight
+                                                            ///< began: one is owed.
 
         GLSceneCapture& m_capture;  ///< Scene -> the surfel tiles; its shadowed sun's map lights them.
 };

@@ -17,16 +17,16 @@ uniform int   u_hasIrradianceVolume;
 uniform vec3  u_ivMin;        // volume box min corner (world)
 uniform vec3  u_ivSize;       // volume box size (world)
 uniform float u_ivIntensity;
-uniform float u_ivBlend;      // fade-in distance inside the box, in metres
+uniform float u_ivBlend;      // fade-in distance inside the box, in meters
 
-// 0 outside the box, 1 from u_ivBlend metres inside every face, so the edge is
+// 0 outside the box, 1 from u_ivBlend meters inside every face, so the edge is
 // no seam against the IBL. A distance, not a share per axis, so a long flat box
 // fades as wide along its length as across its height.
 float irradianceVolumeWeight(vec3 worldPos) {
     vec3 toMin = worldPos - u_ivMin;
     vec3 toMax = u_ivMin + u_ivSize - worldPos;
     if (any(lessThan(toMin, vec3(0.0))) || any(lessThan(toMax, vec3(0.0)))) return 0.0;
-    vec3  toFace = min(toMin, toMax);                   // metres to the nearest face, per axis
+    vec3  toFace = min(toMin, toMax);                   // meters to the nearest face, per axis
     float d      = min(min(toFace.x, toFace.y), toFace.z);
     return clamp(d / max(u_ivBlend, 1e-4), 0.0, 1.0);
 }
@@ -44,7 +44,7 @@ vec3 irradianceVolumeLookup(vec3 worldPos, vec3 Ng) {
 
 // Irradiance for normal @p n: the stored coefficients are radiance, so this
 // applies the cosine-lobe convolution (Ramamoorthi), plus the quadratic zonal term
-// L1 predicts (Activision's ZH3, Roughton et al. 2024): along the light's dominant
+// L1 predicts (ZH3, Roughton et al. 2024): along the light's dominant
 // axis, grown with how directional the light is, so bounce from one side gives a
 // surface's two sides the contrast L1 alone flattens.
 vec3 sampleIrradianceVolume(vec3 worldPos, vec3 n) {

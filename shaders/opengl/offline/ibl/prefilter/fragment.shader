@@ -10,9 +10,9 @@ out vec4 FragColor;
 layout(binding = BAKE_SLOT_SOURCE) uniform samplerCube u_envCube;
 uniform float u_roughness;
 
-#include "../../constants.glsl"
-#include "../../sampling.glsl"
-#include "../../brdf.glsl"
+#include "../../../include/constants.glsl"
+#include "../sampling.glsl"
+#include "../../../include/brdf.glsl"
 
 void main() {
     vec3 N = normalize(vLocalPos);
@@ -43,7 +43,7 @@ void main() {
         if (NdotL > 0.0) {
             // Karis prefiltered importance sampling: a low pdf reads a coarser mip, so the sun
             // does not alias into fireflies on rough metal. Colbert and Krivanek's +1 level and
-            // cube-distortion term are left out (engine.md, importance-sampled convolutions).
+            // cube-distortion term are left out.
             float NdotH    = max(dot(N, H), 0.0);
             // distributionGGX takes the GGX alpha (roughness^2).
             float D        = distributionGGX(NdotH, u_roughness * u_roughness);

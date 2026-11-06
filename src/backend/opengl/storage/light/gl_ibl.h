@@ -5,28 +5,14 @@
 
 #include <GL/glew.h>
 
-#include "gl_texture.h"
-#include "gl_frame_buffer.h"
-#include "gl_texture_cube.h"
-#include "gl_context.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/target/frame_buffer.h"
+#include "vkm_opengl/texture/texture.h"
+#include "vkm_opengl/texture/texture_cube.h"
+
+#include "resource/asset/texture_params.h"
 
 namespace Vkm::Engine {
-
-/**
- * @brief The levels of a whole mip chain from @p size down to one texel.
- *
- * What an environment the convolutions sample keeps: each sample reads the level its share of the
- * lobe covers, and the rarest samples of the widest lobes reach the last levels, which a cut chain
- * would clamp to texels each spanning several of theirs.
- *
- * @param size The base level's width, in texels.
- * @return How many levels, the base included.
- */
-constexpr int fullMipChain(int size) {
-    int levels = 1;
-    while ((size >> levels) > 0) ++levels;
-    return levels;
-}
 
 /**
  * @brief GPU-side image-based lighting product set (split-sum).
@@ -51,11 +37,12 @@ constexpr int fullMipChain(int size) {
 class GLIBL {
     public:
         static constexpr int ENV_SIZE        = 512;  ///< Environment cubemap face size
-        static constexpr int ENV_MIPS        = fullMipChain(ENV_SIZE);  ///< The whole chain.
+        static constexpr int ENV_MIPS        = int(mipChainLength(ENV_SIZE, ENV_SIZE));
+            ///< The whole chain: each convolution sample reads the level its share of the lobe covers, and
+            ///< the widest lobes' rarest samples reach the last, which a cut chain would clamp.
         static constexpr int IRRADIANCE_SIZE = 32;   ///< Diffuse irradiance face size
         static constexpr int PREFILTER_SIZE  = 512;  ///< Prefiltered specular base face size
-        /// Roughness mip count, 512 down to 8.
-        static constexpr int PREFILTER_MIPS  = 7;
+        static constexpr int PREFILTER_MIPS  = 7;    ///< Roughness mip count, 512 down to 8.
         static constexpr int BRDF_SIZE       = 512;  ///< BRDF/DFG LUT size
 
         GLIBL() = default;
@@ -100,12 +87,12 @@ class GLIBL {
         void unbindCaptureFbo() const { m_captureFbo->unbind(); }
 
         /**
-         * @brief Attach the back env cube's @p face as colour 0, sized to its viewport.
+         * @brief Attach the back env cube's @p face as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the env face size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
-        void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
+        void attachEnvFace(const Vkm::OpenGL::Context& gl, int face) const {
             attachFace(gl, back().env, face, 0, ENV_SIZE);
         }
 
@@ -115,32 +102,32 @@ class GLIBL {
         void generateEnvMips() const { back().env.generateMipmaps(); }
 
         /**
-         * @brief Attach the back irradiance cube's @p face as colour 0, sized to its viewport.
+         * @brief Attach the back irradiance cube's @p face as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the irradiance face size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          */
-        void attachIrradianceFace(const Vkm::GL::Context& gl, int face) const {
+        void attachIrradianceFace(const Vkm::OpenGL::Context& gl, int face) const {
             attachFace(gl, back().irradiance, face, 0, IRRADIANCE_SIZE);
         }
 
         /**
-         * @brief Attach the back prefilter cube's @p face / @p mip as colour 0, sized to its viewport.
+         * @brief Attach the back prefilter cube's @p face / @p mip as color 0, sized to its viewport.
          *
          * @param gl   Live GL context whose viewport is set to the mip's size.
-         * @param face Cube face index (0..5) attached as the colour-0 target.
+         * @param face Cube face index (0..5) attached as the color-0 target.
          * @param mip  Roughness mip level being baked; halves the viewport per level.
          */
-        void attachPrefilterFace(const Vkm::GL::Context& gl, int face, int mip) const {
+        void attachPrefilterFace(const Vkm::OpenGL::Context& gl, int face, int mip) const {
             attachFace(gl, back().prefilter, face, mip, PREFILTER_SIZE >> mip);
         }
 
         /**
-         * @brief Attach the BRDF/DFG LUT as colour 0, sized to its viewport.
+         * @brief Attach the BRDF/DFG LUT as color 0, sized to its viewport.
          *
          * @param gl Live GL context whose viewport is set to the LUT size.
          */
-        void attachBrdf(const Vkm::GL::Context& gl) const {
+        void attachBrdf(const Vkm::OpenGL::Context& gl) const {
             m_captureFbo->attachTexture(GL_COLOR_ATTACHMENT0, m_brdf ? m_brdf->getID() : 0);
             gl.setViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
         }
@@ -160,11 +147,13 @@ class GLIBL {
         uint32_t version() const { return m_version; }
 
     private:
-        /// One complete product: what a bake fills and readers bind.
+        /**
+         * @brief One complete product: what a bake fills and readers bind.
+         */
         struct Cubes {
-            Vkm::GL::TextureCube env;
-            Vkm::GL::TextureCube irradiance;
-            Vkm::GL::TextureCube prefilter;
+            Vkm::OpenGL::TextureCube env;
+            Vkm::OpenGL::TextureCube irradiance;
+            Vkm::OpenGL::TextureCube prefilter;
         };
 
     private:
@@ -172,17 +161,17 @@ class GLIBL {
         const Cubes& back()  const { return m_cubes[1 - m_front]; }
 
         void attachFace(
-            const Vkm::GL::Context& gl,
-            const Vkm::GL::TextureCube& cube,
+            const Vkm::OpenGL::Context& gl,
+            const Vkm::OpenGL::TextureCube& cube,
             int face,
             int mip,
             int size
         ) const;
 
     private:
-        Cubes                                 m_cubes[2];
-        std::unique_ptr<Vkm::GL::Texture2D>   m_brdf;
-        std::unique_ptr<Vkm::GL::FrameBuffer> m_captureFbo;
+        Cubes                                     m_cubes[2];
+        std::unique_ptr<Vkm::OpenGL::Texture2D>   m_brdf;
+        std::unique_ptr<Vkm::OpenGL::FrameBuffer> m_captureFbo;
 
         int      m_front   = 0;
         bool     m_ready   = false;

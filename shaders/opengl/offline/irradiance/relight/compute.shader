@@ -1,9 +1,9 @@
 /**
  * Irradiance volume - light what each probe sees and project it to SH-L1, and judge the probe.
  *
- * One workgroup per probe, over its tile of the surfel atlas (shaders/irradiance/surfel.glsl):
+ * One workgroup per probe, over its tile of the surfel atlas (shaders/opengl/offline/irradiance/surfel.glsl):
  * six faces of texels, each the surface nearest the probe in its direction, or the sky. A surface
- * is lit as the forward pass lights it but for the view: diffuse, its bounce colour folding in
+ * is lit as the forward pass lights it but for the view: diffuse, its bounce color folding in
  * what the specular reflects. The lights, unshadowed but the shadowed sun, which reads the
  * capture's map over the box (GLCaptureShadow); what it emits; and the environment - inside the
  * box the grid the gather before made, none on the first, so a wall is lit by what reaches it and
@@ -14,19 +14,20 @@
  * the solid angle it covers, so a small bright patch reaches every probe that sees it. The texels
  * where the probe sees a surface's back give the share of the sphere inside geometry: past
  * BACKFACE_LIMIT the probe is inside a wall, and what it sees is the far side - light that would
- * leak into the room next door. That verdict rides in sh0's alpha, and the fill
- * (shaders/irradiance/fill) replaces the probe by its trusted neighbours.
+ * leak into the room next door. That verdict rides in sh0's alpha and in VerdictBlock, and the fill
+ * (shaders/opengl/offline/irradiance/fill) replaces the probe by its trusted neighbors.
  *
  * Stored raw; the cosine convolution to irradiance happens at lookup (sampleIrradianceVolume).
  */
 
 layout(local_size_x = 256) in;
 
-#include "../../constants.glsl"
-#include "../../sh_l1.glsl"  // SH_Y0/SH_Y1: the projection <-> evaluation contract
-#include "../../area_light.glsl"
-#include "../../shadows.glsl"
-#include "../../ambient.glsl"  // the sky's irradiance and the volume, as the forward pass reads them
+#include "../../../include/constants.glsl"
+#include "../../../include/sh_l1.glsl"  // SH_Y0/SH_Y1: the projection <-> evaluation contract
+#include "../../../include/lights.glsl"
+#include "../../../include/shadows.glsl"
+// The sky's irradiance and the volume, as the forward pass reads them.
+#include "../../../include/ambient.glsl"
 #include "../surfel.glsl"
 
 layout(binding = RELIGHT_SLOT_SURFELS) uniform usampler2D u_surfels;
@@ -39,12 +40,17 @@ layout(std430, binding = SSBO_RELIGHT_LIGHTS) readonly buffer RelightLightBlock 
     uint data[];
 } u_relightLights;
 
+// Each probe's verdict again, by its index, for the bake to read back without reading the grids.
+layout(std430, binding = SSBO_IRRADIANCE_VERDICT) writeonly buffer VerdictBlock {
+    uint verdicts[];
+} u_verdicts;
+
 layout(binding = 0, rgba16f) uniform writeonly image3D u_sh0;
 layout(binding = 1, rgba16f) uniform writeonly image3D u_sh1;
 layout(binding = 2, rgba16f) uniform writeonly image3D u_sh2;
 layout(binding = 3, rgba16f) uniform writeonly image3D u_sh3;
 
-// The box the probes stand in, at their cells' centres, is irradiance_volume.glsl's, set with no
+// The box the probes stand in, at their cells' centers, is irradiance_volume.glsl's, set with no
 // fade; on the first gather u_hasIrradianceVolume is 0 and the box reads no grid.
 uniform int  u_faceSize;        // texels along a tile face's edge
 uniform int  u_tilesPerRow;     // probe tiles along the atlas's width, six faces each
@@ -53,7 +59,7 @@ uniform mat3 u_faceToWorld[6];  // a face's view frame: (x, y, -1) through it, i
 const float BACKFACE_LIMIT = 0.25;  // sphere fraction facing away that means "inside geometry"
 const uint  GROUP          = gl_WorkGroupSize.x;
 
-// The solid angle a face's square from the centre to (x, y) subtends, in face units of -1..1.
+// The solid angle a face's square from the center to (x, y) subtends, in face units of -1..1.
 float cornerArea(float x, float y) {
     return atan(x * y, sqrt(x * x + y * y + 1.0));
 }
@@ -63,8 +69,6 @@ vec3 lightIrradiance(uint i, vec3 p, vec3 n) {
     Light light = u_lights.lights[i];
     int   type  = int(light.position.w);
     vec3  color = light.color.xyz * light.color.w;
-
-    if (type == LIGHT_RECT || type == LIGHT_DISK) return color * areaDiffuse(light, type, p, n) * PI;
 
     vec3  L;
     float atten = punctualAttenuation(light, type, p, L);
@@ -85,13 +89,15 @@ vec3 listIrradiance(uint first, uint count, vec3 p, vec3 n) {
 
 // Irradiance at @p p around @p n from every light that reaches it.
 vec3 directIrradiance(vec3 p, vec3 n) {
-    vec3 E = listIrradiance(u_relightLights.data[1], u_relightLights.data[0], p, n);
+    const uint suns    = uint(RELIGHT_DIRECTIONAL_HEAD);
+    const uint outside = uint(RELIGHT_OUTSIDE_HEAD);
+    vec3 E = listIrradiance(u_relightLights.data[suns + 1u], u_relightLights.data[suns], p, n);
     if (irradianceVolumeWeight(p) <= 0.0) {
-        return E + listIrradiance(u_relightLights.data[3], u_relightLights.data[2], p, n);
+        return E + listIrradiance(u_relightLights.data[outside + 1u], u_relightLights.data[outside], p, n);
     }
     const ivec3 grid = imageSize(u_sh0);
     const ivec3 cell = clamp(ivec3((p - u_ivMin) / u_ivSize * vec3(grid)), ivec3(0), grid - 1);
-    const uint  head = 4u + 2u * uint(cell.x + grid.x * (cell.y + grid.y * cell.z));
+    const uint  head = uint(RELIGHT_CELL_HEADS) + 2u * uint(cell.x + grid.x * (cell.y + grid.y * cell.z));
     return E + listIrradiance(u_relightLights.data[head + 1u], u_relightLights.data[head], p, n);
 }
 
@@ -111,7 +117,7 @@ vec3 indirectIrradiance(vec3 p, vec3 n) {
 vec3 radiance(uvec4 texel, vec3 probe, vec3 dir, out bool back) {
     back = false;
     if (surfelIsSky(texel)) {
-        // At the level whose texel is a surfel's, as the capture's rasterised sky read it: level 0
+        // At the level whose texel is a surfel's, as the capture's rasterized sky read it: level 0
         // would point-sample a sun or a window a surfel covers many texels of.
         const float level = log2(float(textureSize(u_envCube, 0).x) / float(u_faceSize));
         return u_hasIBL == 1 ? textureLod(u_envCube, dir, max(level, 0.0)).rgb : vec3(0.0);
@@ -138,6 +144,7 @@ void main() {
     const int   probe = int(gl_WorkGroupID.x);
     const ivec3 grid  = imageSize(u_sh0);
     const ivec3 cell  = ivec3(probe % grid.x, (probe / grid.x) % grid.y, probe / (grid.x * grid.y));
+    // At its texel's center, as GLIrradianceBaker places each probe it captures (probePosition).
     const vec3  at    = u_ivMin + u_ivSize * (vec3(cell) + 0.5) / vec3(grid);
 
     const int   size   = u_faceSize;
@@ -193,6 +200,7 @@ void main() {
     // The solid angle facing away, as a fraction of the whole sphere's.
     float trusted = (s_back[0].x / s_back[0].y) < BACKFACE_LIMIT ? 1.0 : 0.0;
     imageStore(u_sh0, cell, vec4(s_sh0[0], trusted));
+    u_verdicts.verdicts[probe] = uint(trusted);
     imageStore(u_sh1, cell, vec4(s_sh1[0], 1.0));
     imageStore(u_sh2, cell, vec4(s_sh2[0], 1.0));
     imageStore(u_sh3, cell, vec4(s_sh3[0], 1.0));

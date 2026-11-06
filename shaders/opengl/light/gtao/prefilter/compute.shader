@@ -2,7 +2,7 @@
  * GTAO depth prefilter: linear view depth as a mip chain, so far horizon samples
  * read coarse levels and stay cache-local at any radius.
  *
- * One dispatch a level. Level 0 linearises the scene depth; each later level
+ * One dispatch a level. Level 0 linearizes the scene depth; each later level
  * folds 2x2 of the one before (bound alone, read as level 0), weighted toward
  * the farthest and dropping a texel about a radius nearer, so a coarse level
  * never pulls a distant surface onto a near edge (XeGTAO's depth MIP filter).
@@ -14,8 +14,8 @@ layout(binding = 0, r32f) uniform writeonly image2D u_dst;
 uniform int   u_level;     // 0: u_src is the scene depth; else the level before
 uniform float u_radius;    // world-space sample radius; sizes the fold's tolerance
 
-#include "../../depth.glsl"
-#include "../../camera.glsl"
+#include "../../../include/depth.glsl"
+#include "../../../include/camera.glsl"
 
 float fetch(ivec2 texel) {
     return texelFetch(u_src, clamp(texel, ivec2(0), textureSize(u_src, 0) - 1), 0).r;

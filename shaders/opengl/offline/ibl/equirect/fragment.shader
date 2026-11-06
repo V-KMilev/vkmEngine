@@ -9,7 +9,7 @@ out vec4 FragColor;
 
 layout(binding = BAKE_SLOT_SOURCE) uniform sampler2D u_equirect;
 
-#include "../../constants.glsl"
+#include "../../../include/constants.glsl"
 
 // Longitude and latitude, in radians, to the texture's 0..1 across each.
 const vec2 INV_ATAN = vec2(0.5 / PI, 1.0 / PI);

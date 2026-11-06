@@ -1,8 +1,8 @@
 #pragma once
 
-#include "gl_compute_shader.h"
+#include "vkm_opengl/shader/compute_shader.h"
 
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
 namespace Vkm::Engine {
 
@@ -13,8 +13,8 @@ namespace Vkm::Engine {
  * Computes, from the atmosphere's air tables, the sky the skybox draws - the radiance of every
  * view from the eye, current with the sun every frame - and the air between the eye and every
  * froxel of the view, which GLPass::bindFog lends the passes that shade surfaces. Runs before
- * the skybox and anything lit. A no-op without the procedural sky; each half also when nothing
- * reads it - the skybox hidden, the aerial perspective off.
+ * the skybox and anything lit. A no-op without the procedural sky; the sky-view table also when
+ * the skybox is hidden.
  */
 class GLAtmospherePass : public GLPass {
     public:
@@ -31,8 +31,8 @@ class GLAtmospherePass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        Vkm::GL::ComputeShader m_skyView;
-        Vkm::GL::ComputeShader m_aerialPerspective;
+        Vkm::OpenGL::ComputeShader m_skyView;
+        Vkm::OpenGL::ComputeShader m_aerialPerspective;
 };
 
 } // namespace Vkm::Engine

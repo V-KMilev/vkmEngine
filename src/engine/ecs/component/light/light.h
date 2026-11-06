@@ -4,7 +4,8 @@
 
 #include <glm/glm.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -13,87 +14,69 @@ class Scene;
 
 /**
  * @brief Enumeration of light types.
- *
- * Rect and Disk are area lights and cast no shadow (shading in
- * shaders/forward/pbr/fragment.shader).
  */
 enum class LightType {
     Directional = 0,
     Point       = 1,
     Spot        = 2,
-    Rect        = 3,    ///< Width x height, faces -direction
-    Disk        = 4,    ///< areaRadius, faces -direction
     Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
 /**
  * @brief Component representing a light source in the scene.
  *
- * Pose comes from the Transform. Area lights emit along -direction (a spot along
- * +direction); their intensity is point-equivalent, so from afar they light
- * like a point light of the same intensity.
+ * Pose comes from the Transform; a spot shines along its forward.
  */
 struct Light {
+    static constexpr float SHADOW_BIAS = 0.5f;  ///< How far the depth compare slides toward the light, in
+                                                ///< texels of the light's own map at the receiver, so one
+                                                ///< value holds for every light type, range and distance;
+                                                ///< grown where the light grazes (biasSlide in
+                                                ///< shaders/opengl/include/shadows.glsl).
+
+    static constexpr float SHADOW_NORMAL_BIAS = 1.0f;  ///< How far the point moves off the surface before the
+                                                       ///< compare, in shadow texels: along the surface's
+                                                       ///< normal, by this times the sine of the light's
+                                                       ///< angle to it, nothing head-on and all of it where
+                                                       ///< the light grazes.
+
     LightType type      = LightType::Directional;
     glm::vec3 color     = {1.0f, 1.0f, 1.0f};
     float     intensity = 1.0f;
 
-    float radius = 10.0f;                      ///< Attenuation cutoff (point/spot/area)
+    float radius = 10.0f;  ///< Attenuation cutoff (point/spot)
 
-    float innerConeAngle = 0.5f;               ///< Spot: full-brightness cone, radians
-    float outerConeAngle = 0.785f;             ///< Spot: falloff edge, radians
-
-    float areaWidth  = 1.0f;                   ///< Rect width along the local X axis
-    float areaHeight = 1.0f;                   ///< Rect height along the local Y axis
-    float areaRadius = 0.5f;                   ///< Disk radius
-    bool  twoSided   = false;                  ///< Area lights: emit from both faces
+    float innerConeAngle = 0.5f;    ///< Spot: full-brightness cone, radians
+    float outerConeAngle = 0.785f;  ///< Spot: falloff edge, radians
 
     bool castShadows = true;
 
-    /**
-     * @brief How far the depth compare slides toward the light, in shadow texels (0..4).
-     *
-     * In texels of the light's own map at the receiver, so one value holds for every
-     * light type, range and distance; grown where the light grazes (biasSlide in
-     * shaders/shadows.glsl).
-     */
-    float shadowBias = 0.5f;
+    float shadowDistance = 100.0f;  ///< Directional only: world distance the cascades cover.
 
-    /**
-     * @brief How far the point moves off the surface before the compare, in shadow texels (0..4).
-     *
-     * Along the surface's normal, by this times the sine of the light's angle to it:
-     * nothing head-on, all of it where the light grazes.
-     */
-    float shadowNormalBias = 1.0f;
-    float shadowDistance   = 100.0f;  ///< Directional only: world distance the cascades cover.
+    int shadowPriority = 0;  ///< Which lights keep a shadow when more cast than the atlas holds; higher
+                             ///< first. Among equals the nearest to the camera wins. Unread on a directional
+                             ///< light: one always comes before any spot or point, and the lowest slot casts.
 
-    /**
-     * @brief Which lights keep a shadow when more cast than the atlas holds; higher first.
-     *
-     * Among equals the nearest to the camera wins. Unread on a directional light: one always comes
-     * before any spot or point, and the lowest slot casts.
-     */
-    int shadowPriority = 0;
+    float sourceRadius = glm::radians(0.5f);  ///< How large the light's source is: directional, an angular
+                                              ///< radius in radians (the sun is about 0.0047); spot and
+                                              ///< point, an emitter radius in meters (a sphere light). It
+                                              ///< sizes the highlight, a baked shadow's penumbra and the
+                                              ///< sky's sun; lighting.md says what it does to a live shadow.
 
-    /**
-     * @brief How large the light's source is, which is how soft its shadows are.
-     *
-     * Directional: angular radius in radians (the sun is about 0.0047), also
-     * sizing its highlight. Spot and point: emitter radius in metres, sizing
-     * their highlight too (a sphere light). 0 is hard. The procedural sky draws
-     * the key light's sun at this size.
-     */
-    float sourceRadius = glm::radians(0.5f);
+    float flicker = 0.0f;  ///< How deep the light wavers, as a fire's does: 0 steady, 1 dips to dark. Shading
+                           ///< alone, by the world's clock (flickerWave): the intensity stays what the scene
+                           ///< saves and gameplay reads, and a probe or the irradiance volume bakes it
+                           ///< steady. A directional light does not flicker.
 
-    /**
-     * @brief How deep the light wavers, as a fire's does: 0 holds it steady, 1 dips it to dark.
-     *
-     * Shading alone, by the world's clock (flickerWave): the intensity stays what the scene
-     * saves and gameplay reads, and a probe or the irradiance volume bakes it steady. A
-     * directional light does not flicker.
-     */
-    float flicker = 0.0f;
+    bool inCaptures = true;  ///< Whether a reflection probe or the irradiance volume takes it. A capture made
+                             ///< under other light is made again, so one near a light that never holds still
+                             ///< - carried, swinging, floating - is never done: leave such a light out.
+
+    bool movable = true;  ///< Off: it never moves or changes while the world runs, and the shadows fixed
+                          ///< meshes (Mesh::movable off) cast in its light are baked into the lightmaps they
+                          ///< fall on, soft whatever the penumbra, and read there in place of its shadow map;
+                          ///< what moves is still compared live. The bake takes the first few such lights a
+                          ///< scene holds.
 
     bool enabled = true;
 };
@@ -117,34 +100,42 @@ float flickerWave(const Light& light, double seconds, uint32_t slot);
  * @brief The scene's key light: the lowest-slot entity carrying an enabled directional Light.
  *
  * A Transform is required too; ties break by lowest slot (see findLowestSlot).
- * lowestSlotDirectional applies the same rule to a frame's lights.
+ * A frame's RenderView names it among its lights (RenderView::SceneLists::keyLight).
  *
  * @param scene Scene searched.
  * @return The key light entity, or {} when there is none.
  */
 EntityId findKeyLight(const Scene& scene);
 
+/**
+ * @brief Generate a light component of the given type.
+ *
+ * Only the fields whose sensible value depends on the type differ from the
+ * Light struct's own defaults: how far the light reaches, and the cone angles,
+ * which are cleared on everything but a spot.
+ *
+ * @param type Which kind of light to build.
+ * @return A Light component configured for @p type.
+ */
+Light generateLight(LightType type);
+
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", "Spot", "Rect", "Disk")
+VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", "Spot")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Light)
-    VKM_F(type)
+    VKM_F(type, "A sun, a point lamp or a spot")
     VKM_F(color)
-    VKM_F(intensity)
-    VKM_F(radius)
-    VKM_F(innerConeAngle)
-    VKM_F(outerConeAngle)
-    VKM_F(areaWidth)
-    VKM_F(areaHeight)
-    VKM_F(areaRadius)
-    VKM_F(twoSided)
+    VKM_F(intensity, 0.0f, 100000.0f, "How bright: a sun takes hundreds, a room's lamp tens")
+    VKM_F(radius, 0.1f, 1000.0f, "How far a lamp or a spot reaches")
+    VKM_F(innerConeAngle, 0.0f, 1.5708f, "A spot's cone at full brightness")
+    VKM_F(outerConeAngle, 0.0f, 1.5708f, "A spot's cone where its light ends")
     VKM_F(castShadows)
-    VKM_F(shadowBias)
-    VKM_F(shadowNormalBias)
-    VKM_F(shadowDistance)
-    VKM_F(shadowPriority)
-    VKM_F(sourceRadius)
-    VKM_F(flicker)
+    VKM_F(shadowDistance, 1.0f, 1000.0f, "How far from the camera a sun's shadows reach")
+    VKM_F(shadowPriority, -100.0f, 100.0f, "When the atlas is full, the highest keep their shadows")
+    VKM_F(sourceRadius, 0.0f, 2.0f, "Its source's size: the larger, the softer; the sun is 0.27 deg")
+    VKM_F(flicker, 0.0f, 1.0f, "How deep it wavers, as a fire does: 0 steady, 1 to dark")
+    VKM_F(inCaptures, "Off for one that never holds still, or nearby probes never settle")
+    VKM_F(movable, "Off for one that never moves: fixed meshes' shadows in it are baked")
     VKM_F(enabled)
 VKM_REFLECT_END()

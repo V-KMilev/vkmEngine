@@ -1,63 +1,74 @@
-#include "storage/gl_atmosphere.h"
+#include "storage/light/gl_atmosphere.h"
 
-#include "gl_context.h"
-#include "gl_frame_buffer.h"
-#include "gl_mip_chain_texture.h"
-#include "gl_shader_base.h"
-#include "gl_texture.h"
-#include "gl_texture_3d.h"
-
-#include "storage/gl_lookup_table.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/shader/shader_base.h"
+#include "vkm_opengl/target/frame_buffer.h"
+#include "vkm_opengl/texture/mip_chain_texture.h"
+#include "vkm_opengl/texture/texture.h"
+#include "vkm_opengl/texture/texture_3d.h"
 
 namespace Vkm::Engine {
 
 GLAtmosphere::GLAtmosphere()  = default;
 GLAtmosphere::~GLAtmosphere() = default;
 
-void GLAtmosphere::setExtinction(const Vkm::GL::ShaderBase& shader, const Atmosphere::Coefficients& air) {
+void GLAtmosphere::setExtinction(const Vkm::OpenGL::ShaderBase& shader, const Atmosphere::Coefficients& air) {
     shader.setUniform3fv("u_rayleighScattering", air.rayleighScattering);
     shader.setUniform3fv("u_mieExtinction",      air.mieExtinction);
 }
 
-void GLAtmosphere::setAir(const Vkm::GL::ShaderBase& shader, const Atmosphere::Coefficients& air) {
+void GLAtmosphere::setAir(const Vkm::OpenGL::ShaderBase& shader, const Atmosphere::Coefficients& air) {
     setExtinction(shader, air);
     shader.setUniform3fv("u_mieScattering", air.mieScattering);
 }
 
 void GLAtmosphere::setSky(
-    const Vkm::GL::ShaderBase& shader,
+    const Vkm::OpenGL::ShaderBase& shader,
     const SkyParams& sky,
     const glm::vec3& illuminance
 ) {
     setAir(shader, sky.air);
-    shader.setUniform1f("u_mieG",            sky.mieG);
     shader.setUniform3fv("u_sunIlluminance", illuminance);
 }
 
 void GLAtmosphere::createAir() {
     if (m_transmittance) return;
-    m_fbo = std::make_unique<Vkm::GL::FrameBuffer>();
-    // RGBA16F, as GL makes RGB16F colour-renderable only optionally.
-    m_transmittance = std::make_unique<Vkm::GL::Texture2D>(
+    m_fbo = std::make_unique<Vkm::OpenGL::FrameBuffer>();
+    // RGBA16F, as GL makes RGB16F color-renderable only optionally.
+    m_transmittance = std::make_unique<Vkm::OpenGL::Texture2D>(
         "sky_transmittance_lut",
-        lookupTableParams(TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT, GL_RGBA16F, GL_RGBA)
+        Vkm::OpenGL::renderTargetParams(
+            TRANSMITTANCE_WIDTH,
+            TRANSMITTANCE_HEIGHT,
+            GL_RGBA16F,
+            GL_RGBA,
+            Vkm::OpenGL::TextureMinFilter::Linear,
+            Vkm::OpenGL::TextureMagFilter::Linear
+        )
     );
-    m_multiScattering = std::make_unique<Vkm::GL::Texture2D>(
+    m_multiScattering = std::make_unique<Vkm::OpenGL::Texture2D>(
         "sky_multiscattering_lut",
-        lookupTableParams(MULTISCATTERING_SIZE, MULTISCATTERING_SIZE, GL_RGBA16F, GL_RGBA)
+        Vkm::OpenGL::renderTargetParams(
+            MULTISCATTERING_SIZE,
+            MULTISCATTERING_SIZE,
+            GL_RGBA16F,
+            GL_RGBA,
+            Vkm::OpenGL::TextureMinFilter::Linear,
+            Vkm::OpenGL::TextureMagFilter::Linear
+        )
     );
 }
 
 void GLAtmosphere::createView() {
     if (m_skyView) return;
-    m_skyView = std::make_unique<Vkm::GL::MipChainTexture>();
+    m_skyView = std::make_unique<Vkm::OpenGL::MipChainTexture>();
     m_skyView->create(SKY_VIEW_WIDTH, SKY_VIEW_HEIGHT, 1, GL_RGBA16F, GL_LINEAR, GL_LINEAR);
 
-    Vkm::GL::Texture3DParams volume;
-    volume.width  = AERIAL_PERSPECTIVE_SIZE;
-    volume.height = AERIAL_PERSPECTIVE_SIZE;
-    volume.depth  = AERIAL_PERSPECTIVE_SIZE;
-    m_aerialPerspective = std::make_unique<Vkm::GL::Texture3D>("sky_aerial_perspective", volume);
+    Vkm::OpenGL::Texture3DParams volume;
+    volume.width        = AERIAL_PERSPECTIVE_SIZE;
+    volume.height       = AERIAL_PERSPECTIVE_SIZE;
+    volume.depth        = AERIAL_PERSPECTIVE_SIZE;
+    m_aerialPerspective = std::make_unique<Vkm::OpenGL::Texture3D>("sky_aerial_perspective", volume);
 }
 
 void GLAtmosphere::bindFbo() const {
@@ -68,12 +79,12 @@ void GLAtmosphere::unbindFbo() const {
     if (m_fbo) m_fbo->unbind();
 }
 
-void GLAtmosphere::attachTransmittance(const Vkm::GL::Context& gl) const {
+void GLAtmosphere::attachTransmittance(const Vkm::OpenGL::Context& gl) const {
     m_fbo->attachTexture(GL_COLOR_ATTACHMENT0, m_transmittance->getID());
     gl.setViewport(0, 0, TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT);
 }
 
-void GLAtmosphere::attachMultiScattering(const Vkm::GL::Context& gl) const {
+void GLAtmosphere::attachMultiScattering(const Vkm::OpenGL::Context& gl) const {
     m_fbo->attachTexture(GL_COLOR_ATTACHMENT0, m_multiScattering->getID());
     gl.setViewport(0, 0, MULTISCATTERING_SIZE, MULTISCATTERING_SIZE);
 }

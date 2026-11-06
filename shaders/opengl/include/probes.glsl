@@ -9,16 +9,17 @@ layout(binding = PROBE_SLOT_IRRADIANCE) uniform samplerCubeArray u_probeIrr;
 layout(binding = PROBE_SLOT_PREFILTER)  uniform samplerCubeArray u_probePref;
 uniform int u_probeCount;
 
+// Each component as GpuProbe says (src/backend/opengl/offline/gl_probe_manager.h).
 struct ProbeEntry {
-    vec4 center;    // xyz world centre, w pad
-    vec4 extents;   // xyz half-extents, w pad
-    vec4 params;    // x falloff, y intensity, z layer, w pad
+    vec4 center;
+    vec4 extents;
+    vec4 params;
 };
 layout(std140, binding = UBO_PROBES) uniform ProbeBlock {
     ProbeEntry probes[MAX_PROBES];
 } u_probes;
 
-// Parallax box correction: the direction from the box centre to where R leaves
+// Parallax box correction: the direction from the box center to where R leaves
 // the box, so a cube captured at one point does not reflect as if at infinity.
 vec3 probeParallax(vec3 R, vec3 worldPos, vec3 center, vec3 extents) {
     vec3  boxMin = center - extents;

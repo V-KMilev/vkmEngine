@@ -1,18 +1,16 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "storage/gl_ibl.h"
+#include "storage/light/gl_ibl.h"
 
-#include "logger.h"
-
-#include "storage/gl_lookup_table.h"
+#include "vkm_log/logger.h"
 
 namespace Vkm::Engine {
 
 void GLIBL::createTargets() {
     if (m_cubes[0].env.getID() != 0) return;
-    if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::GL::FrameBuffer>();
+    if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::OpenGL::FrameBuffer>();
 
-    // RGBA16F: rendered into, and GL makes RGB16F colour-renderable only optionally. Not
+    // RGBA16F: rendered into, and GL makes RGB16F color-renderable only optionally. Not
     // R11F_G11F_B10F: this cube is an HDR sky's skybox, and a sky gradient bands at 6-bit mantissas.
     for (Cubes& set : m_cubes) {
         set.env.create(ENV_SIZE, ENV_MIPS, GL_RGBA16F, true);
@@ -31,16 +29,23 @@ void GLIBL::createTargets() {
 
 void GLIBL::createBrdf() {
     if (m_brdf) return;
-    if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::GL::FrameBuffer>();
-    m_brdf = std::make_unique<Vkm::GL::Texture2D>(
+    if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::OpenGL::FrameBuffer>();
+    m_brdf = std::make_unique<Vkm::OpenGL::Texture2D>(
         "ibl_brdf_lut",
-        lookupTableParams(BRDF_SIZE, BRDF_SIZE, GL_RGBA16F, GL_RGBA)
+        Vkm::OpenGL::renderTargetParams(
+            BRDF_SIZE,
+            BRDF_SIZE,
+            GL_RGBA16F,
+            GL_RGBA,
+            Vkm::OpenGL::TextureMinFilter::Linear,
+            Vkm::OpenGL::TextureMagFilter::Linear
+        )
     );
 }
 
 void GLIBL::attachFace(
-    const Vkm::GL::Context& gl,
-    const Vkm::GL::TextureCube& cube,
+    const Vkm::OpenGL::Context& gl,
+    const Vkm::OpenGL::TextureCube& cube,
     int face,
     int mip,
     int size

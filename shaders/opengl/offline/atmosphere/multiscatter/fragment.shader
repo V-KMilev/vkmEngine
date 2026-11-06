@@ -13,7 +13,7 @@ out vec4 FragColor;
 
 layout(binding = BAKE_SLOT_TRANSMITTANCE) uniform sampler2D u_transmittance;
 
-#include "../../atmosphere.glsl"
+#include "../../../include/atmosphere.glsl"
 
 const int   SQRT_DIRECTIONS = 8;
 const int   STEPS           = 20;
