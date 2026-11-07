@@ -5,29 +5,30 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_pass.h"
+#include "pass/gl_pass.h"
 
-#include "frame/gl_draw_list.h"
-#include "frame/gl_shadow_data.h"
+#include "frame/draw/gl_draw_list.h"
+#include "frame/light/gl_shadow_plan.h"
 
 namespace Vkm::Engine {
 
 class GLMaterial;
-class GLView;
+class GLAssetMirror;
 
 /**
  * @brief Renders all shadow depth maps for the frame, ahead of the forward pass.
  *
- * Executes GLShadowData's plan: cascades and spots into the 2D atlas, point lights into cubes.
+ * Executes GLShadowPlan's plan: what moves under the sun and spots into the 2D atlas, point lights
+ * into cubes, and what a held layer is to show of the fixed casters into the layer.
  * A no-op with no shadowed light; a tile or face not held is cleared and drawn, casters or none.
  *
  * Each tile's culled objects go into one shared GLDrawList, a command per run sharing a mesh.
  * Runs come grouped by program and layout (ShadowRun::key), so a tile is one multi-draw per
- * both. A frame whose tiles are all held uploads nothing. A masked caster's runs draw per
- * material through a cutting program; a transparent caster draws solid, and a surface that
- * should cast none turns casting off on its Mesh.
+ * both. A frame whose tiles are all held uploads nothing. A caster whose material cuts its
+ * shadow (GLMaterial::cutsItsShadow) draws per material through the masked program; a surface
+ * that should cast none turns casting off on its Mesh.
  */
 class GLShadowPass : public GLPass {
     public:
@@ -56,10 +57,10 @@ class GLShadowPass : public GLPass {
          * @brief One multi-draw of a tile: runs sharing a program, a cut material and a vertex layout.
          */
         struct ShadowDraw {
-            /// The first run's mesh; every run's shares its vertex layout.
-            const GLMesh*     mesh     = nullptr;
-            /// The material every run is cut by (GLMaterial::cutsItsShadow); null for solid casters.
-            const GLMaterial* material = nullptr;
+            const GLMesh*     mesh     = nullptr;  ///< The first run's mesh; every run's shares its vertex
+                                                   ///< layout.
+            const GLMaterial* material = nullptr;  ///< The material every run is cut by
+                                                   ///< (GLMaterial::cutsItsShadow); null for solid casters.
             uint32_t          program  = 0;        ///< Index into m_programs.
             uint32_t          first    = 0;        ///< First command in m_list.
             uint32_t          count    = 0;        ///< Commands.
@@ -68,27 +69,34 @@ class GLShadowPass : public GLPass {
         /**
          * @brief One of the pass's depth programs, and the tile it last received a matrix for.
          */
-        struct DepthProgram {
-            Vkm::GL::Shader shader;
-            bool            cuts = false;  ///< Cuts casters by their alpha, so takes the dither's shift.
-            uint64_t        tile = 0;      ///< The beginTile() whose matrix and shift it holds.
+        struct DepthProgram     {
+            Vkm::OpenGL::Shader shader;
+            bool                cuts = false;  ///< Cuts casters by their alpha, so takes the dither's shift.
+            uint64_t            tile = 0;      ///< The beginTile() whose matrix and shift it holds.
         };
 
     private:
         /**
-         * @brief Fill the 2D depth atlas for directional cascades and spots.
+         * @brief Fill the 2D depth atlas: what moves under the sun, and spots.
          *
-         * One tile per job not held; a cascade is drawn with its depth clamped.
+         * One tile per job not held; what the sun lights is drawn with its depth clamped.
          *
          * @param ctx For the shadow plan, its batches and the atlas.
          */
         void render2D(GLFrameContext& ctx);
 
         /**
+         * @brief Draw the rectangles of the held layers the plan asks for, depth clamped.
+         *
+         * @param ctx For the shadow plan, its batches and the atlas.
+         */
+        void renderHeld(GLFrameContext& ctx);
+
+        /**
          * @brief Fill each point light's depth cube.
          *
          * Six ordinary perspective depth maps per light, drawn by the atlas's programs; a reader
-         * rebuilds a face's depth from the major axis of its direction (shaders/shadows.glsl).
+         * rebuilds a face's depth from the major axis of its direction (shaders/opengl/include/shadows.glsl).
          *
          * @param ctx For the shadow plan, its batches and the atlas.
          */
@@ -118,11 +126,11 @@ class GLShadowPass : public GLPass {
         /**
          * @brief Turn one tile's or face's pre-culled casters into commands and draws.
          *
-         * Culling and grouping ran on the thread pool (GLShadowData::cullCasters), so this is one
+         * Culling and grouping ran on the thread pool (GLShadowPlan::cullCasters), so this is one
          * command per run. The program (posed or not, cut or not) is chosen here from key and
          * material; consecutive runs agreeing on program, cut material and layout are one draw.
          *
-         * @param ctx   For the GL view and the caster list.
+         * @param ctx   For the asset mirror, the frame's draws and the skin palette.
          * @param batch The surviving caster indices, grouped.
          * @param first Where the batch's indices start in the instance list.
          * @return Where the tile's draws sit in m_draws.
@@ -132,10 +140,10 @@ class GLShadowPass : public GLPass {
         /**
          * @brief Submit one tile's or face's draws against the matrix beginTile() recorded.
          *
-         * @param glView For a cut material's maps.
+         * @param mirror For a cut material's maps.
          * @param tile   Where its draws sit in m_draws.
          */
-        void drawTile(const GLView& glView, const TileDraws& tile);
+        void drawTile(const GLAssetMirror& mirror, const TileDraws& tile);
 
         /**
          * @brief Make @p program current, and give it this tile's matrix, and a cutting one the
@@ -151,19 +159,21 @@ class GLShadowPass : public GLPass {
     private:
         DepthProgram m_programs[4];  ///< Indexed cut * 2 + posed.
 
-        const Vkm::GL::Shader* m_bound = nullptr;    ///< The program that is current, reset each execute().
-        glm::mat4              m_lightVP{1.0f};      ///< The tile being drawn's, as it rasterises.
-        glm::vec2              m_ditherShift{0.0f};  ///< Its beginTile() dither shift.
+        const Vkm::OpenGL::Shader* m_bound = nullptr;    ///< The program that is current, reset each
+                                                         ///< execute().
+        glm::mat4                  m_lightVP{1.0f};      ///< The tile being drawn's, as it rasterizes.
+        glm::vec2                  m_ditherShift{0.0f};  ///< Its beginTile() dither shift.
 
-        /// Counts beginTile() calls; never reset, so no program holds a stale one.
-        uint64_t m_tile       = 0;
+        uint64_t m_tile       = 0;  ///< Counts beginTile() calls; never reset, so no program holds a stale
+                                    ///< one.
         uint32_t m_tilesDrawn = 0;  ///< Tiles and faces drawn this frame; the rest were held.
 
-        /// The drawn tiles' and faces' caster lists, end to end, and a command per run.
-        GLDrawList              m_list;
+        GLDrawList              m_list;       ///< The drawn tiles' and faces' caster lists, end to end, and a
+                                              ///< command per run.
         std::vector<ShadowDraw> m_draws;      ///< Every drawn tile's draws, tile after tile.
         std::vector<TileDraws>  m_tiles2D;    ///< Each 2D job's draws.
         std::vector<TileDraws>  m_tilesCube;  ///< Each cube face's draws, six per job.
+        std::vector<TileDraws>  m_rectsHeld;  ///< Each held job's draws.
 };
 
 } // namespace Vkm::Engine

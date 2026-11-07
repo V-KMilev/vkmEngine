@@ -7,14 +7,13 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_frame_buffer.h"
-#include "gl_shader.h"
+#include "vkm_opengl/target/frame_buffer.h"
 
-#include "core/math/bounds.h"
-#include "frame/gl_instance_batcher.h"
-#include "frame/gl_shadow_data.h"
+#include "base/math/aabb.h"
+#include "frame/light/gl_shadow_block.h"
+#include "offline/capture/gl_caster_depth.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Context;
     class Sampler;
     class Texture2D;
@@ -25,7 +24,7 @@ namespace Vkm::Engine {
 
 class GLLights;
 class GLObjectBuffer;
-class GLView;
+class GLAssetMirror;
 struct RenderView;
 
 /**
@@ -34,7 +33,7 @@ struct RenderView;
  * GLSceneCapture's: the frame's atlas fits the camera, and without a map of its own the sun lights
  * a room's floor through its roof. The sun is the one the frame shadows
  * (lowestSlotDirectionalCaster); other lights capture unshadowed. A map is kept per ShadowKey - the
- * sun, its direction, its biases, the region - in one of SHADOW_SLOTS, so a relight whose small
+ * sun, its direction, the region, the world - in one of SHADOW_SLOTS, so a relight whose small
  * lights move every frame does not draw its casters every frame, and a caster moving under a still
  * sun keeps the shadow it cast, as the captured surfaces keep their place.
  */
@@ -71,16 +70,16 @@ class GLCaptureShadow {
          *
          * @param gl      Live GL context the map is drawn on.
          * @param view    Supplies the lights and the casters' boxes.
-         * @param glView  GPU resource mirror the casters draw through.
+         * @param mirror  GPU resource mirror the casters draw through.
          * @param objects The frame's transforms the casters index.
          * @param casters The scene-wide casters, by object.
          * @param region  World box the map covers.
          * @param lights  The capture's lights.
          */
         void draw(
-            Vkm::GL::Context& gl,
+            Vkm::OpenGL::Context& gl,
             const RenderView& view,
-            const GLView& glView,
+            const GLAssetMirror& mirror,
             const GLObjectBuffer& objects,
             const std::vector<uint32_t>& casters,
             const Math::AABB& region,
@@ -88,35 +87,38 @@ class GLCaptureShadow {
         );
 
     private:
-        /// What a map was drawn for; drawn again when any of it changes.
+        /**
+         * @brief What a map was drawn for; drawn again when any of it changes.
+         */
         struct ShadowKey {
             Math::AABB region{};
-            bool       casts      = false;
-            uint32_t   light      = 0;  ///< The sun's entity slot.
+            bool       casts = false;
+            uint32_t   light = 0;        ///< The sun's entity slot.
             glm::vec3  direction{0.0f};
-            float      bias       = 0.0f;
-            float      normalBias = 0.0f;
+            uint64_t   world = 0;        ///< RenderView::worldEpoch: a replaced world's casters are others.
 
             bool operator==(const ShadowKey& other) const {
                 return region.min == other.region.min && region.max == other.region.max
                     && casts == other.casts && light == other.light && direction == other.direction
-                    && bias == other.bias && normalBias == other.normalBias;
+                    && world == other.world;
             }
         };
 
-        /// The sun's depth over one region, and the ShadowBlock that reads it.
+        /**
+         * @brief The sun's depth over one region, and the ShadowBlock that reads it.
+         */
         struct ShadowSlot {
-            std::optional<ShadowKey>                key;            ///< What it was drawn for; none yet.
-            bool                                    casts = false;
-            std::unique_ptr<Vkm::GL::Texture2D>     map;            ///< Made on first use.
-            std::unique_ptr<Vkm::GL::UniformBuffer> ubo;
-            ShadowUBOData                           last{};         ///< What ubo holds.
-            uint64_t                                used = 0;       ///< When it was last bound.
+            std::optional<ShadowKey>                    key;            ///< What it was drawn for; none yet.
+            bool                                        casts = false;
+            std::unique_ptr<Vkm::OpenGL::Texture2D>     map;            ///< Made on first use.
+            std::unique_ptr<Vkm::OpenGL::UniformBuffer> ubo;
+            ShadowUBOData                               last{};         ///< What ubo holds.
+            uint64_t                                    used  = 0;      ///< When it was last bound.
         };
 
-        /// Maps kept: one for the irradiance volume a relight lights and one for the probe being
-        /// captured, so neither draws the other's away every frame both run.
-        static constexpr int SHADOW_SLOTS = 2;
+        static constexpr int SHADOW_SLOTS = 2;  ///< Maps kept: one for the irradiance volume a relight lights
+                                                ///< and one for the probe being captured, so neither draws
+                                                ///< the other's away every frame both run.
 
         /**
          * @brief What @p view's sun and @p region would draw a map for.
@@ -137,15 +139,13 @@ class GLCaptureShadow {
         void use(int slot, const RenderView& view, GLLights& lights);
 
     private:
-        Vkm::GL::Shader m_depth;   ///< The sun's depth; the shadow pass's program.
-        Vkm::GL::Shader m_masked;  ///< The same, cut by an alpha-masked caster's material.
+        GLCasterDepth m_casters;  ///< Draws the sun's depth.
 
-        Vkm::GL::FrameBuffer              m_fbo;
-        ShadowSlot                        m_slots[SHADOW_SLOTS];
-        std::unique_ptr<Vkm::GL::Sampler> m_sampler;    ///< Compares, as the atlas's does.
-        uint64_t                          m_clock = 0;  ///< Counts binds, for ShadowSlot::used.
+        Vkm::OpenGL::FrameBuffer              m_fbo;
+        ShadowSlot                            m_slots[SHADOW_SLOTS];
+        std::unique_ptr<Vkm::OpenGL::Sampler> m_sampler;    ///< Compares, as the atlas's does.
+        uint64_t                              m_clock = 0;  ///< Counts binds, for ShadowSlot::used.
 
-        GLInstanceBatcher     m_batcher;     ///< The casters over the region, grouped.
         std::vector<uint32_t> m_overRegion;  ///< The casters over the map's region, which it draws.
         std::vector<int>      m_lightSlots;  ///< Per light: 0 for the sun while it casts, else -1.
 };

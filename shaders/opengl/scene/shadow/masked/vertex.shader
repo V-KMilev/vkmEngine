@@ -1,10 +1,10 @@
 // A caster cut by its alpha: depth's projection, plus the UV the fragment stage cuts the shadow by.
-// SKINNED (shadow/depth_masked_skinned) poses it first.
+// SKINNED (the skinned masked depth) poses it first.
 layout(location = ATTR_POSITION) in vec3 aPos;
 layout(location = ATTR_NORMAL) in vec3 aNormal;
 layout(location = ATTR_UV) in vec2 aUV;
-#include "../../instancing.glsl"
-#include "../../material.glsl"
+#include "../../../include/instancing.glsl"
+#include "../../../include/material.glsl"
 
 uniform mat4 u_lightVP;
 
@@ -20,6 +20,6 @@ void main() {
         vUV = materialUV(boxUV(instanceModel(), aPos, aNormal, faceTangent));
     }
 #endif
-    vCaster = aInstance;
+    vCaster = instanceObject();
     gl_Position = u_lightVP * instanceWorldPosition();
 }

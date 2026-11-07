@@ -1,38 +1,48 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "storage/gl_shadow_atlas.h"
+#include "storage/light/gl_shadow_atlas.h"
 
 #include <algorithm>
 
 #include <GL/glew.h>
+#include <glm/ext/scalar_integer.hpp>
+#include <glm/gtc/round.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/texture/sampler.h"
+#include "vkm_opengl/texture/texture.h"
+#include "vkm_opengl/texture/texture_cube_array.h"
 
-#include "gl_context.h"
-#include "gl_error_handle.h"
-#include "gl_sampler.h"
-#include "gl_texture.h"
-#include "gl_texture_cube_array.h"
+#include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
-#include "core/engine_config.h"
+#include "system/render/render_limits.h"
 
 namespace Vkm::Engine {
 
 static_assert(
-    SHADOW_ATLAS_BLOCKS * SHADOW_ATLAS_BLOCKS * 4 >= Config::MAX_SHADOW_CASTERS_2D,
-    "Shadow atlas too small to hold MAX_SHADOW_CASTERS_2D half-size tiles"
+    SHADOW_ATLAS_COLUMNS * SHADOW_ATLAS_ROWS >= Config::MAX_SHADOW_CASTERS_2D,
+    "Shadow atlas too small to hold MAX_SHADOW_CASTERS_2D of its largest tiles"
 );
 
 namespace {
 
-bool isPowerOfTwo(uint32_t v) {
-    return v != 0 && (v & (v - 1)) == 0;
-}
-
-uint32_t floorPowerOfTwo(uint32_t v) {
-    uint32_t p = 1;
-    while (p <= v / 2) p *= 2;
-    return p;
+// A depth texture as the shadow maps are: filtered linearly, so a sampler2DShadow returns the
+// bilinear-weighted fraction of four texels that passed, and clamped at its border only;
+// clampToTile in shaders/opengl/include/shadows.glsl keeps taps in a tile.
+std::unique_ptr<Vkm::OpenGL::Texture2D> depthMap(const char* name, uint32_t width, uint32_t height) {
+    Vkm::OpenGL::Texture2DParams params;
+    params.width           = width;
+    params.height          = height;
+    params.internalFormat  = GL_DEPTH_COMPONENT24;
+    params.format          = GL_DEPTH_COMPONENT;
+    params.type            = GL_FLOAT;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::Linear;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Linear;
+    params.wrapS           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    params.wrapT           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    params.generateMipmaps = false;
+    return std::make_unique<Vkm::OpenGL::Texture2D>(name, params);
 }
 
 } // namespace
@@ -40,54 +50,36 @@ uint32_t floorPowerOfTwo(uint32_t v) {
 GLShadowAtlas::GLShadowAtlas()  = default;
 GLShadowAtlas::~GLShadowAtlas() = default;
 
-void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
+void GLShadowAtlas::init(Vkm::OpenGL::Context& gl, uint32_t heldRes) {
     // Clamped first, so the per-frame idempotence check compares what would be built.
     const uint32_t widest = static_cast<uint32_t>(std::max(gl.maxTextureSize(), 1));
-    const uint32_t fits   = widest / SHADOW_ATLAS_BLOCKS;
+    const uint32_t fits   = 2 * (widest / SHADOW_ATLAS_COLUMNS);
     // A power of two, as smaller tiles are its quarters.
-    const uint32_t wanted = floorPowerOfTwo(
-        std::clamp(tileRes, SHADOW_ATLAS_MIN_BLOCK_RES, std::max(fits, SHADOW_ATLAS_MIN_BLOCK_RES))
+    const uint32_t wanted = glm::floorPowerOfTwo(
+        std::clamp(heldRes, SHADOW_ATLAS_MIN_HELD_RES, std::max(fits, SHADOW_ATLAS_MIN_HELD_RES))
     );
 
-    if (m_atlas2D && m_tileRes == wanted) return;
+    if (m_atlas2D && heldResolution() == wanted) return;
 
-    // After the return, so a setting that cannot be honoured warns once per build, not per frame.
-    if (wanted > tileRes) {
+    // After the return, so a setting that cannot be honored warns once per build, not per frame.
+    if (wanted > heldRes) {
+        LOG_WARNING("Shadow maps raised from %u to %u; below that a shadow stops being one", heldRes, wanted);
+    } else if (wanted < heldRes) {
         LOG_WARNING(
-            "Shadow atlas tiles raised from %u to %u; below that a shadow stops being one",
-            tileRes,
-            wanted
-        );
-    } else if (wanted < tileRes) {
-        LOG_WARNING(
-            "Shadow atlas tiles lowered from %u to %u: a power of two, %u of them within the %d "
-            "texels across this driver holds",
-            tileRes,
+            "Shadow maps lowered from %u to %u: a power of two, whose atlas fits the %d texels "
+            "across this driver holds",
+            heldRes,
             wanted,
-            SHADOW_ATLAS_BLOCKS,
             gl.maxTextureSize()
         );
     }
 
-    m_tileRes = wanted;
+    m_tileRes = wanted / 2;
 
-    const uint32_t atlasW = SHADOW_ATLAS_BLOCKS * m_tileRes;
-    const uint32_t atlasH = SHADOW_ATLAS_BLOCKS * m_tileRes;
+    const uint32_t atlasW = SHADOW_ATLAS_COLUMNS * m_tileRes;
+    const uint32_t atlasH = SHADOW_ATLAS_ROWS * m_tileRes;
 
-    // Linear: a sampler2DShadow returns the bilinear-weighted fraction of four texels that passed.
-    // Clamped at the atlas border only; clampToTile in shaders/shadows.glsl keeps taps in a tile.
-    Vkm::GL::Texture2DParams params;
-    params.width           = atlasW;
-    params.height          = atlasH;
-    params.internalFormat  = GL_DEPTH_COMPONENT24;
-    params.format          = GL_DEPTH_COMPONENT;
-    params.type            = GL_FLOAT;
-    params.minFilter       = Vkm::GL::TextureMinFilter::Linear;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Linear;
-    params.wrapS           = Vkm::GL::TextureWrap::ClampToEdge;
-    params.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
-    params.generateMipmaps = false;
-    m_atlas2D = std::make_unique<Vkm::GL::Texture2D>("shadow_atlas_2d", params);
+    m_atlas2D = depthMap("shadow_atlas_2d", atlasW, atlasH);
     // A new texture holds nothing: every tile is placed and drawn before it is trusted.
     m_tileSignature.assign(Config::MAX_SHADOW_CASTERS_2D, 0);
     m_tiles.assign(Config::MAX_SHADOW_CASTERS_2D, ShadowTileRect{});
@@ -95,24 +87,25 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     // A bound sampler replaces every sampling parameter of its unit, so both carry the atlas's
     // filtering and clamp. They outlive a resize: they describe how it is read, not what it holds.
     if (!m_cmpSampler) {
-        Vkm::GL::Sampler::Params read;
-        read.minFilter = Vkm::GL::TextureMinFilter::Linear;
-        read.magFilter = Vkm::GL::TextureMagFilter::Linear;
-        read.wrapS     = Vkm::GL::TextureWrap::ClampToEdge;
-        read.wrapT     = Vkm::GL::TextureWrap::ClampToEdge;
+        Vkm::OpenGL::Sampler::Params read;
+        read.minFilter = Vkm::OpenGL::TextureMinFilter::Linear;
+        read.magFilter = Vkm::OpenGL::TextureMagFilter::Linear;
+        read.wrapS     = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        read.wrapT     = Vkm::OpenGL::TextureWrap::ClampToEdge;
 
-        m_rawSampler = std::make_unique<Vkm::GL::Sampler>(read);
+        m_rawSampler = std::make_unique<Vkm::OpenGL::Sampler>(read);
 
-        read.compare = Vkm::GL::TextureCompare::LessEqual;
-        m_cmpSampler = std::make_unique<Vkm::GL::Sampler>(read);
+        read.compare = GLDepth::SHADOW_COMPARE;
+        m_cmpSampler = std::make_unique<Vkm::OpenGL::Sampler>(read);
 
-        // The cubes likewise, clamped on the third axis too, which a cube lookup can reach at
-        // an edge: compared for the shadow, raw for the soft path's blocker search.
-        read.wrapR = Vkm::GL::TextureWrap::ClampToEdge;
-        m_cubeSampler = std::make_unique<Vkm::GL::Sampler>(read);
-        read.compare = Vkm::GL::TextureCompare::None;
-        m_cubeRawSampler = std::make_unique<Vkm::GL::Sampler>(read);
+        // The cubes compared likewise, clamped on the third axis too, which a cube lookup can
+        // reach at an edge.
+        read.wrapR    = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        m_cubeSampler = std::make_unique<Vkm::OpenGL::Sampler>(read);
     }
+
+    // Made when first drawn into (beginHeld), so a scene with no fixed caster under a sun has none.
+    m_held.reset();
 
     m_fbo2D.bind();
     m_fbo2D.attachTexture(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
@@ -125,12 +118,12 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     // held. The cubes likewise.
     gl.setDepthWrite(true);
     gl.setViewport(0, 0, static_cast<int32_t>(atlasW), static_cast<int32_t>(atlasH));
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
+    gl.clear(false, true, GLDepth::SHADOW_CLEAR);
     m_fbo2D.unbind();
 
     // Cubes use SHADOW_CUBE_RES, so they and their FBO are built once; a 2D resize leaves them be.
     if (!m_cubes) {
-        m_cubes = std::make_unique<Vkm::GL::TextureCubeArray>();
+        m_cubes = std::make_unique<Vkm::OpenGL::TextureCubeArray>();
         m_cubes->create(
             static_cast<int>(SHADOW_CUBE_RES),
             1,
@@ -139,7 +132,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         );
         m_faceSignature.assign(Config::MAX_SHADOW_CASTERS_CUBE * 6, 0);
 
-        // No colour buffer; the draw/read buffer state set once persists across beginCubeFace.
+        // No color buffer; the draw/read buffer state set once persists across beginCubeFace.
         m_fboCube.bind();
         m_fboCube.setDrawBuffer(GL_NONE);
         m_fboCube.setReadBuffer(GL_NONE);
@@ -147,7 +140,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         for (int layer = 0; layer < static_cast<int>(Config::MAX_SHADOW_CASTERS_CUBE); ++layer) {
             for (int face = 0; face < 6; ++face) {
                 m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, layer * 6 + face);
-                gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
+                gl.clear(false, true, GLDepth::SHADOW_CLEAR);
             }
         }
         m_fboCube.unbind();
@@ -156,15 +149,12 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
 
 bool GLShadowAtlas::layout(const std::vector<uint32_t>& sizes) {
     if (sizes.size() > m_tiles.size()) return false;
-    uint64_t area = 0;
     for (const uint32_t size : sizes) {
-        if (!isPowerOfTwo(size) || size < SHADOW_ATLAS_MIN_TILE_RES || size > m_tileRes) return false;
-        area += static_cast<uint64_t>(size) * size;
+        if (!glm::isPowerOfTwo(size) || size < SHADOW_ATLAS_MIN_TILE_RES || size > m_tileRes) return false;
     }
-    if (area > capacity(m_tileRes)) return false;
 
     // Largest first, then by slot, each into the smallest spare square that holds it, split into
-    // quarters until it fits. Power-of-two squares placed so never fail while their area fits.
+    // quarters until it fits. There is a block for each slot, so this never fails.
     m_order.resize(sizes.size());
     for (uint32_t i = 0; i < m_order.size(); ++i) m_order[i] = i;
     std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
@@ -172,8 +162,8 @@ bool GLShadowAtlas::layout(const std::vector<uint32_t>& sizes) {
     });
 
     m_spare.clear();
-    for (uint32_t by = 0; by < SHADOW_ATLAS_BLOCKS; ++by) {
-        for (uint32_t bx = 0; bx < SHADOW_ATLAS_BLOCKS; ++bx) {
+    for (uint32_t by = 0; by < SHADOW_ATLAS_ROWS; ++by) {
+        for (uint32_t bx = 0; bx < SHADOW_ATLAS_COLUMNS; ++bx) {
             m_spare.push_back({bx * m_tileRes, by * m_tileRes, m_tileRes});
         }
     }
@@ -184,7 +174,6 @@ bool GLShadowAtlas::layout(const std::vector<uint32_t>& sizes) {
         for (auto it = m_spare.begin(); it != m_spare.end(); ++it) {
             if (it->size >= size && (best == m_spare.end() || it->size < best->size)) best = it;
         }
-        if (best == m_spare.end()) return false;
         ShadowTileRect square = *best;
         m_spare.erase(best);
         while (square.size > size) {
@@ -204,25 +193,72 @@ bool GLShadowAtlas::layout(const std::vector<uint32_t>& sizes) {
     return true;
 }
 
-void GLShadowAtlas::begin2D(const Vkm::GL::Context& gl) const {
+void GLShadowAtlas::begin2D(const Vkm::OpenGL::Context& gl) const {
     m_fbo2D.bind();
-    const int32_t side = static_cast<int32_t>(SHADOW_ATLAS_BLOCKS * m_tileRes);
-    gl.setViewport(0, 0, side, side);
+    gl.setViewport(
+        0,
+        0,
+        static_cast<int32_t>(SHADOW_ATLAS_COLUMNS * m_tileRes),
+        static_cast<int32_t>(SHADOW_ATLAS_ROWS * m_tileRes)
+    );
 }
 
-void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature) {
+void GLShadowAtlas::clearRect(
+    Vkm::OpenGL::Context& gl,
+    uint32_t x,
+    uint32_t y,
+    uint32_t width,
+    uint32_t height
+) {
+    const int32_t left = static_cast<int32_t>(x);
+    const int32_t foot = static_cast<int32_t>(y);
+    const int32_t wide = static_cast<int32_t>(width);
+    const int32_t tall = static_cast<int32_t>(height);
+    gl.setViewport(left, foot, wide, tall);
+    // The clear is scissored to the rectangle: its neighbors may be holding a
+    // picture from an earlier frame that nothing this frame will redraw.
+    gl.setScissor(left, foot, wide, tall);
+    gl.enableScissor(true);
+    gl.clear(false, true, GLDepth::SHADOW_CLEAR);
+    gl.enableScissor(false);
+}
+
+void GLShadowAtlas::beginTile(Vkm::OpenGL::Context& gl, uint32_t slot, uint64_t signature) {
     if (slot >= m_tiles.size() || m_tiles[slot].size == 0) return;
     m_tileSignature[slot] = signature;
-    const int32_t tile = static_cast<int32_t>(m_tiles[slot].size);
-    const int32_t x    = static_cast<int32_t>(m_tiles[slot].x);
-    const int32_t y    = static_cast<int32_t>(m_tiles[slot].y);
-    gl.setViewport(x, y, tile, tile);
-    // The clear is scissored to the tile: its neighbours may be holding a
-    // picture from an earlier frame that nothing this frame will redraw.
-    gl.setScissor(x, y, tile, tile);
-    gl.enableScissor(true);
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
-    gl.enableScissor(false);
+    const ShadowTileRect& tile = m_tiles[slot];
+    clearRect(gl, tile.x, tile.y, tile.size, tile.size);
+}
+
+void GLShadowAtlas::beginHeld(Vkm::OpenGL::Context& gl, uint32_t layer, const ShadowHeldRect& rect) {
+    const uint32_t edge = heldResolution();
+    // Read only where the plan drew (ShadowUBOData::heldCount), so nothing clears it whole.
+    if (!m_held) {
+        m_held = depthMap("shadow_held", SHADOW_HELD_SIDE * edge, SHADOW_HELD_SIDE * edge);
+        m_fboHeld.attachTexture(GL_DEPTH_ATTACHMENT, m_held->getID());
+        m_fboHeld.setDrawBuffer(GL_NONE);
+        m_fboHeld.setReadBuffer(GL_NONE);
+        m_held->bindSlot(GLBindings::ShadowTextureSlots::HELD);
+        m_cmpSampler->bindSlot(GLBindings::ShadowTextureSlots::HELD);
+    }
+    m_fboHeld.bind();
+    clearRect(
+        gl,
+        rect.x + edge * (layer % SHADOW_HELD_SIDE),
+        rect.y + edge * (layer / SHADOW_HELD_SIDE),
+        rect.width,
+        rect.height
+    );
+}
+
+glm::vec4 GLShadowAtlas::heldUV(uint32_t layer) {
+    const float share = 1.0f / static_cast<float>(SHADOW_HELD_SIDE);
+    return glm::vec4(
+        static_cast<float>(layer % SHADOW_HELD_SIDE) * share,
+        static_cast<float>(layer / SHADOW_HELD_SIDE) * share,
+        share,
+        share
+    );
 }
 
 bool GLShadowAtlas::tileHolds(uint32_t slot, uint64_t signature) const {
@@ -240,7 +276,7 @@ void GLShadowAtlas::forgetHeld() {
 }
 
 void GLShadowAtlas::beginCubeFace(
-    const Vkm::GL::Context& gl,
+    const Vkm::OpenGL::Context& gl,
     uint32_t slot,
     uint32_t face,
     uint64_t signature
@@ -250,13 +286,17 @@ void GLShadowAtlas::beginCubeFace(
     m_fboCube.bind();
     m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, static_cast<int>(slot * 6 + face));
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
+    gl.clear(false, true, GLDepth::SHADOW_CLEAR);
 }
 
 void GLShadowAtlas::bind2D(uint32_t unit) const {
     if (!m_atlas2D) return;
     m_atlas2D->bindSlot(unit);
     m_cmpSampler->bindSlot(unit);
+    // Until there is a held layer, the atlas stands in for it, unread: the driver checks every
+    // declared shadow sampler has a depth texture behind it whether or not it is read.
+    (m_held ? *m_held : *m_atlas2D).bindSlot(GLBindings::ShadowTextureSlots::HELD);
+    m_cmpSampler->bindSlot(GLBindings::ShadowTextureSlots::HELD);
 }
 
 void GLShadowAtlas::bind2DRaw(uint32_t unit) const {
@@ -271,27 +311,17 @@ void GLShadowAtlas::bindCubes(uint32_t unit) const {
     m_cubeSampler->bindSlot(unit);
 }
 
-void GLShadowAtlas::bindCubesRaw(uint32_t unit) const {
-    if (!m_cubes) return;
-    m_cubes->bindSlot(unit);
-    m_cubeRawSampler->bindSlot(unit);
-}
-
 glm::vec4 GLShadowAtlas::tileUV(uint32_t slot) const {
     if (slot >= m_tiles.size() || m_tiles[slot].size == 0) return glm::vec4(0.0f);
-    const float          side = static_cast<float>(SHADOW_ATLAS_BLOCKS * m_tileRes);
+    const float wide = static_cast<float>(SHADOW_ATLAS_COLUMNS * m_tileRes);
+    const float tall = static_cast<float>(SHADOW_ATLAS_ROWS * m_tileRes);
     const ShadowTileRect tile = m_tiles[slot];
     return glm::vec4(
-        static_cast<float>(tile.x) / side,
-        static_cast<float>(tile.y) / side,
-        static_cast<float>(tile.size) / side,
-        static_cast<float>(tile.size) / side
+        static_cast<float>(tile.x) / wide,
+        static_cast<float>(tile.y) / tall,
+        static_cast<float>(tile.size) / wide,
+        static_cast<float>(tile.size) / tall
     );
-}
-
-uint64_t GLShadowAtlas::capacity(uint32_t tileRes) {
-    const uint64_t side = static_cast<uint64_t>(SHADOW_ATLAS_BLOCKS) * tileRes;
-    return side * side;
 }
 
 } // namespace Vkm::Engine

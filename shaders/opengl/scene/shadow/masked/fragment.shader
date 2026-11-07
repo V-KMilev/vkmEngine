@@ -3,8 +3,8 @@
 // so it casts a share of texels as large as it is opaque and its see-through parts none. How
 // smoothly that share reads as a shade is the filter's: wide where the shadow is soft, grain where
 // a hard edge's few taps meet it.
-#include "../../surface.glsl"
-#include "../../noise.glsl"
+#include "../../../include/surface.glsl"
+#include "../../../include/noise.glsl"
 
 // From this tile's texels to the light's fixed grid (GLShadowPass), so a cascade snapping along
 // with the camera keeps each world texel's dither.

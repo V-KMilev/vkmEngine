@@ -1,4 +1,4 @@
-#include "offline/gl_capture_shadow.h"
+#include "offline/capture/gl_capture_shadow.h"
 
 #include <algorithm>
 #include <limits>
@@ -6,52 +6,51 @@
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "gl_buffer_upload.h"
-#include "gl_context.h"
-#include "gl_sampler.h"
-#include "gl_texture.h"
-#include "gl_uniform_buffer.h"
+#include "vkm_opengl/buffer/buffer_upload.h"
+#include "vkm_opengl/buffer/uniform_buffer.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/texture/sampler.h"
+#include "vkm_opengl/texture/texture.h"
 
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
-#include "asset/gl_material.h"
-#include "frame/gl_lights.h"
+#include "frame/light/gl_lights.h"
 #include "frame/gl_object_buffer.h"
-#include "gl_view.h"
+#include "asset/gl_asset_mirror.h"
+#include "base/math/axes.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/// The sun's map over a capture region; the 3x3 kernel softens its texels.
-constexpr uint32_t SHADOW_RES = 2048;
+constexpr uint32_t SHADOW_RES = 2048;  ///< The sun's map over a capture region; the 3x3 kernel softens its
+                                       ///< texels.
 
-/// Kept clear of the region's edge on every side, in the map's own world units.
-constexpr float SHADOW_MARGIN = 0.5f;
+constexpr float SHADOW_MARGIN = 0.5f;  ///< Kept clear of the region's edge on every side, in the map's own
+                                       ///< world units.
 
-/// A sun's direction is told apart in steps of 1/this a component (keyFor), about a fifth of a
-/// degree: a sun crossing the sky draws its map when it has moved that far, not every frame it moves.
-constexpr float SHADOW_DIRECTION_STEPS = 256.0f;
+constexpr float SHADOW_DIRECTION_STEPS = 256.0f;  ///< A sun's direction is told apart in steps of 1/this a
+                                                  ///< component (keyFor), about a fifth of a degree: a sun
+                                                  ///< crossing the sky draws its map when it has moved that
+                                                  ///< far, not every frame it moves.
 
 } // namespace
 
-GLCaptureShadow::GLCaptureShadow()
-    : m_depth("shaders/shadow/depth")
-    , m_masked("shaders/shadow/depth_masked") {}
+GLCaptureShadow::GLCaptureShadow() = default;
 
 GLCaptureShadow::~GLCaptureShadow() = default;
 
 GLCaptureShadow::ShadowKey GLCaptureShadow::keyFor(const RenderView& view, const Math::AABB& region) {
     ShadowKey key;
     key.region = region;
-    if (const LightData* light = lowestSlotDirectionalCaster(view.lights)) {
-        key.casts      = true;
-        key.light      = light->entitySlot;
+    key.world  = view.worldEpoch;
+    if (const LightData* light = lowestSlotDirectionalCaster(view.lists.lights)) {
         const glm::vec3 steps = glm::round(glm::normalize(light->direction) * SHADOW_DIRECTION_STEPS);
-        key.direction  = steps / SHADOW_DIRECTION_STEPS;
-        key.bias       = light->shadowBias;
-        key.normalBias = light->shadowNormalBias;
+
+        key.casts     = true;
+        key.light     = light->entitySlot;
+        key.direction = steps / SHADOW_DIRECTION_STEPS;
     }
     return key;
 }
@@ -72,15 +71,15 @@ void GLCaptureShadow::use(int slot, const RenderView& view, GLLights& lights) {
     shadow.used = ++m_clock;
 
     // The lights, the shadowed sun on the map's slot while it casts.
-    const size_t lightCount = std::min<size_t>(view.lights.size(), Config::MAX_LIGHTS);
+    const size_t lightCount = std::min<size_t>(view.lists.lights.size(), Config::MAX_LIGHTS);
     m_lightSlots.assign(lightCount, -1);
-    const LightData* sun = lowestSlotDirectionalCaster(view.lights);
+    const LightData* sun = lowestSlotDirectionalCaster(view.lists.lights);
     if (sun && shadow.casts) {
-        const auto index = static_cast<size_t>(sun - view.lights.data());
+        const auto index = static_cast<size_t>(sun - view.lists.lights.data());
         if (index < lightCount) m_lightSlots[index] = 0;
     }
     const bool steady = true;
-    lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)}, steady);
+    lights.update(view.lists.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)}, steady);
     if (!shadow.casts) return;
 
     shadow.ubo->bindBase(GLBindings::UBOBindingPoints::SHADOW);
@@ -89,9 +88,9 @@ void GLCaptureShadow::use(int slot, const RenderView& view, GLLights& lights) {
 }
 
 void GLCaptureShadow::draw(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     const RenderView& view,
-    const GLView& glView,
+    const GLAssetMirror& mirror,
     const GLObjectBuffer& objects,
     const std::vector<uint32_t>& casters,
     const Math::AABB& region,
@@ -110,7 +109,7 @@ void GLCaptureShadow::draw(
     ShadowSlot& shadow = m_slots[slot];
 
     // The sun the frame shadows (see lowestSlotDirectionalCaster).
-    const LightData* key = lowestSlotDirectionalCaster(view.lights);
+    const LightData* key = lowestSlotDirectionalCaster(view.lists.lights);
     shadow.key   = shadowFor;
     shadow.casts = key && !casters.empty();
     if (!shadow.casts) {
@@ -118,9 +117,9 @@ void GLCaptureShadow::draw(
         return;
     }
 
-    const RenderObjects& scene     = *view.objects;
-    const glm::vec3      dir       = glm::normalize(key->direction);
-    const glm::mat4      lightView = glm::lookAt(glm::vec3(0.0f), dir, stableUp(dir));
+    const RenderObjects& scene = *view.objects;
+    const glm::vec3 dir = glm::normalize(key->direction);
+    const glm::mat4 lightView = glm::lookAt(glm::vec3(0.0f), dir, Math::stableUp(dir));
 
     const Math::AABB across = Math::transform(lightView, region);
     glm::vec3 lo = across.min - glm::vec3(SHADOW_MARGIN);
@@ -138,84 +137,53 @@ void GLCaptureShadow::draw(
     }
 
     // The view looks down -z, so what lies nearest the light has the largest z.
-    const float     zNear   = -hi.z - SHADOW_MARGIN;
-    const float     zFar    = -lo.z + SHADOW_MARGIN;
+    const float zNear = -hi.z - SHADOW_MARGIN;
+    const float zFar  = -lo.z + SHADOW_MARGIN;
     const glm::mat4 lightVP = glm::ortho(lo.x, hi.x, lo.y, hi.y, zNear, zFar) * lightView;
 
     if (!shadow.map) {
-        Vkm::GL::Texture2DParams params;
+        Vkm::OpenGL::Texture2DParams params;
         params.width           = SHADOW_RES;
         params.height          = SHADOW_RES;
         params.internalFormat  = GL_DEPTH_COMPONENT24;
         params.format          = GL_DEPTH_COMPONENT;
         params.type            = GL_FLOAT;
-        params.minFilter       = Vkm::GL::TextureMinFilter::Linear;
-        params.magFilter       = Vkm::GL::TextureMagFilter::Linear;
-        params.wrapS           = Vkm::GL::TextureWrap::ClampToEdge;
-        params.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
+        params.minFilter       = Vkm::OpenGL::TextureMinFilter::Linear;
+        params.magFilter       = Vkm::OpenGL::TextureMagFilter::Linear;
+        params.wrapS           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        params.wrapT           = Vkm::OpenGL::TextureWrap::ClampToEdge;
         params.generateMipmaps = false;
-        shadow.map = std::make_unique<Vkm::GL::Texture2D>("capture_shadow", params);
+        shadow.map             = std::make_unique<Vkm::OpenGL::Texture2D>("capture_shadow", params);
     }
     if (!m_sampler) {
-        Vkm::GL::Sampler::Params compare;
-        compare.minFilter = Vkm::GL::TextureMinFilter::Linear;
-        compare.magFilter = Vkm::GL::TextureMagFilter::Linear;
-        compare.wrapS     = Vkm::GL::TextureWrap::ClampToEdge;
-        compare.wrapT     = Vkm::GL::TextureWrap::ClampToEdge;
-        compare.compare   = Vkm::GL::TextureCompare::LessEqual;
-        m_sampler = std::make_unique<Vkm::GL::Sampler>(compare);
+        Vkm::OpenGL::Sampler::Params compare;
+        compare.minFilter = Vkm::OpenGL::TextureMinFilter::Linear;
+        compare.magFilter = Vkm::OpenGL::TextureMagFilter::Linear;
+        compare.wrapS     = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        compare.wrapT     = Vkm::OpenGL::TextureWrap::ClampToEdge;
+        compare.compare   = GLDepth::SHADOW_COMPARE;
+        m_sampler         = std::make_unique<Vkm::OpenGL::Sampler>(compare);
     }
 
-    // Casters through the static depth programs (bind pose, as the capture draws a character),
-    // a cutout through the one its material cuts.
+    // Casters in their bind pose, as the capture draws a character.
     m_fbo.bind();
     m_fbo.attachTexture(GL_DEPTH_ATTACHMENT, shadow.map->getID());
     m_fbo.setDrawBuffer(GL_NONE);
     m_fbo.setReadBuffer(GL_NONE);
-    gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));
-    gl.setDepthTest(true);
-    gl.setDepthWrite(true);
-    gl.setDepthFunc(GLDepth::SHADOW_TEST);
-    gl.setBlending(false);
-    gl.setFaceCulling(false);
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
+    m_casters.draw(gl, m_overRegion, scene, mirror, objects, GLDepth::shadowProjection(lightVP), SHADOW_RES);
 
-    m_batcher.buildGrouped(m_overRegion, scene, glView, 0);
-    m_masked.bind();
-    m_masked.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    m_masked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
-    m_depth.bind();
-    m_depth.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    objects.bind();
-    const Vkm::GL::Shader* bound = &m_depth;
-    for (const InstanceDraw& draw : m_batcher.draws()) {
-        const GLMaterial* material = glView.getMaterial(draw.material);
-        const bool        masked   = material && material->cutsItsShadow();
-        Vkm::GL::Shader&  program  = masked ? m_masked : m_depth;
-        if (&program != bound) {
-            program.bind();
-            bound = &program;
-        }
-        if (masked) {
-            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-            material->bindTextures(glView);
-        }
-        m_batcher.draw(gl, draw);
-    }
-
-    // One "cascade" covering everything: the whole map, and a split no view
-    // depth reaches.
+    // One "cascade" covering everything: the whole map, read as the tile of what moves, with a reach
+    // no distance passes and no held layer.
     ShadowUBOData data{};
     data.csmBase       = 0;
     data.csmCount      = 1;
+    data.moverCount    = 1;
     data.cascadeSplits = glm::vec4(std::numeric_limits<float>::max());
-    Shadow2DGPU& map = data.s2d[0];
-    map.lightVP = lightVP;
-    map.atlas   = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+
     const float worldTexel = std::max(hi.x - lo.x, hi.y - lo.y) / static_cast<float>(SHADOW_RES);
-    map.params  = glm::vec4(key->shadowBias, worldTexel, zFar - zNear, 0.0f);  // w = 0: the hard kernel
-    map.shape   = glm::vec4(key->shadowNormalBias, 0.0f, 0.0f, 0.0f);
-    Vkm::GL::uploadIfChanged(shadow.ubo, shadow.last, data);
+    const float width      = worldTexel * static_cast<float>(SHADOW_RES);
+    data.s2d[0] = Shadow2DGPU::orthographic(lightVP, worldTexel, width, zFar - zNear, 0.0f);  // hard kernel
+    Vkm::OpenGL::uploadIfChanged(shadow.ubo, shadow.last, data);
     use(slot, view, lights);
 }
 

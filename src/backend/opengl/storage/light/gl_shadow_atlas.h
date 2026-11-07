@@ -6,9 +6,11 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_frame_buffer.h"
+#include "vkm_opengl/target/frame_buffer.h"
 
-namespace Vkm::GL {
+#include "system/render/render_limits.h"
+
+namespace Vkm::OpenGL {
     class Context;
     class Sampler;
     class Texture2D;
@@ -17,16 +19,33 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
-// The 2D atlas is SHADOW_ATLAS_BLOCKS x SHADOW_ATLAS_BLOCKS square blocks, each the largest
-// tile across; smaller tiles are its power-of-two quarters.
-constexpr uint32_t SHADOW_ATLAS_BLOCKS        = 2;
+// The 2D atlas is COLUMNS x ROWS square blocks, each the largest tile across, half a held layer's
+// edge; smaller tiles are its power-of-two quarters. Six: the sun's movers' tiles and the spots'.
+constexpr uint32_t SHADOW_ATLAS_COLUMNS       = 3;
+constexpr uint32_t SHADOW_ATLAS_ROWS          = 2;
 // The smallest tile: still a shadow.
 constexpr uint32_t SHADOW_ATLAS_MIN_TILE_RES  = 256;
-// The floor for the largest tile, so its half - the sun's last cascade - is still a tile.
-constexpr uint32_t SHADOW_ATLAS_MIN_BLOCK_RES = 2 * SHADOW_ATLAS_MIN_TILE_RES;
+// The floor for a held layer's edge, so the largest tile is still a tile.
+constexpr uint32_t SHADOW_ATLAS_MIN_HELD_RES  = 2 * SHADOW_ATLAS_MIN_TILE_RES;
 constexpr uint32_t SHADOW_CUBE_RES            = 1024;
 
-/// Where one 2D tile sits in the atlas, in texels; a size of 0 is no tile.
+// How many cascades' held layers a side of their texture holds.
+constexpr uint32_t SHADOW_HELD_SIDE = 2;
+static_assert(SHADOW_HELD_SIDE * SHADOW_HELD_SIDE >= Config::NUM_CASCADES, "A held layer a cascade");
+
+/**
+ * @brief A rectangle of a held layer, in texels.
+ */
+struct ShadowHeldRect {
+    uint32_t x      = 0;
+    uint32_t y      = 0;
+    uint32_t width  = 0;
+    uint32_t height = 0;
+};
+
+/**
+ * @brief Where one 2D tile sits in the atlas, in texels; a size of 0 is no tile.
+ */
 struct ShadowTileRect {
     uint32_t x    = 0;
     uint32_t y    = 0;
@@ -40,11 +59,14 @@ struct ShadowTileRect {
 };
 
 /**
- * @brief Shadow depth: a tiled 2D atlas (cascades and spots) and a cube array (point lights).
+ * @brief Shadow depth: a tiled 2D atlas (what moves under the sun, and spots), a cube array (point
+ *        lights) and held layers (what is fixed under the sun, a cascade each, side by side in a
+ *        texture made when first drawn into).
  *
  * A 2D caster slot indexes one square tile of its own power-of-two size, laid out each frame
  * and sampled with a per-tile UV offset and scale; a point caster's slot is a layer of one
- * depth cube-map array, sampled by direction and layer.
+ * depth cube-map array, sampled by direction and layer. A held layer wraps: a texel belongs to a
+ * place in the light's fixed grid, whichever part of the grid the layer shows now (GLShadowPlan).
  */
 class GLShadowAtlas {
     public:
@@ -65,12 +87,12 @@ class GLShadowAtlas {
          * (the cubes are built once), so sharpness can be traded for cost at runtime. What it
          * allocates is cleared to the far plane, so an undrawn tile or face reads as lit.
          *
-         * @param tileRes The largest tile's edge in texels, from a hand-authored project.json;
-         *                clamped so the blocks fit GL_MAX_TEXTURE_SIZE, past which there would be
+         * @param heldRes A held layer's edge in texels, from a hand-authored project.json; clamped
+         *                so the atlas's blocks fit GL_MAX_TEXTURE_SIZE, past which there would be
          *                no storage.
          * @param gl      Supplies that cached limit, and the clear.
          */
-        void init(Vkm::GL::Context& gl, uint32_t tileRes);
+        void init(Vkm::OpenGL::Context& gl, uint32_t heldRes);
 
         /**
          * @brief Bind the 2D atlas FBO.
@@ -79,18 +101,17 @@ class GLShadowAtlas {
          *
          * @param gl Context the framebuffer is bound through.
          */
-        void begin2D(const Vkm::GL::Context& gl) const;
+        void begin2D(const Vkm::OpenGL::Context& gl) const;
 
         /**
          * @brief Place this frame's 2D tiles, one per slot, largest first.
          *
-         * Each size is a power of two from SHADOW_ATLAS_MIN_TILE_RES to tileResolution(), and
-         * together they fit capacity(); the plan sizes them so (GLShadowData). Equal sizes give
-         * the same places as last frame, so a held tile stays held; a slot that moves forgets
-         * what it held.
+         * Each size is a power of two from SHADOW_ATLAS_MIN_TILE_RES to tileResolution(); the plan
+         * sizes them so (GLShadowPlan). Equal sizes give the same places as last frame, so a held
+         * tile stays held; a slot that moves forgets what it held.
          *
-         * @param sizes Per 2D slot, its tile's edge in texels.
-         * @return False when a size is out of range or they do not fit; nothing is placed then.
+         * @param sizes Per 2D slot, its tile's edge in texels; at most a block's worth of slots.
+         * @return False when a size is out of range or there are too many; nothing is placed then.
          */
         bool layout(const std::vector<uint32_t>& sizes);
 
@@ -103,7 +124,24 @@ class GLShadowAtlas {
          * @param slot      The tile.
          * @param signature What the following draws put in it; 0 for a picture never kept.
          */
-        void beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t signature);
+        void beginTile(Vkm::OpenGL::Context& gl, uint32_t slot, uint64_t signature);
+
+        /**
+         * @brief Restrict draws to @p rect of held layer @p layer, and clear it.
+         *
+         * @param gl    Context the viewport goes through.
+         * @param layer The layer: its cascade.
+         * @param rect  Where in the layer.
+         */
+        void beginHeld(Vkm::OpenGL::Context& gl, uint32_t layer, const ShadowHeldRect& rect);
+
+        /**
+         * @brief Where a held layer sits in its texture's UV, as tileUV() of a tile.
+         *
+         * @param layer The layer: its cascade.
+         * @return Its lowest corner in xy and its extent in zw.
+         */
+        static glm::vec4 heldUV(uint32_t layer);
 
         /**
          * @brief Attach layer @p slot's @p face to the cube FBO, clear it, and record @p signature.
@@ -113,7 +151,7 @@ class GLShadowAtlas {
          * @param face      Its face, 0-5.
          * @param signature What the following draws put in it; 0 for a picture never kept.
          */
-        void beginCubeFace(const Vkm::GL::Context& gl, uint32_t slot, uint32_t face, uint64_t signature);
+        void beginCubeFace(const Vkm::OpenGL::Context& gl, uint32_t slot, uint32_t face, uint64_t signature);
 
         /**
          * @brief Whether 2D tile @p slot already holds the image @p signature names.
@@ -136,7 +174,7 @@ class GLShadowAtlas {
         bool faceHolds(uint32_t slot, uint32_t face, uint64_t signature) const;
 
         /**
-         * @brief Forget what every tile and face holds, so each is drawn again.
+         * @brief Forget what every tile and face hold, so each is drawn again.
          *
          * For a replaced world or asset graph, or a reloaded program: either can hash the same
          * as before while drawing something else.
@@ -144,7 +182,8 @@ class GLShadowAtlas {
         void forgetHeld();
 
         /**
-         * @brief Bind the 2D atlas for a shader that samples it with sampler2DShadow.
+         * @brief Bind the 2D atlas for a shader that samples it with sampler2DShadow, and the held
+         *        layers beside it, on their own unit.
          *
          * The comparison lives on a sampler bound to @p unit, not the texture, since passes
          * disagree on how they read this atlas.
@@ -171,13 +210,6 @@ class GLShadowAtlas {
         void bindCubes(uint32_t unit) const;
 
         /**
-         * @brief Bind the same cube array under a plain sampler, for reading stored depth.
-         *
-         * @param unit Texture unit to bind the array and its non-comparing sampler to.
-         */
-        void bindCubesRaw(uint32_t unit) const;
-
-        /**
          * @brief Where a tile sits in atlas UV: atlasUV = xy + localUV * zw.
          *
          * @param slot The 2D tile, as layout() placed it.
@@ -194,13 +226,18 @@ class GLShadowAtlas {
          */
         uint32_t tileResolution() const { return m_tileRes; }
 
-        /**
-         * @brief The texels the 2D tiles may cover together: every block's.
-         *
-         * @param tileRes The largest tile's edge, as tileResolution() reports it.
-         * @return The atlas's area in texels.
-         */
-        static uint64_t capacity(uint32_t tileRes);
+        /// A held layer's edge in texels: twice the largest tile's.
+        uint32_t heldResolution() const { return 2 * m_tileRes; }
+
+    private:
+        /// Restrict draws to a rectangle of the bound framebuffer and clear it to the far plane.
+        static void clearRect(
+            Vkm::OpenGL::Context& gl,
+            uint32_t x,
+            uint32_t y,
+            uint32_t width,
+            uint32_t height
+        );
 
     private:
         uint32_t m_tileRes = 0;
@@ -215,18 +252,19 @@ class GLShadowAtlas {
         std::vector<uint64_t> m_tileSignature;  ///< Per 2D slot: what it holds, 0 = nothing worth keeping.
         std::vector<uint64_t> m_faceSignature;  ///< Per cube slot and face, slot * 6 + face.
 
-        Vkm::GL::FrameBuffer m_fbo2D;
-        Vkm::GL::FrameBuffer m_fboCube;
+        Vkm::OpenGL::FrameBuffer m_fbo2D;
+        Vkm::OpenGL::FrameBuffer m_fboHeld;
+        Vkm::OpenGL::FrameBuffer m_fboCube;
 
-        std::unique_ptr<Vkm::GL::Texture2D>        m_atlas2D;
-        std::unique_ptr<Vkm::GL::TextureCubeArray> m_cubes;  ///< A layer per point caster
+        std::unique_ptr<Vkm::OpenGL::Texture2D>        m_atlas2D;
+        std::unique_ptr<Vkm::OpenGL::Texture2D>        m_held;   ///< A layer per cascade, side by side.
+        std::unique_ptr<Vkm::OpenGL::TextureCubeArray> m_cubes;  ///< A layer per point caster
 
         // Samplers rather than toggling the texture's compare mode: a sampler overrides the unit's
         // state, so one pass reads a shadow map while another reads depth. See bind2D.
-        std::unique_ptr<Vkm::GL::Sampler> m_cmpSampler;
-        std::unique_ptr<Vkm::GL::Sampler> m_rawSampler;
-        std::unique_ptr<Vkm::GL::Sampler> m_cubeSampler;     ///< The comparison, for the point-light cubes.
-        std::unique_ptr<Vkm::GL::Sampler> m_cubeRawSampler;  ///< The cubes' stored depth, uncompared.
+        std::unique_ptr<Vkm::OpenGL::Sampler> m_cmpSampler;
+        std::unique_ptr<Vkm::OpenGL::Sampler> m_rawSampler;
+        std::unique_ptr<Vkm::OpenGL::Sampler> m_cubeSampler;  ///< The comparison, for the point-light cubes.
 };
 
 } // namespace Vkm::Engine
