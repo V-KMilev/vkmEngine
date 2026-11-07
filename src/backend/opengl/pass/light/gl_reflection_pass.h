@@ -2,37 +2,44 @@
 
 #include <cstdint>
 
-#include "gl_compute_shader.h"
-#include "gl_mip_chain_texture.h"
-#include "gl_shader.h"
+#include "vkm_opengl/shader/compute_shader.h"
+#include "vkm_opengl/shader/shader.h"
+#include "vkm_opengl/texture/mip_chain_texture.h"
+#include "vkm_opengl/texture/texture.h"
 
-#include "gl_pass.h"
-#include "gl_target.h"
+#include "pass/gl_pass.h"
+#include "storage/gl_target.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief Screen-space reflections: the lit scene a glossy pixel's ray meets replaces its probe
- *        or sky reflection; and a planar reflection's picture, on its rectangle.
+ *        or sky reflection.
  *
- * Runs while `ssr` is on or a planar reflection was drawn (GLFrameContext::planarPictures). On a
- * reflector's rectangle the resolve lays its picture, and the trace skips the pixels there.
- *
- * The lit colour goes into a mip chain filtered by shaders/downsample.glsl, so a glossy surface
- * reads the scene blurred to its lobe. A trace marches each glossy pixel's ray through the depth
- * and records the facing surface it met, or none. The resolve swaps the hit colour in through
- * the weight the forward pass wrote: colour + (weight x traced - weight x environment) x trust.
- * Averaging neighbours' rays, weighted by surface likeness, gives a smooth lobe and soft edges
+ * A trace marches each glossy pixel's ray through the depth and records the facing surface it
+ * met, or none. On a frame where one met something, the lit color goes into a mip chain filtered
+ * by shaders/opengl/include/downsample.glsl, so a glossy surface reads the scene blurred to its lobe; on one
+ * where none did, the chain's dispatches return at once. The resolve swaps the hit color in through
+ * the weight the forward pass wrote: color + (weight x traced - weight x environment) x trust.
+ * Averaging neighbors' rays, weighted by surface likeness, gives a smooth lobe and soft edges
  * without a temporal filter.
  *
  * The forward pass dimmed weight and environment reflection by the fog's transmittance, so the
- * replacement is fogged as the surface is.
+ * replacement is fogged as the surface is, and zeroed them on a material rougher than
+ * MAX_ROUGHNESS, which keeps its probe or sky reflection.
  */
 class GLReflectionPass : public GLPass {
     public:
-        /// The colour chain's most levels: enough for a lobe at the roughness limit to span most of
-        /// the screen. A planar reflection's chain is capped at the same.
-        static constexpr int MAX_CHAIN_MIPS = 8;
+        static constexpr int MAX_CHAIN_MIPS = 8;  ///< The most levels a hit reads, the lit scene as level 0
+                                                  ///< and the half-size chain's below it: enough for the
+                                                  ///< roughest lobe traced, far rippled water's, to span
+                                                  ///< most of the screen.
+
+        static constexpr float MAX_ROUGHNESS = 0.25f;  ///< Materials rougher than this reflect the probes and
+                                                       ///< the sky alone. The material's own roughness
+                                                       ///< decides: what a pixel's distance or ripples add
+                                                       ///< blurs its trace, not stops it.
+        static constexpr float MAX_DISTANCE  = 50.0f;  ///< World-space trace length.
 
     public:
         GLReflectionPass();
@@ -49,7 +56,7 @@ class GLReflectionPass : public GLPass {
 
     private:
         /**
-         * @brief Fill the colour chain and march each glossy pixel's ray into the hits.
+         * @brief March each glossy pixel's ray into the hits, then fill the color chain they read.
          *
          * @param ctx  The frame.
          * @param step Pixels a hit stands for on each axis.
@@ -57,22 +64,7 @@ class GLReflectionPass : public GLPass {
         void trace(GLFrameContext& ctx, int step);
 
         /**
-         * @brief Tell @p shader where this frame's planar reflectors are, in view space.
-         *
-         * @param ctx    The frame, whose camera they are placed for.
-         * @param shader The trace, which skips them, or the resolve, which lays their pictures.
-         */
-        void placePlanar(GLFrameContext& ctx, Vkm::GL::Shader& shader) const;
-
-        /**
-         * @brief Tell the resolve where this frame's planar reflectors are, and bind their pictures.
-         *
-         * @param ctx The frame, whose camera they are placed for.
-         */
-        void bindPlanar(GLFrameContext& ctx);
-
-        /**
-         * @brief (Re)allocate the colour chain and the trace target for a scene size.
+         * @brief (Re)allocate the color chain and the trace target for a scene size.
          *
          * @param width  The scene's width in pixels.
          * @param height The scene's height in pixels.
@@ -81,22 +73,18 @@ class GLReflectionPass : public GLPass {
         void ensureTargets(uint32_t width, uint32_t height, uint32_t step);
 
     private:
-        Vkm::GL::ComputeShader m_source;      ///< Lit colour -> chain base.
-        Vkm::GL::ComputeShader m_downsample;  ///< Each chain level from the one before.
-        Vkm::GL::Shader        m_trace;       ///< Ray march, a hit a pixel or a 2x2 block.
-        Vkm::GL::Shader        m_resolve;     ///< Hits -> the colour chain's next link.
+        Vkm::OpenGL::ComputeShader m_downsample;  ///< Each chain level from the one before, or the scene.
+        Vkm::OpenGL::Shader        m_trace;       ///< Ray march, a hit a pixel or a 2x2 block.
+        Vkm::OpenGL::Shader        m_resolve;     ///< Hits -> the color chain's next link.
 
-        Vkm::GL::MipChainTexture m_chain;  ///< The lit scene, filtered down.
+        Vkm::OpenGL::MipChainTexture m_chain;  ///< The lit scene, filtered down from half size.
+        Vkm::OpenGL::Texture2D       m_found;  ///< One texel: whether this frame's trace met anything.
 
-        /**
-         * @brief Per-pixel hit uv, trust, and chain level as a fraction of the last.
-         *
-         * Unsigned 16-bit: a half float spaces uv past 0.5 almost a pixel
-         * apart at 1920 wide, and the resolve reads the colour a hit landed on.
-         */
-        GLTarget m_hits{GLTarget::Layout::Color, GL_RGBA16};
-        uint32_t m_width  = 0;
-        uint32_t m_height = 0;
+        GLTarget m_hits{GLTarget::Layout::Color, GL_RGBA16};  ///< Per-pixel hit uv, trust, and chain level as
+                                                              ///< a fraction of the last. Unsigned 16-bit: a
+                                                              ///< half float spaces uv past 0.5 almost a
+                                                              ///< pixel apart at 1920 wide, and the resolve
+                                                              ///< reads the color a hit landed on.
 };
 
 } // namespace Vkm::Engine

@@ -4,8 +4,7 @@
  * reflects the interpolated G-buffer normal: one ray per pixel turns a normal
  * map into a speckle of hits and misses.
  *
- * Zero trust where the ray found nothing, and no ray from a pixel on a planar reflector: the resolve
- * gives it the reflector's picture.
+ * Zero trust where the ray found nothing.
  */
 
 out vec4 Hit;  // xy: hit uv; z: trust; w: chain level over the last (the target is unorm)
@@ -13,18 +12,19 @@ out vec4 Hit;  // xy: hit uv; z: trust; w: chain level over the last (the target
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
 layout(binding = REFLECT_SLOT_WEIGHT)     uniform sampler2D u_weight;
 
-uniform float u_maxRoughness;  // rougher pixels reflect only probes and sky
 uniform float u_maxDistance;   // world length a ray is traced
-uniform float u_maxLod;        // the colour chain's last level
+uniform float u_maxLod;        // the color chain's last level
 uniform int   u_traceStep;     // pixels a hit stands for on each axis: 1, or 2 at half resolution
 
-#include "../reflection.glsl"
+#include "../scene_read.glsl"
+#include "../found.glsl"
 
-// A mirror takes the most steps; the roughness limit the fewest, since its
-// blurred level cannot show a thin object a coarse march skips.
-const int MAX_STEPS = 48;
-const int MIN_STEPS = 16;
-const int REFINE    = 6;
+// A mirror takes the most steps; a lobe BLURRED_ROUGHNESS wide or wider the
+// fewest, since its blurred level cannot show a thin object a coarse march skips.
+const int   MAX_STEPS         = 32;
+const int   MIN_STEPS         = 12;
+const int   REFINE            = 5;
+const float BLURRED_ROUGHNESS = 0.6;
 
 // How much the scene's depth changes across one texel at @p texel, along the surface: the smaller
 // one-sided difference on each axis, so an edge's jump on one side is not taken for its slope.
@@ -50,7 +50,7 @@ void main() {
     const ivec2 texel     = ivec2(gl_FragCoord.xy) * u_traceStep;
     const vec4  weight    = texelFetch(u_weight, texel, 0);
     const float roughness = weight.a;
-    if (!tracesReflection(weight, u_maxRoughness)) return;
+    if (!tracesReflection(weight)) return;
 
     const float depth = texelFetch(u_sceneDepth, texel, 0).r;
     if (isFarDepth(depth) || !sceneHasNormal(texel)) return;
@@ -61,7 +61,6 @@ void main() {
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
     const vec3 at    = sceneViewPosAt(texel, size);
     const vec3 n     = sceneNormalAt(texel);
-    if (planarAt(at, n) >= 0) return;
     const vec3 toEye = cameraIsPerspective() ? normalize(-at) : vec3(0.0, 0.0, 1.0);
     const vec3 dir   = reflect(-toEye, n);
 
@@ -95,20 +94,26 @@ void main() {
 
     const ivec2 last   = ivec2(size) - 1;
     const float texels = length(delta * tEnd * size);
-    const float budget = mix(float(MAX_STEPS), float(MIN_STEPS), roughness / u_maxRoughness);
+    const float budget = mix(float(MAX_STEPS), float(MIN_STEPS), min(roughness / BLURRED_ROUGHNESS, 1.0));
     const int   steps  = int(clamp(texels, 1.0, budget));
     const float stepT  = tEnd / float(steps);
 
-    float tPrev = 0.0;
+    float tPrev  = 0.0;
+    bool  behind = false;  // past a crossing the gap test refused, and not yet out in front
     for (int i = 1; i <= MAX_STEPS; ++i) {
         if (i > steps) break;
         const float t = stepT * float(i);
 
         // In front of what the frame shows: keep going.
         if (rayDepth(z0, z1, k0, k1, t) <= sceneDepthAt(min(ivec2((s0 + delta * t) * size), last))) {
-            tPrev = t;
+            tPrev  = t;
+            behind = false;
             continue;
         }
+        // Passing behind an object: only a crossing from in front is bisected, or each step behind
+        // it would bisect again, and those few rays would set the whole pass's length.
+        if (behind) continue;
+        behind = true;
 
         // Crossed since the last step: bisect to a texel. At a real surface the
         // gap closes; behind an edge (depth jumping past an object) it stays open.
@@ -136,19 +141,21 @@ void main() {
         if (sceneHasNormal(hitTexel) && dot(sceneNormalAt(hitTexel), dir) > 0.0) continue;
 
         const vec3  hitP      = mix(p0 * k0, p1 * k1, hi) / mix(k0, k1, hi);
-        const float travelled = length(hitP - p0);
+        const float traveled = length(hitP - p0);
 
-        // The lobe widens with the GGX alpha and the distance travelled, in texels.
+        // The lobe widens with the GGX alpha and the distance traveled, in texels.
         const float perTexel = u_camera.projection[1][1] * 0.5 * size.y
             / (cameraIsPerspective() ? hitZ : 1.0);
-        const float cone     = 2.0 * travelled * roughness * roughness * perTexel;
+        const float cone     = 2.0 * traveled * roughness * roughness * perTexel;
         const float lod      = clamp(log2(max(cone, 1.0)), 0.0, u_maxLod);
 
         // Faded at the screen edge and the ray's end so neither draws a line.
         const vec2 edge = min(hitUV, 1.0 - hitUV);
         float trust = smoothstep(0.0, 0.06, min(edge.x, edge.y));
-        trust *= 1.0 - smoothstep(0.8, 1.0, travelled / u_maxDistance);
+        trust *= 1.0 - smoothstep(0.8, 1.0, traveled / u_maxDistance);
         Hit = vec4(hitUV, trust, lod / max(u_maxLod, 1.0));
+        // Read first, so that once marked the texel is not written by every hit after.
+        if (imageLoad(u_found, ivec2(0)).r == 0u) imageStore(u_found, ivec2(0), uvec4(1u));
         return;
     }
 }
