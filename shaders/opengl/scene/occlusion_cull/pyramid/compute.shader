@@ -9,7 +9,7 @@
 
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
-#include "../../depth.glsl"  // fartherDepth
+#include "../../../include/depth.glsl"  // fartherDepth
 
 layout(binding = CULL_SLOT_DEPTH)    uniform sampler2D   u_depth;
 layout(binding = CULL_SLOT_DEPTH_MS) uniform sampler2DMS u_depthMS;
@@ -44,7 +44,8 @@ void main() {
             }
         }
     } else {
-        // By GL's halving of level 0's size, as shaders/cull/instances reads the levels.
+        // By GL's halving of level 0's size, as shaders/opengl/scene/occlusion_cull/instances reads the
+        // levels.
         const ivec2 below = max(textureSize(u_pyramid, 0) >> (u_level - 1), ivec2(1));
         // The last texel of an odd level below has no parent of its own: the last parent takes it.
         const ivec2 last = texel * 2 + 1 + ivec2(equal(texel, size - 1)) * (below & 1);

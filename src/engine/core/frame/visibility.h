@@ -3,8 +3,8 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "system/render/data/camera_data.h"
-#include "system/render/data/render_objects.h"
+#include "core/frame/camera_data.h"
+#include "core/frame/render_objects.h"
 
 namespace Vkm::Engine {
 
@@ -15,22 +15,15 @@ namespace Vkm::Engine {
 struct Visibility {
     RenderObjects objects;  ///< Every drawable mesh, and which the camera sees.
 
-    /**
-     * @brief Per object, its entity, parallel to the columns of `objects`.
-     *
-     * Kept beside the objects because drawing never needs it; tools do.
-     */
-    std::vector<EntityId> entities;
+    std::vector<EntityId> entities;  ///< Per object, its entity, parallel to the columns of `objects`. Kept
+                                     ///< beside them because the backend never reads it; RenderView (for
+                                     ///< outlines), DebugViewSystem and the editor do.
 
-    CameraData camera;  ///< The resolved view, depth of field included; meaningful while hasCamera.
+    CameraData camera;  ///< The resolved view; meaningful while hasCamera.
     bool       hasCamera = false;
 
-    /**
-     * @brief The scene camera the frame was rendered through.
-     *
-     * Empty for a host's free view (HostView) or no camera.
-     */
-    EntityId cameraEntity{};
+    EntityId cameraEntity{};  ///< The scene camera the frame was rendered through. Empty for a host's free
+                              ///< view (HostView) or no camera.
 };
 
 } // namespace Vkm::Engine

@@ -1,19 +1,20 @@
-#include "frame/gl_occlusion_cull.h"
+#include "frame/draw/gl_occlusion_cull.h"
 
 #include <algorithm>
 
 #include <GL/glew.h>
 
-#include "gl_context.h"
-#include "gl_error_handle.h"
+#include "vkm_opengl/core/context.h"
 
 #include "gl_profiler.h"
-#include "gl_target.h"
+#include "storage/gl_target.h"
 #include "convention/gl_bindings.h"
-#include "frame/gl_instance_batcher.h"
-#include "system/render/data/render_objects.h"
+#include "frame/draw/gl_instance_batcher.h"
+#include "core/frame/render_objects.h"
 
 namespace Vkm::Engine {
+
+using Vkm::OpenGL::DrawElementsIndirectCommand;
 
 namespace {
 
@@ -29,10 +30,12 @@ constexpr int SET_COUNT = static_cast<int>(GLOcclusionCull::Set::Count);
 void cullBarrier() {
     constexpr GLbitfield READERS = GL_COMMAND_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT
         | GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
-    VKM_GL_CHECK(glMemoryBarrier(READERS));
+    Vkm::OpenGL::memoryBarrier(READERS);
 }
 
-/// What a buffer ensureBytes() makes holds before anything writes it.
+/**
+ * @brief What a buffer ensureBytes() makes holds before anything writes it.
+ */
 enum class Contents {
     Undefined,
     Zeroed
@@ -47,29 +50,29 @@ enum class Contents {
  * @param usage    A replacement's usage hint.
  */
 void ensureBytes(
-    std::unique_ptr<Vkm::GL::VertexBuffer>& buffer,
+    std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer>& buffer,
     uint32_t bytes,
     Contents contents,
     GLenum usage
 ) {
     if (buffer && bytes <= buffer->getSize()) return;
     const uint32_t capacity = bytes + bytes / 2;
-    const std::vector<uint8_t> zeros(contents == Contents::Zeroed ? capacity : 0, 0);
-    buffer = std::make_unique<Vkm::GL::VertexBuffer>(zeros.empty() ? nullptr : zeros.data(), capacity, usage);
+    buffer = std::make_unique<Vkm::OpenGL::ShaderStorageBuffer>(nullptr, capacity, usage);
+    if (contents == Contents::Zeroed) buffer->clear(GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 }
 
 } // namespace
 
 GLOcclusionCull::GLOcclusionCull()
-    : m_pyramidProgram("shaders/cull/pyramid")
-    , m_cullProgram("shaders/cull/instances") {}
+    : m_pyramidProgram("shaders/opengl/scene/occlusion_cull/pyramid")
+    , m_cullProgram("shaders/opengl/scene/occlusion_cull/instances") {}
 
 GLOcclusionCull::~GLOcclusionCull() = default;
 
 bool GLOcclusionCull::prepare(const GLInstanceBatcher& batch, const RenderObjects& objects) {
-    const GLDrawList&               list      = batch.list();
-    const std::vector<uint32_t>&    instances = list.instances();
-    const std::vector<DrawCommand>& commands  = list.commands();
+    const GLDrawList& list = batch.list();
+    const std::vector<uint32_t>& instances = list.instances();
+    const std::vector<DrawElementsIndirectCommand>& commands = list.commands();
     m_instanceCount = static_cast<uint32_t>(instances.size());
     m_commandCount  = static_cast<uint32_t>(commands.size());
     m_source        = list.instanceSpan();
@@ -80,10 +83,10 @@ bool GLOcclusionCull::prepare(const GLInstanceBatcher& batch, const RenderObject
     for (int set = 0; set < SET_COUNT; ++set) {
         std::copy(commands.begin(), commands.end(), m_commands.begin() + set * m_commandCount);
     }
-    for (DrawCommand& command : m_commands) command.instanceCount = 0;
+    for (DrawElementsIndirectCommand& command : m_commands) command.instanceCount = 0;
 
     // Counted into by the GPU, so not streamed; grown with headroom as the batch grows.
-    const auto commandBytes = static_cast<uint32_t>(m_commands.size() * sizeof(DrawCommand));
+    const auto commandBytes = static_cast<uint32_t>(m_commands.size() * sizeof(DrawElementsIndirectCommand));
     ensureBytes(m_commandBuffer, commandBytes, Contents::Undefined, GL_STREAM_DRAW);
     m_commandBuffer->update(m_commands.data(), commandBytes, 0);
 
@@ -91,18 +94,23 @@ bool GLOcclusionCull::prepare(const GLInstanceBatcher& batch, const RenderObject
     const auto instanceBytes = static_cast<uint32_t>(m_instanceCount * SET_COUNT * sizeof(uint32_t));
     ensureBytes(m_instanceBuffer, instanceBytes, Contents::Undefined, GL_STREAM_DRAW);
 
-    // A verdict an object; grown, every object starts unseen and is drawn by the second draw.
+    // A verdict an object; grown, every object starts unseen and is drawn by the second draw. The
+    // cull reads the last verdicts from a copy, as it writes this frame's: a hand-over draws an
+    // object twice, and the second instance must not read what the first just wrote.
     const auto visibleBytes = static_cast<uint32_t>(objects.models.size() * sizeof(uint32_t));
     ensureBytes(m_visibleBuffer, visibleBytes, Contents::Zeroed, GL_DYNAMIC_DRAW);
+    ensureBytes(m_lastBuffer, visibleBytes, Contents::Undefined, GL_DYNAMIC_DRAW);
+    m_lastBuffer->copyFrom(*m_visibleBuffer, 0, 0, visibleBytes);
     return true;
 }
 
 void GLOcclusionCull::bindBuffers() const {
     namespace SSBO = GLBindings::SSBOBindingPoints;
-    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_SOURCE, m_source);
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_VISIBLE, m_visibleBuffer->getID()));
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_COMMANDS, m_commandBuffer->getID()));
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_INSTANCES, m_instanceBuffer->getID()));
+    Vkm::OpenGL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_SOURCE, m_source);
+    m_visibleBuffer->bindBase(SSBO::CULL_VISIBLE);
+    m_lastBuffer->bindBase(SSBO::CULL_LAST);
+    m_commandBuffer->bindBase(SSBO::CULL_COMMANDS);
+    m_instanceBuffer->bindBase(SSBO::CULL_INSTANCES);
     m_cullProgram.bind();
     m_cullProgram.setUniform1i("u_instanceCount", static_cast<int>(m_instanceCount));
     m_cullProgram.setUniform1i("u_commandCount", static_cast<int>(m_commandCount));
@@ -121,17 +129,17 @@ void GLOcclusionCull::ensurePyramid(uint32_t width, uint32_t height) {
     const uint32_t h = std::max((height + 1) / 2, 1u);
     if (m_pyramid && m_pyramid->getWidth() == w && m_pyramid->getHeight() == h) return;
 
-    // Every level allocated, by the mip generation of an empty level 0.
-    Vkm::GL::Texture2DParams params;
+    // The whole chain allocated (generateMipmaps with no data), which the pyramid pass fills.
+    Vkm::OpenGL::Texture2DParams params;
     params.width           = w;
     params.height          = h;
     params.internalFormat  = GL_R32F;
     params.format          = GL_RED;
     params.type            = GL_FLOAT;
-    params.minFilter       = Vkm::GL::TextureMinFilter::NearestMipmapNearest;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::NearestMipmapNearest;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Nearest;
     params.generateMipmaps = true;
-    m_pyramid = std::make_unique<Vkm::GL::Texture2D>("cull_pyramid", params);
+    m_pyramid              = std::make_unique<Vkm::OpenGL::Texture2D>("cull_pyramid", params);
 }
 
 void GLOcclusionCull::cullAgainst(const GLTarget& scene, uint32_t width, uint32_t height) {
@@ -158,42 +166,30 @@ void GLOcclusionCull::buildPyramid(const GLTarget& scene) {
     uint32_t w = m_pyramid->getWidth();
     uint32_t h = m_pyramid->getHeight();
     for (int level = 0; w > 0 && h > 0; ++level) {
-        VKM_GL_CHECK(glBindImageTexture(0, m_pyramid->getID(), level, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F));
+        m_pyramid->bindImage(0, GL_WRITE_ONLY, static_cast<uint32_t>(level));
         m_pyramidProgram.setUniform1i("u_level", level);
         m_pyramidProgram.dispatch(
             ComputeGroups::covering(w, ComputeGroups::IMAGE),
             ComputeGroups::covering(h, ComputeGroups::IMAGE)
         );
         // The next level reads this one.
-        VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
+        Vkm::OpenGL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
         if (w == 1 && h == 1) break;
         w = std::max(w / 2, 1u);
         h = std::max(h / 2, 1u);
     }
 }
 
-void GLOcclusionCull::draw(Vkm::GL::Context& gl, const InstanceDraw& draw, Set set) const {
+void GLOcclusionCull::draw(Vkm::OpenGL::Context& gl, const InstanceDraw& draw, Set set) const {
     // The set's own lists, end to end with the other sets' in the two buffers.
-    const auto     index         = static_cast<uint32_t>(set);
+    const auto index = static_cast<uint32_t>(set);
     const uint32_t instanceBytes = m_instanceCount * uint32_t{sizeof(uint32_t)};
-    const uint32_t commandBytes  = m_commandCount * uint32_t{sizeof(DrawCommand)};
-    const Vkm::GL::BufferSpan instances{m_instanceBuffer->getID(), index * instanceBytes, instanceBytes};
-    const Vkm::GL::BufferSpan commands{m_commandBuffer->getID(), index * commandBytes, commandBytes};
-    if (draw.mirrored) gl.setFrontFace(GL_CW);
+    const uint32_t commandBytes  = m_commandCount * uint32_t{sizeof(DrawElementsIndirectCommand)};
+    const Vkm::OpenGL::BufferSpan instances{m_instanceBuffer->getID(), index * instanceBytes, instanceBytes};
+    const Vkm::OpenGL::BufferSpan commands{m_commandBuffer->getID(), index * commandBytes, commandBytes};
+    const GLenum front = turnForMirror(gl, draw.mirrored);
     draw.mesh->pool().drawIndirect(draw.mesh->layout(), instances, commands, draw.first, draw.count);
-    if (draw.mirrored) gl.setFrontFace(GL_CCW);
-}
-
-uint32_t GLOcclusionCull::countIn(Set set) const {
-    if (!m_commandBuffer || m_commandCount == 0) return 0;
-    std::vector<DrawCommand> commands(m_commandCount);
-    const auto bytes  = static_cast<GLsizeiptr>(commands.size() * sizeof(DrawCommand));
-    const auto first  = static_cast<size_t>(set) * m_commandCount;
-    const auto offset = static_cast<GLintptr>(first * sizeof(DrawCommand));
-    VKM_GL_CHECK(glGetNamedBufferSubData(m_commandBuffer->getID(), offset, bytes, commands.data()));
-    uint32_t count = 0;
-    for (const DrawCommand& command : commands) count += command.instanceCount;
-    return count;
+    gl.setFrontFace(front);
 }
 
 } // namespace Vkm::Engine

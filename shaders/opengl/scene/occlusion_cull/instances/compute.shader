@@ -4,7 +4,7 @@
  *
  * An invocation per instance of the batch: its object from the batch's own instance list, its
  * command found among the commands by where its instance falls, and its world box from
- * shaders/objects.glsl. A set is a copy of the batch's commands with no instances; an instance
+ * shaders/opengl/include/objects.glsl. A set is a copy of the batch's commands with no instances; an instance
  * given to it is written into its command's own range, counted in as it comes.
  *
  * u_againstDepth 0 gives CULL_SET_SEEN what the last cull saw. 1 tests every box against the
@@ -23,11 +23,15 @@ struct DrawCommand {
 };
 
 layout(std430, binding = SSBO_CULL_SOURCE) readonly buffer SourceBlock {
-    uint objects[];  // the batch's instances, in its commands' order
+    uint instances[];  // the batch's instances, in its commands' order (instancing.glsl)
 } u_source;
 
-layout(std430, binding = SSBO_CULL_VISIBLE) buffer VisibleBlock {
-    uint seen[];  // per object, whether the last cull showed it
+layout(std430, binding = SSBO_CULL_LAST) readonly buffer LastBlock {
+    uint seen[];  // per object, whether the last cull showed it: a copy, which this one leaves alone
+} u_last;
+
+layout(std430, binding = SSBO_CULL_VISIBLE) writeonly buffer VisibleBlock {
+    uint seen[];  // per object, whether this cull shows it
 } u_visible;
 
 layout(std430, binding = SSBO_CULL_COMMANDS) buffer CommandBlock {
@@ -35,7 +39,7 @@ layout(std430, binding = SSBO_CULL_COMMANDS) buffer CommandBlock {
 } u_commands;
 
 layout(std430, binding = SSBO_CULL_INSTANCES) writeonly buffer InstanceBlock {
-    uint objects[];  // u_instanceCount a set, the sets end to end
+    uint instances[];  // u_instanceCount a set, the sets end to end
 } u_instances;
 
 layout(binding = CULL_SLOT_PYRAMID) uniform sampler2D u_pyramid;
@@ -45,14 +49,14 @@ uniform int  u_instanceCount;
 uniform int  u_commandCount;
 uniform vec2 u_sceneSize;  // the scene's pixels, which the pyramid halves
 
-// Window-depth slack the box's nearest point must clear, as a share of the depth there: a float
-// rounds by a share of its size, and the eye's reversed depth (shaders/depth.glsl) falls as one over
-// the distance, so this is the same share of the distance too - a centimetre a kilometre out.
+// Window-depth slack the box's nearest point must clear, as a share of the depth there: a float rounds by a
+// share of its size, and the eye's reversed depth (shaders/opengl/include/depth.glsl) falls as one over the
+// distance, so this is the same share of the distance too - a centimeter a kilometer out.
 const float DEPTH_SLACK = 1.0e-5;
 
-#include "../../depth.glsl"   // nearerDepth, fartherDepth
-#include "../../camera.glsl"
-#include "../../objects.glsl"
+#include "../../../include/depth.glsl"   // nearerDepth, fartherDepth
+#include "../../../include/camera.glsl"
+#include "../../../include/objects.glsl"
 
 // The command whose instances include instance @p i: the last whose first is at or before it.
 uint commandOf(uint i) {
@@ -69,11 +73,12 @@ uint commandOf(uint i) {
     return lo;
 }
 
-// Give @p object to command @p command of set @p set.
-void emit(int set, uint command, uint object) {
+// Give @p instance to command @p command of set @p set.
+void emit(int set, uint command, uint instance) {
     const uint c    = uint(set * u_commandCount) + command;
     const uint slot = atomicAdd(u_commands.commands[c].instanceCount, 1u);
-    u_instances.objects[uint(set * u_instanceCount) + u_commands.commands[c].baseInstance + slot] = object;
+    const uint at   = uint(set * u_instanceCount) + u_commands.commands[c].baseInstance + slot;
+    u_instances.instances[at] = instance;
 }
 
 // Whether the box from @p lo to @p hi lies wholly behind the pyramid's depth where it falls.
@@ -100,7 +105,8 @@ bool occluded(vec3 lo, vec3 hi) {
     const vec2  extent   = (maxUV - minUV) * texels;
     const int   levels   = textureQueryLevels(u_pyramid);
     const int   level    = clamp(int(ceil(log2(max(max(extent.x, extent.y), 1.0)))), 0, levels - 1);
-    // A level's size by GL's halving of level 0's, as shaders/cull/pyramid sizes it: the two must agree.
+    // A level's size by GL's halving of level 0's, as shaders/opengl/scene/occlusion_cull/pyramid sizes it:
+    // the two must agree.
     const ivec2 last     = max(textureSize(u_pyramid, 0) >> level, ivec2(1)) - 1;
     const vec2  scale    = texels / exp2(float(level));
     const ivec2 a        = min(ivec2(minUV * scale), last);
@@ -109,7 +115,7 @@ bool occluded(vec3 lo, vec3 hi) {
         fartherDepth(texelFetch(u_pyramid, a, level).r, texelFetch(u_pyramid, ivec2(b.x, a.y), level).r),
         fartherDepth(texelFetch(u_pyramid, ivec2(a.x, b.y), level).r, texelFetch(u_pyramid, b, level).r)
     );
-    // An object seen last frame is tested against its own depth, which the rasteriser reached by
+    // An object seen last frame is tested against its own depth, which the rasterizer reached by
     // another product and the depth buffer rounded: without the slack a face filling its footprint
     // can hide itself, wherever the two roundings fall apart the hiding way.
     return nearest < farthest * (1.0 - DEPTH_SLACK);
@@ -119,12 +125,14 @@ void main() {
     const uint i = gl_GlobalInvocationID.x;
     if (i >= uint(u_instanceCount)) return;
 
-    const uint object  = u_source.objects[i];
-    const uint command = commandOf(i);
-    const bool seen    = u_visible.seen[object] != 0u;
+    const uint instance = u_source.instances[i];
+    const uint object   = instance & INSTANCE_OBJECT_MASK;
+    const uint command  = commandOf(i);
+    // From the last cull's copy: an object's instances, both levels of a hand-over, read one verdict.
+    const bool seen     = u_last.seen[object] != 0u;
 
     if (u_againstDepth == 0) {
-        if (seen) emit(CULL_SET_SEEN, command, object);
+        if (seen) emit(CULL_SET_SEEN, command, instance);
         return;
     }
 
@@ -132,7 +140,7 @@ void main() {
     vec3 hi;
     objectBox(object, lo, hi);
     const bool shown = objectIsViewmodel(object) || !occluded(lo, hi);
-    if (shown && !seen) emit(CULL_SET_REVEALED, command, object);
-    if (shown) emit(CULL_SET_SHOWN, command, object);
+    if (shown && !seen) emit(CULL_SET_REVEALED, command, instance);
+    if (shown) emit(CULL_SET_SHOWN, command, instance);
     u_visible.seen[object] = shown ? 1u : 0u;
 }

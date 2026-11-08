@@ -4,14 +4,14 @@
 #include <memory>
 #include <vector>
 
-#include "gl_compute_shader.h"
-#include "gl_texture.h"
-#include "gl_stream_ring.h"
-#include "gl_vertex_buffer.h"
+#include "vkm_opengl/buffer/buffer.h"
+#include "vkm_opengl/buffer/shader_storage_buffer.h"
+#include "vkm_opengl/shader/compute_shader.h"
+#include "vkm_opengl/texture/texture.h"
 
 #include "asset/gl_mesh.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class Context;
 }
 
@@ -37,16 +37,19 @@ struct RenderObjects;
  * so the CPU builds and sorts the batch exactly as without it and reads nothing back. The GPU reads
  * each instance's object from the batch's own list and its world box from the frame's
  * (GLObjectBuffer): the CPU cull's, posed for a posed character and reaching as far as the sea moves
- * a wave. The instances arrive in any order within a run, which an opaque draw does not mind. A
- * viewmodel is always shown: it draws through another projection.
+ * a wave. The instances arrive in any order within a run, which an opaque draw does not mind but
+ * for two instances of one mesh overlapping at the same depth, which may swap which shows from frame
+ * to frame. A viewmodel is always shown: it draws through another projection.
  *
  * Saves the vertex work of what is hidden; the depth test already rejected its pixels. Run
  * prepare() after the batch is built, the phases from the depth prepass. When it pays:
- * docs/guides/engine.md section 4.
+ * docs/reference/decisions.md.
  */
 class GLOcclusionCull {
     public:
-        /// The draw lists the cull fills, a list of the batch's commands each.
+        /**
+         * @brief The draw lists the cull fills, a list of the batch's commands each.
+         */
         enum class Set : uint32_t {
             Seen     = 0,  ///< What the last cull showed: the prepass's first draw.
             Revealed = 1,  ///< What this one shows that the last did not: the prepass's second.
@@ -97,15 +100,7 @@ class GLOcclusionCull {
          * @param draw One of the batch's draws.
          * @param set  Which list.
          */
-        void draw(Vkm::GL::Context& gl, const InstanceDraw& draw, Set set) const;
-
-        /**
-         * @brief How many instances the last cull gave set @p set: a synchronising read, for tests.
-         *
-         * @param set Which list.
-         * @return Its instances, over every command; 0 before a cull.
-         */
-        uint32_t countIn(Set set) const;
+        void draw(Vkm::OpenGL::Context& gl, const InstanceDraw& draw, Set set) const;
 
     private:
         /**
@@ -127,21 +122,25 @@ class GLOcclusionCull {
         void bindBuffers() const;
 
     private:
-        Vkm::GL::ComputeShader m_pyramidProgram;  ///< Depth -> the farthest-depth pyramid.
-        Vkm::GL::ComputeShader m_cullProgram;     ///< Records -> the sets.
+        Vkm::OpenGL::ComputeShader m_pyramidProgram;  ///< Depth -> the farthest-depth pyramid.
+        Vkm::OpenGL::ComputeShader m_cullProgram;     ///< Records -> the sets.
 
-        std::vector<DrawCommand> m_commands;  ///< The batch's commands, emptied, once per set.
+        std::vector<Vkm::OpenGL::DrawElementsIndirectCommand> m_commands;
+            ///< The batch's commands, emptied, once per set.
 
-        /// The batch's instances, where it wrote them.
-        Vkm::GL::BufferSpan                    m_source;
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_commandBuffer;   ///< Every set's commands, end to end.
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_instanceBuffer;  ///< Every set's instances, end to end.
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_visibleBuffer;   ///< Per object: the last cull's verdict.
+        Vkm::OpenGL::BufferSpan                           m_source;
+            ///< The batch's instances, where it wrote them.
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_commandBuffer;   ///< Every set's commands.
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_instanceBuffer;  ///< Every set's instances.
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_visibleBuffer;
+            ///< Per object: the verdict written.
+        std::unique_ptr<Vkm::OpenGL::ShaderStorageBuffer> m_lastBuffer;
+            ///< m_visibleBuffer as the last cull left it: an object's instances all read one verdict.
 
         uint32_t m_instanceCount = 0;  ///< The batch's this frame: each set's share of the instances.
         uint32_t m_commandCount  = 0;  ///< Its commands: each set's share of the commands.
 
-        std::unique_ptr<Vkm::GL::Texture2D> m_pyramid;  ///< Farthest depth, half the scene, every level.
+        std::unique_ptr<Vkm::OpenGL::Texture2D> m_pyramid;  ///< Farthest depth, half the scene, every level.
 };
 
 } // namespace Vkm::Engine
