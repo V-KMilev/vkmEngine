@@ -15,20 +15,23 @@ struct RenderSettings;
  */
 namespace Exposure {
 
-/**
- * @brief Histogram bins, laid out by binOf (which a backend's counting mirrors).
- *
- * The first counts what is darker than MIN_LOG, which no exposure is set by; the rest split
- * MIN_LOG..MAX_LOG evenly in log2, the last also counting what is brighter.
- */
-constexpr int BINS = 128;
-/// log2 luminance at the floor of the second bin, and at the ceiling of the last.
-constexpr float MIN_LOG = -14.0f;
+constexpr int BINS = 128;                                     ///< Histogram bins, laid out by binOf (which a
+                                                              ///< backend's counting mirrors). The first
+                                                              ///< counts what is darker than MIN_LOG, which
+                                                              ///< sets no exposure; the rest split
+                                                              ///< MIN_LOG..MAX_LOG evenly in log2, the last
+                                                              ///< also counting what is brighter.
+constexpr float MIN_LOG = -14.0f;                             ///< log2 luminance at the floor of the second
+                                                              ///< bin, and at the ceiling of the last.
 constexpr float MAX_LOG = 10.0f;
-/// The log2 luminance one bin spans.
-constexpr float BIN_STEP = (MAX_LOG - MIN_LOG) / (BINS - 1);
-/// A backend counts a pixel every STRIDE each way.
-constexpr int STRIDE = 2;
+constexpr float BIN_STEP = (MAX_LOG - MIN_LOG) / (BINS - 1);  ///< The log2 luminance one bin spans.
+constexpr int STRIDE = 2;                                     ///< A backend counts a pixel every STRIDE each
+                                                              ///< way.
+constexpr float ADAPT_BRIGHTER = 1.0f;                        ///< How fast it brightens a frame grown dark,
+                                                              ///< and darkens one grown bright: the share of
+                                                              ///< the gap closed in a second is 1 - e^-rate.
+                                                              ///< It brightens slower, as an eye does.
+constexpr float ADAPT_DARKER   = 3.0f;
 
 /// The bin a pixel of log2 luminance @p log2Luminance counts in.
 constexpr int binOf(float log2Luminance) {
@@ -39,17 +42,16 @@ constexpr int binOf(float log2Luminance) {
 }
 
 /// The log2 luminance at the middle of @p bin, one past the first.
-constexpr float binCentre(int bin) {
+constexpr float binCenter(int bin) {
     return MIN_LOG + (static_cast<float>(bin) - 0.5f) * BIN_STEP;
 }
 
-/// The darkest share of what is lit, left out of the average: shade does not set the exposure.
-constexpr float LOW_SHARE = 0.4f;
-/// The share past which the brightest is left out: the sun and its glints do not either.
-constexpr float HIGH_SHARE = 0.95f;
+constexpr float LOW_SHARE = 0.4f;    ///< The darkest share of what is lit, left out of the average: shade
+                                     ///< does not set the exposure.
+constexpr float HIGH_SHARE = 0.95f;  ///< The share past which the brightest is left out: the sun and its
+                                     ///< glints do not either.
 
-/// Where the average lands before RenderSettings::exposure is added.
-constexpr float KEY = 0.09f;
+constexpr float KEY = 0.09f;  ///< Where the average lands before RenderSettings::exposure is added.
 
 /**
  * @brief The stops that bring a histogram's average to KEY, within the settings' range.
@@ -66,15 +68,14 @@ std::optional<float> targetStops(const uint32_t* bins, const RenderSettings& set
 /**
  * @brief @p current moved toward @p target over @p seconds, as an eye adapts.
  *
- * Closes the share 1 - e^(-rate * seconds) of the gap: at adaptDarker toward fewer stops, at
- * adaptBrighter toward more.
+ * Closes the share 1 - e^(-rate * seconds) of the gap: at ADAPT_DARKER toward fewer stops, at
+ * ADAPT_BRIGHTER toward more.
  *
- * @param current  The stops the last frame was exposed by.
- * @param target   What the newest histogram asks for (targetStops).
- * @param seconds  Wall-clock time since the last frame.
- * @param settings Supplies the rates.
+ * @param current The stops the last frame was exposed by.
+ * @param target  What the newest histogram asks for (targetStops).
+ * @param seconds Wall-clock time since the last frame.
  */
-float adaptStops(float current, float target, float seconds, const RenderSettings& settings);
+float adaptStops(float current, float target, float seconds);
 
 /**
  * @brief The adapted stops across frames: a backend feeds it each histogram it reads back.
@@ -106,13 +107,24 @@ class Adaptation {
         float update(const uint32_t* newest, float seconds, const RenderSettings& settings);
 
         /// Take the next read whole, as for a replaced world; the stops hold until it comes.
-        void forget() { m_snap = true; }
+        void forget() {
+            if (m_state == State::Adapting) m_state = State::Held;
+        }
 
     private:
-        float m_target  = 0.0f;   ///< What the newest lit read asks for.
-        float m_stops   = 0.0f;   ///< Adapted toward m_target, RenderSettings::exposure aside.
-        bool  m_adapted = false;  ///< m_stops holds a read.
-        bool  m_snap    = true;   ///< The next read is taken whole.
+        /**
+         * @brief Where the stops stand between reads.
+         */
+        enum class State {
+            Unread,    ///< No read taken: the authored exposure alone; the next read is taken whole.
+            Adapting,  ///< Moving toward the newest lit read.
+            Held,      ///< Held where they stood until the next read, which is taken whole.
+        };
+
+    private:
+        float m_target = 0.0f;           ///< What the newest lit read asks for.
+        float m_stops  = 0.0f;           ///< Adapted toward m_target, RenderSettings::exposure aside.
+        State m_state  = State::Unread;
 };
 
 } // namespace Exposure

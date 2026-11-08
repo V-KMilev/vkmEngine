@@ -4,17 +4,18 @@
 
 #include <GL/glew.h>
 
-#include "gl_mip_chain_texture.h"
+#include "vkm_opengl/texture/mip_chain_texture.h"
 
-#include "gl_mip_levels.h"
+#include "convention/gl_mip_levels.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief The bloom's mip chain (COD/Jimenez).
+ * @brief The bloom's mip chain (Jimenez 2014).
  *
- * RGBA16F at half the viewport, filled by GLBloomPass; mip 0 holds the final bloom. Owns only
- * the policy (size, mip count, format); the Vkm::GL::MipChainTexture owns the GL.
+ * RGBA16F at half the scene's size (after renderScale), filled by GLBloomPass; mip 0 holds the
+ * final bloom. Owns only the policy (size, mip count, format); the Vkm::OpenGL::MipChainTexture owns
+ * the GL.
  */
 class GLBloom {
     public:
@@ -74,7 +75,7 @@ class GLBloom {
         static constexpr int MAX_MIPS = 6;
 
     private:
-        Vkm::GL::MipChainTexture m_chain;
+        Vkm::OpenGL::MipChainTexture m_chain;
 };
 
 } // namespace Vkm::Engine

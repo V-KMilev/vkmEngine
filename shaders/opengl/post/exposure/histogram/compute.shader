@@ -1,5 +1,5 @@
 /**
- * Auto-exposure's histogram (GLExposure): each group counts its pixels of the scene's HDR colour
+ * Auto-exposure's histogram (GLExposure): each group counts its pixels of the scene's HDR color
  * into bins of log2 luminance, then adds its counts to the frame's. A pixel every EXPOSURE_STRIDE
  * each way.
  */
@@ -10,7 +10,7 @@ layout(std430, binding = SSBO_EXPOSURE_HISTOGRAM) buffer Histogram {
     uint bins[EXPOSURE_BINS];
 } u_histogram;
 
-#include "../../color.glsl"  // luma
+#include "../../../include/color.glsl"  // luma
 #include "../bins.glsl"      // binOf
 
 shared uint s_bins[EXPOSURE_BINS];

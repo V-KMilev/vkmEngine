@@ -1,5 +1,5 @@
 /**
- * Bloom downsample - Call of Duty 13-tap filter, one chain level per dispatch.
+ * Bloom downsample - Jimenez's 13-tap filter, one chain level per dispatch.
  *
  * The first downsample (u_karis = 1) caps each 2x2 group, drops a NaN, soft-knee thresholds and
  * Karis-averages them, so one firefly cannot bloom the screen nor a NaN spread down the chain.
@@ -14,7 +14,7 @@ uniform int   u_karis;
 uniform float u_threshold;
 uniform float u_knee;
 
-#include "../../downsample.glsl"
+#include "../../../include/downsample.glsl"
 
 // Soft-knee prefilter: the bright portion of c; knee = threshold = 0 returns c.
 vec3 softKnee(vec3 c) {

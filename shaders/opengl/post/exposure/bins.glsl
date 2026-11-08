@@ -1,5 +1,5 @@
-// The bin a luminance counts in: Exposure::binOf's layout, which tests/render checks this against.
-// The first for what is darker than the range (and what is no number), the last for what is
+// The bin a luminance counts in: Exposure::binOf's layout, which tests/render/opengl/display.cpp holds
+// this to. The first for what is darker than the range (and what is no number), the last for what is
 // brighter. isnan, not a failed comparison: a compiler may fold !(x > 0) into x <= 0.
 int binOf(float lum) {
     if (isnan(lum) || lum <= 0.0) return 0;
