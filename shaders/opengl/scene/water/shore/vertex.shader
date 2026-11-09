@@ -1,7 +1,7 @@
-// The scene seen from above the ocean, for its shore (GLOceanFields::captureShore): world points.
-// SKINNED (ocean/shore_skinned) poses each first, by the camera path's expression.
+// The scene seen from above the water, for its shore (GLWaterPass::captureShore): world points.
+// SKINNED (the skinned shore draw) poses each first, by the camera path's expression.
 layout(location = ATTR_POSITION) in vec3 aPos;
-#include "../../instancing.glsl"
+#include "../../../include/instancing.glsl"
 
 uniform mat4 u_shoreVP;  // looking straight down over the shore's square
 

@@ -1,13 +1,13 @@
 /**
- * The ocean's shore, finished (GLOceanFields): for each texel, the least of a column's
- * ocean/shore_rows plus its own squared distance down the column, rooted: metres to the nearest
+ * The water's shore, finished (GLWaterShore): for each texel, the least of a column's
+ * water/shore/rows plus its own squared distance down the column, rooted: meters to the nearest
  * thing breaking the water, its depth under counted as distance too, out to the reach.
  */
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
-layout(binding = 0) uniform sampler2D u_rows;
+layout(binding = WATER_SLOT_SHORE_ROWS) uniform sampler2D u_rows;
 layout(binding = 0, r16f) uniform writeonly image2D u_shore;
-uniform float u_texel;  // metres across a texel
+uniform float u_texel;  // meters across a texel
 uniform int   u_reach;  // texels searched either way
 
 void main() {

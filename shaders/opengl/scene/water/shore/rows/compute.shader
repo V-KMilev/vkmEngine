@@ -1,18 +1,20 @@
 /**
- * The ocean's shore, first half of its distances (GLOceanFields): for each texel, the least of a
+ * The water's shore, first half of its distances (GLWaterShore): for each texel, the least of a
  * row's squared distances to its texels, each texel's own depth under the water counted
- * SHORE_UNDER times on top. ocean/shore_columns takes the least down the columns: two passes of
+ * SHORE_UNDER times on top. water/shore/columns takes the least down the columns: two passes of
  * a distance transform, exact within u_reach texels (Felzenszwalb and Huttenlocher 2012).
  */
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
-layout(binding = 0) uniform sampler2D u_under;  // ocean/shore's under draw: metres under the water, 0 inside
-layout(binding = 1) uniform sampler2D u_over;  // and its over draw: 0 inside, else nothing
+// scene/water/shore's under draw: meters under the water, 0 inside; and its over draw: 0 inside,
+// else nothing.
+layout(binding = WATER_SLOT_SHORE_UNDER) uniform sampler2D u_under;
+layout(binding = WATER_SLOT_SHORE_OVER)  uniform sampler2D u_over;
 layout(binding = 0, r32f) uniform writeonly image2D u_rows;
-uniform float u_texel;  // metres across a texel
+uniform float u_texel;  // meters across a texel
 uniform int   u_reach;  // texels searched either way
 
-// How far under the water a thing counts for, against across: a post's foot a metre under is
+// How far under the water a thing counts for, against across: a post's foot a meter under is
 // no waterline, but the post where it breaks the surface is.
 const float SHORE_UNDER = 3.0;
 
