@@ -2,14 +2,14 @@
  * Billboard particle - fragment stage.
  *
  * A procedural soft round sprite, or a frame of the emitter's texture, tinted by the particle's
- * colour. An additive particle gives off that colour. An alpha one is lit as a ball: a sphere's
+ * color. An additive particle gives off that color. An alpha one is lit as a ball: a sphere's
  * normal under the card - or its normal map's folds - turns toward or away from the light at its
- * centre, with the ambient from all round, and it gives off the share of its colour its emission
+ * center, with the ambient from all round, and it gives off the share of its color its emission
  * says. A sheet's frames fade one into the next when the emitter asks. A distortion one bends
  * the scene behind it - outward from its middle, or as its texture says, read as a normal map.
  */
 
-#include "../camera.glsl"
+#include "../../include/camera.glsl"
 #include "shade.glsl"
 
 layout(binding = PARTICLE_SLOT_NORMAL) uniform sampler2D u_normalMap;  // read while u_normalMapped
@@ -68,7 +68,7 @@ void main() {
         // A texture is a normal map; the disc bulges out from its middle, most halfway out.
         vec2 lean = bendOf(sprite);
         vec2 bend = u_textured == 1 ? card * lean : facing * (1.0 - r) * 2.0;
-        writeBent(lean, bend * vExtra * falloff * color.a, falloff * color.a);
+        writeBent(lean, heldBend(bend) * vExtra * falloff * color.a, falloff * color.a);
         return;
     }
 

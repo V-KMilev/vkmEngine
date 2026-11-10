@@ -3,13 +3,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "gl_shader.h"
+#include "vkm_opengl/shader/shader.h"
 
-#include "gl_pass.h"
-#include "gl_target.h"
+#include "pass/gl_pass.h"
+#include "storage/gl_target.h"
+#include "frame/gl_camera.h"
 
-#include "ecs/component/render/particle_emitter.h"
-#include "system/render/data/camera_data.h"
+#include "ecs/component/effect/particle_emitter.h"
+#include "core/frame/camera_data.h"
 #include "system/render/data/particle_data.h"
 
 namespace Vkm::Engine {
@@ -19,18 +20,47 @@ struct RenderView;
 /**
  * @brief Draws the frame's particles: billboards and strips, each blend in turn.
  *
- * Runs after the forward pass, depth-tested without writing depth, and before it into each planar
- * reflection's picture (drawMirrored). Additive particles draw first, grouped by texture, then
- * alpha ones, which arrive unsorted and are sorted back-to-front here, then distortion ones, sorted
- * the same, over a copy of the scene they bend. Strips - ribbons and trails - follow the billboards
- * of their blend: additive ones grouped by texture, the others sorted back-to-front by their heads.
- * Attribute-less: billboards and strip points live in SSBOs, each uploaded once a blend and once
- * each time they draw, drawn as an instanced draw for each run of one texture and normal map, and a
+ * Runs after the forward pass, depth-tested without writing depth. Additive particles draw first,
+ * grouped by texture, then alpha ones, which arrive unsorted and are sorted back-to-front here - at
+ * half resolution while they cover the scene thickly (chooseSize), over the scene's depth there, then
+ * blended over the scene as one more particle - then distortion ones, sorted the same, over a copy of
+ * the scene they bend.
+ * Every blend is premultiplied. Strips - trails - follow the billboards of their blend:
+ * additive ones grouped by texture, the others sorted back-to-front by their heads.
+ * Attribute-less: billboards and strip points live in SSBOs, the billboards uploaded once a blend,
+ * drawn as an instanced draw for each run of one texture and normal map, and a
  * multi-draw for each run of strips.
  */
 class GLParticlePass : public GLPass {
     public:
-        GLParticlePass();
+        static constexpr float HALF_RESOLUTION_COVER = 3.0f;  ///< How many times over the alpha billboards in
+                                                              ///< view, each as a square of its width, must
+                                                              ///< cover the scene to draw at half resolution:
+                                                              ///< fewer cost less at full size than the
+                                                              ///< half-size target's own draws.
+
+        static constexpr float FULL_RESOLUTION_COVER = 2.0f;  ///< How far under that they must fall to draw
+                                                              ///< at full size again: cover hovering at the
+                                                              ///< line keeps one size rather than flipping
+                                                              ///< the sharpness frame to frame.
+
+        static constexpr uint32_t RESOLUTION_HOLD_FRAMES = 8;  ///< Frames a choice of size holds at least
+                                                               ///< before it may change again.
+
+        static constexpr float BEND_REACH = 2.0f;  ///< The longest a distortion's bend may be before its
+                                                   ///< strength scales it, as a share of the screen's
+                                                   ///< height: the shaders hold it so
+                                                   ///< (PARTICLE_BEND_REACH), and the scene is copied
+                                                   ///< that far around it.
+
+    public:
+        /**
+         * @brief Draws with the backend's camera block, @p camera, bound again after its own.
+         *
+         * @param camera The frame's camera block, which the half-resolution draw replaces for its
+         *               viewport and puts back.
+         */
+        explicit GLParticlePass(GLCamera& camera);
         ~GLParticlePass() override;
 
         GLParticlePass(const GLParticlePass& other) = delete;
@@ -41,28 +71,6 @@ class GLParticlePass : public GLPass {
 
     public:
         void execute(GLFrameContext& ctx) override;
-
-        /**
-         * @brief Draw the frame's additive and alpha particles into a planar reflection's picture.
-         *
-         * Seen by @p eye, which the camera block already holds, over @p target's scene and fading
-         * on its depth, clipped at @p clip while GL_CLIP_DISTANCE0 is on. Lit by every light: the
-         * clusters are the camera's. No fog or aerial perspective, which are the camera's, no
-         * distortion, which bends the camera's screen, and nothing on the viewmodel layer.
-         *
-         * @param ctx    The frame: its particles, with the shadow atlas bound.
-         * @param target The picture, drawn opaque already.
-         * @param size   Its size.
-         * @param eye    The mirrored camera.
-         * @param clip   The plane, as the PBR program takes it.
-         */
-        void drawMirrored(
-            GLFrameContext& ctx,
-            GLTarget& target,
-            glm::uvec2 size,
-            const CameraData& eye,
-            const glm::vec4& clip
-        );
 
     private:
         /**
@@ -77,6 +85,25 @@ class GLParticlePass : public GLPass {
         };
 
     private:
+        /**
+         * @brief Choose this frame's size for the alpha particles, with hysteresis and a hold.
+         *
+         * Half once they cover the scene HALF_RESOLUTION_COVER times over, full again once under
+         * FULL_RESOLUTION_COVER; a choice holds RESOLUTION_HOLD_FRAMES frames before it may change.
+         *
+         * @param view The frame: its alpha billboards and camera.
+         */
+        void chooseSize(const RenderView& view);
+
+        /**
+         * @brief Draw the alpha particles at half resolution, then blend them over the scene; at full
+         *        size over the scene while chooseSize says so.
+         *
+         * @param ctx The frame: its particles, with the programs, lights and shadows bound, and
+         *            m_depthCopy holding the scene's depth.
+         */
+        void drawHalf(GLFrameContext& ctx);
+
         /**
          * @brief Fill m_order with @p count indices, far to near from @p eye.
          *
@@ -106,7 +133,12 @@ class GLParticlePass : public GLPass {
          * @param normalMap ParticleData::uvNext.w, the same way; billboards alone read one.
          * @return False while the run's texture is still loading: the run is not drawn.
          */
-        bool bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture, float normalMap = 0.0f);
+        bool bindTexture(
+            GLFrameContext& ctx,
+            Vkm::OpenGL::Shader& shader,
+            float texture,
+            float normalMap = 0.0f
+        );
 
         /**
          * @brief Upload @p batch to the instance SSBO and draw it, an instanced quad call a run.
@@ -120,24 +152,17 @@ class GLParticlePass : public GLPass {
          * @brief Draw @p strips, a triangle strip each through the frame's strip points, a draw
          *        call for each run of one texture.
          *
-         * @param ctx     The frame: the view's points, uploaded as this draw began, and the
+         * @param ctx     The frame: its camera, the view's points, uploaded as the pass began, and the
          *                textures.
-         * @param eye     The eye they are sorted from.
          * @param strips  The strips of one blend.
          * @param byDepth Far to near, by each strip's head; otherwise grouped by texture.
          */
-        void drawStrips(
-            GLFrameContext& ctx,
-            const CameraData& eye,
-            const std::vector<ParticleStrip>& strips,
-            bool byDepth
-        );
+        void drawStrips(GLFrameContext& ctx, const std::vector<ParticleStrip>& strips, bool byDepth);
 
         /**
          * @brief Draw one blend: its billboards, then its strips.
          *
-         * @param ctx        The frame: its strip points, and the GL state the blend is set on.
-         * @param eye        The eye drawing: the camera's, or a mirror's.
+         * @param ctx        The frame: its camera, its strip points, and the GL state the blend is set on.
          * @param blend      Which blend: the blend function, the shaders' u_blend, and whether to sort
          *                   by depth.
          * @param billboards The view's billboards of @p blend, unsorted.
@@ -145,15 +170,14 @@ class GLParticlePass : public GLPass {
          */
         void drawBlend(
             GLFrameContext& ctx,
-            const CameraData& eye,
             ParticleBlend blend,
             const std::vector<ParticleData>& billboards,
             const std::vector<ParticleStrip>& strips
         );
 
     private:
-        Vkm::GL::Shader m_shader;  ///< Billboards (shaders/particle).
-        Vkm::GL::Shader m_strip;   ///< Ribbons and trails (shaders/particle_strip).
+        Vkm::OpenGL::Shader m_shader;  ///< Billboards (shaders/opengl/scene/particle).
+        Vkm::OpenGL::Shader m_strip;   ///< Trails (shaders/opengl/scene/particle/strip).
 
         std::vector<DepthOrder>    m_order;   ///< Sort keys; capacity kept across frames.
         std::vector<ParticleData>  m_sorted;  ///< The billboards drawing, in their order.
@@ -161,16 +185,28 @@ class GLParticlePass : public GLPass {
         std::vector<int32_t>       m_firsts;  ///< A strip run's first vertices, for one multi-draw.
         std::vector<int32_t>       m_counts;  ///< And its vertex counts.
 
-        /// The scene's depth, copied: the particles test against it attached and fade on it here.
-        GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};
+        GLTarget m_depthCopy{GLTarget::Layout::Depth};
+            ///< The scene's depth, copied: the particles test against it attached and fade on it here.
 
-        /// A planar reflection's picture's depth, copied the same way.
-        GLTarget m_mirrorDepth{GLTarget::Layout::ColorDepth, GL_R8};
+        GLTarget m_half{GLTarget::Layout::ColorDepth};  ///< The alpha particles at half resolution,
+                                                        ///< premultiplied, over the nearest of each block of
+                                                        ///< the scene's depth
+                                                        ///< (shaders/opengl/scene/particle/half_depth), and
+                                                        ///< that depth copied to fade on.
+        GLTarget m_halfDepthCopy{GLTarget::Layout::Depth};
 
-        /// What a mirror sees, off the viewmodel layer: additive billboards, alpha ones, and strips of each.
-        std::vector<ParticleData>  m_seenAdditive;
-        std::vector<ParticleData>  m_seenAlpha;
-        std::vector<ParticleStrip> m_seenStrips[2];
+        Vkm::OpenGL::Shader m_halfDepth;   ///< The scene's depth into m_half
+                                           ///< (shaders/opengl/scene/particle/half_depth).
+        Vkm::OpenGL::Shader m_composite;   ///< m_half over the scene
+                                           ///< (shaders/opengl/scene/particle/composite).
+        GLCamera            m_halfCamera;  ///< The frame's camera at m_half's size.
+        GLCamera&           m_camera;      ///< The backend's; see the constructor.
+
+        bool     m_halfSize = false;                   ///< Whether the alpha particles draw at half
+                                                       ///< resolution.
+        uint32_t m_sizeHeld = RESOLUTION_HOLD_FRAMES;  ///< Frames m_halfSize has held, up to
+                                                       ///< RESOLUTION_HOLD_FRAMES: free to choose from the
+                                                       ///< first.
 };
 
 } // namespace Vkm::Engine

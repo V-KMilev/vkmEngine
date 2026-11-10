@@ -1,11 +1,11 @@
 /**
- * Particle strip - fragment stage: soft across its width, its texture laid along it, and
- * otherwise a particle's (shaders/particle/shade.glsl): an additive strip gives off its colour, an
- * alpha one is lit, a distortion one bends the scene behind across its width.
+ * Particle strip - fragment stage: soft across its width, its texture laid along it, and otherwise a
+ * particle's (shaders/opengl/scene/particle/shade.glsl): an additive strip gives off its color, an alpha one
+ * is lit, a distortion one bends the scene behind across its width.
  */
 
-#include "../camera.glsl"
-#include "../particle/shade.glsl"
+#include "../../../include/camera.glsl"
+#include "../shade.glsl"
 
 in vec2  vUV;
 in vec4  vColor;
@@ -29,7 +29,7 @@ void main() {
         vec2 along   = vec2(-outward.y, outward.x);
         vec2 lean    = bendOf(sprite);
         vec2 bend    = u_textured == 1 ? mat2(outward, along) * lean : outward * across * (1.0 - edge) * 2.0;
-        writeBent(lean, bend * vLook.y * falloff * vColor.a, falloff * vColor.a);
+        writeBent(lean, heldBend(bend) * vLook.y * falloff * vColor.a, falloff * vColor.a);
         return;
     }
     vec4 color = vColor * sprite;

@@ -1,10 +1,10 @@
 /**
- * Particle strip - vertex stage: a ribbon through an emitter's particles, or a trail behind one.
+ * Particle strip - vertex stage: a trail behind a particle.
  *
  * Attribute-less: two vertices a point, gl_VertexID / 2 the point in the frame's list - one draw
  * of many strips starts each at its first - and its parity the side. Each point is widened across
  * the strip as the view sees it, so the strip faces the eye along its whole length. An alpha strip
- * is lit as a card at each point (shaders/particle/light.glsl): it has no ball's form to turn to
+ * is lit as a card at each point (shaders/opengl/scene/particle/light.glsl): it has no ball's form to turn to
  * the light.
  */
 struct StripPoint {
@@ -19,20 +19,20 @@ layout(std430, binding = SSBO_STRIP_POINTS) readonly buffer StripBlock {
     StripPoint points[];
 } u_strip;
 
-#include "../camera.glsl"
-#include "../constants.glsl"
-#include "../area_light.glsl"
-#include "../shadows.glsl"
-#include "../ambient.glsl"
-#include "../particle/light.glsl"
+#include "../../../include/camera.glsl"
+#include "../../../include/constants.glsl"
+#include "../../../include/lights.glsl"
+#include "../../../include/cluster_grid.glsl"
+#include "../../../include/shadows.glsl"
+#include "../../../include/ambient.glsl"
+#include "../light.glsl"
 
 uniform int u_blend;       // PARTICLE_*: only an alpha one is lit
-uniform vec4 u_clipPlane;  // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
 
 out vec2  vUV;         // x along the strip, y across it, 0 to 1
 out vec4  vColor;
 out float vSize;       // half its width here, how deep its fade runs
-out vec3  vLight;      // what lights it, over its colour; 1 for one that is not lit
+out vec3  vLight;      // what lights it, over its color; 1 for one that is not lit
 out vec2  vAcross;     // its across in the view's right and up, which a bend follows
 flat out vec3 vLook;   // StripPoint.look: falloff, emission or bend, viewmodel
 
@@ -60,12 +60,7 @@ void main() {
     vAcross = vec2(dot(across, right), dot(across, up));
     vLook   = p.look.xyz;
 
-    if (p.look.z > 0.5) {
-        gl_Position = intoViewmodelBand(u_camera.viewmodelViewProjection * vec4(world, 1.0));
-    } else {
-        gl_Position = u_camera.viewProjection * vec4(world, 1.0);
-    }
-    gl_ClipDistance[0] = dot(vec4(world, 1.0), u_clipPlane);
+    gl_Position = clipOnLayer(p.look.z > 0.5, vec4(world, 1.0));
 
     vLight = vec3(1.0);
     if (u_blend == PARTICLE_ALPHA) vLight = particleCardLightAt(here);

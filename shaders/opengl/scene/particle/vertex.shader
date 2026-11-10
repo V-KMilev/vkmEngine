@@ -6,10 +6,10 @@
  * faces the view, turned by the particle's angle; one that streaks lies along its trail as the
  * view sees it instead, from its head back to where the trail ends.
  *
- * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so its colour is
- * an albedo, lit as a ball: the light at its centre (shaders/particle/light.glsl) goes to the
+ * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so its color is
+ * an albedo, lit as a ball: the light at its center (shaders/opengl/scene/particle/light.glsl) goes to the
  * fragment stage, which turns a sphere's normal to it. Every corner takes the light of its
- * centre: a corner lies off the puff, past a wall or in a lamp's reach the puff is not, and turns
+ * center: a corner lies off the puff, past a wall or in a lamp's reach the puff is not, and turns
  * with the view.
  */
 struct Particle {
@@ -27,16 +27,16 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
     Particle particles[];
 } u_particles;
 
-#include "../camera.glsl"
-#include "../constants.glsl"
-#include "../area_light.glsl"
-#include "../shadows.glsl"
-#include "../ambient.glsl"
+#include "../../include/camera.glsl"
+#include "../../include/constants.glsl"
+#include "../../include/lights.glsl"
+#include "../../include/cluster_grid.glsl"
+#include "../../include/shadows.glsl"
+#include "../../include/ambient.glsl"
 #include "light.glsl"
 
 uniform int u_firstInstance;  // the run's first particle: gl_InstanceID starts at 0 every draw
 uniform int u_blend;          // PARTICLE_*: only an alpha one is lit
-uniform vec4 u_clipPlane;     // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
 
 out vec2  vCorner;
 flat out vec2 vAxisX;  // the card's own x, then y, in the view's right and up: turned, or streaked
@@ -49,8 +49,8 @@ out vec4  vColor;
 out float vSoftness;
 out float vSize;       // half the billboard's width, how deep its fade runs
 flat out int vViewmodel;  // drawn as a Viewmodel mesh is: its depth is the squashed band, so no fade
-flat out float vExtra;    // the share of its colour it gives off, or how far it bends the view
-flat out vec3 vAmbient;   // the light at its centre, for an alpha one
+flat out float vExtra;    // the share of its color it gives off, or how far it bends the view
+flat out vec3 vAmbient;   // the light at its center, for an alpha one
 flat out vec3 vLightColor;
 flat out vec3 vLightDir;
 
@@ -78,14 +78,14 @@ void main() {
     vec3  seen   = p.trail.xyz - camBack * dot(p.trail.xyz, camBack);
     float span   = length(seen);
     vec3 world;
-    vec3 centre = p.positionSize.xyz;
+    vec3 center = p.positionSize.xyz;
     if (span > 1e-4) {
         // Along the trail, capped by half its width at either end; corner.y = 1, the top of its
         // frame, leads.
         vec3 along  = seen / span;
         vec3 across = normalize(cross(camBack, along));
-        centre = p.positionSize.xyz + p.trail.xyz * 0.5;
-        world  = centre + across * (corner.x * size) + along * (-corner.y * (span * 0.5 + size));
+        center = p.positionSize.xyz + p.trail.xyz * 0.5;
+        world  = center + across * (corner.x * size) + along * (-corner.y * (span * 0.5 + size));
         vAxisX = vec2(dot(across, camRight), dot(across, camUp));
         vAxisY = -vec2(dot(along, camRight), dot(along, camUp));
     } else {
@@ -96,20 +96,14 @@ void main() {
         vec2 turned = vAxisX * corner.x + vAxisY * corner.y;
         world = p.positionSize.xyz + (camRight * turned.x + camUp * turned.y) * size;
     }
-    // On the viewmodel layer, projected as shaders/viewmodel.glsl's eyeClip projects the weapon.
-    vViewmodel = p.params.w > 0.5 ? 1 : 0;
-    if (vViewmodel == 1) {
-        gl_Position = intoViewmodelBand(u_camera.viewmodelViewProjection * vec4(world, 1.0));
-    } else {
-        gl_Position = u_camera.viewProjection * vec4(world, 1.0);
-    }
-    gl_ClipDistance[0] = dot(vec4(world, 1.0), u_clipPlane);
+    vViewmodel  = p.params.w > 0.5 ? 1 : 0;
+    gl_Position = clipOnLayer(vViewmodel == 1, vec4(world, 1.0));
 
     vAmbient    = vec3(1.0);
     vLightColor = vec3(0.0);
     vLightDir   = vec3(0.0, 1.0, 0.0);
     if (u_blend == PARTICLE_ALPHA) {
-        ParticleLight lit = particleLightAt(centre);
+        ParticleLight lit = particleLightAt(center);
         vAmbient    = lit.ambient;
         vLightColor = lit.color;
         vLightDir   = lit.direction;
