@@ -4,19 +4,19 @@
 #include <string>
 #include <vector>
 
-#include "platform/process/child_process.h"
+#include <imgui.h>
+
+#include "vkm_platform/process/child_process.h"
 
 namespace Vkm::Engine {
 
 struct EditorState;
 
 /**
- * @brief The editor's way to vkm: it runs `vkm new`, `vkm build` and `vkm package` and shows
- *        what they print in the Build window.
+ * @brief Runs `vkm new`, `vkm build` and `vkm package`, showing their output in the Console's Build view.
  *
- * vkm is the one implementation of each; the editor does none of them itself. A build
- * changes the module on disk, which EditorSystem's watch then reloads. A project opened
- * with no module is built once, so a new one runs its code without a terminal.
+ * vkm is the one implementation of each. A project opened with no module is built once, so a new one
+ * runs its code without a terminal.
  */
 class BuildController {
     public:
@@ -46,19 +46,32 @@ class BuildController {
         void run(std::vector<std::string> args, std::string openWhenDone = {});
 
         /**
-         * @brief Take what the run printed, finish it when it ends, and build a module-less project.
+         * @brief Take what the run printed, finish it when it ends, and build a module-less project once.
          *
-         * @param state Takes EditorState::requestVkm, toasts, and the request to open a new project.
+         * @param state Takes an ask of VkmRun, and toasts.
          * @param modulePath The module the open project loads, whose absence asks for a build.
          */
         void update(EditorState& state, const std::filesystem::path& modulePath);
 
         /**
-         * @brief The Build window's contents: what ran, how it ended, and its output.
+         * @brief Draw the Console's Build view: what ran, how it ended, its output, and Stop.
          *
-         * @param state Asked to run a build or a package from the window's buttons.
+         * A run is asked for elsewhere: the menu bar's Build, File > Build Scripts or its key.
          */
-        void draw(EditorState& state);
+        void draw();
+
+        /// Bring the Console forward on this view the next frame, as a run does.
+        void reveal() { m_reveal = true; }
+
+        /**
+         * @brief Whether the last run succeeded less than @p seconds ago.
+         *
+         * @param seconds How long a success is news.
+         * @return True only within that time of the run's end.
+         */
+        bool succeededWithin(double seconds) const {
+            return m_status == Status::Succeeded && ImGui::GetTime() - m_endedAt < seconds;
+        }
 
         /**
          * @brief Whether nothing has run yet.
@@ -67,8 +80,14 @@ class BuildController {
          */
         bool idle() const { return m_status == Status::Idle; }
 
+        /// Whether the last run failed.
+        bool failed() const { return m_status == Status::Failed; }
+
+        /// Whether a run is under way.
+        bool running() const { return m_status == Status::Running; }
+
         /**
-         * @brief Whether the Build window should come to the front this frame.
+         * @brief Whether the Console should come forward on its Build view this frame.
          *
          * @return True once per run, as it starts.
          */
@@ -85,15 +104,16 @@ class BuildController {
         void append(const std::string& text);
 
     private:
-        ChildProcess             m_process;
-        Status                   m_status = Status::Idle;
-        std::string              m_command;        ///< What ran, as typed
+        Platform::ChildProcess   m_process;
+        Status                   m_status  = Status::Idle;
+        std::string              m_command;         ///< What ran, as typed.
         std::string              m_openWhenDone;
         std::vector<std::string> m_lines;
-        std::string              m_partial;        ///< The line still being written
-        std::filesystem::path    m_checkedRoot;    ///< The project whose module was looked for
-        bool                     m_reveal = false;
-        bool                     m_follow = true;  ///< Jump to the output's end on the next frame
+        std::string              m_partial;         ///< The line still being written.
+        std::filesystem::path    m_checkedRoot;     ///< The project whose module was looked for.
+        bool                     m_reveal  = false;
+        bool                     m_follow  = true;  ///< Jump to the output's end on the next frame.
+        double                   m_endedAt = 0.0;   ///< ImGui's clock when the last run ended.
 };
 
 } // namespace Vkm::Engine

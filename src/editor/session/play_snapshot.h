@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <string>
+#include <vector>
 
-#include "io/scene/prefab.h"
-#include "platform/window/window_manager.h"
+#include "ecs/prefab_instances.h"
+#include "vkm_platform/window/window_manager.h"
 
 namespace Vkm::Engine {
 
@@ -11,12 +14,12 @@ class Scene;
 class ResourceManager;
 
 /**
- * @brief The world as it stood when Play was pressed, held until Stop puts it back.
+ * @brief The world as Play found it, held until Stop puts it back.
  *
- * The scene file names only the assets it uses, so the whole asset list is
- * recorded beside it, keeping unassigned imports. Prefab-built slots, which the
- * scene stores as a reference, are recorded too: the undo history addresses
- * entities by slot. The ejection ends with the session in release().
+ * Every asset is recorded, keeping unassigned imports, and so are each instance's slots and every
+ * slot's generation, so each entity comes back under the id the undo history holds it by, and every
+ * reference to an entity already deleted, which the document holds as none: an undo that brings that
+ * entity back points them at it again.
  */
 class PlaySnapshot {
     public:
@@ -44,11 +47,10 @@ class PlaySnapshot {
         bool capture(const Scene& scene, ResourceManager& resources, bool dirty);
 
         /**
-         * @brief Put the assets back, then the scene, into @p scene.
+         * @brief Put the assets back in place, then the scene, into @p scene.
          *
-         * Assets in place, so the undo history's handles keep their meaning.
-         * Entities return to their slots while each prefab still builds the same
-         * entities; @ref restoredInPlace says whether it did.
+         * In place, so the undo history's handles keep their meaning; @ref restoredInPlace says
+         * whether the entities came back under their ids.
          *
          * @param scene     Live world, rebuilt.
          * @param resources Reloaded from the recorded list.
@@ -63,22 +65,21 @@ class PlaySnapshot {
          * @brief Show the editor's view of the running session, or the game's again.
          *
          * Ejecting frees a grabbed cursor; returning hands back what the game last
-         * set. No-op outside a session.
+         * set. Nothing outside a session.
          *
          * @param ejected true to show the editor's view.
          * @param window  Owns the cursor.
          */
-        void setEjected(bool ejected, WindowManager& window);
+        void setEjected(bool ejected, Platform::WindowManager& window);
 
         /**
-         * @brief Free the cursor again if the game grabbed it while ejected.
+         * @brief Free the cursor again if the game grabbed it while ejected, keeping what it set.
          *
-         * What the game set is kept for return. Call once a frame, after the
-         * game's systems, never while the editor's view holds the cursor for a look.
+         * Call once a frame after the game's systems, never while the editor's view holds it for a look.
          *
          * @param window Owns the cursor.
          */
-        void holdCursorFree(WindowManager& window);
+        void holdCursorFree(Platform::WindowManager& window);
 
         /**
          * @brief Whether the running session shows the editor's view.
@@ -88,11 +89,9 @@ class PlaySnapshot {
         bool ejected() const { return m_ejected; }
 
         /**
-         * @brief Whether every entity a prefab instance built stands in the slot
-         *        it held at capture.
+         * @brief Whether every entity a prefab instance built stands in the slot it held at capture.
          *
-         * False when a prefab changed on disk or would not open; a history kept
-         * across the restore would then address other entities.
+         * False when a prefab changed on disk: a kept history would address others.
          *
          * @param scene World restoreInto() rebuilt.
          * @return true when the restore put every slot back.
@@ -104,14 +103,31 @@ class PlaySnapshot {
         /// EditorState::sceneDirty at capture.
         bool dirtyAtCapture() const { return m_dirty; }
 
+        /**
+         * @brief Scene::epoch() of the world capture() took.
+         *
+         * @return Not the world's epoch once the game has read a world of its own in play, whose
+         *         ids are numbered afresh.
+         */
+        uint64_t epochAtCapture() const { return m_epoch; }
+
     private:
-        std::string           m_scene;          ///< Empty means no session.
-        std::string           m_assets;         ///< Whole asset list.
-        Prefab::InstanceSlots m_instanceSlots;  ///< Where each instance's entities stood.
-        bool                  m_dirty = false;
-        bool                  m_ejected = false;                ///< See setEjected.
-        /// Handed back on return.
-        CursorMode            m_gameCursor = CursorMode::Normal;
+        /// Writes one component's references back as capture() found them.
+        using PutBack = std::function<void(Scene&)>;
+
+    private:
+        std::string           m_scene;                                      ///< Empty means no session.
+        std::string           m_assets;                                     ///< Whole asset list.
+        Prefab::InstanceSlots m_instanceSlots;                              ///< Where each instance's
+                                                                            ///< entities stood.
+        std::vector<uint32_t> m_generations;                                ///< Scene::slotGenerations
+                                                                            ///< at capture.
+        std::vector<PutBack>  m_deadReferences;                             ///< Each component naming an
+                                                                            ///< entity dead at capture.
+        uint64_t              m_epoch      = 0;                             ///< See epochAtCapture().
+        bool                  m_dirty      = false;
+        bool                  m_ejected    = false;                         ///< See setEjected.
+        Platform::CursorMode  m_gameCursor = Platform::CursorMode::Normal;  ///< The game's, handed back.
 };
 
 } // namespace Vkm::Engine

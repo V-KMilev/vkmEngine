@@ -1,17 +1,17 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
-#include "session/build_controller.h"
+#include "session/project/build_controller.h"
 
 #include <cstddef>
 #include <system_error>
 
 #include <imgui.h>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "editor_state.h"
-#include "io/project_paths.h"
-#include "ui/editor_style.h"
+#include "io/project/roots.h"
+#include "ui/style/editor_style.h"
 
 namespace fs = std::filesystem;
 
@@ -19,8 +19,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-/// Kept lines; a build's output past this sheds its oldest.
-constexpr size_t MAX_LINES = 4000;
+constexpr size_t MAX_LINES = 4000;  ///< Kept lines; a build's output past this sheds its oldest.
 
 #if defined(_WIN32)
 constexpr const char* LAUNCHER = "vkm.cmd";
@@ -36,7 +35,7 @@ std::string typed(const std::string& word) {
 } // namespace
 
 fs::path BuildController::launcher() {
-    const fs::path root = ProjectPaths::engineRoot();
+    const fs::path root = Roots::engineRoot();
     std::error_code ec;
     for (const fs::path& candidate : {root / LAUNCHER, root / "tools" / LAUNCHER}) {
         if (fs::is_regular_file(candidate, ec)) return candidate;
@@ -51,8 +50,8 @@ void BuildController::run(std::vector<std::string> args, std::string openWhenDon
     m_command = "vkm";
     for (const std::string& arg : args) m_command += " " + typed(arg);
     m_openWhenDone = std::move(openWhenDone);
-    m_reveal = true;
-    m_follow = true;
+    m_reveal       = true;
+    m_follow       = true;
 
     if (vkm.empty()) {
         m_lines.push_back("This engine has no vkm beside it to run.");
@@ -65,17 +64,22 @@ void BuildController::run(std::vector<std::string> args, std::string openWhenDon
 }
 
 void BuildController::update(EditorState& state, const fs::path& modulePath) {
-    if (!state.requestVkm.empty()) {
-        run(std::move(state.requestVkm), std::move(state.requestVkmOpens));
-        state.requestVkm.clear();
-        state.requestVkmOpens.clear();
+    if (std::optional<VkmRun> asked = state.requests.take<VkmRun>()) {
+        // One at a time: a second would race the first over a project half made or a build half linked.
+        if (m_status == Status::Running) {
+            state.toasts.push(ToastKind::Warning, m_command + " is still running", ConsoleView::Build);
+        } else {
+            run(std::move(asked->words), std::move(asked->opens));
+        }
     }
 
-    // A project that opens with no module is built once, so its code runs without a terminal.
-    if (state.projectOpen && ProjectPaths::projectRoot() != m_checkedRoot) {
-        m_checkedRoot = ProjectPaths::projectRoot();
+    // A project that opens with no module is built once, so its code runs without a terminal: by vkm,
+    // which builds into its bin/, so not an example whose module this engine's tree builds.
+    if (state.projectOpen && Roots::projectRoot() != m_checkedRoot) {
+        m_checkedRoot = Roots::projectRoot();
         std::error_code ec;
-        const bool buildable = fs::exists(m_checkedRoot / "CMakeLists.txt", ec);
+        const bool buildable = fs::exists(m_checkedRoot / "CMakeLists.txt", ec)
+            && modulePath.parent_path() == Roots::projectBin();
         const bool unbuilt = !modulePath.empty() && !fs::exists(modulePath, ec);
         if (buildable && unbuilt && m_status != Status::Running) run({"build", m_checkedRoot.string()});
     }
@@ -87,13 +91,14 @@ void BuildController::update(EditorState& state, const fs::path& modulePath) {
     append(m_process.takeOutput());
     if (!m_partial.empty()) append("\n");
     const int code = m_process.exitCode();
-    m_status = code == 0 ? Status::Succeeded : Status::Failed;
+    m_status  = code == 0 ? Status::Succeeded : Status::Failed;
+    m_endedAt = ImGui::GetTime();
     if (code != 0) {
-        state.pushToast(ToastKind::Error, m_command + " failed - see the Build window");
+        state.toasts.push(ToastKind::Error, m_command + " failed", ConsoleView::Build);
         return;
     }
     if (!m_openWhenDone.empty()) {
-        state.requestSceneAction(EditorState::SceneAction::OpenProject, m_openWhenDone);
+        state.sceneActions.request(SceneActions::Kind::OpenProject, m_openWhenDone);
         m_openWhenDone.clear();
     }
 }
@@ -121,17 +126,8 @@ void BuildController::append(const std::string& text) {
     }
 }
 
-void BuildController::draw(EditorState& state) {
+void BuildController::draw() {
     const bool running = m_status == Status::Running;
-    const bool canRun = state.projectOpen && !running;
-    const std::string root = ProjectPaths::projectRoot().string();
-
-    ImGui::BeginDisabled(!canRun);
-    if (ImGui::Button("Build")) state.requestVkm = {"build", root};
-    ImGui::SameLine();
-    if (ImGui::Button("Package")) state.requestVkm = {"package", root};
-    ImGui::EndDisabled();
-    ImGui::SameLine();
     ImGui::BeginDisabled(!running);
     if (ImGui::Button("Stop")) {
         m_process.stop();
@@ -166,17 +162,16 @@ void BuildController::draw(EditorState& state) {
     while (clipper.Step()) {
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
             const std::string& line = i < static_cast<int>(m_lines.size()) ? m_lines[i] : m_partial;
-            const bool error = line.find("error") != std::string::npos;
+            const bool error   = line.find("error") != std::string::npos;
             const bool warning = line.find("warning") != std::string::npos;
-            const bool marked = error || warning;
-            const ImVec4& colour = error ? EditorStyle::DANGER : EditorStyle::WARNING;
-            if (marked) ImGui::PushStyleColor(ImGuiCol_Text, colour);
+            const bool marked  = error || warning;
+            const ImVec4& color = error ? EditorStyle::DANGER : EditorStyle::WARNING;
+            if (marked) ImGui::PushStyleColor(ImGuiCol_Text, color);
             ImGui::TextUnformatted(line.c_str());
             if (marked) ImGui::PopStyleColor();
         }
     }
-    // Follows the output while scrolled to its end, as last frame measured it; scrolling
-    // up to read stops it. A new run starts at the end.
+    // Follows the output while scrolled to its end, as last frame measured it; a new run starts there.
     if (m_follow || ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
     m_follow = false;
     ImGui::EndChild();

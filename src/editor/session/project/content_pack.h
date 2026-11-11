@@ -9,16 +9,15 @@ namespace Vkm::Engine {
 /**
  * @brief The content the engine ships for a project to take in: packs laid out as a project is.
  *
- * A pack under ProjectPaths::engineContent() holds what a project would - assets/, prefabs/ and
- * the recipes in library/ - and is copied into one, never read in place. The project then owns its
- * copy, as it owns everything else it cooks and ships.
+ * A pack under Roots::engineContent() holds assets/, prefabs/ and the recipes in library/,
+ * and is copied into a project, never read in place: the project owns its copy.
  */
 namespace ContentPack {
 
 /**
  * @brief The engine's pack of @p name.
  *
- * @param name Its folder under ProjectPaths::engineContent(), as "effects".
+ * @param name Its folder under Roots::engineContent(), as "effects".
  * @return Where it is.
  */
 std::filesystem::path shipped(const std::string& name);

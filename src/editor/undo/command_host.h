@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "command/command_stack.h"
+#include "undo/command_stack.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -17,7 +17,7 @@ enum class ToastKind { Info, Warning, Error };
  * @brief What an undoable step may touch outside the scene it edits.
  *
  * Not the whole EditorState, which carries ImGui types, so undo runs without a
- * window; tests/editor/undo_tests.cpp supplies its own.
+ * window, as tests/editor/desk.h runs it.
  */
 class CommandHost {
     public:
@@ -54,11 +54,10 @@ class CommandHost {
         virtual CommandStack& commandStack() = 0;
 
         /**
-         * @brief Record a step whose change has already been applied, and mark
-         *        the scene unsaved.
+         * @brief Record a step whose change has already been applied, and mark the scene unsaved.
          *
-         * The stack alone does not raise the dirty flag. Only an edit that marks
-         * the scene as it goes pushes onto commandStack() directly.
+         * The stack alone does not raise the dirty flag; only an edit that marks the scene as it goes
+         * pushes onto commandStack() directly.
          *
          * @param step Applied change, held to undo it.
          */

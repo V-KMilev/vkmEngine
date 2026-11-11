@@ -1,10 +1,12 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
-#include "command/command_stack.h"
+#include "undo/command_stack.h"
 
 #include <algorithm>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+
+#include "ecs/scene.h"
 
 namespace Vkm::Engine {
 
@@ -13,9 +15,9 @@ CommandStack::~CommandStack() = default;
 
 void CommandStack::push(std::unique_ptr<Command> cmd) {
     if (!cmd) return;
+    ++m_revision;
 
-    // A fresh edit invalidates the redo history. Drop it before merge so a
-    // failed merge doesn't leave a half-state.
+    // Before the merge, so a failed merge leaves no half-state.
     m_redo.clear();
 
     if (m_mergeOpen && !m_undo.empty() && m_undo.back()->tryMerge(*cmd)) {
@@ -29,7 +31,8 @@ void CommandStack::push(std::unique_ptr<Command> cmd) {
     if (m_undo.size() > HISTORY_LIMIT) {
         const size_t dropped = m_undo.size() - HISTORY_LIMIT;
         m_undo.erase(m_undo.begin(), m_undo.begin() + dropped);
-        LOG_WARNING("History limit %zu reached; dropped %zu oldest command(s)", HISTORY_LIMIT, dropped);
+        if (!m_limitLogged) LOG_WARNING("History limit %zu reached; older steps are dropped", HISTORY_LIMIT);
+        m_limitLogged = true;
     }
     m_mergeOpen = true;
     LOG_VERBOSE("Pushed '%s' (undo size %zu)", label, m_undo.size());
@@ -37,6 +40,7 @@ void CommandStack::push(std::unique_ptr<Command> cmd) {
 
 void CommandStack::undo(Scene& scene, CommandHost& host) {
     if (m_undo.empty()) return;
+    ++m_revision;
     m_mergeOpen = false;
     auto cmd = std::move(m_undo.back());
     m_undo.pop_back();
@@ -47,12 +51,23 @@ void CommandStack::undo(Scene& scene, CommandHost& host) {
 
 void CommandStack::redo(Scene& scene, CommandHost& host) {
     if (m_redo.empty()) return;
+    ++m_revision;
     m_mergeOpen = false;
     auto cmd = std::move(m_redo.back());
     m_redo.pop_back();
     LOG_VERBOSE("Redo '%s' (redo %zu -> undo %zu)", cmd->label(), m_redo.size(), m_undo.size() + 1);
     cmd->redo(scene, host);
     m_undo.push_back(std::move(cmd));
+}
+
+void CommandStack::retract(Scene& scene, CommandHost& host) {
+    if (m_undo.empty()) return;
+    ++m_revision;
+    m_mergeOpen = false;
+    auto cmd = std::move(m_undo.back());
+    m_undo.pop_back();
+    LOG_VERBOSE("Retract '%s' (undo size %zu)", cmd->label(), m_undo.size());
+    cmd->undo(scene, host);
 }
 
 void CommandStack::clear() {
@@ -63,28 +78,39 @@ void CommandStack::clear() {
     m_redo.clear();
     m_parkedUndo.clear();
     m_parkedRedo.clear();
+    m_parkedReturns.clear();
     m_parked    = false;
     m_mergeOpen = false;
+    ++m_revision;
 }
 
-void CommandStack::park() {
+void CommandStack::park(const Scene& scene) {
     if (m_parked) return;
     m_parkedUndo = std::move(m_undo);
     m_parkedRedo = std::move(m_redo);
     m_undo.clear();
     m_redo.clear();
+    // Returns noted in an earlier world name none of this one's entities.
+    if (scene.epoch() == m_returnsWorld) m_parkedReturns = std::move(m_returns);
+    m_returns.clear();
     m_parked    = true;
     m_mergeOpen = false;
+    ++m_revision;
 }
 
-void CommandStack::unpark() {
+void CommandStack::unpark(const Scene& scene) {
     if (!m_parked) return;
     m_undo = std::move(m_parkedUndo);
     m_redo = std::move(m_parkedRedo);
     m_parkedUndo.clear();
     m_parkedRedo.clear();
+    // The world is back under the ids they name, at an epoch of its own.
+    m_returns      = std::move(m_parkedReturns);
+    m_returnsWorld = scene.epoch();
+    m_parkedReturns.clear();
     m_parked    = false;
     m_mergeOpen = false;
+    ++m_revision;
 }
 
 void CommandStack::forget(const std::vector<uint32_t>& slotIndices) {
@@ -95,6 +121,7 @@ void CommandStack::forget(const std::vector<uint32_t>& slotIndices) {
         return false;
     };
 
+    ++m_revision;
     const size_t before = m_undo.size() + m_redo.size();
     m_undo.erase(std::remove_if(m_undo.begin(), m_undo.end(), outlived), m_undo.end());
     m_redo.erase(std::remove_if(m_redo.begin(), m_redo.end(), outlived), m_redo.end());
@@ -113,12 +140,29 @@ void CommandStack::forget(const std::vector<uint32_t>& slotIndices) {
     m_mergeOpen = false;
 }
 
-const char* CommandStack::undoLabel() const {
-    return m_undo.empty() ? nullptr : m_undo.back()->label();
+void CommandStack::noteReturn(const Scene& scene, EntityId was, EntityId now) {
+    if (scene.epoch() != m_returnsWorld) {
+        m_returns.clear();
+        m_returnsWorld = scene.epoch();
+    }
+    m_returns.emplace_back(was, now);
 }
 
-const char* CommandStack::redoLabel() const {
-    return m_redo.empty() ? nullptr : m_redo.back()->label();
+EntityId CommandStack::returnOf(const Scene& scene, EntityId id) const {
+    if (scene.epoch() != m_returnsWorld) return id;
+    // In the order they happened: an id is destroyed only after it came back, so one pass follows it.
+    for (const auto& [was, now] : m_returns) {
+        if (was == id) id = now;
+    }
+    return id;
+}
+
+const char* CommandStack::undoLabel(size_t back) const {
+    return back < m_undo.size() ? m_undo[m_undo.size() - 1 - back]->label() : nullptr;
+}
+
+const char* CommandStack::redoLabel(size_t ahead) const {
+    return ahead < m_redo.size() ? m_redo[m_redo.size() - 1 - ahead]->label() : nullptr;
 }
 
 } // namespace Vkm::Engine

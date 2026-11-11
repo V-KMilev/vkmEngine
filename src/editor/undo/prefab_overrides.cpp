@@ -1,4 +1,4 @@
-#include "command/prefab_overrides.h"
+#include "undo/prefab_overrides.h"
 
 #include <algorithm>
 #include <cstring>
@@ -9,10 +9,12 @@
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/scene/prefab.h"
+#include "ecs/prefab_instances.h"
 
-#include "command/command_stack.h"
-#include "command/editor_commands.h"
-#include "command/command_host.h"
+#include "undo/command_stack.h"
+#include "undo/composite_command.h"
+#include "undo/entity_snapshot.h"
+#include "undo/command_host.h"
 
 namespace Vkm::Engine::PrefabOverrides {
 
@@ -126,7 +128,7 @@ std::unique_ptr<Command> recordFields(
     const std::vector<std::string>& entities,
     const char* label
 ) {
-    const EntityId      root    = Prefab::instanceRootOf(scene, id);
+    const EntityId root = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return nullptr;
 
@@ -187,15 +189,20 @@ void warnComponentIsPrefabs(
     host.pushToast(ToastKind::Warning, message);
 }
 
-void revert(
+namespace {
+
+// Drop the overrides of (@p id, @p component) that @p dropped names, giving those fields back the
+// prefab's values, as one step.
+template <typename Dropped>
+void revertWhere(
     Scene& scene,
     ResourceManager& resources,
     CommandHost& host,
     EntityId id,
     const char* component,
-    const std::string& field
+    Dropped&& dropped
 ) {
-    const EntityId      root    = Prefab::instanceRootOf(scene, id);
+    const EntityId root = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return;
 
@@ -204,8 +211,7 @@ void revert(
         entriesFor(scene.get<PrefabInstance>(root).overrides, uid, component);
 
     std::vector<PrefabOverride> entries = restore;
-    const auto onField = [&](const PrefabOverride& o) { return o.field == field; };
-    entries.erase(std::remove_if(entries.begin(), entries.end(), onField), entries.end());
+    entries.erase(std::remove_if(entries.begin(), entries.end(), dropped), entries.end());
     if (entries.size() == restore.size()) return;
 
     if (!Prefab::definesComponent(scene.get<PrefabInstance>(root).source, uid, component)) {
@@ -229,4 +235,112 @@ void revert(
     );
 }
 
+} // namespace
+
+void revert(
+    Scene& scene,
+    ResourceManager& resources,
+    CommandHost& host,
+    EntityId id,
+    const char* component,
+    const std::string& field
+) {
+    const auto onField = [&](const PrefabOverride& o) { return o.field == field; };
+    revertWhere(scene, resources, host, id, component, onField);
+}
+
+void revertComponent(
+    Scene& scene,
+    ResourceManager& resources,
+    CommandHost& host,
+    EntityId id,
+    const char* component
+) {
+    revertWhere(scene, resources, host, id, component, [](const PrefabOverride&) { return true; });
+}
+
+void revertAll(Scene& scene, ResourceManager& resources, CommandHost& host, EntityId root) {
+    const PrefabInstance* instance = scene.tryGet<PrefabInstance>(root);
+    if (!instance || instance->overrides.empty()) return;
+
+    // Each (entity, component) once: its entries go together.
+    std::vector<std::pair<uint32_t, std::string>> pairs;
+    for (const PrefabOverride& o : instance->overrides) {
+        const std::pair<uint32_t, std::string> pair{o.uid, o.component};
+        if (std::find(pairs.begin(), pairs.end(), pair) == pairs.end()) pairs.push_back(pair);
+    }
+
+    const std::string source = instance->source;
+    auto step = std::make_unique<CompositeCommand>("Revert All Overrides");
+    size_t kept = 0;
+    for (const auto& [uid, component] : pairs) {
+        if (!Prefab::definesComponent(source, uid, component)) {
+            ++kept;
+            continue;
+        }
+        const std::vector<PrefabOverride>& held = scene.get<PrefabInstance>(root).overrides;
+        std::vector<PrefabOverride> restore     = entriesFor(held, uid, component);
+        apply(scene, resources, root, uid, component, {});
+        step->add(
+            std::make_unique<PrefabOverrideCommand>(
+                resources,
+                root,
+                uid,
+                component,
+                std::move(restore),
+                std::vector<PrefabOverride>{},
+                "Revert Override"
+            )
+        );
+    }
+    if (!step->empty()) host.pushStep(std::move(step));
+    if (kept > 0) {
+        host.pushToast(
+            ToastKind::Warning,
+            std::to_string(kept) + " override(s) are on components the prefab no longer defines - kept"
+        );
+    }
+}
+
 } // namespace Vkm::Engine::PrefabOverrides
+
+namespace Vkm::Engine {
+
+void PrefabOverrideCommand::step(
+    Scene& scene,
+    CommandHost& host,
+    const std::vector<PrefabOverride>& entries
+) {
+    const bool applied = PrefabOverrides::apply(
+        scene,
+        *m_resources,
+        liveEntity(scene, m_root),
+        m_targetUid,
+        m_component,
+        entries
+    );
+    if (applied) return;
+    const std::string message = "The prefab no longer defines " + m_component
+        + " - the value here is stale until the scene is loaded again";
+    host.pushToast(ToastKind::Warning, message);
+}
+
+void PrefabOverrideCommand::redo(Scene& scene, CommandHost& host) {
+    step(scene, host, m_after);
+}
+
+void PrefabOverrideCommand::undo(Scene& scene, CommandHost& host) {
+    step(scene, host, m_before);
+}
+
+bool PrefabOverrideCommand::tryMerge(Command& incoming) {
+    auto* p = dynamic_cast<PrefabOverrideCommand*>(&incoming);
+    if (!p || p->m_root != m_root || p->m_targetUid != m_targetUid
+        || p->m_component != m_component) {
+        return false;
+    }
+    m_after = p->m_after;
+    return true;
+}
+
+} // namespace Vkm::Engine

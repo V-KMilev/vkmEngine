@@ -1,11 +1,11 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
-#include "session/project_controller.h"
+#include "session/project/project_controller.h"
 
 #include <filesystem>
 #include <system_error>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "core/clock.h"
 #include "ecs/scene.h"
@@ -14,121 +14,106 @@
 #include "editor_settings.h"
 #include "editor_state.h"
 #include "io/asset/asset_library.h"
-#include "io/project.h"
-#include "io/project_paths.h"
-#include "loader/font_baker.h"
-#include "platform/window/window_manager.h"
-#include "session/scene_io_controller.h"
-#include "project_boot.h"
+#include "io/project/project.h"
+#include "io/project/roots.h"
+#include "font_baker.h"
+#include "vkm_platform/window/window_manager.h"
+#include "session/scene_session.h"
+#include "system/loading/loading_system.h"
+#include "core/project_boot.h"
 #include "system/audio/audio_system.h"
-#include "system/script/script_module.h"
+#include "system/script/module/script_module.h"
 
 namespace fs = std::filesystem;
 
 namespace Vkm::Engine::ProjectController {
 
-bool open(
-    EditorContext& ec,
-    ScriptModule& scriptModule,
-    SceneIOController& sceneIO,
-    const std::string& projectRoot,
-    OpenKind kind
-) {
+bool open(EditorContext& ec, ScriptModule& scriptModule, const std::string& projectRoot, OpenKind kind) {
     const fs::path root = findProjectRoot(projectRoot);
     if (root.empty()) {
-        // Only a failure when somebody asked for this one. At startup the
-        // editor looks beside itself and usually finds nothing, which is not a
-        // fault.
+        // At startup the editor looks beside itself and usually finds nothing: not a fault.
         if (kind == OpenKind::Requested) {
             LOG_ERROR("'%s' is not a project (no project.json in it or above it)", projectRoot.c_str());
-            ec.state.pushToast(ToastKind::Error, "Not a project: " + projectRoot);
+            ec.state.toasts.push(ToastKind::Error, "Not a project: " + projectRoot);
         } else {
             LOG_INFO("No project beside the editor - opening the start screen");
         }
         return false;
     }
-    // Whether a project is open, not which way in this is: the start screen's
-    // first open has nothing to write or tear down either, and writing it would
-    // put editor_settings.json in the engine root.
+    // Whether one is open, not the way in: with none, writing would put editor_settings.json in the
+    // engine root.
     const bool replacing = ec.state.projectOpen;
 
-    // editor_settings.json is per project, so the open one's tuning has to be
-    // written while its root is still current, or it lands in the project being
-    // opened - which at startup would be a default layout over the real one.
+    // Written while its root is current, or it lands in the project being opened.
     if (replacing) {
-        sceneIO.rememberView(ec.state);
-        EditorSettings::save(ec.state, ec.frame.render);
+        ec.session.rememberView(ec.state);
+        EditorSettings::save(ec.state, ec.frame.chrome);
     }
 
-    ProjectPaths::setProjectRoot(root);
-
-    // Reset before the read, not after: loadProject leaves untouched fields
-    // alone, so opening a project with no maxPlayers would otherwise inherit the
-    // one left open.
+    // Reset before the read: loadProject leaves absent fields alone, which would keep the last project's.
     Project& project = ec.state.project;
     project = Project{};
     loadProject(root, project);
+    ec.state.projectSaved = project;
 
-    // The look the project ships, then the editor's view defaults, then - in
-    // EditorSettings::load below - this editor's persisted view state; the
-    // shipped and view sets are disjoint, so neither overwrites the other.
-    ec.frame.render = project.render;
-    EditorSettings::applyViewDefaults(ec.frame.render);
+    // Emptied while the old module still holds its behaviors' code, for their onDestroy.
+    if (replacing) ec.session.beginSceneReplace(ec.frame, ec.state);
+
+    // Re-rooted after the teardown, whose crash copy is the project left's to discard.
+    Roots::setProjectRoot(root);
+
+    // After the teardown, whose session end puts back the old project's settings. The display is the
+    // editor's defaults, then this editor's own (EditorSettings::load below).
+    ec.frame.graphics.setProject(project.render);
+    ec.state.previewTier.reset();  // the last project's
+    EditorSettings::applyViewDefaults(ec.frame.chrome);
     bakeProjectFonts(ec.frame.resources, project.fonts, uiFontPixels(ec.frame.window.displayHeight()));
-
-    // Emptied before the assets it references go away, through the teardown a
-    // New Scene runs: behaviors get onDestroy while the old module still holds
-    // their code, and the scene-scoped editor state belongs to the project left.
-    if (replacing) sceneIO.beginSceneReplace(ec.frame, ec.state);
+    ec.loadingSystem.setScreen(project.loading);
 
     AssetLibrary::get().load(AssetLibrary::Truth::Recipes);
-    EditorSettings::load(ec.state, ec.frame.render);
+    EditorSettings::load(ec.state, ec.frame.chrome);
 
-    // Behaviors from any previous module went with the scene above, and its
-    // sounds go here, so nothing of the last project plays on into this one.
+    // So nothing of the last project plays on; its behaviors went with the scene above.
     ec.audioSystem.stopEverything();
-    const fs::path modulePath = gameplayModulePath();
+    const fs::path modulePath = Roots::gameplayModule();
     std::error_code moduleEc;
     bool moduleFailed = false;
     if (fs::exists(modulePath, moduleEc)) {
-        // A failed load is otherwise silent: the project opens looking fine
-        // and every behavior in the scene loads as text that never runs.
+        // Otherwise silent: every behavior in the scene would load as text that never runs.
         moduleFailed = !scriptModule.load(modulePath, &ec.frame.events);
     } else {
-        // Unload rather than leave the last project's module in place: it would
-        // still answer buildScene below and generate the previous project's
-        // world inside this one, and its behavior types would stay registered.
-        // Expected rather than forgotten, so the first build is picked up.
+        // Unloaded, or the last module's behavior types stay registered; expected, so the first
+        // build is picked up.
         scriptModule.expect(modulePath, ec.frame.events);
-        LOG_WARNING("Project '%s' has no gameplay module", project.name.c_str());
+        LOG_INFO("Project '%s' has no gameplay module yet", project.name.c_str());
     }
 
-    // The editor never hosts or joins, but it is where a game is authored, so an
-    // author has to be able to read what it puts on the wire.
+    // The editor never hosts or joins, but an author reads what the game puts on the wire.
     scriptModule.setupNetwork(ec.frame.net);
 
+    // The project opens behind the loading screen, as a game's world does.
+    ec.frame.chrome.coverNextWorld = true;
     const SceneBootResult boot = bootProjectWorld(
         project,
-        scriptModule,
         ec.frame.scene,
         ec.frame.resources,
         ec.frame.clock,
+        ec.frame.input,
         ec.frame.net
     );
 
-    sceneIO.adoptPath(ec.frame.scene, ec.state, boot.path);
+    ec.session.adoptPath(ec.frame.scene, ec.state, boot.path);
 
     ec.state.sceneDirty = false;
 
     pushRecentPath(ec.state.recentProjects, root.string());
-    // One slot, so the last push is the only one anyone sees.
     if (moduleFailed) {
         const char* withoutModule =
-            " without its gameplay module - see the Errors panel. Behaviors are kept but do not "
-            "run; fix the build and use File > Reload Scripts.";
-        ec.state.pushToast(ToastKind::Error, "Opened " + project.name + withoutModule);
+            " without its gameplay module: behaviors are kept but do not run; fix the build and use "
+            "File > Reload Scripts";
+        ec.state.toasts.push(ToastKind::Error, "Opened " + project.name + withoutModule, ConsoleView::Errors);
     } else {
-        ec.state.pushToast(ToastKind::Info, "Opened " + project.name);
+        ec.state.toasts.push(ToastKind::Info, "Opened " + project.name);
     }
     LOG_INFO("Opened project '%s' at '%s'", project.name.c_str(), root.string().c_str());
     ec.state.projectOpen = true;

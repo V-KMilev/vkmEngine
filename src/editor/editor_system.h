@@ -1,68 +1,70 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "core/system.h"
-#include "system/render/render_settings.h"
-#include "debug/engine_error_log.h"
+#include "debug/error/engine_error_log.h"
 #include "editor_state.h"
-#include "session/build_controller.h"
-#include "session/material_preview_session.h"
-#include "session/scene_io_controller.h"
+#include "session/project/build_controller.h"
+#include "preview/preview_cache.h"
+#include "session/play_session.h"
+#include "session/scene_session.h"
+#include "session/project/reload_watcher.h"
 #include "chrome/editor_menu_bar.h"
-#include "chrome/model_import_dialog.h"
-#include "chrome/new_project_dialog.h"
-#include "chrome/open_project_dialog.h"
-#include "chrome/place_prefab_dialog.h"
+#include "chrome/dialog/model_import_dialog.h"
+#include "chrome/dialog/new_project_dialog.h"
+#include "chrome/dialog/open_project_dialog.h"
+#include "chrome/dialog/place_prefab_dialog.h"
 #include "input/input_ownership.h"
-#include "overlays/viewport_overlay.h"
-#include "overlays/gizmo_overlay.h"
+#include "overlays/navigation_axes.h"
+#include "overlays/gizmo/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
-#include "overlays/terrain_tool.h"
+#include "overlays/terrain_tool_overlay.h"
+#include "panels/console/console_panel.h"
 #include "panels/terrain_editor_panel.h"
 #include "panels/hierarchy_panel.h"
-#include "panels/inspector_panel.h"
+#include "panels/inspector/inspector_panel.h"
 #include "panels/animation_panel.h"
-#include "panels/asset_browser_panel.h"
+#include "panels/asset_browser/asset_browser_panel.h"
 #include "panels/preferences_panel.h"
-#include "panels/material_editor_panel.h"
+#include "asset_editors/asset_editors.h"
 #include "panels/project_settings_panel.h"
-#include "panels/start_screen.h"
+#include "chrome/start_screen.h"
 #include "panels/render_settings_panel.h"
 
-struct GLFWwindow;
+namespace Vkm::Platform {
+class WindowManager;
+} // namespace Vkm::Platform
 
 namespace Vkm::Engine {
 
 struct EditorContext;
 class AudioSystem;
+class LoadingSystem;
 class BehaviorSystem;
 class CameraControllerSystem;
 class EditorRenderHooks;
 class Scene;
-class UISystem;
 class RenderSystem;
 class ScriptModule;
 
 /**
- * @brief Top-level editor System: owns the panel set, the workspace shell and
- *        the long-lived editor state.
+ * @brief Top-level editor System: owns the panel set, the workspace shell and the editor state.
  *
- * Runs at the Editor stage, after Render: its ImGui frame lands on top of the scene
- * and its panels read what this frame published. It holds other systems because it
- * drives the engine rather than taking part in the frame's data flow. Mutation goes
- * through EditorContext; the panels do not know about each other.
+ * Runs at the Editor stage, after Render, so its ImGui frame lands on the scene and its panels read
+ * what this frame published. Mutation goes through EditorContext; the panels do not know each other.
  */
 class EditorSystem : public System {
     public:
         EditorSystem(
-            GLFWwindow* window,
+            Platform::WindowManager& window,
             CameraControllerSystem& cameraController,
             RenderSystem& renderSystem,
-            RenderSettings& render,
             AudioSystem& audioSystem,
+            LoadingSystem& loadingSystem,
             BehaviorSystem& behaviorSystem,
             ScriptModule& scriptModule
         );
@@ -77,9 +79,7 @@ class EditorSystem : public System {
         /**
          * @brief Open the project the host was launched on, before the first frame.
          *
-         * The host resolves the root and builds the window; everything scoped to the
-         * project is rooted here through the same ProjectController::open that
-         * File > Open Project runs.
+         * Through the same ProjectController::open that File > Open Project runs.
          *
          * @param ctx Frame context the project's world is built into.
          */
@@ -87,20 +87,11 @@ class EditorSystem : public System {
 
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Save the editor's settings and tear ImGui down.
-         *
-         * Not in the destructor because both halves need a live window: the settings
-         * write reads the render system's state, and ImGui's renderer and platform
-         * halves hold the window.
-         */
+        /// Save the settings and tear ImGui down; not in the destructor, as both need a live window.
         void shutdown() override;
 
     private:
-        /// Seconds between scans of what a build rewrites.
-        static constexpr float DISK_POLL_INTERVAL = 1.0f;
-        /// Frames a second while unfocused outside a session.
-        static constexpr int   IDLE_FRAMERATE     = 15;
+        static constexpr int IDLE_FRAMERATE = 15;  ///< Frames a second, unfocused outside a session.
 
     private:
         /**
@@ -112,30 +103,6 @@ class EditorSystem : public System {
         EditorContext makeContext(FrameContext& ctx);
 
         /**
-         * @brief Carry the pending scene action one stage on, and run it once
-         *        the unsaved-changes guard has cleared it.
-         *
-         * Called before the ImGui frame opens: New, Open and Open Project rebuild the
-         * world, which may not happen with a window still on the ImGui stack.
-         *
-         * @param ec Editor context the action operates on.
-         */
-        void resolveSceneAction(EditorContext& ec);
-
-        /**
-         * @brief Do the thing the guard cleared.
-         *
-         * @param ec Editor context the action operates on.
-         * @param action Which action was approved.
-         * @param payload Its target: a scene file, a project root, or empty.
-         */
-        void performSceneAction(
-            EditorContext& ec,
-            EditorState::SceneAction action,
-            const std::string& payload
-        );
-
-        /**
          * @brief Re-apply the theme when the display or the preference moved.
          *
          * Before the ImGui frame opens, which is laid out against the theme.
@@ -145,14 +112,10 @@ class EditorSystem : public System {
         void applyUiScaleIfMoved(FrameContext& ctx);
 
         /**
-         * @brief Put the Preferences into effect: the fly camera's feel, and
-         *        the window's vsync, mode and frame cap.
+         * @brief Apply the Preferences: the fly camera's feel, and the window's vsync, mode and frame cap.
          *
-         * Every frame, against what the window already has, so a Preferences edit and
-         * the end of a session are one code path. The window half stands aside during
-         * a play session, where the game may set the window up its own way; Stop puts
-         * the editor's back. Outside a session an unfocused editor is held to
-         * IDLE_FRAMERATE rather than redrawing a scene nobody is looking at.
+         * Every frame, against what the window has, so a Preferences edit and a session's end are one
+         * path. The window half stands aside during a session; an unfocused editor runs at IDLE_FRAMERATE.
          *
          * @param ctx The frame, for its window.
          */
@@ -163,48 +126,9 @@ class EditorSystem : public System {
          *
          * Runs before any panel is submitted.
          *
-         * @param ctx The frame being serviced.
+         * @param ec The frame being serviced.
          */
-        void serviceFrame(FrameContext& ctx);
-
-        /**
-         * @brief Poll the shader sources and reload what changed.
-         *
-         * Polled, not watched: a filesystem watcher is a per-platform dependency for
-         * what a once-a-second scan answers. Editor-only; a shipped runtime has no
-         * shader sources.
-         *
-         * @param ctx The frame, for its delta.
-         */
-        void pollShaderReload(FrameContext& ctx);
-
-        /**
-         * @brief Notice that `vkm build` has rewritten the gameplay module.
-         *
-         * A script reload stops the play session (see serviceScriptReload), so this
-         * reloads on its own only while nothing is playing, and says so otherwise.
-         *
-         * @param ctx The frame, for its delta.
-         */
-        void pollScriptRebuild(FrameContext& ctx);
-
-        /**
-         * @brief Rebuild the gameplay module if File > Reload Scripts asked.
-         *
-         * @param ctx The frame, for the scene behaviors are rebound into and the
-         *        session the wire schema is rebuilt on.
-         */
-        void serviceScriptReload(FrameContext& ctx);
-
-        /**
-         * @brief Ask about unsaved changes, and record the answer.
-         *
-         * Records the answer without acting on it: performing it rebuilds the world, which
-         * cannot happen with an ImGui window open, so resolveSceneAction does it.
-         *
-         * @param ctx The frame, for the play session a Save ends before it writes.
-         */
-        void drawUnsavedChangesDialog(FrameContext& ctx);
+        void serviceFrame(EditorContext& ec);
 
         /**
          * @brief Draw the corner hint naming the key that brings the editor back.
@@ -216,8 +140,8 @@ class EditorSystem : public System {
         /**
          * @brief Gather what this frame's input ownership is decided from.
          *
-         * Read before the ImGui frame opens, so every hover is the last frame's - the
-         * frame a click was aimed in - and nothing drawn this frame answers a press first.
+         * Read before the ImGui frame opens, so every hover is the last frame's, the one a click was
+         * aimed in, and nothing drawn this frame answers a press first.
          *
          * @param ctx The frame, for the game's UI and the window's cursor.
          * @return The signals resolveInputOwnership takes.
@@ -245,8 +169,7 @@ class EditorSystem : public System {
         void drawPanels(EditorContext& ec);
 
         /**
-         * @brief Draw the Viewport window: state its rect to the engine and draw the
-         *        overlays over the scene.
+         * @brief Draw the Viewport window: state its rect to the engine and draw the overlays over the scene.
          *
          * The window has no background, so the frame RenderSystem drew shows through.
          * The rect is its content region, in framebuffer pixels on HostChrome and
@@ -256,50 +179,46 @@ class EditorSystem : public System {
          */
         void drawViewport(EditorContext& ec);
 
+        /**
+         * @brief Title the window with the project, the scene's file and its unsaved mark.
+         *
+         * Writes only when one of them changed, so a steady frame builds no string and calls no GLFW.
+         *
+         * @param window The editor's window.
+         */
+        void syncWindowTitle(Platform::WindowManager& window);
+
     private:
         CameraControllerSystem& m_cameraController;
         RenderSystem&           m_renderSystem;
         EditorRenderHooks&      m_hooks;
-        RenderSettings&         m_render;
         AudioSystem&            m_audioSystem;
+        LoadingSystem&          m_loadingSystem;
         BehaviorSystem&         m_behaviorSystem;
         ScriptModule&           m_scriptModule;
 
-        MaterialPreviewSession m_materialPreviews;
+        PreviewCache m_previews;
 
-        /**
-         * @brief The recoverable-error log, the engine's reportError() sink for this
-         *        editor's lifetime.
-         */
-        EngineErrorLog m_errorLog;
+        FrameContext* m_frame = nullptr;  ///< Kept at init for shutdown(), which is handed no frame.
 
-        /**
-         * @brief Last EngineErrorLog total observed, so serviceFrame() toasts only new
-         *        errors, not once per frame.
-         */
-        unsigned long long m_lastErrorTotal = 0;
+        EngineErrorLog m_errorLog;  ///< The engine's reportError() sink for the editor's lifetime.
 
-        float             m_shaderPollTimer = 0.0f;
-        float             m_scriptPollTimer = 0.0f;
-        /// The module last polled and its write time; another project's module is a first look.
-        std::filesystem::path           m_scriptModulePath;
-        std::filesystem::file_time_type m_scriptModuleStamp{};
-        /// A changed write time seen once, acted on when the next poll sees it unchanged.
-        std::filesystem::file_time_type m_scriptModuleSettling{};
+        unsigned long long m_lastErrorTotal = 0;  ///< Last seen, so serviceFrame() toasts only new errors.
 
-        /**
-         * @brief The installed UI scale: display content scale times the user's multiplier.
-         *
-         * Held because re-applying the theme writes every metric in it.
-         */
-        float             m_appliedUiScale = 1.0f;
+        float             m_appliedUiScale = 1.0f;  ///< The installed scale: display content scale
+                                                    ///< times the user's multiplier.
 
-        bool m_editorVisible = true;  ///< The whole editor UI, toggled by its keybind
+        bool m_editorVisible = true;  ///< The whole editor UI, toggled by its keybind.
 
-        /// The pointer is over the viewport's scene rect, as last drawn; see nextViewportHover.
-        bool m_viewportHovered = false;
+        std::string         m_titleProject;  ///< What syncWindowTitle last wrote the title from.
+        std::string         m_titlePath;
+        std::optional<bool> m_titleDirty;    ///< Empty until the first write.
 
-        SceneIOController m_sceneIO;
+        bool m_viewportHovered = false;  ///< Pointer over the scene rect as last drawn (nextViewportHover).
+
+        PlaySession       m_play;
+        SceneSession      m_session;
+        ReloadWatcher     m_scripts;
         BuildController   m_build;
         EditorMenuBar     m_menuBar;
 
@@ -312,15 +231,16 @@ class EditorSystem : public System {
         HierarchyPanel       m_hierarchy;
         InspectorPanel       m_inspector;
         AssetBrowserPanel    m_assetBrowser;
+        ConsolePanel         m_console;
         AnimationPanel       m_animation;
-        ViewportOverlay      m_viewportOverlay;
+        NavigationAxes       m_navigationAxes;
         GizmoOverlay         m_gizmoOverlay;
         TerrainToolOverlay   m_terrainTool;
         ViewportToolbar      m_viewportToolbar;
         PlaybackBar          m_playbar;
         PreferencesPanel     m_preferences;
-        MaterialEditorPanel  m_materialEditor;
         TerrainEditorPanel   m_terrainEditor;
+        AssetEditors         m_assetEditors;  ///< A window for each asset open in its editor.
         RenderSettingsPanel  m_renderSettings;
         ProjectSettingsPanel m_projectSettings;
         StartScreen          m_startScreen;   ///< Drawn instead of the workspace when there is no project.

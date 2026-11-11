@@ -44,16 +44,15 @@ class Command {
         /**
          * @brief Short name for the Edit menu's Undo/Redo entries.
          *
-         * @return A literal, never a c_str(): CommandStack::undoLabel() hands it
-         *         out frames later, past the command's life.
+         * @return Text of static storage, a literal or a static string's c_str(): CommandStack::undoLabel()
+         *         hands it out past the command's life.
          */
         virtual const char* label() const = 0;
 
         /**
          * @brief Optionally absorb @p incoming, pushed onto @c this within one gesture.
          *
-         * Test identity only: the gesture boundary is CommandStack's to enforce
-         * (see CommandStack::endGesture).
+         * Test identity only: CommandStack::endGesture enforces the gesture boundary.
          *
          * @param incoming Being pushed.
          * @return true if merged, so the stack discards @p incoming.
@@ -61,11 +60,9 @@ class Command {
         virtual bool tryMerge(Command& incoming) { return false; }
 
         /**
-         * @brief Whether undoing or redoing this step lands on the entity in
-         * slot @p slotIndex.
+         * @brief Whether undoing or redoing this step lands on the entity in slot @p slotIndex.
          *
-         * Lets CommandStack::forget drop outlived steps. Keyed by slot, not
-         * EntityId: the slot is what a destroy-and-resurrect keeps.
+         * Lets CommandStack::forget drop outlived steps; keyed by slot, as a destroy-and-resurrect keeps it.
          *
          * @param slotIndex Entity slot asked about.
          * @return true when this step's effect lands on that entity.
