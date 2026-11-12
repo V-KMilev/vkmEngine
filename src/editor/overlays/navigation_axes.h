@@ -1,26 +1,22 @@
 #pragma once
 
-#include <imgui.h>
-
 namespace Vkm::Engine {
 
 struct EditorContext;
 
 /**
- * @brief In-viewport axis gizmo: click an endpoint to snap the view to that axis.
- *
- * The view orbits the selection or the origin.
+ * @brief In-viewport axis gizmo: click an endpoint to snap the view, orbiting the selection or origin.
  */
-class ViewportOverlay {
+class NavigationAxes {
     public:
-        ViewportOverlay() = default;
-        ~ViewportOverlay() = default;
+        NavigationAxes() = default;
+        ~NavigationAxes() = default;
 
-        ViewportOverlay(const ViewportOverlay& other) = delete;
-        ViewportOverlay& operator=(const ViewportOverlay& other) = delete;
+        NavigationAxes(const NavigationAxes& other) = delete;
+        NavigationAxes& operator=(const NavigationAxes& other) = delete;
 
-        ViewportOverlay(ViewportOverlay && other) = delete;
-        ViewportOverlay& operator=(ViewportOverlay && other) = delete;
+        NavigationAxes(NavigationAxes && other) = delete;
+        NavigationAxes& operator=(NavigationAxes && other) = delete;
 
     public:
         /**
@@ -30,13 +26,6 @@ class ViewportOverlay {
          * @param shown Whether the axes are drawn at all.
          */
         void drawNavigationGizmo(EditorContext& ec, bool shown);
-
-        /**
-         * @brief Say why the viewport is empty when a session's game has no active Camera.
-         *
-         * @param ec Supplies the viewport rect.
-         */
-        void drawNoCameraNotice(EditorContext& ec);
 
         /**
          * @brief Whether the mouse is over an axis endpoint, so the viewport does not also pick.

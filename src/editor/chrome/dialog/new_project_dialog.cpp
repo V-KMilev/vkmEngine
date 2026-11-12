@@ -1,38 +1,34 @@
-#include "chrome/new_project_dialog.h"
+#include "chrome/dialog/new_project_dialog.h"
 
 #include <cstdio>
 
 #include <imgui.h>
 
 #include "editor_state.h"
-#include "io/project_paths.h"
+#include "io/project/roots.h"
 #include "ui/editor_dialogs.h"
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
 /// What New Project copies unless it is asked for another project.
-std::filesystem::path defaultTemplate() { return ProjectPaths::engineRoot() / "templates" / "default"; }
+std::filesystem::path defaultTemplate() { return Roots::engineRoot() / "templates" / "default"; }
 
 } // namespace
 
 void NewProjectDialog::draw(EditorState& state) {
-    if (state.requestNewProject) {
-        state.requestNewProject = false;
-        m_open  = true;
-        m_source = state.newProjectTemplate.empty()
-            ? defaultTemplate()
-            : std::filesystem::path(state.newProjectTemplate);
+    if (const std::optional<NewProject> asked = state.requests.take<NewProject>()) {
+        m_open   = true;
+        m_source = asked->from.empty() ? defaultTemplate() : std::filesystem::path(asked->from);
         // An example's copy starts under the example's name.
-        if (!state.newProjectTemplate.empty()) {
+        if (!asked->from.empty()) {
             const std::string name = m_source.filename().string();
             std::snprintf(m_nameBuffer, sizeof(m_nameBuffer), "%s", name.c_str());
         }
-        state.newProjectTemplate.clear();
         if (m_parentBuffer[0] == '\0') {
-            const std::string parent = ProjectPaths::projectRoot().parent_path().string();
+            const std::string parent = Roots::projectRoot().parent_path().string();
             std::snprintf(m_parentBuffer, sizeof(m_parentBuffer), "%s", parent.c_str());
         }
     }
@@ -67,9 +63,8 @@ void NewProjectDialog::draw(EditorState& state) {
 
     const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
     if (r == DialogResult::Confirm) {
-        // vkm makes it, as `vkm new` would from a terminal; the Build window shows how it went.
-        state.requestVkm = {"new", dest.string(), "-t", m_source.filename().string()};
-        state.requestVkmOpens = dest.string();
+        // vkm makes it, as `vkm new` would from a terminal; the Console's Build view shows how it went.
+        state.requests.ask(VkmRun{{"new", dest.string(), "-t", m_source.filename().string()}, dest.string()});
         m_nameBuffer[0] = '\0';
     }
     endDialog();

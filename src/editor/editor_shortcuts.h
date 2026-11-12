@@ -3,30 +3,22 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
-class SceneIOController;
+class SceneSession;
 
 /**
- * @brief Keyboard-shortcut dispatcher for the editor.
+ * @brief The editor's keyboard shortcuts: panel toggles, scene save and load, entity operations, gizmo modes.
  *
- * Translates the configured keybinds into editor commands: panel toggles, scene
- * save/load (via the controller), entity ops (delete/duplicate/focus/deselect)
- * and gizmo mode changes. Reads keybinds and mutates EditorState.
- *
- * The toggleEditor bind, which shows the hidden editor again, is not here:
- * process() runs past EditorSystem's visibility gate, so it never sees a frame
- * while the editor is hidden. The toggle sits with the gate.
+ * Not toggleEditor: process() sees no frame while the editor is hidden, so that bind sits with
+ * EditorSystem's visibility gate.
  */
 namespace EditorShortcuts {
 
 /**
- * @brief Process this frame's shortcuts.
- *
- * The caller asks InputOwnership::editorHasKeys first.
+ * @brief Act on this frame's shortcuts; the caller asks InputOwnership::editorHasKeys first.
  *
  * @param ec Editor context holding the scene, state and keybinds to read and mutate.
- * @param sceneIO Controller the save/load shortcuts forward their intent to.
  */
-void process(EditorContext& ec, SceneIOController& sceneIO);
+void process(EditorContext& ec);
 
 } // namespace EditorShortcuts
 

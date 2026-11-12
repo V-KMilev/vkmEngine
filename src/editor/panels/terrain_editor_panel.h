@@ -13,24 +13,10 @@ struct EditorState;
 class Scene;
 
 /**
- * @brief Point the terrain brush at the selection when the selection is a terrain.
+ * @brief The Terrain window: which terrain, the tools, the brush, the layers and plants, and its grid.
  *
- * Every frame, whether the Terrain window shows or not, so a terrain picked in the hierarchy or
- * the viewport is the one the window opens on; only when the selection changes, so a terrain
- * chosen in the window holds. Selecting anything else leaves the brush where it was, so a click off
- * the terrain does not take it away.
- *
- * @param state The selection and the brush.
- * @param scene Says whether the selection is a terrain.
- */
-void followTerrainSelection(EditorState& state, const Scene& scene);
-
-/**
- * @brief The Terrain window: which terrain, the tools a drag over it uses, the brush, the layers
- *        and plants it paints and grows, and its grid.
- *
- * The tools work in the viewport (TerrainToolOverlay) while the window is open; a click on a layer
- * or a plant picks it and the tool that uses it. Settings edit the asset, one undo step a gesture.
+ * The tools work in the viewport (TerrainToolOverlay) while the window is open. Settings edit the
+ * asset, one undo step a gesture.
  */
 class TerrainEditorPanel {
     public:
@@ -52,7 +38,9 @@ class TerrainEditorPanel {
         void draw(EditorContext& ec);
 
     private:
-        /// Changes to the edited terrain, applied to one copy of it once the window is drawn.
+        /**
+         * @brief Changes to the edited terrain, applied to one copy of it once the window is drawn.
+         */
         using Edits = std::vector<std::function<void(TerrainAsset&)>>;
 
         /**

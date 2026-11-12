@@ -1,32 +1,26 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
-#include "ui/asset_picker.h"
+#include "ui/file_picker.h"
 
 #include <algorithm>
 #include <cstdio>
-#include <cctype>
 #include <system_error>
 #include <utility>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+
+#include "import/import_formats.h"
 
 #include "ui/editor_dialogs.h"
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
 
 namespace {
-std::string lowerExt(const std::filesystem::path& p) {
-    std::string ext = p.extension().string();
-    for (char& c : ext)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext;
-}
-
 bool extMatches(const std::vector<std::string>& exts, const std::filesystem::path& p) {
     if (exts.empty()) return true;
-    const std::string e = lowerExt(p);
+    const std::string e = lowercaseExtension(p);
     for (const std::string& ex : exts) if (e == ex) return true;
     return false;
 }
@@ -45,17 +39,18 @@ std::string displayName(
 }
 } // namespace
 
-void AssetPicker::open(Options options) {
+void FilePicker::open(Options options) {
     m_options  = std::move(options);
     m_wantOpen = true;
     rescan();
 }
 
-void AssetPicker::rescan() {
+void FilePicker::rescan() {
     m_entries.clear();
     m_paths.clear();
     m_filter[0] = '\0';
-    m_selected  = -1;
+    m_selected.clear();
+    m_anchor    = -1;
     m_truncated = false;
 
     std::error_code ec;
@@ -64,9 +59,7 @@ void AssetPicker::rescan() {
             m_truncated = true;
             return false;
         }
-        // The error_code forms: the throwing ones carry an entry that cannot be
-        // stat'd - a dangling symlink, a directory turned unreadable - out of
-        // the middle of an ImGui frame, and either way the entry is skipped.
+        // The error_code forms: an entry that cannot be stat'd is skipped, not thrown mid-frame.
         std::error_code entryEc;
         const bool isFile = e.is_regular_file(entryEc);
         const bool isDir  = e.is_directory(entryEc);
@@ -78,9 +71,8 @@ void AssetPicker::rescan() {
         return true;
     };
 
-    // Stepped by hand rather than walked with a range-for: there the error code
-    // goes to the constructor alone, so one unreadable subdirectory throws out
-    // of an ImGui frame. A failed step here ends the walk with the warning below.
+    // Stepped by hand: a range-for gives the error code to the constructor alone, so an
+    // unreadable subdirectory would throw out of an ImGui frame. A failed step ends the walk.
     namespace fs = std::filesystem;
     if (m_options.recursive) {
         for (fs::recursive_directory_iterator it(m_options.root, ec), end;
@@ -94,11 +86,10 @@ void AssetPicker::rescan() {
         }
     }
 
-    // Surface unreadable roots loudly - an empty picker with no warning is
-    // indistinguishable from a real empty directory.
+    // Loudly: an empty picker without a warning looks like an empty directory.
     if (ec) {
         LOG_WARNING(
-            "AssetPicker: cannot iterate %s - %s",
+            "FilePicker: cannot iterate %s - %s",
             m_options.root.string().c_str(),
             ec.message().c_str()
         );
@@ -117,7 +108,32 @@ void AssetPicker::rescan() {
     m_paths   = std::move(p2);
 }
 
-bool AssetPicker::draw(std::string& outPath) {
+void FilePicker::click(const std::vector<int>& shown, int clicked) {
+    const ImGuiIO& io = ImGui::GetIO();
+    const auto from   = std::find(shown.begin(), shown.end(), m_anchor);
+    if (m_options.many && io.KeyShift && from != shown.end()) {
+        const auto to = std::find(shown.begin(), shown.end(), clicked);
+        m_selected.assign(std::min(from, to), std::max(from, to) + 1);
+        return;
+    }
+    const auto held = std::find(m_selected.begin(), m_selected.end(), clicked);
+    if (m_options.many && io.KeyCtrl) {
+        if (held != m_selected.end()) m_selected.erase(held);
+        else m_selected.insert(std::upper_bound(m_selected.begin(), m_selected.end(), clicked), clicked);
+    } else {
+        m_selected = {clicked};
+    }
+    m_anchor = clicked;
+}
+
+bool FilePicker::draw(std::string& outPath) {
+    std::vector<std::string> picks;
+    if (!draw(picks)) return false;
+    outPath = picks.front();
+    return true;
+}
+
+bool FilePicker::draw(std::vector<std::string>& outPaths) {
     bool picked = false;
     const ImVec2 initialSize(EditorStyle::px(520.0f), EditorStyle::px(400.0f));
     const ImVec2 minimumSize(EditorStyle::px(380.0f), EditorStyle::px(260.0f));
@@ -147,41 +163,48 @@ bool AssetPicker::draw(std::string& outPath) {
             ImGuiInputTextFlags_EnterReturnsTrue
         );
 
-        // Filtered view over the cached listing (indices into the full lists).
         std::vector<int> view;
         view.reserve(m_entries.size());
         for (int i = 0; i < static_cast<int>(m_entries.size()); ++i) {
             if (matchesFilter(m_entries[i].c_str(), m_filter)) view.push_back(i);
         }
 
-        auto confirm = [&](int idx) {
-            outPath = m_options.relativeTo.empty() ? m_paths[idx].string() : m_entries[idx];
-            picked  = true;
-            // Both halves, in the order dialogButtons closes with: the intent
-            // flag is what beginDialog re-opens from, so closing the popup
-            // alone raises the same picker again on the next frame.
+        // The selection survives a filter change; only what the filter shows is handed over.
+        std::vector<int> chosen;
+        for (const int i : m_selected) {
+            if (matchesFilter(m_entries[i].c_str(), m_filter)) chosen.push_back(i);
+        }
+
+        auto confirm = [&](const std::vector<int>& rows) {
+            outPaths.clear();
+            for (const int i : rows) {
+                outPaths.push_back(m_options.relativeTo.empty() ? m_paths[i].string() : m_entries[i]);
+            }
+            picked = true;
+            // Both halves: beginDialog reopens from the flag, so closing the popup alone reopens it.
             m_wantOpen = false;
             ImGui::CloseCurrentPopup();
         };
 
         const float footerH = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
         if (ImGui::BeginChild("##AssetPickerList", ImVec2(0, -footerH), ImGuiChildFlags_Borders)) {
-            if (view.empty()) {
-                const char* placeholder = m_entries.empty()
-                    ? "(no matching entries)"
-                    : "(nothing matches the search)";
-                ImGui::TextDisabled("%s", placeholder);
+            if (view.empty() && !m_entries.empty()) {
+                ImGui::TextDisabled("(nothing matches the search)");
+            } else if (view.empty()) {
+                // Where the files go, since the list shows only that folder.
+                ImGui::TextDisabled("No files of these kinds in %s.", m_options.root.string().c_str());
+                ImGui::TextDisabled("Drop them on the editor's window to copy them in, or copy them there.");
             } else {
                 const ImGuiSelectableFlags rowFlags = ImGuiSelectableFlags_AllowDoubleClick;
                 ImGuiListClipper clipper;
                 clipper.Begin(static_cast<int>(view.size()));
                 while (clipper.Step()) {
                     for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                        const int i = view[row];
-                        const bool sel = (i == m_selected);
+                        const int i    = view[row];
+                        const bool sel = std::binary_search(m_selected.begin(), m_selected.end(), i);
                         if (ImGui::Selectable(m_entries[i].c_str(), sel, rowFlags)) {
-                            m_selected = i;
-                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) confirm(i);
+                            click(view, i);
+                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) confirm({i});
                         }
                     }
                 }
@@ -189,23 +212,17 @@ bool AssetPicker::draw(std::string& outPath) {
         }
         ImGui::EndChild();
 
-        // The selection survives a filter change, so it can be off screen by the
-        // time either confirm path runs. Both read this, so neither opens a row
-        // the list is no longer showing.
-        const bool selectionVisible =
-            m_selected >= 0 && matchesFilter(m_entries[m_selected].c_str(), m_filter);
-
         // Enter from the search field: the selection, or the single match.
         if (!picked && searchCommit) {
-            if (selectionVisible) {
-                confirm(m_selected);
+            if (!chosen.empty()) {
+                confirm(chosen);
             } else if (view.size() == 1) {
-                confirm(view[0]);
+                confirm({view[0]});
             }
         }
 
-        if (!picked && dialogButtons(m_wantOpen, "Open", selectionVisible) == DialogResult::Confirm) {
-            confirm(m_selected);
+        if (!picked && dialogButtons(m_wantOpen, "Open", !chosen.empty()) == DialogResult::Confirm) {
+            confirm(chosen);
         }
         endDialog();
     }

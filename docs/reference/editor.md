@@ -1,580 +1,217 @@
 # Editor
 
-`vkm_editor` edits one project: its scenes, prefabs and assets, with a play
-session to try them. It is an ImGui shell registered as a `System` on
-`SystemStage::Editor`, owning the panels, the layout, the undo stack and scene
-I/O. Panels mutate through an `EditorContext` aggregate, never through each
-other.
+`vkm_editor` edits one project - its scenes, prefabs and assets - and plays it in a session
+to try them. Its menus, tooltips and **Help > Keyboard & Mouse** say what each control does
+and which key reaches it, and [features.md](features.md#the-editor) lists what it has. This
+page holds what the controls cannot say: what the editor promises whoever authors with it,
+and then, under [How it works inside](#how-it-works-inside), how it is built.
 
-## Layout
+## What the viewport shows
 
-```
-+---------------------------------------------------------------+
-|                          Menu bar                             |
-+-----------+---------------------------------------+-----------+
-| Hierarchy |                Viewport               | Inspector |
-|           |                                       | Material  |
-|           | [T]      [Playback bar]   [View bar]  |           |
-|           | [o]                                   |           |
-|           | [o]                                   |           |
-|           | [l]                       [Nav axes]  |           |
-|           +---------------------------------------+           |
-|           |  Assets | Animation | Errors | Build  |           |
-+-----------+---------------------------------------+-----------+
-|                          Status bar                           |
-+---------------------------------------------------------------+
-```
-
-The viewport's overlays - the **tool strip** on the left, the **view bar**
-top-right, the **playbar** between them and the navigation axes bottom-right -
-draw in a child that is exactly the scene's rect; the three strips share one
-design (`beginOverlayStrip`, `ui/editor_widgets.h`).
-
-### The panels dock, and the layout is ImGui's
-
-The editor runs on Dear ImGui's docking branch: the root window holds the menu
-bar, one dockspace and the status bar, and every panel is a window that docks,
-tabs or floats. Their names are in `chrome/dock_layout.h`, because a name is
-what the ini files a window's place under. Where they are and how big is
-ImGui's; nothing of the editor's stores a panel size, and the default layout's
-are constants in `chrome/dock_layout.h`. Multi-viewport is off.
-
-- **Default layout** - the one above, cut by `buildDefaultLayout`
-  (`chrome/dock_layout.cpp`) when the ini holds no dockspace and on **Window >
-  Reset Layout**, which also shows every panel.
-- **What is shown is the editor's.** Window > Hierarchy, Inspector and Assets
-  (Ctrl+1 to Ctrl+3) show and hide the groups the default layout docks together:
-  the Hierarchy; the Inspector and Material editor; Assets, Animation, Errors and
-  Build. Window > Terrain (Ctrl+5) shows the Terrain window, a tab beside the
-  Inspector (`dockBesideOnFirstUse` puts it there under a layout saved before it).
-  Persisted per project in `editor_settings.json`. Windows have no close box, so a
-  toggle is the one way to hide one and to get it back.
-- **Where it is, is per person**: `io.IniFilename` is `imgui.ini` in
-  `ProjectPaths::userRoot()`, so the layout follows the person across projects
-  ([io.md](io.md#which-root-owns-a-path)). Popups, dialogs and the root window
-  are `NoSavedSettings`.
-
-## Panels
-
-| Panel               | File                                  | Description                                                                 |
-|---------------------|---------------------------------------|-----------------------------------------------------------------------------|
-| Hierarchy           | `panels/hierarchy_panel.cpp`          | Every entity; drag a node onto another to reparent (cycle-safe) |
-| Inspector           | `panels/inspector_panel.cpp`          | Component cards; prefab-instance overrides |
-| Animation           | `panels/animation_panel.cpp`          | Transport, three-lane keyframe timeline, a table per track |
-| Render Settings     | `panels/render_settings_panel.cpp`    | Floating window over `RenderSettings` (Window > Render Settings) |
-| Material Editor     | `panels/material_editor_panel.cpp`    | The **Material** window: one material under a live preview |
-| Terrain Editor      | `panels/terrain_editor_panel.cpp`     | The **Terrain** window: tools, brush, layers and plants ([terrain.md](terrain.md#making-one)) |
-| Asset Browser       | `panels/asset_browser_panel.cpp`      | The **Assets** window: one library for every asset kind |
-| Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over `project.json` (File > Settings...) |
-| Preferences         | `panels/preferences_panel.cpp`        | Floating editor settings window (Edit > Preferences, Ctrl+,) |
-| Errors              | `panels/errors_panel.cpp`             | Recoverable engine failures (`EngineErrorLog`), newest first |
-| Build               | `session/build_controller.cpp`        | The vkm command running or last run, and its output |
-| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo |
-| Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and click-to-pick |
-| Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline |
-| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | Tool strip (tool, space, snap) and view bar (shading, camera, projection, Frame All, Focus) |
-| Playback Bar        | `overlays/playback_bar.cpp`           | Play / Pause / Step / Stop; frames and captions the viewport during a session |
-| Start Screen        | `panels/start_screen.cpp`             | Shown when no project is open |
-
-The **chrome** belongs to `EditorSystem` and sits around the layout:
-
-| Chrome              | File                                  | Description                                                                 |
-|---------------------|---------------------------------------|-----------------------------------------------------------------------------|
-| Menu Bar            | `chrome/editor_menu_bar.cpp`          | File / Edit / View / Window / Entity / Help; reads and writes `EditorState`, forwards scene-file intents to `SceneIOController` |
-| Status Bar          | `chrome/editor_status_bar.cpp`        | Dirty dot, the selection's breadcrumb and position, the build banner |
-| Dock Layout         | `chrome/dock_layout.cpp`              | Window names and the default layout |
-
-Preferences, Render Settings and Project Settings open through
-`beginToolWindow` (`ui/editor_dialogs.h`), which never docks.
-
-### Where world settings live
-
-Scene-global settings are cards in the **World inspector** (the **World** row at
-the top of the hierarchy): `Environment`, `Procedural Sky`, `Volumetric Fog` and
-`Physics` (`Scene::physics()`). They are scene data. Render Settings, quality
-tuning rather than content, has its own window.
-
-### Preferences
-
-`Camera`, `Gizmo` (snap defaults), `Display` and `Keybinds` tabs over one
-`Preferences` struct on `EditorState`, saved in `editor_user.json` under
-`userRoot()` (per person, not per project) and applied every frame by
-`EditorSystem::applyPreferences`. Vsync, the
-frame cap and the window mode stand aside during a play session, where the game
-may set the window up its own way.
-
-**UI Scale** (Display) multiplies the display's own content scale; everything
-the editor draws itself follows it through `EditorStyle::px()`.
-
-### The Material editor
-
-One way in: `EditorState::openMaterial(handle)`, used by the Mesh card and the
-Asset Browser's tile and New verb. Shown and hidden with the Inspector (Ctrl+2).
-
-- **Base and Maps are always there**; each of the five secondary lobes is a card
-  only while the material uses it. `FEATURES` in the panel says per lobe how to
-  tell it is on, switch it on, and reset its fields; `+ Add Feature` offers the
-  ones that are off.
-- **A row that cannot do anything is not drawn** - Cutoff only for AlphaMask,
-  emission Strength only once the emission is not black.
-- **Which material it edits.** The tab follows the selection. A material chosen
-  by hand - the chooser, an Asset Browser tile, New or Duplicate - is pinned in
-  `EditorState::materialEditorTarget` and outranks the selection until another
-  entity with a material of its own is picked.
-
-### Animation editor
-
-Works on the selected entity. Play/Pause is a *preview* writing the runtime
-`Animation::playing`; what a shipped scene does is the card's **Play On Start**.
-**Length** (`Animation::length`) `0` means the last keyframe. Re-keying at an
-existing time replaces that keyframe.
-
-The world does not step in Edit mode, so moving the playhead poses the entity
-through `AnimationSystem::applyAnimation`, the function the system samples with.
-Outside play that pose is the authored `Transform`, so it is recorded as one
-**Scrub Animation** step per gesture; in play it is not recorded.
-
-### Inspector cards
-
-A component card is an `editComponentCard` section, so it undoes, records prefab
-overrides and appears in Add Component. Controls over session state push no
-edit:
-
-- **Animator** - loop, speed and **Play On Start** push an edit; play, stop and
-  the scrubber do not, which is safe only because `Animator::playing` and
-  `Animator::time` are session state, never serialized.
-- **Bone Socket** - the Offset is authored; the entity's `Transform` is the
-  socket's output, rewritten from the bone every frame.
-- **Audio Source** - `auditionTransport` plays the clip **through the device, not
-  `AudioSource::playing`**, whose write would be a scene edit
-  ([audio.md](audio.md#the-cursor-is-the-devices-not-the-components)).
-- **Terrain** - the asset, shadows and Edit Terrain, which opens the Terrain
-  window. There the brush is editor state (`TerrainToolSettings`, its `target` the
-  terrain edited); layers and plants are the asset's, each change a
-  `TerrainEditCommand`, and a stroke a `TerrainStrokeCommand` holding the region
-  it touched ([terrain.md](terrain.md#making-one)).
-
-**The identity header** shows the entity's wire slot and which components
-replicate, or warns that it is off the wire and why (`netSilence`)
-([networking.md](networking.md#identity-is-the-servers-slot)). Drawn only when
-the project replicates something and the entity carries some of it.
-
-**A card greys what the scene, not the author, writes.** With **Procedural Sky**
-on, `SkySystem` drives the key light's rotation, colour and intensity, so that
-Light card says so and disables colour and intensity. Both find the light with
-`findKeyLight`, so they cannot disagree.
-
-### A card names what its component is waiting for
-
-Where the engine can tell a component will do nothing, its card says so in
-place - `EditorStyle::DANGER` for "does nothing", `EditorStyle::WARNING` for "is
-not what you think". For example: a `Collider` with no `Rigidbody` (physics
-walks the `Rigidbody` storage, so nothing collides with it), a dynamic
-`Rigidbody` with no `Collider`, a UI element with no `UICanvas` above it or no
-`UIElement` beside it (`warnNoUIElement`), an active camera that is not the
-game's eye. The checks live with their cards in `panels/inspector_panel.cpp`;
-add one wherever a component can sit silently inert.
-
-### Widgets
-
-Every slider is `sliderFloat` / `sliderInt` and every combo `beginCombo` or
-`comboList` (`ui/editor_widgets.h`); nothing calls ImGui's directly, so a look
-changed there changes everywhere.
-
-`propDrag` / `propSlider` / `propDragInt` / `propDrag3` pass
-`ImGuiSliderFlags_ClampOnInput` (`PROP_CLAMP`), because Ctrl+click turns a drag
-into an unbounded text field. Not `AlwaysClamp`: that also clamps a
-`lo == hi == 0` range, which is how a row spells "unbounded".
-
-`pickAsset` offers a **(none)** row, because an empty slot round-trips through
-the scene file.
-
-## The viewport
-
-### Transform gizmo
-
-Translate, rotate and scale handles, axis-constrained; **Select** mode draws none
-so a click always selects. `transform_gizmo.cpp` holds the whole gizmo. A drag
-pushes one step when it ends: `editStep<Transform>`, or one `CompositeCommand`
-when the selection has several roots. Picking and drags cast `viewportRay` from
-the near plane, so orthographic views pick too.
-
-**Snapping** (the strip's toggle, or Ctrl held) moves in whole steps *from where
-the drag began*, along the handle held (`overlays/gizmo_snap.h`); an off-step
-value keeps its offset.
-
-Keys, while the cursor is not captured: `Q` Select, `W` Move, `E` Rotate, `R`
-Scale, `X` Local / World - rebindable in Preferences > Keybinds.
-
-While the Terrain window is open with a tool picked, a left drag over the terrain
-it edits brushes (`TerrainToolOverlay`) and no gizmo is drawn; a click that misses
-it picks as ever, and Esc puts the tool down before it deselects.
-
-Everything with no mesh draws an authoring marker (`gizmo_overlay_draw.cpp`):
-lights, cameras, probes, planar reflectors and irradiance volumes, decals,
-particle emitters, audio sources and listeners. **View > Show** toggles each
-kind (`GizmoVisibility`, per project in `editor_settings.json`); a hidden kind
-cannot be picked.
-
-### Entity selection and shortcuts
-
-- A viewport click tests the visible set's world boxes, then each hit mesh's
-  triangles (`overlays/mesh_pick.h`); a skinned mesh, whose stored triangles are
-  in bind pose, is picked by its box. A meshless entity is picked by its marker:
-  `GizmoOverlay::markEntity` draws every marker, and the picker tests exactly
-  those drawn that frame.
-- Probes, irradiance volumes, decals and particle emitters pick by their marker
-  only, never by their box, which would swallow every click inside it.
-- The selection is an ordered list (`EditorState::selection`); the active
-  entity is `EditorState::selectedEntity`, always in it, and
-  `EditorState::selectedAt` indexes it by slot. Only `EditorState`'s selection
-  helpers write them.
-- The inspector shows the active entity. Inside a prefab instance an edit is a
-  per-instance override with "Revert to prefab" (`command/prefab_overrides.h`).
-- Every shortcut is a keybind in `input/editor_keybinds.h`, dispatched by
-  `EditorShortcuts::process`.
-
-### What the viewport shows
-
-The editor looks through a viewpoint of its own (`EditorViewpoint`: position,
-yaw, pitch, projection), not an entity: flying marks nothing unsaved, a scene
-needs no camera to be edited, and nothing of the editor's writes the game's
-camera. The view bar's camera box picks what the frame renders through:
+The editor looks through a viewpoint of its own (`EditorViewpoint`), not an entity: flying
+marks nothing unsaved, a scene needs no camera to be edited, and nothing of the editor's
+writes the game's camera. The view bar's camera box picks what the frame renders through:
 
 | Mode | The frame renders through | Flies |
 |---|---|---|
 | Edit, **Editor** (the default) | the editor's viewpoint | yes |
-| Edit, a scene camera from the box | that camera, active or not: a read-only preview, `(main)` on the one the game starts on | no |
+| Edit, a scene camera from the box | that camera, active or not, as a read-only preview | no |
 | Play | the game's camera; the box reads **Game** | no |
 | Play, ejected (F8) | the editor's viewpoint, or a previewed camera | unless a camera is previewed |
 
-A previewed or game camera draws no frustum or marker and takes no gizmo
-(`Visibility::cameraEntity` names it), since dragging the view you look through
-would move it. **Set as Main Camera** in the inspector picks the game's eye,
-which is a separate thing.
+The camera looked through draws no marker and takes no gizmo, since moving it would move the
+view. Which camera the game starts on is the Camera card's **Set as Main Camera**, and
+**Create > Camera** makes the new camera the game's only when the scene has none. Each scene's
+viewpoint is kept per project (`EditorState::sceneViews`); a scene with none is framed from
+its active camera.
 
-The viewpoint is kept per scene in `editor_settings.json` under `sceneViews`
-(`EditorState::sceneViews`), by path relative to the project. A scene with no
-entry is framed from its active camera, or from `(0, 2, 6)` facing the origin.
+A Hierarchy row's eye and lock take an entity out of the editor's view and keep a click in
+the view off it. Both are this session's alone: never saved, never the game's, and dropped when a
+scene opens. Stop and a script reload keep them, as they keep the undo history, only when every
+entity comes back under its id. Holding Alt as a gizmo handle is taken drags a copy of the selection and
+leaves the originals where they stood: one step for the copy, one for the drag.
 
-**Fly controls:**
+Scaling an entity, by the gizmo or the Transform card, writes the scale into its `Collider`'s
+parts in the same step (`rescaleParts`), since physics reads no `Transform` scale: a box's
+collider grows with the box, each selected entity's by its own scale. A child's collider keeps
+its size when its parent is scaled, and a clip that poses a scale leaves the collider alone, as
+it does in a game.
 
-| Input                          | Action                            |
-|--------------------------------|-----------------------------------|
-| Right mouse button (hold)      | Look mode (cursor hidden)         |
-| Mouse movement (in look mode)  | Yaw / pitch                       |
-| W / A / S / D                  | Forward / left / back / right     |
-| Q / E                          | Up / down                         |
-| Shift (hold)                   | Speed boost                       |
-| Scroll wheel (in look mode)    | Dolly; orthographic, zoom         |
-| Numpad 5                       | Perspective / orthographic        |
+## A play session owns the scene
 
-Speeds and sensitivities (`CameraControllerSystem::Settings`) are the
-Preferences Camera tab (`Preferences::camera`).
+Play runs the game on the scene as it stands, and Stop puts the authored scene back as Play
+found it - every entity under the id it had, the selection and the undo history. Every panel stays
+live meanwhile, but:
 
-**Orthographic** (view-bar button, View > Orthographic, Numpad 5) keeps the
-focus - what Frame Selected, Frame All or a navigation axis last aimed at - the
-same size (`EditorViewpoint::orthoHeight`). A navigation axis snaps to an
-orthographic view down that axis (`viewAlongAxis`); turning the view returns to
-perspective unless the projection was switched by hand.
+- **Save is refused**: it would write a scene nobody authored.
+- **Undo reaches only what the session did.** The session runs on a history of its own, so
+  Ctrl+Z never reaches an authored step, and Stop says so when it throws away an edit made in
+  play.
+- **Stop restores the scene, its materials and its terrains, not other assets.** A mesh,
+  texture, rig, clip or sound edited in play keeps the edit. A terrain comes back from the
+  file Play wrote it to, so Play is refused when one cannot be written.
+- **Ending a session restores the render settings** a game's settings screen may have
+  changed - by Stop, or by opening a scene or a project during it.
+- **A component copied in play pastes after Stop.** Tune a value while playing, Copy the
+  component from its card's menu, Stop, then Paste Values. Only the authored fields travel,
+  never the run's state - a voice started, a body asleep.
+- **A Stop that cannot restore keeps the session**, paused, so Stop can be pressed again.
 
-### When the scene has no camera
+**The viewport is the game's.** With the pointer on it, or the cursor grabbed by the game,
+keys and buttons go to the game and no editor shortcut acts: Ctrl+1 picks a weapon rather
+than hiding the Hierarchy. Still live are **Toggle Editor** (F5), **Play / Stop**, **Pause /
+Resume**, **Eject / Return** and the playbar. The game reads the frame's input before the
+editor does, so a game that binds one of those keys sees the press too. **Eject** hands the
+viewport back: the running game renders through the editor's viewpoint, which flies, picks
+and edits as in Edit mode while the game hears nothing. Stop ends an ejection with the
+session.
 
-It opens, renders and edits like any other; a play session has nothing to render
-from, and `ViewportOverlay::drawNoCameraNotice` says so. `Entity > Create >
-Camera` makes the new camera active only when the scene has no active one, so a
-new camera never takes the game's view.
+While the game holds the viewport, the playbar and the view bar sit in a band above the game's
+view rather than over it, so they cover nothing a game draws at the top of its screen.
 
-### Who has the pointer and the keyboard
-
-Decided once a frame, before the ImGui frame opens, from the hovers the last
-frame drew (`InputOwnership`, `input/input_ownership.h`, as
-`EditorContext::input`); the shortcuts, gizmo, picker, navigation axes and the
-capture declared on `HostChrome` all take that one answer. The first row that
-holds wins:
-
-| When | Owner | What answers a press |
-|---|---|---|
-| The cursor is hidden and grabbed, by the fly camera or a running game | `Captured` | Nothing of the editor's: ImGui is told it has no mouse |
-| A gizmo drag is held | `GizmoHandle` | The drag, wherever it has gone |
-| The pointer is off the viewport | `Panel` | A panel, a popup, a floating window |
-| Over the tool strip, the view bar, the playbar or the navigation axes | `Overlay` | The overlay |
-| Over a gizmo handle | `GizmoHandle` | The handle |
-| Over a blocking element of the game's UI | `GameUI` | Selected, unless the game has the viewport - then the game's |
-| Anywhere else on the viewport | `Scene` | The picker - or, over the terrain with a Terrain tool up, the brush first |
-
-While a field is typed into, a menu, popup or dialog is open, or Preferences
-waits for a key to rebind, no keybind answers and the fly camera hears nothing
-(`InputOwnership::keysHeldByUI`). While an edit is held under the button - a
-gizmo drag or a terrain stroke, its undo step not yet pushed - no keybind
-answers either, Play and undo included (`InputOwnership::held`).
-
-**A play session's viewport is the game's.** With the pointer on the viewport,
-or the cursor grabbed by the game, keys and mouse buttons go to the game: no
-editor shortcut acts, so Ctrl+1 picks a weapon rather than hiding the Hierarchy.
-Still live: the **Toggle Editor** key (F5), **Play / Stop** (Ctrl+P),
-**Pause / Resume** (Ctrl+Shift+P), **Eject / Return** (F8;
-`PlaybackBar::processKeys`) and the playbar.
-The editor's view stands down (`CameraControllerSystem::setActive`), and
-framing, the navigation axes, the gizmo and click-picking with it
-(`InputOwnership::clickPicks`).
-
-**Eject / Return** (F8, or the playbar's camera button) hands the viewport back:
-the running game renders through the editor's viewpoint, which flies, picks and
-edits as in Edit mode, while the game hears nothing
-(`InputOwnership::hostHoldsPointer`). A cursor the game grabbed is freed while
-ejected and restored on return. Stop ends an ejection with the session.
-
-## Asset browser
-
-**Operations act on the tile under the pointer**, not a selection: **F2**
-renames it; its context menu assigns it to the selected entity through an
-`EditScope<T>` (an undo step, and an override on an instance). **Rename**
-suffixes a taken name (`ResourceManager::rename`). **Delete asks first** instead
-of offering undo: a re-added asset takes a new slot, so every handle to the old
-one stays dead.
-
-**Import.** The toolbar's first control is the kind's primary verb - `New` for
-materials and terrains, `Import...` for the rest. Meshes, skeletons and clips raise
-`EditorState::requestModelImport`, since all three come out of one model. **A
-texture imports as colour (`TextureUsage::Color`)**; data and normal maps come
-with their model or through the Material Editor slot, which knows the usage. A
-file the project already holds is refused, because `ResourceManager::add` under
-a taken name replaces that asset in place.
-
-**"In use"** - the strip on every tile, and Delete's guard - is
-`AssetSerializer::collectAssetRefs` (`io/asset/asset_serializer.h`), the walk a
-scene save builds its `assets` block from, so an asset a save would name is in
-use. Five kinds also count references that walk does not see:
-
-| Kind      | Also referenced by |
-|-----------|--------------------|
-| Materials | every terrain's layers and plants |
-| Meshes    | every terrain's plants |
-| Textures  | every `TextureHandle` slot on **every** `MaterialAsset`, drawn or not (`VKM_MATERIAL_MAPS`) |
-| Skeletons | a skinned mesh's `MeshAsset::skeleton` and `AnimationClipAsset::skeleton`, resolved from their **name** strings |
-| Clips     | every `Animator`'s `fadeFrom` - session state, but a fading clip is still sampled |
-
-A clip tile marked **`no rig`** names a skeleton that does not resolve, so it
-animates nothing.
-
-**Previews.** Materials and meshes render through
-`EditorRenderHooks::renderPreview`, cached per asset and version, a few baked per
-frame (`MaterialPreviewSession`). A texture tile draws the renderer's own GPU
-copy, uploaded through `EditorRenderHooks::ensureTexture`. **Known:** an sRGB
-texture's thumbnail draws darker than the file - ImGui writes the linear sample
-to a framebuffer that is not sRGB-encoded.
-
-**Inside**, the browser is a `KINDS[]` table of `AssetKind` descriptors, one per
-`AssetType`, each a set of function pointers; the only place a C++ asset type
-appears is `KindOps<Asset>`. `rename` is null for skeletons, whose name meshes
-and clips carry as a string, and for terrains, whose name is their file's path.
-`FontAsset` is not a kind: the library does not hold it.
-
-### What Create > Primitive puts in the asset graph
-
-A generated mesh has a deterministic name - `mesh:generator:cube`,
-`mesh:generator:sphere:16` - and `addGeneratedMesh` and
-`generateDefaultMaterial` reuse what the graph holds under it, so three cubes
-share one mesh and one `material:default`. A material of its own comes from
-**Duplicate** or **New**, which copy the default rather than rename it -
-renaming would pull `material:default` from under everything that names it.
-
-### What Create > Effect brings into the project
-
-The engine ships effects - an explosion, a campfire, a torch, a plume of smoke -
-as a pack under `ProjectPaths::engineContent()`, `content/effects/`, laid out as
-a project is: textures and sounds in `assets/effects/`, prefabs in
-`prefabs/effects/`, their recipes in `library/`. The menu lists the pack's
-prefabs; choosing one copies each file of the pack the project lacks to the same
-path in the project, then places the prefab as **Prefab** does
-(`EditorActions::placeEffect`).
-
-- **The project owns its copy.** It cooks, ships and edits it as its own; a
-  file it already has is never overwritten, so an edited effect stays edited
-  and an engine update does not reach it. Delete a file to take the engine's
-  again.
-- **An effect cleans up after itself.** Each root is `NetLocal` - every end of a
-  game spawns its own - and a one-off is rooted on its longest-lived emitter,
-  whose `destroyWhenSpent` takes the rest with it, the explosion's scorch mark
-  included.
+The playbar's speed (`Clock::setHostScale`) multiplies the game's own time scale, never
+writes it, and outlives the session.
 
 ## Prefabs
 
+A scene stores a prefab instance as a reference, a pose and its overrides, not its entities
+([io.md](io.md#prefabs)), so anything done inside an instance that is not an override would
+not be saved. The editor makes each gesture mean what it looks like, or refuses it.
+
 ### What an instance will not let you do
 
-A scene stores a prefab instance as a reference, a pose and its overrides, not
-the subtree - so anything done inside an instance that is not an override is not
-saved. The editor makes each gesture mean what it looks like, or refuses it:
+- **Duplicate and Paste instance the prefab again**, overrides included. A copy that would
+  land inside an instance stands at the root, where it stood in the world.
+- **Re-parenting into or out of an instance, and Create or Group inside one, are refused**
+  with a toast; the root itself moves anywhere. One rule decides them all (`refusesNewChild`,
+  `copy_parent.h`).
+- **Add Component inside an instance works and warns**: saving the instance over its file is
+  how a component is added to a prefab.
+- **An entity picker is disabled inside an instance** - a Joint's Connected, a slider's Knob:
+  an override is read in the prefab's numbering, and a pick names an entity in the scene's.
+- **Revert to Prefab on a component the prefab no longer defines is refused**, and the
+  override kept.
+- **Undo of a delete** brings the instance back whole, its overrides included.
 
-- **Duplicate** instances the prefab again, with its overrides.
-- **Undo of a delete** brings the instance back whole, overrides intact.
-- **Re-parenting into or out of an instance** is refused with a toast
-  (`EditorActions::reparentKeepingWorld`); the root itself moves anywhere.
-- **Add Component** inside an instance works and warns: saving the instance over
-  its file is how a component is added to a prefab.
-- **An entity picker** - a Joint's Connected, a slider's Knob - is disabled
-  inside an instance: an override is read back in the prefab's namespace, a pick
-  names an entity in the scene's.
-- **Revert to prefab** on a component the prefab no longer defines is refused
-  and the entry kept.
-- **Save as Prefab** inside an instance is refused; save the instance root.
+The **Prefab Instance** card, on any entity of an instance, offers what an instance is for:
+**Apply to Prefab** saves the root over its file, so every instance takes the overrides;
+**Revert All** drops them; **Unpack** keeps the entities and drops the reference, so the
+scene stores them.
 
 ### Save as Prefab
 
-`EditorActions::saveAsPrefab` writes the selected subtree to the project's
-`prefabs/` and turns it into an instance of the file.
+Writes the selected subtree to the project's `prefabs/` and makes it an instance of the file
+(`EditorActions::saveAsPrefab`). An instance saves back over its own file, which is how a
+prefab is edited; anything else takes the first free name, which the toast names, so no
+collision overwrites a file. The assets it names are cooked first, as a scene's save cooks
+them. It is refused inside an instance: save the instance's root.
 
-- **Nothing is overwritten by a name collision.** An existing instance saves back
-  over its own source - that is how a prefab is edited; anything else takes the
-  first free name (`Enemy`, `Enemy 2`, ...), which the toast names.
-- **A save drops exactly the history steps that name the subtree**
-  (`CommandStack::forget`, via `Command::addresses`): the scene now stores a
-  reference, so a step assigning a component in there would undo to a value no
-  longer stored.
+The save drops exactly the undo steps that name the subtree (`CommandStack::forget`): the
+scene now stores a reference, so such a step would undo to a value no longer stored.
 
-## Undo / redo
+## Asset browser
 
-Every mutation goes through a `Command` holding the before and after state. The
-caller has already applied the change, so pushing records it; undo and redo
-replay one side. The stack holds 200 steps (`CommandStack::HISTORY_LIMIT`) and
-is cleared on scene load, since entity IDs do not survive the swap. The commands
-are documented in `command/editor_commands.h`; which one an edit takes:
+**The Assets window is the project's library**, by name: what the session holds and, dimmed,
+what the library lists that it does not - assets an earlier scene imported. Using one -
+opening, dragging or assigning it, or picking it in a slot - loads it, and what a scene uses
+goes into its `assets` block on save, so the scene loads it again. Fonts are not in it: a
+project's fonts are a list in its Project Settings, baked by each host rather than loaded with
+a scene. A double-click on a tile, or **Open** in its menu, opens the asset in a window of its
+own.
 
-- **A component's value** goes through `editStep<T>`, `EditScope<T>` or
-  `pushEdit` (`command/component_edit.h`), which push a `ComponentEditCommand<T>`
-  - or a `PrefabOverrideCommand` inside an instance. Every component the editor
-  can put back is a row of `VKM_EDITOR_COMPONENTS`.
-- **Everything else** - scene values, scripts, entities and subtrees, reparents,
-  prefabs, assets - has its own command in `command/editor_commands.h`;
-  `CompositeCommand` makes several steps one.
-- **Never create an entity outside the history**: freed slots are reused last-in
-  first-out, so it lands in the slot a deleted entity's undo is waiting for.
+**"In use"** - a tile's tooltip, the **Unused** filter and Delete's guard - is what a scene
+save would name (`SceneAssets::collectAssetRefs`), plus what the project's loading screen
+shows and what other assets hold: a terrain's layers and plants, a material's maps, the
+skeleton a mesh or clip names. **Select Users** selects the entities that name an asset.
 
-`CommandStack::push` tries `Command::tryMerge` against the top step while the
-gesture is open - that is drag coalescing. `EditorSystem` calls
-`CommandStack::endGesture` at the end of every frame with no mouse button held
-and no ImGui item active, sealing the top; without it, a second drag of the same
-field would merge into the first.
+**Deleting an asset asks first instead of offering undo**: an asset added again takes a new
+slot, so every handle to the old one stays dead. For the same reason it drops the undo history
+and the copied component, either of which could hold such a handle.
 
-## Opening a project
+**Import.** A kind's first button is its primary verb: **New** for materials and terrains,
+**Import...** for the rest. Meshes, skeletons and clips all come out of one model file
+([resources.md](resources.md#importing-a-model)). A texture imports as color; data and normal
+maps come with their model, or through a material's slot, which knows the usage. A file
+dropped on the editor's window imports as its kind would, after a copy into the project's
+`assets/` when it lies outside; a file already there with the same bytes is used as it is.
 
-The editor edits *a project*. If `ProjectController::open` fails at
-`EditorSystem::init`, the editor draws the **start screen** and no workspace,
-since every workspace path would resolve against the engine's own directory.
-With no argument, a `vkm_editor` shipped beside a project opens it. A path
-naming a file opens its project (`findProjectRoot` walks up). See
-[io.md](io.md#projects-and-their-roots).
+## Where Create puts a new entity
 
-`ProjectController::open` (`session/project_controller.h`) roots the editor in a
-project, or re-roots it in place with no restart. Its steps are in order because
-each composes paths or runs code the one before put in place: the outgoing
-project's settings are saved while its root is current, the scene is torn down
-(`SceneIOController::beginSceneReplace`) while the old gameplay module still
-holds the behaviors' code, and only then is the module swapped. It builds the
-wire schema from the module's `vkmSetupNetwork` so the editor can show what goes
-on the wire (the editor never hosts or joins), and boots the world through
-`bootProjectWorld`, as every host but `vkm_cook` does. An entry scene that will
-not load leaves the default scene and an error toast - the editor is where you
-fix it ([io.md](io.md#what-each-host-does-when-a-project-will-not-open)).
+Where the view is looking (`ViewPlacement::placeInView`): on the first visible surface at the
+view's center, standing on it; else on the ground plane when that is near; else ahead at the
+view's focus distance. A placed prefab or effect goes there too. A camera takes the view's own
+pose, so it starts out seeing what the author sees. A terrain and a sea stay at the origin, as
+ground or water for the whole scene. **Create Child** makes the same kinds under an entity,
+at its origin.
 
-Choosing a project - `OpenProjectDialog` (`chrome/open_project_dialog.h`), Open
-Recent, the start screen - goes through `EditorState::requestSceneAction`,
-because opening one throws the scene away.
+**Primitives share their mesh and material.** A generated mesh has a fixed name
+(`mesh:generator:cube`), so three cubes share one mesh and one `material:default`. A material
+of its own comes from the Mesh card's **Duplicate** or the Assets window's **New**, each a
+copy: renaming the default would pull it from under everything that names it.
 
-### Building from the editor
+### What Create > Effect brings into the project
 
-New Project, File > Build Scripts and File > Package Game run `vkm new`, `vkm
-build` and `vkm package` through the launcher beside the engine
-(`BuildController::launcher`); the editor never builds itself. Output fills the
-**Build** window, which can stop the run and its compilers (`ChildProcess`).
-Outside a play session the editor's watch on the module reloads a new build
-however it was made; during one, a toast points at File > Reload Scripts. A
-project that opens with no module is built once.
+The engine ships effects - an explosion, a campfire, a torch, a plume of smoke - as a pack
+laid out as a project is, under `Roots::engineContent()`. Choosing one copies each file
+of the pack the project lacks into the project, then places its prefab
+(`EditorActions::placeEffect`). **The project owns its copy**: it cooks, ships and edits it as
+its own, and a file it already has is never overwritten, so an edited effect stays edited and
+an engine update does not reach it. Delete a file to take the engine's again.
 
-### The start screen
+## Unsaved changes outlive a crash
 
-- **Projects** - recents, newest first, searchable. One made for another minor
-  release (`compatibleEngine`, `io/project.h`) shows a "Made for" badge; opening
-  it asks, then writes this engine's version into its `project.json`.
-- **Examples** - a card per project in the engine's `examples/`, opening New
-  Project on a copy (`EditorState::newProjectTemplate`): in an SDK the example
-  sits inside an install the next update replaces.
+While a scene has unsaved changes outside a play session, the editor keeps a copy of it, and
+of its terrains' unsaved strokes, in the user's folder, never the project's
+(`session/scene_recovery.h`). A save, leaving the scene or a clean close removes the copy; a
+crash leaves it. Opened again with a copy newer than its file, the scene offers to **Recover**
+it, **Discard** it, or **Cancel**, which keeps the copy, writing no newer one, until the scene
+is saved or left. The copy changes nothing the project already holds: a material's
+unsaved values are not in it.
 
-## Actions that throw the live scene away
+## Where settings live
 
-Quit (File > Exit, the titlebar close), New Scene, Open Scene and Open Project
-all go through one entry point, which neither checks dirtiness nor acts - so a
-new destructive action cannot forget to ask:
+- **What a scene has** - its environment, sky, fog, acoustics, waves and physics - is cards
+  of the **World** row at the top of the Hierarchy, shown while nothing is selected. It is
+  scene data, saved and undone with the scene.
+- **How the project draws** is **Window > Render Settings**, written into `project.json`'s
+  `render` block as each edit ends; the rest of `project.json` is **File > Settings...**. Both
+  are outside the undo history.
+- **How one person likes the editor** - the camera's feel, snap steps, the display, the keys -
+  is **Edit > Preferences**, and the dock layout is ImGui's own `imgui.ini`; both follow the
+  person across projects. Vsync, the frame cap and the window mode stand aside during a play
+  session, where the game sets the window up its own way. Which windows show, the
+  **View > Show** choices and each scene's viewpoint are the project's
+  ([io.md](io.md#which-root-owns-a-path)).
 
-```cpp
-state.requestSceneAction(EditorState::SceneAction::Open, path);
-```
+## Building from the editor
 
-`EditorSystem::resolveSceneAction` answers it once per frame, **before the ImGui
-frame opens**, because rebuilding the scene must not happen with a window on the
-ImGui stack. Stages: **Ask** (clean goes straight to Run; dirty raises *Unsaved
-Changes*), **Saving** (ends any play session, since a save inside one is refused;
-backing out of the Save-As withdraws the request), **Run** (`performSceneAction`).
+New Project, **File > Build Scripts** and **File > Package Game** run `vkm new`, `vkm build`
+and `vkm package` through the launcher beside the engine (`BuildController::launcher`): the
+editor never builds itself. One runs at a time, and its output fills the Console's **Build**
+view, which can stop it: asked to end first, on Windows as on POSIX, then ended
+(`Platform::ChildProcess::stop`).
 
-## Scene I/O
-
-`SceneIOController` owns New / Open / Save / Save-As: the file-picker modals,
-then `SceneSerializer::save` / `load` ([io.md](io.md)). A load restores the
-editor's viewpoint for that scene and ends any play session (`endPlaySession`).
-
-### A play session owns the scene
-
-During a session the ECS holds the simulation's copy, and every panel stays live:
-
-- **Save is refused** - it would write a scene nobody authored.
-- **The viewport is framed** in the warning colour, captioned PLAY MODE.
-- **Stop warns** when the session took an undo step or dirtied a scene that was
-  clean at Play.
-- **Stop restores the scene, the materials and the terrains, not other
-  assets**: a terrain comes back from the file Play wrote it to
-  (`readTerrainFiles`, `session/terrain_files.h`); a mesh, texture, rig, clip
-  or sound edited during play keeps the edit.
-- **Stop restores the render settings**, which a game's settings screen may
-  have written.
-
-What Play captures - the scene document, the asset list, where each prefab
-instance's entities stood, the dirty flag - is `PlaySnapshot`
-(`session/play_snapshot.h`), which needs nothing of the editor, so
-`vkm_engine_tests play` covers the round trip. `SceneIOController::isPlaying()`
-is the state; ask it, not the clock, which is paused in Edit mode too.
-`SceneIOController::stopPlaySession` is all of Stop.
-
-### What an open does to the session's imports
-
-An open is a clean break - undo stack, selection, previews and a fresh
-`ResourceManager` - ending in `afterSceneReplace`, after which an open reselects
-the active entity by name. New Scene and Open Project reach it through
-`beginSceneReplace`, which empties the scene first. An import the outgoing scene
-never named - a sound not yet assigned - has nothing to be recreated from and is
-dropped; the count goes in a toast, the names in the log.
-
-**Stop is the opposite**: it puts the session back exactly as Play found it,
-history included.
-
-- The snapshot is read back into the slots it came from, prefab instances
-  included, so every undo step still names what it did.
-- `captureSnapshot` parks the authored history (`CommandStack::park`) and the
-  session runs on an empty stack, so Ctrl+Z in play never reaches an authored
-  step. Stop restores it (`unpark`) - or drops it with a toast if an instance
-  could not return to its slots (`PlaySnapshot::restoredInPlace`).
-- **The asset graph is kept, not rebuilt**, because undo steps hold handles into
-  one `ResourceManager`: `restoreSnapshot` merges the snapshot into it
-  (`AssetPolicy::Merge`). Materials reload in place (`LoadMode::Reload`), and
-  an asset made during play is dropped (`AssetSerializer::dropAssetsNotIn`).
-
-Steps that destroy by slot check it still holds their entity
-(`EntitySnapshot::describes`), and a step reclaiming a slot checks it is free;
-a mismatch skips the step with an error toast.
+The editor reloads the gameplay module whenever a new build lands, however it was made, once
+the build stamps it whole (`game.built`, beside the module). In a play session the reload
+stops the session and plays again on the new code. A project that opens with no module is
+built once, so its code runs without a terminal.
 
 ---
 
 ## How it works inside
+
+`EditorSystem` is an ImGui shell registered on `SystemStage::Editor`, after Render, so its
+frame lands over the drawn scene. It owns the panels, the layout, the undo stack and scene
+I/O, and it is the one system that holds other systems
+([architecture.md](architecture.md#what-everything-else-stands-on)). Panels change the world
+through `EditorContext` - the frame, the editor's state and the services a panel may use -
+never through each other.
+
+Every panel is an ImGui window that docks, tabs or floats; multi-viewport lets one leave the
+main window, drawn through `EditorRenderHooks::renderImGui`. The Viewport alone stays in the
+main window, since the renderer draws the scene into its framebuffer. A window's name is what
+`imgui.ini` keys its place by, so a name spelled in more than one place - the dock layout's, a
+menu's focus - is a constant in `ui/window_names.h`.
 
 ### Where things are
 
@@ -582,53 +219,358 @@ Every directory under `src/editor/` is one responsibility:
 
 | Directory | Holds |
 |---|---|
-| *(root)* | `EditorSystem`, `EditorState`, `EditorContext`, `EditorSettings`, and `editor_actions` - the scene mutations panels invoke |
-| `command/` | Undo: `Command`, `CommandStack`, the commands, `EditScope`/`editStep`/`pushEdit`, `CommandHost::pushStep`, prefab-override bookkeeping. Reaches the editor through `CommandHost`, so it tests without a window |
-| `session/` | What outlives a frame, and the project's files: `SceneIOController`, `ProjectController`, `PlaySnapshot`, `BuildController`, the material preview cache, `ContentPack` (the engine's packs brought into a project), the terrains' files (`terrain_files.h`) |
-| `panels/` | One file per panel, owning only its own widget state |
-| `overlays/` | Drawn over the viewport: gizmo, tool strip and view bar, playbar, navigation axes |
-| `chrome/` | Drawn around the panels: menu bar, status bar, default layout, and the menus' dialogs, drawn at the menu bar's scope so a closing menu does not take them |
-| `input/` | Keybinds and shortcut dispatch, `InputOwnership`, `CameraControllerSystem` and `ViewFraming` |
-| `ui/` | The widget vocabulary: `prop*` rows, dialog scaffold, style, icons, asset picker, audition transport |
+| *(root)* | `EditorSystem` and the shortcuts it dispatches (`EditorShortcuts`); `EditorState`, a hub of owners - the `Selection`, the one-shot asks (`Requests`), `Toasts`, `SceneActions`, the `Workspace`, the `Preferences` and the copied entities (`EntityClipboard`); `EditorContext` |
+| `actions/` | What the menus and shortcuts do, a file per subject: creating entities and the Create menu that lists them, copy and paste, prefabs, assets, components, what a dropped asset does (`asset_drop.h`), and the edits on the selection (`edit_actions.h`); what a copy of an entity is (`entity_copy.h`), and the prefab-interior rule every one checks (`copy_parent.h`) |
+| `undo/` | `Command`, `CommandStack`, the commands, the edit helpers and prefab overrides. It reaches the editor through `CommandHost`, so it runs without a window |
+| `session/` | The scene's session: its I/O and Play, the play snapshot, the unsaved-changes guard, the crash copy. `project/` is the open project - opening it, builds, the reload watch, content packs - and `asset/` the project's assets as the editor imports and writes them |
+| `preview/` | Rendering previews of assets: the cache that holds them, `PreviewViewport` |
+| `panels/` | A panel each, its header and source owning only its own widget state; the Inspector, the Console and the Asset Browser are folders, the Inspector's cards a file per Add Component heading |
+| `overlays/` | Drawn over the viewport: the strips' frame (`overlay_strip.h`), the tool strip and view bar, the playbar, the navigation axes, the viewport's notices, the terrain brush; the gizmo and its markers in `gizmo/` |
+| `chrome/` | Drawn around or instead of the panels: menu bar, status bar, default layout, toasts, the start screen, and the menus' dialogs (`dialog/`), drawn after the menu bar rather than in it, so a closing menu does not take them |
+| `input/` | The key binds, and `InputOwnership` |
+| `view/` | The editor's view of the scene: `CameraControllerSystem`, `ViewFraming`, `ViewPlacement`, the triangle pick, the viewport's projection |
+| `asset_editors/` | An asset's own window: `AssetEditors`, and an `AssetEditor` per kind |
+| `ui/` | The widget vocabulary: a reflected struct's rows (`Rows`), the widget each value type takes, dialogs, the file picker, the windows' names (`window_names.h`); the editor's look in `style/`, picking, dragging and naming an asset in `asset/` |
+
+What needs no window is kept free of ImGui, so `tests/editor/` checks it headless: the
+commands (through `CommandHost`), `InputOwnership`, `ViewPlacement`, `ViewFraming`,
+`PlaySnapshot`, `SceneRecovery`, `LogTail`, `copyParent`, `clickTarget`, `dragRect` and the
+triangle pick. A new rule of that kind goes beside them, not inside a panel.
+
+The editor's own settings are reflected structs - `Preferences`, `Workspace`,
+`GizmoVisibility` - written whole by `editor_settings.cpp`, so a new setting is a field: its
+range, its tip and its place in the file follow from its `VKM_F`, and its Preferences row names
+it (`PreferencesPanel`).
+
+### The editor's frame
+
+`EditorSystem::update` runs at the Editor stage, after Render, so its ImGui frame lands over
+the drawn scene. Before that frame opens it applies the UI scale (the frame is laid out
+against the theme) and the Preferences, services the frame - the module watch, the build, the
+crash copy - resolves a waiting `SceneActions` request and decides who owns input. Whatever
+replaces the world - an open, a recovery, a project switch, Stop, a reload - happens there, and
+a gesture inside the frame only asks for it (`Requests`, or a `SceneActions` request): a world
+replaced with a window on the ImGui stack frees the previews' textures that the frame has already
+drawn with. Stop pauses the clock as it asks, so the game's systems, which run before the editor's
+next frame, tick no more. A `SceneActions` request to be carried out then pauses it too, once
+nothing more in the frame can ask; one waiting on Unsaved Changes does not
+(`SceneActions::pauseForResolve`).
+
+Under the splash, or a loading screen covering the whole window, it stops there: no ImGui
+frame is begun, because ImGui's first frame builds its shader program, which would wait
+behind the renderer's compiles and stall the splash. Otherwise come the transport and Toggle
+Editor keys, the dialogs - drawn shown or hidden, as a Save the unsaved-changes prompt answers
+may wait on a name - and, while the editor shows, the shortcuts, the workspace and its panels,
+and the floating windows. Last, with no button held and no item active, it closes the undo
+gesture (`CommandStack::endGesture`).
+
+### Who has the pointer and the keyboard
+
+Decided once a frame, before the ImGui frame opens, from the hovers the last frame drew
+(`InputOwnership`, `input/input_ownership.h`), and held in `EditorContext::input`. The
+shortcuts, the gizmo, the picker, the navigation axes and the capture told to the engine all
+take that one answer, so no two of them act on one press. A grabbed cursor outranks
+everything, then a gizmo drag, then the panels, the viewport's overlays, a gizmo handle, the
+game's blocking UI and last the scene (`resolveInputOwnership`).
+
+No keybind answers while a field is typed into, a menu, popup or dialog is open, or
+Preferences waits for a key (`InputOwnership::keysHeldByUI`), nor while an edit is held under
+the button - a gizmo drag or a terrain stroke whose step is not yet pushed - Play and undo
+included (`InputOwnership::held`).
+
+Every editor-wide shortcut is a keybind in `input/editor_keybinds.h`, dispatched by
+`EditorShortcuts::process`. That does not run while the editor is hidden, so
+`EditorSystem::update` reads Toggle Editor and the transport keys before it
+(`PlaybackBar::processKeys`). A panel's own keys act while it has the keyboard: the Console's
+(`EditorState::consoleHoldsKeys`, so Ctrl+C copies its line, not the entities) and a
+preview's (`EditorState::previewHovered`), each set as the panel draws and read by the next
+frame's shortcuts.
 
 ### What the editor tells the engine
 
-The scene renders into the window's backbuffer inside the viewport's rect; the
-Viewport window has no background. Once a frame the editor states that rect,
-and whether its panels hold the pointer and keyboard, on `HostChrome`
-(`ctx.chrome`). `RenderSystem`, `VisibilitySystem` and `UISystem` read the rect;
-`InputMap::update` reads the capture ([input.md](input.md)). A runtime writes
-neither, and the defaults are what a shipped game wants.
+The scene renders into the window's backbuffer inside the viewport's rect; the Viewport window
+has no background. Once a frame the editor states on `HostChrome` (`ctx.chrome`) what an
+authoring host may say about the frame:
 
-The world is open to edits (`HostChrome::setAuthoring`) in Edit mode, paused,
-ejected, or with the panels shown. Fixed meshes (`Mesh::movable` off, the Mesh
-card's Movable) keep nothing then ([visibility.md](visibility.md#fixed-meshes)),
-so the work they save shows only in a running session with the editor hidden
-(**Toggle Editor**, F5) or in `vkm_runtime`.
+- the viewport's rect, which `RenderSystem`, `VisibilitySystem` and `UISystem` read;
+- whether its panels hold the pointer and the keyboard, which `InputMap::update` reads
+  ([input.md](input.md));
+- the slots the Hierarchy's eye hides, which `VisibilitySystem` leaves out only while the
+  world is authored, so they are never the game's;
+- the effects previewed while the world stands still (`HostChrome::effectPreview`), which
+  `ParticleSystem` plays without writing a component;
+- that the next world comes in under the loading screen (`HostChrome::coverNextWorld`).
 
-### The editor's view
+A runtime writes none of these, and the defaults are what a shipped game wants. The world is
+open to edits (`HostChrome::authoring`) in Edit mode, paused, ejected, or with the panels
+shown. Fixed meshes (`Mesh::movable` off) keep nothing then
+([visibility.md](visibility.md#fixed-meshes)), so the work they save shows only in a running
+session with the editor hidden (**Toggle Editor**) or in `vkm_runtime`.
 
-`CameraControllerSystem` holds the `EditorViewpoint` and publishes it as
-`ctx.hostView` at the Input stage, before every reader of a view
-([visibility.md](visibility.md#where-the-view-comes-from)); `VisibilitySystem`
-renders through it instead of the scene's camera. The picker, gizmo, wire
-overlays and navigation axes project through `ctx.visibility`'s matrices, so
-they follow whatever the frame rendered through.
+The editor's eye is the other host product: `CameraControllerSystem` publishes the
+`EditorViewpoint`, or the camera previewed, as `ctx.hostView` at the Input stage
+([visibility.md](visibility.md#where-the-view-comes-from)), and the picker, gizmo and markers
+project through `ctx.visibility`'s matrices, so they follow whatever the frame rendered
+through. Only `vkm_editor`'s `main()` registers that system, after `setupEngineApp`, and its
+fly bindings (`CameraActions`) live in an `InputMap` of its own, never the game's: an ejected
+session flies while the game hears nothing.
 
-Only the editor registers it - `vkm_editor`'s `main()` adds it after
-`setupEngineApp` - so a shipped game cannot reach it. Its fly bindings
-(`CameraActions`) live in an `InputMap` it owns, sampled against what the panels
-hold (`setCapture`), never in the game's: an ejected session can fly while the
-game hears nothing, and a game's map spends no command slots on `Camera/`
-actions.
+### Opening a project
+
+The project opens from `EditorSystem::init`, through the same `ProjectController::open`
+(`session/project/project_controller.h`) that File > Open Project runs, so a switch re-roots the
+editor in place with no restart. With no argument, a `vkm_editor` shipped beside a project
+opens it; a path naming a file opens the project it is in. When none opens, the editor draws
+the start screen and no workspace, since every workspace path would resolve against the
+engine's own directory.
+
+`open`'s steps are in order because each composes paths or runs code the one before put in
+place; its declaration lists them. It boots the world through `bootProjectWorld`, as every
+host but `vkm_cook` does, and an entry scene that will not load opens the default scene with
+an error toast - the editor is where you fix it
+([io.md](io.md#what-each-host-does-when-a-project-will-not-open)).
+
+### Actions that throw the live scene away
+
+Quit, New Scene, Open Scene and Open Project all come in through one door, which neither
+checks dirtiness nor acts, so a new destructive action cannot forget to ask:
+
+```cpp
+state.sceneActions.request(SceneActions::Kind::Open, path);
+```
+
+`SceneActions::resolve` (`session/scene_actions.h`) carries the request through the
+unsaved-changes prompt once a frame, before the ImGui frame opens, because rebuilding the
+scene must not happen with a window on the ImGui stack. A request made while another waits is
+ignored, so a held key or a second click cannot stack prompts.
+
+### What an open does to the session's imports
+
+An open is a clean break - the undo history, the selection, the previews and a fresh
+`ResourceManager` - since entity ids and handles do not carry across worlds. A load, a recovery
+and New Scene go through `SceneSession::openWorld` and end in `afterSceneReplace`, which ends
+any play session too (`PlaySession::end`): a snapshot outliving its world would let Stop put
+that dead world back over the new one. Open Project empties the world through it first, then
+boots the project's. A read that fails leaves the outgoing world, its path and the editor's
+state as they were, but a play session, whose behaviors the open has ended, stops. An import
+the outgoing scene never named - a sound not yet assigned - has nothing to be made again from,
+and is dropped: the count goes in a toast, the names in the log. What the project's loading
+screen names is built again from its file.
+
+**Stop is the opposite**: it puts the session back exactly as Play found it. `PlaySession`
+(`session/play_session.h`) runs the session - its snapshot, the ejected view, Edit mode put back
+at its end - and `SceneSession::stopPlaySession` puts its world back, as an open replaces one. `PlaySnapshot`
+(`session/play_snapshot.h`) holds the scene document, every asset, the slots each prefab
+instance's entities stood in, every slot's generation (`Scene::slotGenerations`), every
+reference to an entity already deleted, which the document holds as none, the world's epoch and
+the dirty flag, and, while the session runs, whether the editor's view is ejected and the cursor
+the game set; it needs nothing of the editor, so `tests/editor/play.cpp` covers the round
+trip. Play parks the authored history (`CommandStack::park`), with the returns noted in it, and
+the session runs on an empty one. Stop merges the snapshot's assets back into the same graph,
+since undo steps hold handles into it, and reads the scene back under the ids it had at Play:
+each slot starts at the generation it had (`Scene::startSlotsAt`), so a slot then free hands out
+no id it gave before, and a reference to a deleted entity is written back, for an undo that
+brings the entity back to point at it again. It restores the history and its returns as they
+were, and the selection, the eye, the lock and the copied entities' parents by their ids, less
+any the world it put back does not hold, as a slot free at Play hands out again the ids play took
+in it. A world the game read in play numbers its ids afresh, so after one the selection, the eye
+and the lock come back as Play found them (`PlaySession::marksAtPlay`), and only a copy taken in
+Play's world keeps its parents. When an instance could not return to its slots
+(`PlaySnapshot::restoredInPlace`), Stop drops all of these with a toast.
+
+### Undo / redo
+
+Every mutation goes through a `Command` holding the before and after state. The caller has
+already applied the change, so pushing records it; undo and redo replay one side. The stack
+holds `CommandStack::HISTORY_LIMIT` steps and is cleared when a scene opens.
+
+- **A component's value** goes through `EditScope<T>` by default, `pushEdit` for a gesture
+  spanning frames, or `editStep<T>` for a step that joins others (`undo/component_edit.h`). Each
+  makes a `ComponentEditCommand<T>` or, inside a prefab instance, a `PrefabOverrideCommand`, so a
+  call site never chooses. Both, and the snapshot an undone delete restores (`EntitySnapshot`),
+  cover every value row of the scene format (`VKM_SCENE_VALUE_COMPONENTS`): a new component
+  needs nothing here.
+- **Everything else** has its own command: scene values and scripts in
+  `undo/component_commands.h`, entities, subtrees, reparents and prefabs in
+  `undo/entity_commands.h`, assets in `undo/asset_commands.h`; `CompositeCommand`
+  (`undo/composite_command.h`) makes several steps one.
+- **A gesture is one step.** `CommandStack::push` merges into the top step
+  (`Command::tryMerge`) only while the gesture is open, and `EditorSystem` seals it once no
+  button is held and no item is active, so a second drag of the same field is a second step.
+
+The rules every command keeps:
+
+- **Never create an entity outside the history**: freed slots are reused last-in first-out,
+  so it lands in the slot a deleted entity's undo is waiting for.
+- **A step names its entity by slot** (`liveEntity`, `undo/entity_snapshot.h`). An undone
+  delete, or a redone create, comes back in its slot under a new generation, so an id held from
+  before would never match again; a reference another entity holds to it, a Joint's other body,
+  is pointed at it again (`SubtreeSnapshot::apply`), whether that entity stands or comes back
+  too, before it or after, and so is one a step writes back later, an edit's or a component's
+  (`followReturns`): the stack keeps the id each came back as (`CommandStack::returnOf`) while
+  the world it came back in stands; a load or a clear replaces that world (`Scene::epoch`), its
+  ids numbered afresh, while Stop puts back the one Play found under its own ids, and the
+  returns noted in it with it (`CommandStack::unpark`). Last-in first-out makes the slot safe: a
+  step runs only once every later one is undone, when its slot holds what the step was made
+  against. Steps that destroy by slot check it still holds their entity
+  (`EntitySnapshot::describes`), and a mismatch skips the step with an error toast.
+- **Merging reaches only the top step**, so an edit that changes two things a frame - the
+  Animation editor's `Animation` and the pose it writes - pushes one `CompositeCommand`, not two
+  steps that would never merge over the drag. A composite pushed again under its label in one
+  gesture merges in step by step, so no two steps of one group may edit the same component of
+  the same entity.
+- **An asset's value goes back through `ResourceManager::swapValue`**, which bumps the version
+  previews and caches watch; a value assigned by hand would change the asset but not its
+  picture. An asset's step does nothing once its handle is dead, since deleting an asset is not
+  undoable. A step may hold the `ResourceManager` by pointer: the `Engine` destroys it after
+  every system, so it outlives the history.
+- **What an edit leaves to settle** on the live component - a body woken, a mesh collider's
+  triangles rebuilt - is `settleEdit`'s (`undo/component_edit.h`), run before the step is
+  cut, so the step holds it. A component with such state adds an overload.
+- **A cache over the scene keys on `CommandStack::revision`**, which moves with every push,
+  undo and redo, beside `Scene::epoch` and `ResourceManager::revision`. The revision misses a
+  play session, which changes the world outside the history, so a cache walks every frame
+  there; it misses too an edit an open step takes in without a push
+  (`CommandStack::mergeTarget`).
+
+### Inspector cards
+
+A component card is its `cardInfo` (`panels/inspector/card_info.h`) and `drawCard` (`cards.h`),
+one pair for every value row of the scene format (`VKM_SCENE_VALUE_COMPONENTS`), so a component
+with no card does not link: it is authored in the editor as soon as it is in the scene format.
+The Script row's card, declared beside them, is `drawScriptCard`: its behaviors, each a fold of
+its fields. The panel draws them in the list's order, each edit one undo step that records
+prefab overrides; `cardInfo` puts a card in Add Component under its `AddSection`.
+`Hierarchy` has no card - parent and children are the Hierarchy panel's - and a behavior is
+added from the Behaviors section, which gives the entity its `ScriptComponent` in the same
+step.
+
+**A control over session state pushes no edit.** What a card plays, scrubs or previews is
+state the scene never saves, so it is no undo step and no unsaved change:
+
+- **Animator**: play, stop and the scrubber write `Animator::playing` and `Animator::time`;
+  **Play On Start** is what a shipped scene does. An `Animation`'s playhead is the exception:
+  it poses the entity through `AnimationSystem::poseAt`, the function the system
+  samples with, and outside play that pose is the authored `Transform`, so it is one
+  **Scrub Animation** step per gesture.
+- **Audio Source**: the audition plays the clip through the device, not
+  `AudioSource::playing`, whose write would be a scene edit
+  ([audio.md](audio.md#the-cursor-is-the-devices-not-the-components)).
+- **Particle Emitter**: Play, Pause, Restart and Stop preview the selected effects, or all of
+  them, while the world stands still, through `HostChrome::effectPreview`. `ParticleSystem`
+  says how it plays them; it writes no component, so a preview leaves the scene as it was.
+
+**Reset and Paste Values take the authored fields alone** (`withAuthored`,
+`undo/component_edit.h`), so a run's state never lands in the scene. A card owning more
+than its component (Ragdoll) has no menu.
+
+**A card grays what the scene, not the author, writes.** With **Procedural Sky** on,
+`SkySystem` drives the key light's rotation, color and intensity, so that Light card says so
+and disables color and intensity. Both find the light with `findKeyLight`, so they cannot
+disagree.
+
+#### A card is rows
+
+A card's rows name the members they edit, in the order the author reads them:
+
+```cpp
+void drawCard(Rows<Light>& c, CardContext& card) {
+    const bool sun = c.value().type == LightType::Directional;
+    c.row<&Light::type>();
+    c.row<&Light::intensity>();
+    if (!sun) c.row<&Light::radius>("%.1f m");
+    if (sun) c.angle<&Light::sourceRadius>("%.2f deg");
+    c.row<&Light::enabled>();
+}
+```
+
+A row's label is its field's name in words (`fieldLabel`), and its range and tip are the field's
+`VKM_F` ([scripting.md](scripting.md#fields)), so code and editor say the same words and a row
+holds no number of its own; a card's own controls, for what no field reflects (a Ragdoll's build
+settings), hold theirs. The member's type picks the widget (`ui/value_widgets.h`); a behavior's
+fields go through the same widgets, so a component and a behavior read alike. Every reflected
+field of a component or of the scene's settings is named by its card, and the docs suite fails
+on one that is not ([building.md](building.md#tests)), so a field added is added to its card.
+
+What an edit reaches is the rows' to say (`Rows::shared`): a row's field is carried to every
+selected entity holding the component, while a list, an entity reference and whatever the
+card's own code did stay the active entity's.
+
+A card is built from the shared widgets in `ui/editor_widgets.h` - sliders, combos, folds,
+list rows, the card's frame and its notes - so a look changed there changes everywhere; a
+panel with no reflected struct uses the `prop*` rows.
+
+#### A card names what its component is waiting for
+
+Where the engine can tell a component will do nothing, its card says so in place with a
+`cardNote`, in one sentence: `Note::Danger` for "does nothing", `Note::Warning` for "is not
+what you think". For example a `Collider` with no `Rigidbody` (physics walks the `Rigidbody`
+storage, so nothing collides with it), a dynamic `Rigidbody` with no `Collider`, a UI element
+with no `UICanvas` above it, or an active camera that is not the game's eye. The checks live
+with their cards in `panels/inspector/`; add one wherever a component can sit silently inert.
+
+### Asset editors
+
+An asset opens in a window of its own (`EditorState::openAssetEditor`), with an `AssetEditor`
+per kind - mesh, material, texture, clip - that knows its asset by handle. `AssetEditors`
+brings an open one forward rather than opening it twice, and closes it when the asset is
+deleted or a scene or project opens. An editor's viewport is a `PreviewViewport`
+(`preview/preview_viewport.h`): the backend's preview of its draws
+(`EditorRenderHooks::renderPreview`), rendered again only when the view or what it draws
+changes. The Assets window's material and mesh tiles render the same way, cached per asset
+and version (`PreviewCache`).
+
+### Markers and picking
+
+Everything with no mesh - a light, a camera, a probe, a decal, an emitter, a sound, a joint -
+draws an authoring marker through ImGui, and a click picks it by that marker, tested against
+exactly the markers drawn that frame (`EntityMarkers::markEntity`). The shapes in the world - a
+collider's wires, a camera's frustum, a rig's bones, the selection's boxes - are the engine's,
+drawn through `DebugDraw` into the scene ([rendering.md](rendering.md#debug-drawing)); each
+frame the editor hands `DebugDraw` a category per **View > Show** kind and the selection as its
+focus (`GizmoOverlay::showWorldGizmos`). ImGui keeps what is 2D or answers the pointer: the
+markers, the transform gizmo and a UI element's rect handles.
+
+Otherwise a click picks by triangle (`mesh_pick.h`), but a probe, volume, decal or emitter
+picks only by its marker, since its box would swallow every click inside it.
+
+### Rules that fail quietly
+
+The compiler enforces none of these:
+
+- **Every mutation goes through an undoable `Command`.** Writing `scene.get<T>(e).field = v`
+  compiles, works on screen, and breaks undo; [Undo / redo](#undo--redo) says which call a
+  change takes, and its declarations their rules. A step pushed by hand goes through
+  `CommandHost::pushStep`, which marks the scene unsaved as `CommandStack::push` alone does not.
+- **A command's label outlives the command**: a string literal, or a string of static storage as
+  the Inspector's are, never a temporary's `c_str()` (`Command::label` says why).
+- **A menu item opens no modal.** A menu closes the frame its item is clicked, taking a popup
+  opened inside it; the item asks (`Requests`, `requests.h`) and a dialog drawn outside the
+  menu answers.
+- **A handle does not outlive its asset graph.** An open swaps in a new graph
+  (`ResourceManager::epoch`), which reuses slots and generations, so a handle kept across it
+  names another asset: the asset editors close (`AssetEditors`), and a panel looks up the
+  assets it made for itself - a preview's shapes - by name each draw.
+- **A drag passes `PROP_CLAMP`**, without which Ctrl+click text entry ignores every inspector
+  bound. The rows and the `prop*` wrappers pass it; a raw drag passes it itself.
+- **Fixed metrics go through `EditorStyle::px(units)`** (`ui/style/editor_style.h`) - design pixels
+  scaled to the loaded font; a raw pixel literal is wrong on a scaled display. The exception is
+  the ImGui style: `applyEditorTheme(scale)` writes design pixels and scales them itself. A
+  scaled number two files must agree on is a named nullary function beside its subject, as
+  `OverlayStrip::button()` (`overlays/overlay_strip.h`).
+- **Dialogs use `beginDialog` / `dialogButtons` / `endDialog`** (`ui/editor_dialogs.h`), which
+  own Escape-cancels and Enter-confirms.
 
 ## Key files
 
-- `src/editor/editor_system.h` - `EditorSystem`, the frame and the scene-action guard
+- `src/editor/editor_system.h` - `EditorSystem`, the frame
 - `src/editor/editor_state.h` - `EditorState`: selection, preferences, requests
-- `src/editor/command/editor_commands.h` - every undo command
-- `src/editor/session/project_controller.h` - `ProjectController::open`
-- `src/editor/session/scene_io_controller.h` - `SceneIOController`
-- `src/editor/session/play_snapshot.h` - `PlaySnapshot`
+- `src/editor/session/scene_actions.h` - `SceneActions`, the unsaved-changes guard
+- `src/editor/session/project/project_controller.h` - `ProjectController::open`
+- `src/editor/session/scene_session.h` - `SceneSession`
+- `src/editor/session/play_session.h` - `PlaySession`; `src/editor/session/play_snapshot.h` - `PlaySnapshot`
+- `src/editor/undo/entity_commands.h`, `component_commands.h`, `asset_commands.h` - the undo commands
+- `src/editor/undo/component_edit.h` - `EditScope`, `editStep`, `pushEdit`
 - `src/editor/input/input_ownership.h` - `InputOwnership`
-- `src/editor/input/camera_controller_system.h` - `CameraControllerSystem`, `CameraActions`
+- `src/editor/view/camera_controller_system.h` - `CameraControllerSystem`, `CameraActions`
+- `src/editor/panels/inspector/card_info.h` - `cardInfo`; `cards.h` - `drawCard`

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/asset_picker.h"
+#include "ui/file_picker.h"
 
 namespace Vkm::Engine {
 
@@ -26,8 +26,7 @@ class PlacePrefabDialog {
 
     public:
         /**
-         * @brief Open the picker when EditorState::requestPlacePrefab is set,
-         *        and instance the prefab through EditorActions::placePrefab.
+         * @brief Open the picker on Ask::PlacePrefab and instance the pick (EditorActions::placePrefab).
          *
          * With no prefabs yet, toasts where they come from instead.
          *
@@ -38,7 +37,7 @@ class PlacePrefabDialog {
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
 
     private:
-        AssetPicker m_picker;
+        FilePicker m_picker;
 };
 
 } // namespace Vkm::Engine

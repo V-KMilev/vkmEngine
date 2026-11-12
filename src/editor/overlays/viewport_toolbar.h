@@ -3,11 +3,10 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
+struct Preferences;
 
 /**
- * @brief The viewport's own controls: the tool strip and the view bar.
- *
- * Both sizes are fixed, so the overlays around them are placed without waiting a frame.
+ * @brief The viewport's tool strip and view bar, of fixed sizes so the overlays around them place at once.
  */
 class ViewportToolbar {
     public:
@@ -22,16 +21,15 @@ class ViewportToolbar {
 
     public:
         /**
-         * @brief Draw the tool strip (tools, space, snap) down the viewport's left edge.
+         * @brief Draw the tool strip (tools, space, snap) down the viewport's left edge, unless the game
+         *        has the viewport.
          *
          * @param ec The frame's editor context.
          */
         void draw(EditorContext& ec);
 
         /**
-         * @brief Draw the view bar in the viewport's top-right corner.
-         *
-         * The RenderMode, the camera looked through, and Frame All and Focus.
+         * @brief Draw the view bar (RenderMode, camera, grid axes, Frame All, Focus) in the top-right corner.
          *
          * @param ec The frame's editor context.
          */
@@ -64,6 +62,14 @@ class ViewportToolbar {
          * @return Screen pixels from the viewport's top edge.
          */
         static float viewBarBottom();
+
+    private:
+        /**
+         * @brief The snap button's right-click menu: a few common steps for each tool.
+         *
+         * @param prefs Takes the step picked.
+         */
+        static void drawSnapSteps(Preferences& prefs);
 
     private:
         bool m_hovered        = false;  ///< Tool strip.

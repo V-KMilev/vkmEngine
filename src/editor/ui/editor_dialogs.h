@@ -5,7 +5,7 @@
 
 #include <imgui.h>
 
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 
 namespace Vkm::Engine {
 
@@ -17,7 +17,7 @@ enum class DialogResult {
 };
 
 /**
- * @brief Open (when @p wantOpen) and begin the centered modal, first of the dialog scaffold's three calls.
+ * @brief Open (when @p wantOpen) and begin the centered modal; content, dialogButtons, endDialog follow.
  *
  *   if (beginDialog("Rename Asset", m_renameOpen)) {
  *       // ...content...
@@ -27,9 +27,9 @@ enum class DialogResult {
  *
  * @param title    ImGui title and popup id.
  * @param wantOpen Dialog-visible intent; cleared when dismissed by a path that skipped dialogButtons.
- * @param initialSize First-open size in screen pixels (px() of a design size); zero fits the content.
+ * @param initialSize First-open size in screen pixels; zero fits the content.
  * @param minimumSize Smallest drag size; read only with @p initialSize.
- * @return Whether the modal is open; content, dialogButtons and endDialog run only when true.
+ * @return Whether the modal is open; the rest of the dialog runs only when true.
  */
 inline bool beginDialog(
     const char* title,
@@ -48,44 +48,48 @@ inline bool beginDialog(
         flags |= ImGuiWindowFlags_AlwaysAutoResize;
     }
 
+    // The title in the heading face; the body takes the text face back.
+    EditorStyle::pushHeadingFont();
     const bool open = ImGui::BeginPopupModal(title, nullptr, flags);
+    ImGui::PopFont();
     if (!open) wantOpen = false;
     return open;
 }
 
 /**
- * @brief Begin a floating tool window: centred and sized on first use, never docked.
+ * @brief Begin a floating tool window: centered and sized on first use, never docked.
  *
- * A closed or collapsed window is ended here, so the caller pairs ImGui::End only
- * with a true return.
+ * A closed or collapsed window is ended here, so the caller pairs ImGui::End only with a true return.
  *
  * @param name Window title and id.
  * @param show Visibility flag; the window's close button clears it.
- * @param size First-use size in screen pixels (px() of a design size).
- * @return Whether the window is open.
+ * @param size First-use size in screen pixels.
+ * @return True when the caller draws the content and calls ImGui::End.
  */
 inline bool beginToolWindow(const char* name, bool& show, ImVec2 size) {
-    const ImVec2 centre = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(centre, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(name, &show, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking)) return true;
+    EditorStyle::pushHeadingFont();
+    const bool open = ImGui::Begin(name, &show, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::PopFont();
+    if (open) return true;
     ImGui::End();
     return false;
 }
 
 /**
- * @brief The three-way dialog button row: [alt] [Cancel] [Confirm], right-aligned.
+ * @brief The dialog button row, [alt] [Cancel] [Confirm], right-aligned; any result closes the popup.
  *
- * Any result closes the popup and clears @p wantOpen. Escape cancels; Enter confirms
- * when no text field has the keyboard or @p fieldCommitted, since an active field's
- * WantTextInput would swallow Enter. The alt label has no default and precedes the
- * flags, so only a label can land in its slot.
+ * Escape cancels. Enter confirms unless a text field has the keyboard, so pass @p fieldCommitted
+ * when a field returned true from EnterReturnsTrue this frame.
  *
- * @param wantOpen       The flag beginDialog received.
+ * @param wantOpen       The flag beginDialog received; any result clears it.
  * @param confirmLabel   Rightmost (accent, default) action.
  * @param altLabel       Third action left of Cancel, or nullptr.
  * @param confirmEnabled Gates the button and both Enter paths.
  * @param fieldCommitted A text field here returned true from EnterReturnsTrue this frame.
+ * @param destructive    The confirm cannot be undone: drawn in the danger color.
  * @return What fired this frame (None while the dialog stays open).
  */
 inline DialogResult dialogButtons(
@@ -93,7 +97,8 @@ inline DialogResult dialogButtons(
     const char* confirmLabel,
     const char* altLabel,
     bool confirmEnabled = true,
-    bool fieldCommitted = false
+    bool fieldCommitted = false,
+    bool destructive = false
 ) {
     const ImGuiStyle& style = ImGui::GetStyle();
 
@@ -106,7 +111,7 @@ inline DialogResult dialogButtons(
     fit("Cancel");
     fit(altLabel);
 
-    const int   n     = altLabel ? 3 : 2;
+    const int n = altLabel ? 3 : 2;
     const float total = n * bw + (n - 1) * style.ItemSpacing.x;
 
     ImGui::Spacing();
@@ -120,9 +125,11 @@ inline DialogResult dialogButtons(
     if (ImGui::Button("Cancel", ImVec2(bw, 0))) r = DialogResult::Cancel;
     ImGui::SameLine();
     ImGui::BeginDisabled(!confirmEnabled);
-    ImGui::PushStyleColor(ImGuiCol_Button,        EditorStyle::ACCENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  EditorStyle::ACCENT);
+    const ImVec4& tone  = destructive ? EditorStyle::DANGER : EditorStyle::ACCENT;
+    const ImVec4& hover = destructive ? EditorStyle::DANGER_HOV : EditorStyle::ACCENT_HOV;
+    ImGui::PushStyleColor(ImGuiCol_Button,        tone);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  tone);
     if (ImGui::Button(confirmLabel, ImVec2(bw, 0))) r = DialogResult::Confirm;
     ImGui::PopStyleColor(3);
     ImGui::EndDisabled();
@@ -146,7 +153,7 @@ inline DialogResult dialogButtons(
 }
 
 /**
- * @brief The two-button dialog button row: [Cancel] [Confirm], right-aligned.
+ * @brief The two-button row, [Cancel] [Confirm], right-aligned.
  *
  * @param wantOpen       The flag beginDialog received.
  * @param confirmLabel   Rightmost (accent, default) action.
@@ -166,8 +173,8 @@ inline DialogResult dialogButtons(
 /**
  * @brief Refuse a call that puts a flag ahead of the labels.
  *
- * dialogButtons(want, "Save", true, "Don't Save") would otherwise bind the label to
- * fieldCommitted on the two-button overload; this exact match outranks that conversion.
+ * dialogButtons(want, "Save", true, "Don't Save") would otherwise bind the label to fieldCommitted
+ * on the two-button overload; this exact match outranks that conversion.
  *
  * @param wantOpen       The flag beginDialog received.
  * @param confirmLabel   Rightmost action.
@@ -182,16 +189,14 @@ inline DialogResult dialogButtons(
     const char* altLabel
 ) = delete;
 
-/**
- * @brief End the modal begun by a true-returning beginDialog.
- */
+/// End the modal begun by a true-returning beginDialog.
 inline void endDialog() { ImGui::EndPopup(); }
 
 /**
  * @brief The editor's one rename dialog: a name field and the two buttons.
  *
- * The field takes focus with the old name selected. The caller owns the buffer and does
- * the renaming; any close clears @p open.
+ * The field takes focus with the old name selected. The caller owns the buffer and does the
+ * renaming; any close clears @p open.
  *
  * @param title Modal title and popup id.
  * @param open Dialog-visible intent; the caller sets it to raise the dialog.

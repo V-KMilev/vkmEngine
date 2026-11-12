@@ -6,18 +6,18 @@
 
 #include <glm/glm.hpp>
 
-#include "core/math/bounds.h"
+#include "vkm_physics/geometry/triangle.h"
+
+#include "base/math/ray.h"
 #include "resource/asset/mesh_asset.h"
-#include "system/physics/collision/triangle.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief Where a ray first meets a mesh's triangles, as placed in the world.
  *
- * The ray goes into mesh space and t stays in world-ray terms (an affine map keeps it).
- * Both faces count: a click inside a room hits its wall. Linear in triangles - for a
- * click, not a frame. Free of ImGui so it is tested headlessly.
+ * t stays in world-ray terms, as an affine map keeps it. Both faces count: a click inside a room hits
+ * its wall. Linear in triangles: for a click, not a frame.
  *
  * @param ray A world-space ray.
  * @param model The mesh's world matrix; invertible.
@@ -40,7 +40,7 @@ inline bool rayHitsMesh(const Math::Ray& ray, const glm::mat4& model, const Mesh
         if (a >= vertexCount || b >= vertexCount || c >= vertexCount) continue;
 
         float hit;
-        const bool crossed = rayTriangle(
+        const bool crossed = Physics::rayTriangle(
             origin,
             dir,
             mesh.vertices[a].position,

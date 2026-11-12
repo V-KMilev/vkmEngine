@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/asset_picker.h"
+#include "ui/file_picker.h"
 
 namespace Vkm::Engine {
 
@@ -11,8 +11,7 @@ struct EditorState;
 /**
  * @brief The "Import Model" picker, and the import of what is picked.
  *
- * Drawn at the root window's scope, not inside the Create menu, so the modal
- * survives that menu closing.
+ * Drawn at the root window's scope, not inside the Create menu, so the modal survives that menu closing.
  */
 class ModelImportDialog {
     public:
@@ -27,7 +26,7 @@ class ModelImportDialog {
 
     public:
         /**
-         * @brief Open the picker when EditorState::requestModelImport is set, and import the pick.
+         * @brief On Ask::ImportModel, open the picker and import the pick.
          *
          * @param scene Receives the model.
          * @param resources Receives its meshes and materials.
@@ -36,7 +35,7 @@ class ModelImportDialog {
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
 
     private:
-        AssetPicker m_picker;
+        FilePicker m_picker;
 };
 
 } // namespace Vkm::Engine

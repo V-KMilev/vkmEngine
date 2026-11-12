@@ -5,10 +5,9 @@
 namespace Vkm::Engine {
 
 /**
- * @brief What the pointer is over, as far as a click is concerned.
+ * @brief What the pointer is over for a click, in the order a press is offered.
  *
- * In the order a press is offered. Captured outranks all: a grabbed cursor
- * points at nothing the editor drew.
+ * Captured outranks all: a grabbed cursor points at nothing the editor drew.
  */
 enum class PointerOwner : uint8_t {
     Panel,        ///< Off the viewport.
@@ -20,9 +19,7 @@ enum class PointerOwner : uint8_t {
 };
 
 /**
- * @brief Everything the frame's ownership is decided from.
- *
- * Hovers are the previous frame's: the overlays draw after what must yield to them.
+ * @brief What ownership is decided from; hovers are last frame's, as overlays draw after what yields to them.
  */
 struct InputSignals {
     bool viewportHovered = false;  ///< Over the viewport, nothing of ImGui's above it.
@@ -30,21 +27,20 @@ struct InputSignals {
     bool gizmoHovered    = false;
     bool gizmoDragging   = false;  ///< Wherever the pointer has gone.
     bool stroking        = false;  ///< A terrain stroke is held, wherever the pointer has gone.
-    bool gameUIHovered   = false;  ///< A blocking game UI element is under the pointer.
-    bool cursorCaptured  = false;  ///< Hidden, grabbed and re-centred.
+    bool gameUIHovered   = false;  ///< A blocking game UI element.
+    bool cursorCaptured  = false;  ///< Hidden, grabbed and re-centered.
     bool playing         = false;
     bool ejected         = false;  ///< The session's viewport shows the editor's view.
     bool typing          = false;  ///< A text field has the keyboard.
-    bool popupOpen       = false;  ///< A menu, popup or modal is open and owns keys.
+    bool popupOpen       = false;  ///< A menu, popup or modal owns the keys.
     bool rebinding       = false;  ///< Preferences awaits the key to bind.
 };
 
 /**
- * @brief Who has the pointer and the keyboard this frame, decided once.
+ * @brief Who has the pointer and the keyboard this frame, decided once so no reader of a press disagrees.
  *
- * Readers of a press ask this, not a hover or ImGui flag, so none disagree. In a
- * session over the viewport, keys and buttons are the game's but for the transport
- * and editor-toggle keys and the playbar; ejected, the editor owns it as in Edit mode.
+ * In a session over the viewport, keys and buttons are the game's but for the transport and
+ * editor-toggle keys and the playbar; ejected, the editor owns them as in Edit mode.
  */
 struct InputOwnership {
     PointerOwner pointer   = PointerOwner::Panel;
@@ -53,8 +49,7 @@ struct InputOwnership {
     bool         typing    = false;
     bool         popupOpen = false;
     bool         rebinding = false;
-    /// An edit is held under the button - a gizmo drag or a terrain stroke - its undo step not yet pushed.
-    bool         held      = false;
+    bool         held      = false;  ///< A gizmo drag or terrain stroke, its undo step not yet pushed.
 
     /**
      * @brief Whether the viewport shows the game: a session, not ejected.
@@ -71,8 +66,7 @@ struct InputOwnership {
     bool gameHasKeyboard() const { return gameHasViewport() && pointer != PointerOwner::Panel; }
 
     /**
-     * @brief Whether a key is the editor's own UI's before it is anybody's
-     *        binding: a field typed into, a popup, or a key being rebound.
+     * @brief Whether a key is the editor's own UI's before any binding's: a field, a popup or a rebind.
      *
      * @return true while no editor keybind may answer a press.
      */
@@ -90,16 +84,14 @@ struct InputOwnership {
     /**
      * @brief Whether the play transport and editor toggle keys may act.
      *
-     * They are the way out of a session that grabbed the keys, so only the
-     * editor's own UI stops them, and an edit held in the editor's view.
+     * The way out of a session that grabbed the keys: only the editor's own UI or a held edit stops them.
      *
      * @return true unless a field, a popup or a rebind has the keyboard, or an edit is held.
      */
     bool editorHasSessionKeys() const { return !keysHeldByUI() && !held; }
 
     /**
-     * @brief Whether the editor's own UI holds the pointer, so a panel drag
-     *        does not steer the fly camera.
+     * @brief Whether the editor's own UI holds the pointer, so a panel drag does not steer the fly camera.
      *
      * @return true over a panel, an overlay or a gizmo handle.
      */
@@ -109,7 +101,7 @@ struct InputOwnership {
     }
 
     /**
-     * @brief The keyboard half of panelsHoldPointer.
+     * @brief The keyboard half of panelsHoldPointer().
      *
      * @return true while the editor's UI has the key, or the game has the
      *         viewport and the pointer is off it.
@@ -119,9 +111,8 @@ struct InputOwnership {
     /**
      * @brief The pointer half of what the chrome declares to the game.
      *
-     * All of it when the viewport is not the game's, so its UI does not scroll
-     * under an author's cursor (a saved offset edited with no undo). What is
-     * under the cursor is still resolved, so a click there picks the element.
+     * All of it while the viewport is not the game's, else its UI would scroll under the author's
+     * cursor, editing a saved offset with no undo. A click there still picks the element.
      *
      * @return The panels' answer while the game has the viewport, otherwise true.
      */
@@ -193,10 +184,9 @@ inline InputOwnership resolveInputOwnership(const InputSignals& signals) {
 /**
  * @brief The viewport hover the next frame's signals take.
  *
- * ImGui has no mouse while the cursor is grabbed, so its hover is meaningless;
- * taken, the first frame after release would read as a panel and hand the host
- * the keyboard with the game's keys still down. The cursor returns where it was
- * grabbed, so the pre-grab hover stands.
+ * ImGui's hover means nothing while the cursor is grabbed; taken, the first frame after release would
+ * read as a panel and hand the host the keyboard with the game's keys still down. The cursor returns
+ * where it was grabbed, so the pre-grab hover stands.
  *
  * @param previous Hover the signals hold now.
  * @param seen     ImGui's viewport hover this frame.

@@ -8,16 +8,19 @@
 #include <imgui.h>
 
 #include "ecs/entity.h"
-#include "ecs/component/core/transform.h"
-#include "overlays/transform_gizmo.h"
-#include "ui/editor_icons.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/scene/transform.h"
+#include "overlays/gizmo/transform_gizmo.h"
+#include "overlays/gizmo/ui_rect_drag.h"
+#include "overlays/gizmo/entity_markers.h"
 
 namespace Vkm::Engine {
 
 struct EditorContext;
 
 /**
- * @brief Viewport overlay: the transform gizmo, each kind's entity gizmos and markers, and click picking.
+ * @brief Viewport overlay: the transform gizmo, each kind's markers, the selection's UI rects and click
+ *        picking.
  */
 class GizmoOverlay {
     public:
@@ -32,135 +35,55 @@ class GizmoOverlay {
 
     public:
         /**
-         * @brief Draw the translate/rotate/scale gizmo on the selected entity.
+         * @brief Draw the translate/rotate/scale gizmo on the selected entity, one undo entry per drag.
          *
-         * One undo entry per drag. No-op for the Select tool, an empty selection or the
-         * camera the frame renders through. Input ownership gates hover and drag, so a click
-         * on a tool strip button does not start one.
+         * No-op for the Select tool, an empty selection or the camera the frame renders through.
          *
          * @param ec The frame's editor context.
          */
         void drawTransformGizmo(EditorContext& ec);
 
         /**
-         * @brief Draw a small 3D shape per light entity (sun rays, point sphere, spot cone).
+         * @brief Hand the engine's DebugDraw a category per GizmoVisibility toggle, the focus and scale.
          *
-         * Drawn behind the transform gizmo.
-         *
-         * @param ec The frame's editor context.
+         * @param ec    The frame's editor context.
+         * @param shown False while the editor is hidden: no shapes, no focus.
          */
-        void drawLightGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw a frustum and icon per camera, except the one the frame renders through.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawCameraGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw each reflection probe's influence box and marker, each planar reflector's
-         *        rectangle and marker, and each irradiance volume's box.
-         *
-         * The selected volume also shows its probe grid, up to a cap.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawProbeGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw each decal's projection box and direction, and each emitter's marker and velocity.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawEffectGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw an icon per audio source and listener, the selected source's falloff spheres
-         *        and the listener's facing.
-         *
-         * The speaker keeps its arcs only while spatial. Spheres for the selection only, or a
-         * scene's worth buries everything else.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawAudioGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw a wireframe of every entity's physics Collider.
-         *
-         * Shown by GizmoVisibility::colliders.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawColliderGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw every joint as its two anchors and the line between them.
-         *
-         * Point joints mark the shared anchor; distance joints draw the rope.
-         * Shown with GizmoVisibility::colliders.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawJointGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw every posed rig as bone segments from parent to child,
-         * with an axis triad per bone on the selected one.
-         *
-         * Draws the pose SkeletalAnimationSystem published. Shown by GizmoVisibility::skeletons.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawSkeletonGizmos(EditorContext& ec);
-
-        /**
-         * @brief Draw the world-space AABB of every visible entity.
-         *
-         * The visibility pass's set. Shown by GizmoVisibility::bounds.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawBoundsGizmos(EditorContext& ec);
-
-        /**
-         * @brief Outline every selected entity's world-space AABB as a selection cue.
-         *
-         * The active entity in full highlight, the rest dimmer; only what the visibility pass
-         * drew, and a selected UI element's resolved rect. Lights, probes and cameras
-         * highlight their own gizmos.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawSelectionOutline(EditorContext& ec);
+        void showWorldGizmos(EditorContext& ec, bool shown) const;
 
         /**
          * @brief Ray-cast pick on left-click in the viewport, updating the selection.
          *
-         * Outside a session a blocking game UI element wins; then the nearest of the visible
-         * meshes and this frame's markers. Empty space deselects. No-op unless input
-         * ownership gives the picker the click, or while the gizmo has it. Never dirties the
-         * scene.
+         * Outside a session a blocking game UI element wins, then the nearest visible mesh or marker;
+         * empty space deselects. No-op unless input ownership gives the picker the click. Never
+         * dirties the scene.
          *
          * @param ec The frame's editor context.
          */
         void handleViewportPick(EditorContext& ec);
-        bool isGizmoOver() const  { return m_gizmo.isOver(); }
-        bool isGizmoUsing() const { return m_gizmo.isUsing(); }
 
-    private:
         /**
-         * @brief One entity marker drawn this frame, kept for the picker.
+         * @brief Move and resize the active UI element by its rect, one undo step per drag.
+         *
+         * An edge or corner resizes it with the opposite side held (dragRect), in reference pixels.
+         *
+         * @param ec The frame's editor context.
          */
-        struct Marker {
-            EntityId  id;
-            ImVec2    screen;         ///< Where it was drawn.
-            glm::vec3 world;          ///< Its distance ranks it against meshes.
-            float     reach = 0.0f;   ///< Half-size of a world box that also answers; 0 none.
-        };
+        void drawUIRectTool(EditorContext& ec);
+
+        /// The viewport's entity markers, which the editor draws and the pick reads.
+        EntityMarkers& markers() { return m_markers; }
+
+        /// A rect's edge or corner counts; its body does not, so a click there still picks what is on top.
+        bool isGizmoOver() const  { return m_gizmo.isOver() || rectEdgeHeld(m_rectHover); }
+        bool isGizmoUsing() const { return m_gizmo.isUsing() || m_rectDrag != RectHandle::None; }
 
     private:
+        /// Whether @p handle resizes: an edge or a corner, not the body or nothing.
+        static bool rectEdgeHeld(RectHandle handle) {
+            return handle != RectHandle::None && handle != RectHandle::Body;
+        }
+
         /**
          * @brief Close an active drag: push its undo entry and reset the overlay's and gizmo's state.
          *
@@ -169,63 +92,45 @@ class GizmoOverlay {
         void finishDrag(EditorContext& ec);
 
         /**
-         * @brief Draw an entity's viewport marker and record it as a pick target.
+         * @brief Carry each dragged entity's scale into its Collider, from the drag's start.
          *
-         * Every marker goes through here, so what is drawn is exactly what is pickable.
-         *
-         * @param dl Draw list to append to.
-         * @param icon Glyph naming the entity's kind.
-         * @param id Entity a click selects.
-         * @param screen Projected position.
-         * @param world The point it marks.
-         * @param col Glyph colour.
-         * @param reach Half-size of a world box around @p world that also answers, or 0.
+         * @param ec Supplies the scene.
          */
-        void markEntity(
-            ImDrawList* dl,
-            EditorIcon icon,
-            EntityId id,
-            ImVec2 screen,
-            const glm::vec3& world,
-            ImU32 col,
-            float reach = 0.0f
-        );
+        void carryScale(EditorContext& ec);
 
     private:
         TransformGizmo m_gizmo;
-        bool m_dragActive = false;
+        bool           m_dragActive  = false;
+        bool           m_altCopied   = false;  ///< This drag's Alt copy was tried; one a drag.
+        bool           m_altCopyMade = false;  ///< And it pushed a step, which an unmoved drag takes back.
+        EntityId              m_altActive{};    ///< The active original an Alt copy was made of.
+        std::vector<EntityId> m_altOriginals;   ///< The selection it was made of.
+        bool                  m_altWasDirty{};  ///< Whether the scene had unsaved changes before it.
 
-        // Snapshot at drag start, so finishDrag pushes one step for the whole drag.
-        Transform m_dragStartTransform{};
+        Transform m_dragStartTransform{};  ///< At drag start, so finishDrag pushes one step per drag.
         EntityId  m_dragEntity{};
 
-        /**
-         * @brief The active entity's parent-world basis as the drag began.
-         *
-         * Held, not recomputed: a selected ancestor moves with the drag, shifting the basis.
-         * Identity when the active entity has no parent.
-         */
-        glm::mat4 m_dragStartParentWorld{1.0f};
+        glm::mat4 m_dragStartParentWorld{1.0f};  ///< The parent-world basis at drag start, held: a selected
+                                                 ///< ancestor moves with the drag. Identity with no parent.
 
-        /**
-         * @brief Drag-start transforms of the selection's roots, for one batch undo at drag end.
-         *
-         * Roots only: a descendant inherits the motion, so writing it would apply it twice.
-         * The active entity is absent exactly when m_dragActiveIsDescendant. This, not the
-         * selection size, says whether a drag is multi-entity.
-         */
-        std::vector<std::pair<EntityId, Transform>> m_dragSelection;
+        std::vector<std::pair<EntityId, Transform>> m_dragSelection;  ///< The selection's roots at drag
+                                                                      ///< start, for one batch undo; more
+                                                                      ///< than one makes a multi-entity drag.
 
-        /**
-         * @brief Is the dragged entity itself a descendant of another selected one?
-         *
-         * Then the gizmo's direct write to it must be undone, or it travels twice.
-         */
-        bool m_dragActiveIsDescendant = false;
+        bool m_dragActiveIsDescendant = false;  ///< The dragged entity descends from another selected one:
+                                                ///< undo the gizmo's write to it, or it moves twice.
 
-        /// This frame's markers, and the ImGui frame they were drawn in.
-        std::vector<Marker> m_markers;
-        int                 m_markerFrame = -1;
+        std::vector<std::pair<EntityId, Collider>> m_dragColliders;  ///< A scale drag's entities' Colliders
+                                                                     ///< at its start, which their parts
+                                                                     ///< are carried from each frame.
+
+        RectHandle m_rectHover = RectHandle::None;  ///< Under the pointer this frame.
+        RectHandle m_rectDrag  = RectHandle::None;  ///< Held since the press.
+        UIElement  m_rectStart{};                   ///< The element as the drag began.
+        ImVec2     m_rectFrom{};                    ///< Where the press was, panel pixels.
+        EntityId   m_rectEntity{};
+
+        EntityMarkers m_markers;  ///< Drawn by the editor each frame; the pick reads them.
 };
 
 } // namespace Vkm::Engine
