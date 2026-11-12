@@ -44,11 +44,10 @@ class PreferencesPanel {
         void drawKeybindsSection(EditorState& state);
 
     private:
-        /// FPS cap edited before "Apply"; seeded from the preference when the window appears.
-        int m_fpsLimitEdit = 0;
+        int m_fpsLimitEdit = 0;  ///< FPS cap being typed, taken on Enter; seeded as the window appears.
 
-        /// The capturing row, by its KEYBINDS label's address (stable across frames).
-        const char* m_rebindTarget = nullptr;
+        const char* m_rebindTarget = nullptr;  ///< The capturing row, by its KEYBINDS label's address,
+                                               ///< which is stable across frames.
 };
 
 } // namespace Vkm::Engine

@@ -1,7 +1,7 @@
 #include "ui/editor_widgets.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cstdarg>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -12,42 +12,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "ui/editor_style.h"
-#include "core/utf8.h"
-#include "ecs/scene.h"
-#include "ecs/component/animation/animation.h"
-#include "ecs/component/animation/animator.h"
-#include "ecs/component/animation/bone_socket.h"
-#include "ecs/component/audio/audio_listener.h"
-#include "ecs/component/audio/audio_source.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/physics/character_controller.h"
-#include "ecs/component/physics/collider.h"
-#include "ecs/component/physics/joint.h"
-#include "ecs/component/physics/ragdoll.h"
-#include "ecs/component/physics/rigidbody.h"
-#include "ecs/component/render/camera.h"
-#include "ecs/component/render/decal.h"
-#include "ecs/component/render/irradiance_volume.h"
-#include "ecs/component/prefab/prefab_instance.h"
-#include "ecs/component/render/light.h"
-#include "ecs/component/render/lod.h"
-#include "ecs/component/render/mesh.h"
-#include "ecs/component/render/particle_emitter.h"
-#include "ecs/component/render/planar_reflector.h"
-#include "ecs/component/render/reflection_probe.h"
-#include "ecs/component/render/terrain.h"
-#include "ecs/component/ui/ui_button.h"
-#include "ecs/component/ui/ui_canvas.h"
-#include "ecs/component/ui/ui_choice.h"
-#include "ecs/component/ui/ui_element.h"
-#include "ecs/component/ui/ui_image.h"
-#include "ecs/component/ui/ui_scroll.h"
-#include "ecs/component/ui/ui_slider.h"
-#include "ecs/component/ui/ui_toggle.h"
-#include "ecs/component/ui/ui_text.h"
-#include "io/project_paths.h"
-
+#include "ui/style/editor_style.h"
+#include "base/encoding/utf8.h"
+#include "io/project/roots.h"
 namespace Vkm::Engine {
 
 namespace {
@@ -99,7 +66,7 @@ bool sliderScalar(
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
-    const float pad = 2.0f;
+    const float pad   = 2.0f;
     const float track = (max.x - min.x) - pad * 2.0f;
     float grab = style.GrabMinSize;
     if (type == ImGuiDataType_S32) {
@@ -129,10 +96,43 @@ bool sliderScalar(
 }
 
 bool beginCombo(const char* id, const char* preview, ImGuiComboFlags flags) {
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
-    const bool open = ImGui::BeginCombo(id, preview, flags);
-    ImGui::PopStyleColor(2);
+    // The field's rect, taken before an open popup becomes the current window.
+    const ImVec2 min   = ImGui::GetCursorScreenPos();
+    const float  width = ImGui::CalcItemWidth();
+    ImDrawList*  dl    = ImGui::GetWindowDrawList();
+    const bool   open  = ImGui::BeginCombo(id, "", flags | ImGuiComboFlags_NoArrowButton);
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 max(min.x + width, min.y + ImGui::GetFrameHeight());
+    const float side     = ImGui::GetFontSize();
+    const float chevronX = max.x - style.FramePadding.x - side * 0.5f;
+    const ImVec2 textMin(min.x + style.FramePadding.x, min.y + style.FramePadding.y);
+    const ImVec2 textMax(chevronX - side * 0.5f - style.ItemInnerSpacing.x, max.y);
+    // Into the field's own list, which an open popup is not.
+    dl->PushClipRect(textMin, textMax, true);
+    dl->AddText(textMin, ImGui::GetColorU32(ImGuiCol_Text), preview);
+    dl->PopClipRect();
+    const float midY  = (min.y + max.y) * 0.5f;
+    const ImU32 faint = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    drawEditorIcon(dl, EditorIcon::ChevronDown, ImVec2(chevronX, midY), side * 0.32f, faint);
+    return open;
+}
+
+bool beginSubmenu(const char* label, bool enabled) {
+    ImDrawList* dl  = ImGui::GetWindowDrawList();
+    const bool open = ImGui::BeginMenu(label, enabled);
+    // ImGui's arrow is the last shape it adds to the menu's list, a triangle filled with an edge or
+    // without one; it is hidden, and the chevron drawn where it stood.
+    const int triangle = (dl->Flags & ImDrawListFlags_AntiAliasedFill) ? 6 : 3;
+    for (int i = std::max(0, dl->VtxBuffer.Size - triangle); i < dl->VtxBuffer.Size; ++i) {
+        dl->VtxBuffer[i].col &= ~IM_COL32_A_MASK;
+    }
+    const ImVec2 min  = ImGui::GetItemRectMin();
+    const ImVec2 max  = ImGui::GetItemRectMax();
+    const float  side = ImGui::GetFontSize();
+    const ImU32  ink  = ImGui::GetColorU32(ImGuiCol_TextDisabled, enabled ? 1.0f : 0.5f);
+    const ImVec2 mark(max.x - side * 0.5f, (min.y + max.y) * 0.5f);
+    drawEditorIcon(dl, EditorIcon::ChevronRight, mark, side * 0.32f, ink);
     return open;
 }
 
@@ -152,83 +152,37 @@ bool comboList(const char* id, int* index, const char* const* labels, int count)
     return changed;
 }
 
-bool beginOverlayStrip(const char* id, ImVec2 size) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleColor(ImGuiCol_Border, EditorStyle::OVERLAY_EDGE);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, EditorStyle::overlayRounding());
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_WindowPadding,
-        ImVec2(EditorStyle::overlayPad(), EditorStyle::overlayPad())
-    );
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_ItemSpacing,
-        ImVec2(EditorStyle::overlayGap(), EditorStyle::overlayGap())
-    );
-    ImGuiChildFlags flags = ImGuiChildFlags_Borders;
-    if (size.x <= 0.0f) flags |= ImGuiChildFlags_AutoResizeX;
-    if (size.y <= 0.0f) flags |= ImGuiChildFlags_AutoResizeY;
-    return ImGui::BeginChild(
-        id,
-        size,
-        flags,
-        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
-    );
-}
-
-void endOverlayStrip() {
-    ImGui::EndChild();
-    ImGui::PopStyleVar(3);
-    ImGui::PopStyleColor(2);
-}
-
-bool drawVec3Control(const char* label, float* values, float resetValue, float speed, float lo, float hi) {
+bool vec3Fields(float* values, float speed, float lo, float hi, const char* format) {
+    // Three equal fields with no floor, so the row fits whatever the panel's width.
     bool changed = false;
-    ImGui::PushID(label);
-
-    float lineHeight = ImGui::GetFrameHeight();
-    ImVec2 buttonSize(lineHeight * 0.8f, lineHeight);
-    // Floored, or the drags vanish on a narrow panel; overflowing is the lesser failure.
-    const float spareWidth = ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
-        - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5;
-    float inputWidth = std::max(spareWidth / 3.0f, ImGui::GetFontSize() * 2.5f);
-
-    // The full width drawPropertyLabel sets is spent on the X button.
-    drawPropertyLabel(label);
-
-    static const struct {
-        const char*   button;
-        const char*   drag;
-        const ImVec4& color;
-        const ImVec4& hover;
-    } AXES[3] = {
-        { "X", "##X", EditorStyle::AXIS_X, EditorStyle::AXIS_X_HOV },
-        { "Y", "##Y", EditorStyle::AXIS_Y, EditorStyle::AXIS_Y_HOV },
-        { "Z", "##Z", EditorStyle::AXIS_Z, EditorStyle::AXIS_Z_HOV },
-    };
-
-    // The button only shows on hover: solid RGB blocks on every row would be the loudest thing.
-    auto tint = [](ImVec4 c, float a) {
-        c.w = a;
-        return c;
-    };
+    const float gap   = EditorStyle::px(4.0f);
+    const float width = (ImGui::GetContentRegionAvail().x - gap * 2.0f) / 3.0f;
+    const float bar   = EditorStyle::px(2.0f);
+    static constexpr const char* LETTERS[3] = {"X", "Y", "Z"};
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     for (int i = 0; i < 3; ++i) {
-        ImGui::PushStyleColor(ImGuiCol_Text, AXES[i].hover);
-        ImGui::PushStyleColor(ImGuiCol_Button, tint(AXES[i].color, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tint(AXES[i].color, 0.25f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, tint(AXES[i].color, 0.40f));
-        if (ImGui::Button(AXES[i].button, buttonSize)) {
-            values[i] = resetValue;
-            changed = true;
+        if (i > 0) ImGui::SameLine(0.0f, gap);
+        ImGui::PushID(i);
+        ImGui::SetNextItemWidth(width);
+        changed |= ImGui::DragFloat("##v", &values[i], speed, lo, hi, format, PROP_CLAMP);
+        ImGui::PopID();
+        // The axis's color as a bar at the field's left edge, its letter faint inside.
+        const ImVec2 min     = ImGui::GetItemRectMin();
+        const ImVec2 max     = ImGui::GetItemRectMax();
+        const float rounding = ImGui::GetStyle().FrameRounding;
+        const ImU32 axis     = EditorStyle::axisU32(i);
+        dl->AddRectFilled(min, ImVec2(min.x + bar, max.y), axis, rounding, ImDrawFlags_RoundCornersLeft);
+        // The letter only where it clears the centered value; the bar alone says the axis otherwise.
+        // The width at two places: near enough to place the letter, whatever the format.
+        char value[32];
+        std::snprintf(value, sizeof(value), "%.2f", values[i]);
+        const float margin  = (max.x - min.x - ImGui::CalcTextSize(value).x) * 0.5f;
+        const float letterX = bar + EditorStyle::px(4.0f);
+        if (margin >= letterX + ImGui::CalcTextSize(LETTERS[i]).x + EditorStyle::px(2.0f)) {
+            const ImVec2 letterAt(min.x + letterX, min.y + ImGui::GetStyle().FramePadding.y);
+            dl->AddText(letterAt, EditorStyle::axisU32(i, 150), LETTERS[i]);
         }
-        ImGui::PopStyleColor(4);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset %s", AXES[i].button);
-        ImGui::SameLine(0, EditorStyle::px(2.0f));
-        ImGui::SetNextItemWidth(inputWidth);
-        changed |= ImGui::DragFloat(AXES[i].drag, &values[i], speed, lo, hi, "%.2f", PROP_CLAMP);
-        if (i < 2) ImGui::SameLine(0, EditorStyle::px(6.0f));
     }
-
-    ImGui::PopID();
     return changed;
 }
 
@@ -248,7 +202,7 @@ void drawPropertyLabel(const char* label) {
         char clipped[96];
         size_t n = 0;
         for (const char* c = label; *c && n < sizeof(clipped) - 4; ++c) {
-            clipped[n] = *c;
+            clipped[n]     = *c;
             clipped[n + 1] = '\0';
             if (ImGui::CalcTextSize(clipped).x + dotsW > maxW) break;
             ++n;
@@ -262,13 +216,24 @@ void drawPropertyLabel(const char* label) {
     ImGui::SetNextItemWidth(-1);
 }
 
+bool searchField(const char* id, char* buf, size_t size, float width, const char* hint) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+        && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_F, ImGuiInputFlags_RouteFocused)) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(width);
+    return ImGui::InputTextWithHint(id, hint, buf, size, ImGuiInputTextFlags_EscapeClearsAll);
+}
+
+void factRow(const char* label, const char* value) {
+    drawPropertyLabel(label);
+    ImGui::TextUnformatted(value);
+}
+
 namespace {
 struct CardState {
-    ImVec4 accent;
-    float  startY = 0.0f;   ///< Body top, screen-space y.
-    float  lineX  = 0.0f;   ///< Left accent-line x, screen-space.
-    int    frame  = 0;      ///< The ImGui frame that pushed it.
-    bool   open   = false;
+    int  frame = 0;      ///< The ImGui frame that pushed it.
+    bool open  = false;
 };
 
 // The cards begun and not yet ended; ImGui, and so every card, is on one thread.
@@ -279,37 +244,64 @@ std::vector<CardState>& cardStack() {
 // A function: px() needs an ImGui context, absent when file-scope initializers run.
 float cardIndent() { return EditorStyle::px(14.0f); }
 
-// Tinted, accent-stripped CollapsingHeader (no body/end pairing).
-bool styledCollapsingHeader(const char* title, const ImVec4& accent, bool defaultOpen) {
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth
-        | ImGuiTreeNodeFlags_AllowOverlap
-        | ImGuiTreeNodeFlags_FramePadding;
-    if (defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
+// The card's header: chevron, icon, title in the heading face, and a "..." for its menu.
+// Open or shut lives in ImGui's storage, as a tree node's does.
+bool cardHeader(const char* title, EditorIcon icon, bool defaultOpen, const char* menu) {
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const ImGuiID openId = ImGui::GetID("##open");
+    bool open = storage->GetBool(openId, defaultOpen);
 
-    ImGui::PushStyleColor(ImGuiCol_Header,        EditorStyle::CARD_HEADER);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, EditorStyle::CARD_HEADER_HOV);
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  EditorStyle::CARD_HEADER_ACT);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(EditorStyle::px(8.0f), EditorStyle::px(7.0f)));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, EditorStyle::px(4.0f));
+    // 26 px at the 14 px font.
+    const ImVec2 min    = ImGui::GetCursorScreenPos();
+    const float  width  = ImGui::GetContentRegionAvail().x;
+    const float  height = EditorStyle::px(26.0f);
+    ImGui::SetNextItemAllowOverlap();
+    if (ImGui::InvisibleButton("##header", ImVec2(width, height))) {
+        open = !open;
+        storage->SetBool(openId, open);
+    }
+    const bool hovered = ImGui::IsItemHovered();
+    const bool held    = ImGui::IsItemActive();
+    if (menu) ImGui::OpenPopupOnItemClick(menu, ImGuiPopupFlags_MouseButtonRight);
 
-    const bool open = ImGui::CollapsingHeader(title, flags);
-    const ImVec2 rMin = ImGui::GetItemRectMin();
-    const ImVec2 rMax = ImGui::GetItemRectMax();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 max(min.x + width, min.y + height);
+    const ImVec4& fill = held ? EditorStyle::PRESSED : hovered ? EditorStyle::HOVERED : EditorStyle::RAISED;
+    dl->AddRectFilled(min, max, ImGui::GetColorU32(fill), EditorStyle::px(4.0f));
+    const ImU32 ink   = ImGui::GetColorU32(ImGuiCol_Text);
+    const ImU32 faint = ImGui::GetColorU32(ImGuiCol_TextDisabled);
 
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(3);
+    const float side = ImGui::GetFontSize();
+    const float midY = (min.y + max.y) * 0.5f;
+    const float gap  = EditorStyle::px(6.0f);
+    float x = min.x + EditorStyle::px(8.0f);
+    const EditorIcon chevron = open ? EditorIcon::ChevronDown : EditorIcon::ChevronRight;
+    drawEditorIcon(dl, chevron, ImVec2(x + side * 0.5f, midY), side * 0.32f, faint);
+    x += side + gap;
+    if (icon != EditorIcon::None) {
+        drawEditorIcon(dl, icon, ImVec2(x + side * 0.5f, midY), side * 0.42f, ink);
+        x += side + gap;
+    }
+    EditorStyle::pushHeadingFont();
+    dl->AddText(ImVec2(x, midY - ImGui::GetTextLineHeight() * 0.5f), ink, title);
+    ImGui::PopFont();
 
-    // Accent strip welded to the header's left edge.
-    ImGui::GetWindowDrawList()->AddRectFilled(
-        ImVec2(rMin.x, rMin.y),
-        ImVec2(rMin.x + EditorStyle::px(3.0f), rMax.y),
-        ImGui::GetColorU32(accent)
-    );
+    if (menu) {
+        const float button = height - EditorStyle::px(6.0f);
+        ImGui::SameLine();
+        const float inset = EditorStyle::px(3.0f);
+        ImGui::SetCursorScreenPos(ImVec2(max.x - button - inset, min.y + inset));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        if (iconButton("cardMenu", EditorIcon::Ellipsis, false, true, "More", button)) {
+            ImGui::OpenPopup(menu);
+        }
+        ImGui::PopStyleColor();
+    }
     return open;
 }
 } // namespace
 
-bool beginComponentCard(const char* title, const ImVec4& accent, bool defaultOpen, bool* removeClicked) {
+bool beginComponentCard(const char* title, EditorIcon icon, bool defaultOpen, const char* menu) {
     // Reset per frame, as ImGui's stacks are, so a skipped end cannot shift later cards.
     std::vector<CardState>& stack = cardStack();
     if (!stack.empty() && stack.back().frame != ImGui::GetFrameCount()) stack.clear();
@@ -317,27 +309,14 @@ bool beginComponentCard(const char* title, const ImVec4& accent, bool defaultOpe
     ImGui::PushID(title);
     ImGui::Spacing();
 
-    const bool open   = styledCollapsingHeader(title, accent, defaultOpen);
-    const ImVec2 rMin = ImGui::GetItemRectMin();
-
-    if (removeClicked) {
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - EditorStyle::px(20.0f));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
-        if (ImGui::SmallButton("x")) *removeClicked = true;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove component");
-        ImGui::PopStyleColor(2);
-    }
+    const bool open = cardHeader(title, icon, defaultOpen, menu);
 
     CardState st;
-    st.accent = accent;
-    st.open   = open;
-    st.frame  = ImGui::GetFrameCount();
-    st.lineX  = rMin.x + cardIndent() * 0.5f;
+    st.open  = open;
+    st.frame = ImGui::GetFrameCount();
     if (open) {
         ImGui::Indent(cardIndent());
         ImGui::Spacing();
-        st.startY = ImGui::GetCursorScreenPos().y;
     }
     stack.push_back(st);
     return open;
@@ -353,15 +332,7 @@ void endComponentCard() {
 
     if (st.open) {
         ImGui::Spacing();
-        const float endY = ImGui::GetCursorScreenPos().y;
         ImGui::Unindent(cardIndent());
-        const ImU32 c = ImGui::GetColorU32(ImVec4(st.accent.x, st.accent.y, st.accent.z, 0.30f));
-        ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(st.lineX, st.startY),
-            ImVec2(st.lineX, endY),
-            c,
-            EditorStyle::px(2.0f)
-        );
     }
     ImGui::PopID();
     ImGui::Spacing();
@@ -402,10 +373,10 @@ std::string elidedLine(const char* text, float maxWidth) {
 }
 
 void emptyStateHeading(EditorIcon icon, const char* headline, const char* detail, int actionRows) {
-    const ImVec2 region    = ImGui::GetContentRegionAvail();
-    const float  glyphSize = EditorStyle::px(56.0f);
-    const float  lineH     = ImGui::GetTextLineHeightWithSpacing();
-    const float  blockH    = glyphSize + lineH * 2.0f
+    const ImVec2 region   = ImGui::GetContentRegionAvail();
+    const float glyphSize = EditorStyle::px(56.0f);
+    const float lineH     = ImGui::GetTextLineHeightWithSpacing();
+    const float blockH    = glyphSize + lineH * 2.0f
         + ImGui::GetFrameHeight() * static_cast<float>(actionRows)
         + EditorStyle::px(24.0f);
     ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
@@ -421,15 +392,15 @@ void emptyStateHeading(EditorIcon icon, const char* headline, const char* detail
     );
 
     ImGui::Spacing();
-    centreNextItem(ImGui::CalcTextSize(headline).x);
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    EditorStyle::pushHeadingFont();
+    centerNextItem(ImGui::CalcTextSize(headline).x);
     ImGui::TextUnformatted(headline);
-    ImGui::PopStyleColor();
+    ImGui::PopFont();
     // Wrapped, not clipped, when the panel is narrower than the line.
     const float detailW = ImGui::CalcTextSize(detail).x;
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     if (detailW <= region.x) {
-        centreNextItem(detailW);
+        centerNextItem(detailW);
         ImGui::TextUnformatted(detail);
     } else {
         ImGui::TextWrapped("%s", detail);
@@ -438,61 +409,103 @@ void emptyStateHeading(EditorIcon icon, const char* headline, const char* detail
     ImGui::Spacing();
 }
 
-void centreNextItem(float width) {
+void centerNextItem(float width) {
     ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - width) * 0.5f));
 }
 
-bool tileFace(
-    ImTextureID picture,
-    float face,
-    const ImVec4& accent,
-    EditorIcon glyph,
-    const ImVec4& glyphColor,
-    ImVec2& faceMin,
-    ImVec2& faceMax
-) {
-    faceMin = ImGui::GetCursorScreenPos();
-
-    const ImVec4 inert = ImGui::GetStyleColorVec4(ImGuiCol_Button);
-    ImGui::SetNextItemAllowOverlap();
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, inert);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, inert);
-    const bool clicked = picture
-        ? ImGui::ImageButton("##face", picture, ImVec2(face, face), ImVec2(0, 1), ImVec2(1, 0))
-        : ImGui::Button("##face", ImVec2(face, face));
+bool removeButton(const char* id, const char* tooltip) {
+    const float side = ImGui::GetFrameHeight();
+    ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - side);
+    // Neutral until the pointer is on it: a red cross on every row would be the loudest thing.
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const bool hot  = ImGui::IsMouseHoveringRect(at, ImVec2(at.x + side, at.y + side));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    const ImVec4 ink = hot ? EditorStyle::DANGER : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+    ImGui::PushStyleColor(ImGuiCol_Text, ink);
+    const bool pressed = iconButton(id, EditorIcon::Cross, false, true, tooltip, side);
     ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
-    faceMax = ImGui::GetItemRectMax();
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    if (ImGui::IsItemHovered()) {
-        dl->AddRect(faceMin, faceMax, ImGui::GetColorU32(accent), 0.0f, 0, EditorStyle::px(2.0f));
-    }
-    if (!picture) {
-        drawEditorIcon(
-            dl,
-            glyph,
-            ImVec2((faceMin.x + faceMax.x) * 0.5f, (faceMin.y + faceMax.y) * 0.5f),
-            face * 0.22f,
-            ImGui::GetColorU32(glyphColor)
-        );
-    }
-    return clicked;
-}
-
-void tileStrip(ImVec2 faceMin, ImVec2 faceMax, const ImVec4& color) {
-    ImGui::GetWindowDrawList()->AddRectFilled(
-        faceMin,
-        ImVec2(faceMin.x + EditorStyle::px(3.0f), faceMax.y),
-        ImGui::GetColorU32(color)
-    );
+    return pressed;
 }
 
 void clippedLine(const char* text, float maxWidth, bool dim) {
     const std::string line = elidedLine(text, maxWidth);
     if (dim) ImGui::TextDisabled("%s", line.c_str());
     else     ImGui::TextUnformatted(line.c_str());
+}
+
+bool segmentedControl(const char* id, const Segment* segments, int count, int* chosen) {
+    ImGui::PushID(id);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const float height  = ImGui::GetFrameHeight();
+    const float padding = style.FramePadding.x * 1.5f;
+
+    const auto widthOf = [&](int i) {
+        return ImGui::CalcTextSize(segments[i].label, nullptr, true).x + padding * 2.0f;
+    };
+    float width = 0.0f;
+    for (int i = 0; i < count; ++i) width += widthOf(i);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float rounding = style.FrameRounding;
+    const ImU32 well = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    dl->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), well, rounding);
+
+    bool changed = false;
+    float x = origin.x;
+    for (int i = 0; i < count; ++i) {
+        const float w = widthOf(i);
+        const ImVec2 min(x, origin.y);
+        const ImVec2 max(x + w, origin.y + height);
+        ImGui::SetCursorScreenPos(min);
+        ImGui::PushID(i);
+        if (ImGui::InvisibleButton("##segment", ImVec2(w, height)) && *chosen != i) {
+            *chosen = i;
+            changed = true;
+        }
+        ImGui::PopID();
+        if (segments[i].tooltip) ImGui::SetItemTooltip("%s", segments[i].tooltip);
+        const bool picked  = *chosen == i;
+        const bool hovered = ImGui::IsItemHovered();
+        if (picked || hovered) {
+            // Inset, so the fill reads as a key pressed into the control.
+            const ImU32 fill  = ImGui::GetColorU32(picked ? ImGuiCol_Header : ImGuiCol_FrameBgHovered);
+            const float inset = EditorStyle::px(2.0f);
+            const ImVec2 from(min.x + inset, min.y + inset);
+            dl->AddRectFilled(from, ImVec2(max.x - inset, max.y - inset), fill, rounding - inset * 0.5f);
+        }
+        const ImVec4 text = segments[i].tint ? *segments[i].tint : ImGui::GetStyleColorVec4(ImGuiCol_Text);
+        const char*  end  = ImGui::FindRenderedTextEnd(segments[i].label);
+        const ImVec2 size = ImGui::CalcTextSize(segments[i].label, end);
+        const ImVec2 at(min.x + (w - size.x) * 0.5f, min.y + (height - size.y) * 0.5f);
+        // Chosen, it reads on the accent fill as any pressed button's label does.
+        const ImVec4 shown = picked ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : text;
+        dl->AddText(at, ImGui::ColorConvertFloat4ToU32(shown), segments[i].label, end);
+        x += w;
+    }
+    // Leave the cursor after the control, as an item of its size would.
+    ImGui::SetCursorScreenPos(origin);
+    ImGui::Dummy(ImVec2(width, height));
+    ImGui::PopID();
+    return changed;
+}
+
+bool toggleChip(const char* label, bool* on, const ImVec4& color) {
+    ImVec4 off = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+    off.w *= 0.75f;
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetFrameHeight() * 0.5f);
+    const auto tint = [&](float alpha) { return ImVec4(color.x, color.y, color.z, alpha); };
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, *on ? 1.0f : 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, tint(0.55f));
+    ImGui::PushStyleColor(ImGuiCol_Button, tint(*on ? 0.22f : 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tint(0.30f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, tint(0.38f));
+    ImGui::PushStyleColor(ImGuiCol_Text, *on ? color : off);
+    const bool clicked = ImGui::Button(label);
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(2);
+    if (clicked) *on = !*on;
+    return clicked;
 }
 
 bool matchesFilter(const char* text, const char* filter) {
@@ -510,128 +523,6 @@ bool matchesFilter(const char* text, const char* filter) {
     return false;
 }
 
-namespace {
-
-struct EntityLabel {
-    const char* name;
-    EditorIcon  icon;
-};
-
-// One row per LightType, in order; the viewport marker wears the same glyph.
-constexpr EntityLabel LIGHT_LABELS[] = {
-    {"Dir Light",   EditorIcon::LightDir},
-    {"Point Light", EditorIcon::LightPoint},
-    {"Spot Light",  EditorIcon::LightSpot},
-    {"Rect Light",  EditorIcon::LightRect},
-    {"Disk Light",  EditorIcon::LightDisk},
-};
-static_assert(
-    std::size(LIGHT_LABELS) == static_cast<size_t>(LightType::Count),
-    "every light type needs a label and a glyph"
-);
-
-EntityLabel lightLabelOf(LightType type) {
-    const auto index = static_cast<size_t>(type);
-    return index < std::size(LIGHT_LABELS)
-        ? LIGHT_LABELS[index]
-        : EntityLabel{"Light", EditorIcon::LightPoint};
-}
-
-// Order is precedence. A Light answers by its type, and a Mesh carrying an
-// Animation reads "Animated Mesh" while keeping the plain mesh glyph.
-EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
-    // First: being a prefab constrains editing. Only the root holds PrefabInstance;
-    // PrefabEntity is on the whole subtree.
-    if (scene.has<PrefabInstance>(id)) return {"Prefab", EditorIcon::Prefab};
-    if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
-    if (const Light* light = scene.tryGet<Light>(id)) return lightLabelOf(light->type);
-    // Before Mesh: an Animator makes it the rig (its meshes are children); a socket likewise.
-    if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
-    if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
-    if (scene.has<Terrain>(id)) return {"Terrain", EditorIcon::Terrain};
-    if (scene.has<Mesh>(id)) {
-        if (scene.has<Animation>(id)) return {"Animated Mesh", EditorIcon::Mesh};
-        if (scene.has<LOD>(id))       return {"LOD Mesh",      EditorIcon::Mesh};
-        return {"Mesh", EditorIcon::Mesh};
-    }
-    if (scene.has<Animation>(id))        return {"Animation", EditorIcon::Anim};
-    if (scene.has<ReflectionProbe>(id))  return {"Probe",     EditorIcon::Probe};
-    if (scene.has<PlanarReflector>(id))  return {"Mirror",    EditorIcon::Probe};
-    if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
-    if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
-    if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
-    if (const AudioSource* source = scene.tryGet<AudioSource>(id)) {
-        return source->spatial
-            ? EntityLabel{"Sound",    EditorIcon::Audio}
-            : EntityLabel{"2D Sound", EditorIcon::Audio2D};
-    }
-    if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
-    if (scene.has<UISlider>(id))         return {"Slider",    EditorIcon::UISlider};
-    if (scene.has<UIToggle>(id))         return {"Toggle",    EditorIcon::UIToggle};
-    if (scene.has<UIChoice>(id))         return {"Choice",    EditorIcon::UIChoice};
-    if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
-    if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
-    if (scene.has<UIScroll>(id))         return {"Scroll",    EditorIcon::UIScroll};
-    if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};
-    if (scene.has<UICanvas>(id))         return {"Canvas",    EditorIcon::UICanvas};
-    if (scene.has<UIElement>(id))        return {"Widget",    EditorIcon::UIWidget};
-    // Below the visual rows: a crate keeps its mesh glyph; these catch what has no other face.
-    if (scene.has<CharacterController>(id)) return {"Character", EditorIcon::Character};
-    if (scene.has<Ragdoll>(id))          return {"Ragdoll",   EditorIcon::Ragdoll};
-    if (scene.has<Joint>(id))            return {"Jointed Body", EditorIcon::Joint};
-    if (scene.has<Collider>(id))         return {"Collider",  EditorIcon::Colliders};
-    if (scene.has<Rigidbody>(id))        return {"Body",      EditorIcon::Colliders};
-    return {"Entity", EditorIcon::Entity};
-}
-
-} // namespace
-
-void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize) {
-    const Name* name = scene.tryGet<Name>(id);
-    if (name && name->value[0] != '\0') {
-        snprintf(buf, bufSize, "%s", name->value);
-        return;
-    }
-    snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.slot());
-}
-
-namespace {
-// Shared by the reserved label space and the drawn icon.
-float rowIconRadius() { return ImGui::GetFontSize() * 0.52f; }
-
-// Leading spaces that clear the glyph; an optional id keeps ImGui ids stable when names collide.
-void iconPaddedLabel(char* out, size_t n, const char* name, const char* idStr) {
-    const float sw = ImGui::CalcTextSize(" ").x;
-    int pad = (sw > 0.0f)
-        ? static_cast<int>((rowIconRadius() * 2.0f + EditorStyle::px(6.0f)) / sw) + 1 : 4;
-    if (pad < 2)  pad = 2;
-    if (pad > 18) pad = 18;
-    char sp[20];
-    for (int i = 0; i < pad; ++i) sp[i] = ' ';
-    sp[pad] = '\0';
-    if (idStr) snprintf(out, n, "%s%s###%s", sp, name, idStr);
-    else       snprintf(out, n, "%s%s", sp, name);
-}
-void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
-    const float iconR = rowIconRadius();
-    drawEditorIcon(
-        ImGui::GetWindowDrawList(),
-        ic,
-        ImVec2(startX + iconR, rmin.y + rh * 0.5f),
-        iconR,
-        ImGui::GetColorU32(ImGuiCol_Text)
-    );
-}
-} // namespace
-
-EditorIcon entityIconKind(const Scene& scene, EntityId id) {
-    return entityLabelOf(scene, id).icon;
-}
-
-EditorIcon lightIcon(LightType type) {
-    return lightLabelOf(type).icon;
-}
-
 void inlineIcon(EditorIcon icon, float size, ImU32 color) {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(size, size));
@@ -644,47 +535,156 @@ void inlineIcon(EditorIcon icon, float size, ImU32 color) {
     );
 }
 
-bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags, EditorIcon icon, const char* name) {
-    char label[96];
-    iconPaddedLabel(label, sizeof(label), name, nullptr);
-    // Touching rows read as one list and fit more.
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_FramePadding,
-        ImVec2(ImGui::GetStyle().FramePadding.x, EditorStyle::px(3.0f))
-    );
-    ImGui::PushStyleVar(
-        ImGuiStyleVar_ItemSpacing,
-        ImVec2(ImGui::GetStyle().ItemSpacing.x, EditorStyle::px(1.0f))
-    );
-    const bool open = ImGui::TreeNodeEx(const_cast<void*>(idPtr), flags, "%s", label);
-    ImGui::PopStyleVar(2);
-    const ImVec2 rmin = ImGui::GetItemRectMin();
-    const float  rh   = ImGui::GetItemRectSize().y;
-    drawRowGlyph(icon, rmin.x + ImGui::GetTreeNodeToLabelSpacing(), rmin, rh);
+void cardNote(Note kind, const char* format, ...) {
+    const ImVec4 color = kind == Note::Danger ? EditorStyle::DANGER
+                           : kind == Note::Warning ? EditorStyle::WARNING
+                           : EditorStyle::TEXT_SECONDARY;
+    const EditorIcon icon = kind == Note::Danger ? EditorIcon::Error
+                           : kind == Note::Warning ? EditorIcon::Warning
+                           : EditorIcon::Info;
+    const float side = ImGui::GetTextLineHeight();
+    inlineIcon(icon, side, ImGui::GetColorU32(color));
+    ImGui::SameLine(0.0f, EditorStyle::px(4.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::PushTextWrapPos(0.0f);
+    va_list args;
+    va_start(args, format);
+    ImGui::TextV(format, args);
+    va_end(args);
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+}
+
+int searchComboRows(const std::vector<ComboRow>& rows) {
+    // One list is open at a time, so one search serves them all; each opening starts it empty.
+    static char s_search[64] = {};
+    const bool opening = ImGui::IsWindowAppearing();
+    if (opening) s_search[0] = '\0';
+    if (rows.size() > SEARCH_FROM) {
+        if (opening) ImGui::SetKeyboardFocusHere();
+        popupSearchField("##search", s_search, sizeof(s_search));
+    }
+    const bool narrowed = s_search[0] != '\0';
+    std::vector<int> shown;
+    shown.reserve(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (matchesFilter(rows[i].label.c_str(), s_search)) shown.push_back(static_cast<int>(i));
+    }
+
+    int picked = -1;
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(shown.size()));
+    while (clipper.Step()) {
+        for (int k = clipper.DisplayStart; k < clipper.DisplayEnd; ++k) {
+            const ComboRow& row = rows[static_cast<size_t>(shown[k])];
+            const float step    = EditorStyle::px(12.0f);
+            const float indent  = narrowed ? 0.0f : static_cast<float>(row.indent) * step;
+            ImGui::PushID(shown[k]);
+            if (indent > 0.0f) ImGui::Indent(indent);
+            if (row.dim) ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::TEXT_SECONDARY);
+            if (ImGui::Selectable(row.label.c_str(), row.selected)) picked = shown[k];
+            if (row.dim) ImGui::PopStyleColor();
+            if (row.tip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", row.tip);
+            if (indent > 0.0f) ImGui::Unindent(indent);
+            ImGui::PopID();
+        }
+    }
+    return picked;
+}
+
+bool foldRow(const char* label, bool& open) {
+    const char*  shown  = ImGui::FindRenderedTextEnd(label);
+    const ImVec2 at     = ImGui::GetCursorScreenPos();
+    const float  height = ImGui::GetFrameHeight();
+    const float  side   = ImGui::GetFontSize();
+    const float  gap    = EditorStyle::px(4.0f);
+    const float  text   = ImGui::CalcTextSize(label, shown).x;
+    const float  width  = side + gap + text + ImGui::GetStyle().FramePadding.x;
+    ImGui::PushID(label);
+    if (ImGui::InvisibleButton("##fold", ImVec2(width, height))) open = !open;
+    ImGui::PopID();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float midY = at.y + height * 0.5f;
+    const ImU32 ink = ImGui::GetColorU32(ImGui::IsItemHovered() ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    const EditorIcon chevron = open ? EditorIcon::ChevronDown : EditorIcon::ChevronRight;
+    drawEditorIcon(dl, chevron, ImVec2(at.x + side * 0.5f, midY), side * 0.32f, ink);
+    const ImVec2 textAt(at.x + side + gap, midY - ImGui::GetTextLineHeight() * 0.5f);
+    dl->AddText(textAt, ImGui::GetColorU32(ImGuiCol_Text), label, shown);
     return open;
 }
 
-bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut, bool enabled) {
-    char padded[96];
-    iconPaddedLabel(padded, sizeof(padded), label, nullptr);
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const bool pressed = ImGui::MenuItem(padded, shortcut, false, enabled);
-    drawRowGlyph(icon, p.x + EditorStyle::px(4.0f), p, ImGui::GetItemRectSize().y);
-    return pressed;
+bool beginFold(const char* label, bool defaultOpen) {
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const ImGuiID id = ImGui::GetID(label);
+    const bool was = storage->GetBool(id, defaultOpen);
+    bool open = was;
+    if (foldRow(label, open) != was) storage->SetBool(id, open);
+    if (!open) return false;
+    ImGui::PushID(label);
+    ImGui::Indent(cardIndent());
+    return true;
 }
 
-bool entitySelectable(const char* idStr, bool selected, EditorIcon icon, const char* name) {
-    char label[96];
-    iconPaddedLabel(label, sizeof(label), name, idStr);
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const bool clicked = ImGui::Selectable(label, selected);
-    drawRowGlyph(icon, p.x + EditorStyle::px(4.0f), p, ImGui::GetItemRectSize().y);
-    return clicked;
+void endFold() {
+    ImGui::Unindent(cardIndent());
+    ImGui::PopID();
+}
+
+ListRowResult listRow(
+    const char* id,
+    EditorIcon icon,
+    const char* label,
+    bool selected,
+    int depth,
+    bool hasChildren,
+    bool open,
+    bool linked
+) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float height = ImGui::GetFrameHeight();
+    const float side   = ImGui::GetFontSize();
+    const float gap    = EditorStyle::px(4.0f);
+    const float left   = style.FramePadding.x + static_cast<float>(depth) * style.IndentSpacing;
+    const float textX  = left + (side + gap) * 2.0f;
+
+    // The row spans the window to the pointer; its own size is its content, so a popup fits it.
+    ImGui::PushID(id);
+    if (selected) ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImGui::GetStyleColorVec4(ImGuiCol_Header));
+    const ImVec2 size(textX + ImGui::CalcTextSize(label).x + style.FramePadding.x, height);
+    // Overlap allowed: a row's own buttons (the Hierarchy's eye and lock) sit on it.
+    const ImGuiSelectableFlags flags = ImGuiSelectableFlags_SpanAvailWidth
+        | ImGuiSelectableFlags_AllowOverlap;
+    const bool clicked = ImGui::Selectable("##row", selected, flags, size);
+    if (selected) ImGui::PopStyleColor();
+    ImGui::PopID();
+
+    ListRowResult result;
+    const float chevronMin = at.x + left;
+    const float pointerX   = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left].x;
+    const bool  onChevron  = hasChildren && pointerX >= chevronMin && pointerX < chevronMin + side + gap;
+    result.toggled = clicked && onChevron;
+    result.clicked = clicked && !onChevron;
+
+    ImDrawList* dl   = ImGui::GetWindowDrawList();
+    const float midY = at.y + height * 0.5f;
+    if (hasChildren) {
+        const EditorIcon chevron = open ? EditorIcon::ChevronDown : EditorIcon::ChevronRight;
+        const ImVec2     center(chevronMin + side * 0.5f, midY);
+        drawEditorIcon(dl, chevron, center, side * 0.32f, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+    }
+    const ImVec2 iconCenter(at.x + left + side + gap + side * 0.5f, midY);
+    const ImU32 ink     = ImGui::GetColorU32(ImGuiCol_Text);
+    const ImU32 iconInk = linked ? ImGui::GetColorU32(EditorStyle::ACCENT) : ink;
+    drawEditorIcon(dl, icon, iconCenter, side * 0.42f, iconInk);
+    dl->AddText(ImVec2(at.x + textX, midY - ImGui::GetTextLineHeight() * 0.5f), ink, label);
+    return result;
 }
 
 bool drawEngineMark(EditorRenderHooks& hooks, float side) {
     const GpuTextureId mark = hooks.chromeImage(
-        (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string()
+        (Roots::engineAssets() / "logo" / "vkm_engine_mark.png").string()
     );
     if (!mark) return false;
     // The UVs flip because the decode is bottom-up and ImGui's are not.
