@@ -1,20 +1,17 @@
-#include "ui/editor_icons.h"
+#include "ui/style/editor_icons.h"
 
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
 
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
 ImFont* g_iconFont = nullptr;
-
-// Entity marker disc: translucent, to lift the glyph off a bright sky without hiding geometry.
-constexpr ImU32 MARKER_DISC_COL = IM_COL32(15, 15, 18, 180);
 
 // EditorIcon -> Lucide codepoint (lucide-static font/info.json); the trailing 0 catches an out-of-range cast.
 ImWchar iconCodepoint(EditorIcon icon) {
@@ -62,8 +59,6 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::UIToggle:   return 0xe18c;  // toggle-right
         case EditorIcon::UIChoice:   return 0xe293;  // chevrons-left-right
         case EditorIcon::UIButton:   return 0xe202;  // square-mouse-pointer
-        case EditorIcon::LightRect:  return 0xe376;  // rectangle-horizontal
-        case EditorIcon::LightDisk:  return 0xe0af;  // disc
         case EditorIcon::Cube:       return 0xe061;  // box
         case EditorIcon::Sphere:     return 0xe076;  // circle
         case EditorIcon::Plane:      return 0xe167;  // square
@@ -88,6 +83,31 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Flatten:    return 0xe43c;  // fold-vertical
         case EditorIcon::Paint:      return 0xe2e7;  // paintbrush
         case EditorIcon::Plants:     return 0xe1eb;  // sprout
+        case EditorIcon::Info:       return 0xe0f9;  // info
+        case EditorIcon::Warning:    return 0xe193;  // alert-triangle
+        case EditorIcon::Error:      return 0xe084;  // circle-x
+        case EditorIcon::Check:      return 0xe07c;  // check-circle
+        case EditorIcon::More:       return 0xe0b7;  // ellipsis-vertical
+        case EditorIcon::Search:     return 0xe151;  // search
+        case EditorIcon::Copy:       return 0xe09e;  // copy
+        case EditorIcon::Terminal:   return 0xe181;  // terminal
+        case EditorIcon::ArrowDown:  return 0xe042;  // arrow-down
+        case EditorIcon::ArrowUp:    return 0xe04a;  // arrow-up
+        case EditorIcon::ChevronDown:  return 0xe06d;  // chevron-down
+        case EditorIcon::ChevronRight: return 0xe06f;  // chevron-right
+        case EditorIcon::Ellipsis:   return 0xe0b6;  // ellipsis
+        case EditorIcon::Weight:     return 0xe530;  // weight
+        case EditorIcon::Script:     return 0xe0c3;  // file-code
+        case EditorIcon::Levels:     return 0xe52a;  // layers-2
+        case EditorIcon::Water:      return 0xe283;  // waves-horizontal
+        case EditorIcon::Fog:        return 0xe214;  // cloud-fog
+        case EditorIcon::NetLocal:   return 0xe45d;  // unplug
+        case EditorIcon::Grid:       return 0xe0e9;  // grid-3x3
+        case EditorIcon::Eye:        return 0xe0ba;  // eye
+        case EditorIcon::EyeOff:     return 0xe0bb;  // eye-off
+        case EditorIcon::Lock:       return 0xe10b;  // lock
+        case EditorIcon::LockOpen:   return 0xe10c;  // lock-open
+        case EditorIcon::None:       break;
     }
     return 0;
 }
@@ -105,11 +125,12 @@ void encodeUtf8(ImWchar cp, char out[5]) {
 
 bool loadEditorIconFont(const char* path) {
     ImGuiIO& io = ImGui::GetIO();
-    g_iconFont  = io.Fonts->AddFontFromFileTTF(path, EditorStyle::REFERENCE_FONT_SIZE);
+    g_iconFont = io.Fonts->AddFontFromFileTTF(path, EditorStyle::REFERENCE_FONT_SIZE);
     return g_iconFont != nullptr;
 }
 
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col) {
+    if (icon == EditorIcon::None) return;
     if (g_iconFont) {
         if (const ImWchar cp = iconCodepoint(icon)) {
             // Lucide art fills ~20/24 of its em; 2.3r fills the caller's (c, r) frame.
@@ -117,9 +138,9 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             char txt[5];
             encodeUtf8(cp, txt);
 
-            // Centre on the glyph's bounds, not the em box: icon fonts hang art off the baseline.
+            // Center on the glyph's bounds, not the em box: icon fonts hang art off the baseline.
             ImVec2 pos;
-            ImFontBaked* baked = g_iconFont->GetFontBaked(sz);
+            ImFontBaked* baked   = g_iconFont->GetFontBaked(sz);
             const ImFontGlyph* g = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(cp)) : nullptr;
             if (g) {
                 pos = ImVec2(
@@ -147,11 +168,6 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         0,
         th
     );
-}
-
-void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col) {
-    dl->AddCircleFilled(center, entityMarkerHitRadius(), MARKER_DISC_COL, 16);
-    drawEditorIcon(dl, icon, center, entityMarkerRadius() * 0.85f, col);
 }
 
 bool iconButton(

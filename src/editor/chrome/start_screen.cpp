@@ -1,24 +1,22 @@
-#include "panels/start_screen.h"
+#include "chrome/start_screen.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <filesystem>
-#include <functional>
 #include <string>
 
 #include <imgui.h>
-#include <nlohmann/json.hpp>
 
 #include "editor_context.h"
+#include "editor_settings.h"
 #include "editor_state.h"
-#include "io/json_file.h"
-#include "io/project.h"
-#include "io/project_paths.h"
+#include "io/project/project.h"
+#include "io/project/roots.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_dialogs.h"
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace fs = std::filesystem;
@@ -27,26 +25,16 @@ namespace Vkm::Engine {
 
 namespace {
 
+constexpr double RECENTS_LOOKED_AT = 1.0;  ///< Seconds between looks at the recent projects' folders.
+
 using EditorStyle::px;
 
-/// Opaque enough to read on: the sky shows around the panel, not through it.
-const ImVec4 PANEL_BG = ImVec4(0.095f, 0.100f, 0.120f, 0.97f);
+const ImVec4 PANEL_BG = ImVec4(EditorStyle::GAP.x, EditorStyle::GAP.y, EditorStyle::GAP.z, 0.97f);
+    ///< Opaque enough to read on: the sky shows around the panel, not through it.
 
-/// What the sky is dimmed by, darker towards the bottom where the horizon is brightest.
-constexpr ImU32 SCRIM_TOP_U32    = IM_COL32(8, 9, 12, 120);
+constexpr ImU32 SCRIM_TOP_U32    = IM_COL32(8, 9, 12, 120);  ///< What the sky is dimmed by, darker towards
+                                                             ///< the bottom where the horizon is brightest.
 constexpr ImU32 SCRIM_BOTTOM_U32 = IM_COL32(8, 9, 12, 215);
-
-/// A row's avatar is coloured by the project's name, so a list scans by colour as well as by word.
-const ImVec4* const AVATAR_COLOURS[] = {
-    &EditorStyle::Accent::PREFAB,
-    &EditorStyle::Accent::MESH,
-    &EditorStyle::Accent::LIGHT,
-    &EditorStyle::Accent::CAMERA,
-    &EditorStyle::Accent::ANIM,
-    &EditorStyle::Accent::SCRIPT,
-    &EditorStyle::Accent::UI,
-    &EditorStyle::Accent::ENV
-};
 
 /// One project row: two lines of text and the air around them.
 float rowHeight() { return ImGui::GetTextLineHeight() * 2.0f + px(18.0f); }
@@ -54,18 +42,17 @@ float rowHeight() { return ImGui::GetTextLineHeight() * 2.0f + px(18.0f); }
 /**
  * @brief When this project was last open in the editor, in words.
  *
- * The timestamp of editor_settings.json, written as the editor leaves; a project never
- * closed cleanly has none.
+ * Read off editor_settings.json, written as the editor leaves; a project never closed cleanly has none.
  *
  * @param root Project directory.
  * @return A phrase like "3 hours ago", or empty when there is nothing to read.
  */
 std::string lastOpened(const fs::path& root) {
     std::error_code ec;
-    const auto stamp = fs::last_write_time(root / "editor_settings.json", ec);
+    const auto stamp = fs::last_write_time(EditorSettings::pathIn(root), ec);
     if (ec) return {};
 
-    const auto age = fs::file_time_type::clock::now() - stamp;
+    const auto age     = fs::file_time_type::clock::now() - stamp;
     const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(age).count();
     if (minutes < 1)   return "just now";
     if (minutes < 60)  return std::to_string(minutes) + (minutes == 1 ? " minute ago" : " minutes ago");
@@ -113,36 +100,33 @@ Project describe(const fs::path& root) {
 }
 
 /**
- * @brief A rounded square holding the name's first letter.
+ * @brief A rounded tile with @p name's first letter: a project's avatar, or an example's missing picture.
  *
  * @param dl Draw list to append to.
  * @param min Top-left corner.
- * @param side Side length in pixels.
- * @param name The project's name, which picks the colour and the letter.
+ * @param size Its width and height, in pixels.
+ * @param name The project's name, whose first letter it shows.
  * @param dim Whether the project is missing.
  */
-void drawAvatar(ImDrawList* dl, ImVec2 min, float side, const std::string& name, bool dim) {
-    const size_t pick = std::hash<std::string>{}(name) % std::size(AVATAR_COLOURS);
-    const ImVec4& colour = *AVATAR_COLOURS[pick];
-    dl->AddRectFilled(
-        min,
-        ImVec2(min.x + side, min.y + side),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, dim ? 0.10f : 0.24f)),
-        px(6.0f)
-    );
+void drawLetterTile(ImDrawList* dl, ImVec2 min, ImVec2 size, const std::string& name, bool dim) {
+    const float alpha  = dim ? 0.45f : 1.0f;
+    const ImVec4& fill = EditorStyle::PRESSED;
+    const ImVec2  max(min.x + size.x, min.y + size.y);
+    dl->AddRectFilled(min, max, ImGui::GetColorU32(ImVec4(fill.x, fill.y, fill.z, alpha)), px(6.0f));
 
     const auto first = std::find_if(name.begin(), name.end(), [](char c) { return std::isalnum(c) != 0; });
     const char letter[2] = {
         first == name.end() ? '?' : static_cast<char>(std::toupper(static_cast<unsigned char>(*first))),
         '\0'
     };
-    const float size = ImGui::GetFontSize() * 1.25f;
-    const ImVec2 extent = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, letter);
+    const float  height = std::min(size.x, size.y) * 0.5f;
+    const ImVec2 extent = ImGui::GetFont()->CalcTextSizeA(height, FLT_MAX, 0.0f, letter);
+    const ImVec4& ink   = EditorStyle::TEXT_SECONDARY;
     dl->AddText(
         ImGui::GetFont(),
-        size,
-        ImVec2(min.x + (side - extent.x) * 0.5f, min.y + (side - extent.y) * 0.5f),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, dim ? 0.45f : 1.0f)),
+        height,
+        ImVec2(min.x + (size.x - extent.x) * 0.5f, min.y + (size.y - extent.y) * 0.5f),
+        ImGui::GetColorU32(ImVec4(ink.x, ink.y, ink.z, alpha)),
         letter
     );
 }
@@ -152,31 +136,28 @@ void drawAvatar(ImDrawList* dl, ImVec2 min, float side, const std::string& name,
  *
  * @param dl Draw list to append to.
  * @param right Its right edge.
- * @param centreY The line it sits on.
+ * @param centerY The line it sits on.
  * @param text What it says.
- * @param colour Its text, and a faint fill of the same.
+ * @param color Its text, and a faint fill of the same.
  * @return Its width.
  */
-float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, const ImVec4& colour) {
+float drawBadge(ImDrawList* dl, float right, float centerY, const char* text, const ImVec4& color) {
     const ImVec2 size = ImGui::CalcTextSize(text);
-    const float padX = px(7.0f);
-    const float h = size.y + px(4.0f);
-    const ImVec2 min(right - size.x - padX * 2.0f, centreY - h * 0.5f);
+    const float padX  = px(7.0f);
+    const float h     = size.y + px(4.0f);
+    const ImVec2 min(right - size.x - padX * 2.0f, centerY - h * 0.5f);
     dl->AddRectFilled(
         min,
         ImVec2(right, min.y + h),
-        ImGui::GetColorU32(ImVec4(colour.x, colour.y, colour.z, 0.16f)),
+        ImGui::GetColorU32(ImVec4(color.x, color.y, color.z, 0.16f)),
         h * 0.5f
     );
-    dl->AddText(ImVec2(min.x + padX, min.y + px(2.0f)), ImGui::GetColorU32(colour), text);
+    dl->AddText(ImVec2(min.x + padX, min.y + px(2.0f)), ImGui::GetColorU32(color), text);
     return size.x + padX * 2.0f;
 }
 
 /**
- * @brief One selectable project row: avatar, name and path, and a note and badge at the right.
- *
- * An empty selectable with text drawn over it. The tooltip and @p menu are raised here,
- * while the row is still ImGui's last item.
+ * @brief One selectable project row: avatar, name and @p detail, and @p note and @p badge at the right.
  *
  * @tparam Menu Callable raising the row's context menu, invoked with no arguments.
  * @param id Unique widget id for the row.
@@ -184,7 +165,7 @@ float drawBadge(ImDrawList* dl, float right, float centreY, const char* text, co
  * @param detail Second line, dim: the path, or what the project is.
  * @param note Right-aligned, dim, or empty for none.
  * @param badge Right-aligned pill, or nullptr for none.
- * @param badgeColour The pill's colour.
+ * @param badgeColor The pill's color.
  * @param dim Whether the whole row is drawn faint, for a project that is gone.
  * @param menu Raises the context menu while the row is still the last item.
  * @return Whether the row was clicked.
@@ -196,7 +177,7 @@ bool projectRow(
     const std::string& detail,
     const std::string& note,
     const char* badge,
-    const ImVec4& badgeColour,
+    const ImVec4& badgeColor,
     bool dim,
     Menu&& menu
 ) {
@@ -212,19 +193,19 @@ bool projectRow(
     // Draw list, not the cursor: SetCursorScreenPos would leave the layout misplaced.
     const ImVec2 mn = ImGui::GetItemRectMin();
     const ImVec2 mx = ImGui::GetItemRectMax();
-    ImDrawList*  dl = ImGui::GetWindowDrawList();
-    const float  lineH   = ImGui::GetTextLineHeight();
-    const float  centreY = (mn.y + mx.y) * 0.5f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float lineH   = ImGui::GetTextLineHeight();
+    const float centerY = (mn.y + mx.y) * 0.5f;
 
     const float side = rowHeight() - px(14.0f);
-    drawAvatar(dl, ImVec2(mn.x + px(6.0f), centreY - side * 0.5f), side, name, dim);
+    drawLetterTile(dl, ImVec2(mn.x + px(6.0f), centerY - side * 0.5f), ImVec2(side, side), name, dim);
 
     float right = mx.x - px(10.0f);
-    if (badge) right -= drawBadge(dl, right, centreY, badge, badgeColour) + px(10.0f);
+    if (badge) right -= drawBadge(dl, right, centerY, badge, badgeColor) + px(10.0f);
     if (!note.empty()) {
         const ImVec2 size = ImGui::CalcTextSize(note.c_str());
         dl->AddText(
-            ImVec2(right - size.x, centreY - size.y * 0.5f),
+            ImVec2(right - size.x, centerY - size.y * 0.5f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled),
             note.c_str()
         );
@@ -233,9 +214,9 @@ bool projectRow(
 
     const float textX = mn.x + side + px(18.0f);
     const float textW = right - textX;
-    const float top   = centreY - lineH;
-    const ImVec4& nameColour = ImGui::GetStyleColorVec4(dim ? ImGuiCol_TextDisabled : ImGuiCol_Text);
-    dl->AddText(ImVec2(textX, top), ImGui::GetColorU32(nameColour), elidedLine(name.c_str(), textW).c_str());
+    const float top   = centerY - lineH;
+    const ImVec4& nameColor = ImGui::GetStyleColorVec4(dim ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+    dl->AddText(ImVec2(textX, top), ImGui::GetColorU32(nameColor), elidedLine(name.c_str(), textW).c_str());
     dl->AddText(
         ImVec2(textX, top + lineH),
         ImGui::GetColorU32(ImGuiCol_TextDisabled),
@@ -244,31 +225,20 @@ bool projectRow(
     return clicked;
 }
 
-/**
- * @brief Stamp a project for this engine, touching no other key of its project.json.
- *
- * @param root Project directory.
- * @return Whether the file was rewritten.
- */
-bool moveToThisEngine(const fs::path& root) {
-    const fs::path file = root / "project.json";
-    nlohmann::json doc;
-    if (!detail::readJsonFile(file, doc, "project") || !doc.is_object()) return false;
-    doc["engineVersion"] = APP_VERSION;
-    return detail::writeJsonFile(file, doc, "project");
-}
-
 } // namespace
 
 void StartScreen::syncRecent(const std::vector<std::string>& roots) {
     if (roots == m_recentRoots) return;
 
     m_recentRoots = roots;
+    m_seenAt      = -1.0;
     m_recent.clear();
     m_recent.reserve(roots.size());
     for (const std::string& root : roots) {
         const Project project = describe(root);
-        m_recent.push_back({root, pathKey(root), project.name, project.description, project.engineVersion});
+        m_recent.push_back(
+            {root, pathKey(root), project.name, project.description, {}, project.engineVersion, false, {}}
+        );
     }
 }
 
@@ -277,21 +247,27 @@ void StartScreen::scanExamples() {
     m_examplesScanned = true;
 
     std::error_code ec;
-    const fs::path dir = ProjectPaths::engineRoot() / "examples";
+    const fs::path dir = Roots::engineRoot() / "examples";
     if (!fs::is_directory(dir, ec)) return;
 
     // Stepped by hand: a range-for's error_code covers only the constructor, and a step throws.
     for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         std::error_code entryEc;
         if (!it->is_directory(entryEc)) continue;
-        if (!fs::exists(it->path() / "project.json", entryEc)) continue;
+        if (!isProjectRoot(it->path())) continue;
         const Project project = describe(it->path());
+        const fs::path root   = it->path();
+        std::string picture;
+        if (!project.picture.empty()) picture = (root / project.picture).string();
         m_examples.push_back({
             it->path().string(),
             pathKey(it->path()),
             project.name,
             project.description,
-            project.engineVersion
+            picture,
+            project.engineVersion,
+            false,
+            {}
         });
     }
     std::sort(
@@ -305,6 +281,14 @@ void StartScreen::draw(EditorContext& ec) {
     EditorState& state = ec.state;
 
     syncRecent(state.recentProjects);
+    // Looked at again now and then, not each frame: a folder moved or made shows within a second.
+    if (ImGui::GetTime() - m_seenAt >= RECENTS_LOOKED_AT || m_seenAt < 0.0) {
+        m_seenAt = ImGui::GetTime();
+        for (Entry& entry : m_recent) {
+            entry.missing = !isProjectRoot(entry.root);
+            entry.opened  = entry.missing ? std::string{} : lastOpened(entry.root);
+        }
+    }
     scanExamples();
 
     // The sky stays, dimmed under the panel so the text reads.
@@ -366,10 +350,12 @@ void StartScreen::draw(EditorContext& ec) {
                 ImGui::EndTabItem();
             }
             std::snprintf(label, sizeof(label), "Examples  %zu###examples", m_examples.size());
-            const ImGuiTabItemFlags select = m_showExamples ? ImGuiTabItemFlags_SetSelected : 0;
-            m_showExamples = false;
+            // With nothing of one's own yet, the examples are where to start.
+            const bool lead = m_recent.empty() && !m_examplesLed;
+            m_examplesLed  |= lead;
+            const ImGuiTabItemFlags select = lead ? ImGuiTabItemFlags_SetSelected : 0;
             if (ImGui::BeginTabItem(label, nullptr, select)) {
-                drawExamples(state);
+                drawExamples(ec);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -383,8 +369,8 @@ void StartScreen::draw(EditorContext& ec) {
 
 void StartScreen::drawHeader(EditorContext& ec, float width) {
     EditorState& state = ec.state;
-    const float top  = ImGui::GetCursorPosY();
-    const float side = ImGui::GetTextLineHeight() * 2.6f;
+    const float top    = ImGui::GetCursorPosY();
+    const float side   = ImGui::GetTextLineHeight() * 2.6f;
 
     if (drawEngineMark(ec.hooks, side)) ImGui::SameLine(0.0f, px(14.0f));
 
@@ -402,14 +388,13 @@ void StartScreen::drawHeader(EditorContext& ec, float width) {
     const float  y    = top + (side - button.y) * 0.5f;
     ImGui::SameLine(left);
     ImGui::SetCursorPosY(y);
-    if (ImGui::Button("Open...", button)) state.requestOpenProject = true;
+    if (ImGui::Button("Open...", button)) state.requests.ask(Ask::OpenProject);
     ImGui::SameLine(left + button.x + gap);
     ImGui::SetCursorPosY(y);
     ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
     if (ImGui::Button("New Project", button)) {
-        state.newProjectTemplate.clear();
-        state.requestNewProject = true;
+        state.requests.ask(NewProject{});
     }
     ImGui::PopStyleColor(2);
     ImGui::SetCursorPosY(top + side);
@@ -419,24 +404,11 @@ void StartScreen::drawProjects(EditorState& state) {
     ImGui::Spacing();
 
     if (m_recent.empty()) {
-        ImGui::Dummy(ImVec2(0.0f, px(40.0f)));
-        const char* headline = "No projects yet";
-        const char* detail   = "Make one with New Project, or start from a copy of an example.";
-        centreNextItem(ImGui::CalcTextSize(headline).x);
-        sectionLabel(headline);
-        centreNextItem(ImGui::CalcTextSize(detail).x);
-        ImGui::TextDisabled("%s", detail);
-        if (!m_examples.empty()) {
-            ImGui::Spacing();
-            const ImVec2 button(px(160.0f), px(30.0f));
-            centreNextItem(button.x);
-            if (ImGui::Button("Browse Examples", button)) m_showExamples = true;
-        }
+        ImGui::TextDisabled("No projects yet: New Project makes one, or start from an example.");
         return;
     }
 
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##filter", "Search by name or folder", m_filter, sizeof(m_filter));
+    searchField("##filter", m_filter, sizeof(m_filter), -FLT_MIN, "Search by name or folder");
     ImGui::Spacing();
 
     const bool listed = ImGui::BeginChild(
@@ -455,11 +427,10 @@ void StartScreen::drawProjects(EditorState& state) {
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(1.0f, 1.0f, 1.0f, 0.09f));
 
     // Found ones first, in the recents' order; the gone ones after, faint, until removed.
-    std::error_code ec;
     int shown = 0;
     for (const bool wantMissing : {false, true}) {
         for (const Entry& entry : m_recent) {
-            const bool missing = !fs::exists(fs::path(entry.root) / "project.json", ec);
+            const bool missing = entry.missing;
             if (missing != wantMissing) continue;
             const bool matches = matchesFilter(entry.name.c_str(), m_filter)
                 || matchesFilter(entry.root.c_str(), m_filter);
@@ -471,10 +442,10 @@ void StartScreen::drawProjects(EditorState& state) {
                 if (!ImGui::BeginPopupContextItem("##row")) return;
                 if (ImGui::MenuItem("Open", nullptr, false, !missing)) {
                     if (movable) {
-                        m_moving = entry;
+                        m_moving   = entry;
                         m_moveOpen = true;
                     } else {
-                        state.requestSceneAction(EditorState::SceneAction::OpenProject, entry.root);
+                        state.sceneActions.request(SceneActions::Kind::OpenProject, entry.root);
                     }
                 }
                 if (ImGui::MenuItem("Copy Path")) ImGui::SetClipboardText(entry.root.c_str());
@@ -486,10 +457,10 @@ void StartScreen::drawProjects(EditorState& state) {
             };
 
             std::string badge;
-            ImVec4 badgeColour = EditorStyle::WARNING;
+            ImVec4 badgeColor = EditorStyle::WARNING;
             if (missing) {
-                badge = "Not found";
-                badgeColour = EditorStyle::DANGER;
+                badge      = "Not found";
+                badgeColor = EditorStyle::DANGER;
             } else if (movable) {
                 badge = "Made for " + entry.engineVersion;
             }
@@ -499,9 +470,9 @@ void StartScreen::drawProjects(EditorState& state) {
                 "##recent",
                 entry.name,
                 entry.root,
-                missing ? std::string{} : lastOpened(entry.root),
+                entry.opened,
                 badge.empty() ? nullptr : badge.c_str(),
-                badgeColour,
+                badgeColor,
                 missing,
                 menu
             );
@@ -509,10 +480,10 @@ void StartScreen::drawProjects(EditorState& state) {
 
             if (!clicked || missing) continue;
             if (movable) {
-                m_moving = entry;
+                m_moving   = entry;
                 m_moveOpen = true;
             } else {
-                state.requestSceneAction(EditorState::SceneAction::OpenProject, entry.root);
+                state.sceneActions.request(SceneActions::Kind::OpenProject, entry.root);
             }
         }
     }
@@ -521,7 +492,8 @@ void StartScreen::drawProjects(EditorState& state) {
     ImGui::EndChild();
 }
 
-void StartScreen::drawExamples(EditorState& state) {
+void StartScreen::drawExamples(EditorContext& ec) {
+    EditorState& state = ec.state;
     ImGui::Spacing();
     if (m_examples.empty()) {
         ImGui::TextDisabled("This engine ships no examples.");
@@ -541,48 +513,55 @@ void StartScreen::drawExamples(EditorState& state) {
         return;
     }
 
+    // A 16:9 picture across each card's top, then its name, what it is and the way in.
     const float width   = ImGui::GetContentRegionAvail().x;
     const float gap     = px(12.0f);
-    const int   columns = width >= px(780.0f) ? 3 : 2;
-    const float  across = static_cast<float>(columns);
-    const ImVec2 card((width - gap * (across - 1.0f)) / across, px(176.0f));
+    const int columns   = width >= px(780.0f) ? 3 : 2;
+    const float across  = static_cast<float>(columns);
+    const float cardW   = (width - gap * (across - 1.0f)) / across;
+    const float pad     = px(14.0f);
+    const float picture = std::floor(cardW * 9.0f / 16.0f);
+    const ImVec2 card(cardW, picture + px(140.0f));
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::CARD_HEADER);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::RAISED);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, px(8.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14.0f), px(14.0f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, pad));
     for (size_t i = 0; i < m_examples.size(); ++i) {
         const Entry& entry = m_examples[i];
         if (i % static_cast<size_t>(columns) != 0) ImGui::SameLine(0.0f, gap);
 
         ImGui::PushID(entry.root.c_str());
-        if (ImGui::BeginChild(
-                "##card",
-                card,
-                ImGuiChildFlags_AlwaysUseWindowPadding,
-                ImGuiWindowFlags_NoScrollbar
-            )) {
-            const float side = ImGui::GetTextLineHeight() * 1.8f;
-            drawAvatar(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), side, entry.name, false);
-            ImGui::Dummy(ImVec2(side, side));
-            ImGui::SameLine(0.0f, px(10.0f));
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (side - ImGui::GetTextLineHeight()) * 0.5f);
+        if (ImGui::BeginChild("##card", card, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
+            ImDrawList*  dl  = ImGui::GetWindowDrawList();
+            const ImVec2 top = ImGui::GetWindowPos();
+            const ImVec2 end(top.x + cardW, top.y + picture);
+            const GpuTextureId shown = entry.picture.empty() ? 0 : ec.hooks.chromeImage(entry.picture);
+            if (shown) {
+                // The UVs flip because the decode is bottom-up and ImGui's are not.
+                const ImU32 white = IM_COL32_WHITE;
+                const float round = px(8.0f);
+                const ImDrawFlags corners = ImDrawFlags_RoundCornersTop;
+                const ImVec2 uvTop(0.0f, 1.0f);
+                const ImVec2 uvEnd(1.0f, 0.0f);
+                dl->AddImageRounded(imTexture(shown), top, end, uvTop, uvEnd, white, round, corners);
+            } else {
+                drawLetterTile(dl, top, ImVec2(cardW, picture), entry.name, false);
+            }
+            ImGui::SetCursorPosY(picture + pad);
             sectionLabel(entry.name.c_str());
-
-            ImGui::Spacing();
             ImGui::PushTextWrapPos(0.0f);
             const std::string& about = entry.description.empty() ? entry.root : entry.description;
             ImGui::TextDisabled("%s", about.c_str());
             ImGui::PopTextWrapPos();
 
-            // Tinted, as the card's colour would swallow a plain button.
-            const float buttonH = px(28.0f);
-            const ImVec4& accent = EditorStyle::ACCENT;
-            ImGui::SetCursorPosY(card.y - buttonH - px(14.0f));
+            // Tinted, as the card's color would swallow a plain button.
+            const float   buttonH = px(28.0f);
+            const ImVec4& accent  = EditorStyle::ACCENT;
+            ImGui::SetCursorPos(ImVec2(pad, card.y - buttonH - pad));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(accent.x, accent.y, accent.z, 0.22f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(accent.x, accent.y, accent.z, 0.45f));
-            if (ImGui::Button("New Project from This", ImVec2(-FLT_MIN, buttonH))) {
-                state.newProjectTemplate = entry.root;
-                state.requestNewProject  = true;
+            if (ImGui::Button("New Project from This", ImVec2(cardW - pad * 2.0f, buttonH))) {
+                state.requests.ask(NewProject{entry.root});
             }
             ImGui::PopStyleColor(2);
         }
@@ -613,11 +592,11 @@ void StartScreen::drawMoveDialog(EditorState& state) {
     ImGui::Spacing();
 
     if (dialogButtons(m_moveOpen, "Move and Open") == DialogResult::Confirm) {
-        if (moveToThisEngine(m_moving.root)) {
+        if (saveProjectEngine(m_moving.root)) {
             m_recentRoots.clear();   // Re-read, so the row loses its badge.
-            state.requestSceneAction(EditorState::SceneAction::OpenProject, m_moving.root);
+            state.sceneActions.request(SceneActions::Kind::OpenProject, m_moving.root);
         } else {
-            state.pushToast(ToastKind::Error, "Could not write " + m_moving.root + "/project.json");
+            state.toasts.push(ToastKind::Error, "Could not write " + m_moving.root + "/project.json");
         }
     }
     endDialog();

@@ -11,9 +11,8 @@ struct EditorState;
 /**
  * @brief What the editor shows when no project is open: the projects you have, and the examples.
  *
- * One panel over a dimmed sky. Projects lists the recents, newest first, flags one made
- * for an engine this one cannot build, and offers to move it; Examples offers a copy of
- * each shipped example through the New Project dialog, so the original stays as shipped.
+ * A project made for an engine this one cannot build is flagged and offered a move. An example
+ * opens as a copy, through the New Project dialog, so the original stays as shipped.
  */
 class StartScreen {
     public:
@@ -35,13 +34,18 @@ class StartScreen {
         void draw(EditorContext& ec);
 
     private:
-        /// One project as the screen shows it, read from its project.json.
+        /**
+         * @brief One project as the screen shows it, read from its project.json.
+         */
         struct Entry {
-            std::string root;            ///< As stored and shown.
-            std::string key;             ///< Resolved, so two spellings compare equal.
-            std::string name;            ///< Project::name, or the directory's if unreadable.
-            std::string description;     ///< Project::description.
-            std::string engineVersion;   ///< Project::engineVersion.
+            std::string root;             ///< As stored and shown.
+            std::string key;              ///< Resolved, so two spellings compare equal.
+            std::string name;             ///< Project::name, or the directory's if unreadable.
+            std::string description;      ///< Project::description.
+            std::string picture;          ///< Project::picture, resolved against its root; empty for none.
+            std::string engineVersion;    ///< Project::engineVersion.
+            bool        missing = false;  ///< Its folder holds no project now (seen at m_seenAt).
+            std::string opened;           ///< When it was last opened, as shown (seen at m_seenAt).
         };
 
         /**
@@ -70,11 +74,11 @@ class StartScreen {
         void drawProjects(EditorState& state);
 
         /**
-         * @brief The Examples tab: a card per example, each making a copy.
+         * @brief The Examples tab: a card per example, its picture over it, each making a copy.
          *
-         * @param state Receives the New Project request.
+         * @param ec Loads the pictures, and receives the New Project request.
          */
-        void drawExamples(EditorState& state);
+        void drawExamples(EditorContext& ec);
 
         /**
          * @brief The question a project made for another engine raises before it opens.
@@ -85,15 +89,16 @@ class StartScreen {
 
     private:
         std::vector<Entry>       m_recent;
-        std::vector<std::string> m_recentRoots;   ///< What m_recent was built from.
+        std::vector<std::string> m_recentRoots;    ///< What m_recent was built from.
+        double                   m_seenAt = -1.0;  ///< When the recents' folders were last looked at.
 
         std::vector<Entry> m_examples;
         bool               m_examplesScanned = false;
 
         char  m_filter[128] = {};
-        bool  m_showExamples = false;   ///< Selects the Examples tab on the next frame.
-        Entry m_moving;                 ///< The project the move dialog asks about.
-        bool  m_moveOpen = false;
+        bool  m_examplesLed = false;  ///< Examples were brought forward for a start with no projects.
+        Entry m_moving;               ///< The project the move dialog asks about.
+        bool  m_moveOpen    = false;
 };
 
 } // namespace Vkm::Engine

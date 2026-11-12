@@ -2,20 +2,21 @@
 
 namespace Vkm::Engine {
 
+class ConsolePanel;
 struct EditorContext;
 
 /**
- * @brief The editor's bottom status bar.
+ * @brief The editor's bottom status bar, which remembers nothing.
  *
- * A readout of the unsaved-changes dot, the selection (parent breadcrumb +
- * position) and the build banner; it remembers nothing.
+ * The selection's breadcrumb on the left; on the right the errors and the warnings, each a click
+ * from its Console view, and the frame rate.
  */
 namespace EditorStatusBar {
 
 /**
  * @brief How tall the bar draws.
  *
- * Only meaningful inside an ImGui frame; it is built from a font metric.
+ * Only inside an ImGui frame, as it reads a font metric.
  *
  * @return Height in screen pixels.
  */
@@ -24,9 +25,10 @@ float height();
 /**
  * @brief Draw the bar into the current window.
  *
- * @param ec Editor context whose scene, selection and dirty flag it reads.
+ * @param ec      Editor context whose scene, selection, errors and clock it reads.
+ * @param console Counts the warnings, and is shown the view a click asks for.
  */
-void draw(EditorContext& ec);
+void draw(EditorContext& ec, ConsolePanel& console);
 
 } // namespace EditorStatusBar
 

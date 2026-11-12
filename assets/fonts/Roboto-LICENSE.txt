@@ -1,4 +1,4 @@
-Roboto-Medium.ttf
+Roboto-Medium.ttf, Roboto-Regular.ttf
 Copyright 2011 The Roboto Project Authors (https://github.com/googlefonts/roboto)
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -7,5 +7,6 @@ License at:
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-Bundled with vkmEngine as the default UI font, baked into an SDF atlas at load
-by src/tools/loader/font_baker.cpp.
+Medium is bundled with vkmEngine as the default UI font, baked into an SDF atlas
+at load by src/loader/font_baker.cpp. The editor sets its text in Regular
+and its headings in Medium.
