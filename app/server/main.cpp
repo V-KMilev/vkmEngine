@@ -4,15 +4,17 @@
 #include <cstdlib>
 #include <string>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+
+#include "vkm_network/address.h"
 
 #include "core/engine.h"
-#include "io/project.h"
-#include "io/project_paths.h"
+#include "io/project/project.h"
+#include "io/project/roots.h"
 #include "net/net_session.h"
-#include "platform/net/net_address.h"
-#include "project_boot.h"
-#include "system/script/script_module.h"
+#include "core/project_boot.h"
+#include "io/project/host_boot.h"
+#include "system/script/module/script_module.h"
 #include "app/engine_app.h"
 
 namespace {
@@ -20,7 +22,7 @@ namespace {
 /**
  * @brief Read --port out of the command line.
  *
- * An unrecognised argument is refused, not skipped.
+ * An unrecognized argument is refused, not skipped.
  *
  * @param argc Argument count as main received it.
  * @param argv Arguments as main received them; flags start at firstFlagIndex.
@@ -35,12 +37,12 @@ bool readPort(int argc, char** argv, uint16_t& port) {
                 LOG_ERROR("--port needs a number to serve on");
                 return false;
             }
-            if (!Vkm::Engine::NetAddress::parsePort(argv[++i], port)) {
+            if (!Vkm::Network::Address::parsePort(argv[++i], port)) {
                 LOG_ERROR("'%s' is not a port to serve on", argv[i]);
                 return false;
             }
         } else {
-            LOG_ERROR("Unrecognised argument '%s'", arg.c_str());
+            LOG_ERROR("Unrecognized argument '%s'", arg.c_str());
             LOG_ERROR("Usage: vkm_server [project] [--port N]");
             return false;
         }
@@ -51,10 +53,10 @@ bool readPort(int argc, char** argv, uint16_t& port) {
 } // namespace
 
 // The host that referees: no window, no render backend, nobody playing here.
-// Why it is an executable, not a flag: docs/guides/engine.md 1.
+// Why it is an executable, not a flag: docs/reference/architecture.md, The engine runs projects.
 int main(int argc, char** argv) {
-    try {
-        if (!Vkm::Engine::bootHost(argc, argv, "server.log", "VKM-SERVER")) return EXIT_FAILURE;
+    const int status = Vkm::Engine::runHost([&] {
+        Vkm::Engine::bootHost(argc, argv, "server.log", "VKM-SERVER");
 
         // Before anything expensive or failable. Zero unless --port was given.
         uint16_t port = 0;
@@ -64,29 +66,15 @@ int main(int argc, char** argv) {
         if (!Vkm::Engine::bootGameplayModule(scriptModule, "serving")) return EXIT_FAILURE;
 
         Vkm::Engine::Project project;
-        Vkm::Engine::loadProject(Vkm::Engine::ProjectPaths::projectRoot(), project);
+        Vkm::Engine::loadProject(Vkm::Engine::Roots::projectRoot(), project);
 
         Vkm::Engine::Engine engine;
 
         Vkm::App::AppConfig config;
-        config.windowTitle       = project.name.c_str();
         config.headlessFrameRate = project.tickRate;
         auto sys = Vkm::App::setupEngineApp(engine, config, nullptr);
 
-        const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectWorld(
-            project,
-            scriptModule,
-            engine.getScene(),
-            engine.getResources(),
-            engine.getClock(),
-            engine.getNet()
-        );
-        if (boot.source != Vkm::Engine::SceneBoot::Project) {
-            LOG_ERROR("Project '%s' has no world of its own to serve", project.name.c_str());
-            return EXIT_FAILURE;
-        }
-        // What a game's restartScene() starts over while it has loaded no scene of its own.
-        sys.behaviors.setPlayedScene(boot.path);
+        if (!Vkm::Engine::bootPlayedWorld(project, engine, sys.behaviors, "serve")) return EXIT_FAILURE;
 
         if (!scriptModule.setupNetwork(engine.getNet())) {
             LOG_ERROR(
@@ -98,9 +86,15 @@ int main(int argc, char** argv) {
 
         // The command line's port wins over the project's.
         const uint16_t listenPort = port != 0 ? port : project.netPort;
-        if (!engine.getNet().host(listenPort, project.maxPlayers, project.tickRate)) {
-            return EXIT_FAILURE;
-        }
+        const Vkm::Engine::InputMap& input = engine.getInput();
+        const bool hosting = engine.getNet().host(
+            listenPort,
+            project.maxPlayers,
+            project.tickRate,
+            input.actionCount(),
+            input.actionFingerprint()
+        );
+        if (!hosting) return EXIT_FAILURE;
 
         LOG_INFO(
             "Serving '%s' at %u Hz for up to %u player(s)",
@@ -110,14 +104,9 @@ int main(int argc, char** argv) {
         );
         engine.run();
 
-    } catch (const std::exception& e) {
-        LOG_FATAL("Exception: %s", e.what());
-        return EXIT_FAILURE;
-    } catch (...) {
-        LOG_FATAL("Unknown exception");
-        return EXIT_FAILURE;
-    }
-
-    LOG_INFO("Stopped serving");
-    return 0;
+        return EXIT_SUCCESS;
+    });
+    // After the engine's teardown, which ends the run.
+    if (status == EXIT_SUCCESS) LOG_INFO("Stopped serving");
+    return status;
 }

@@ -7,19 +7,19 @@
 #include <system_error>
 #include <vector>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
-#include "cook/recipe_registration.h"
+#include "import/recipe_registration.h"
 #include "cook/asset_cooker.h"
-#include "debug/engine_error_log.h"
+#include "debug/error/engine_error_log.h"
 #include "io/asset/asset_library.h"
-#include "platform/threading/thread_pool.h"
-#include "io/project.h"
-#include "io/project_paths.h"
+#include "vkm_platform/threading/thread_pool.h"
+#include "io/project/project.h"
+#include "io/project/roots.h"
 #include "io/scene/scene_serializer.h"
-#include "project_boot.h"
+#include "io/project/host_boot.h"
 
 namespace {
 
@@ -28,14 +28,14 @@ namespace {
 // unattended build gets a shippable project without opening the editor and
 // saving one. The project is the one bootHost resolves.
 int cook(int argc, char** argv) {
-    try {
+    return Vkm::Engine::runHost([&] {
         // First: everything below logs to the file this opens and resolves paths
         // against the project it finds. Its own log file and tag, because a cook
         // is a separate run from the editor session that may have launched it.
-        if (!Vkm::Engine::bootHost(argc, argv, "cook.log", "VKM-COOK")) return EXIT_FAILURE;
+        Vkm::Engine::bootHost(argc, argv, "cook.log", "VKM-COOK");
         if (!Vkm::Engine::refuseExtraArgs(argc, argv, "vkm_cook")) return EXIT_FAILURE;
 
-        const std::filesystem::path root = Vkm::Engine::ProjectPaths::projectRoot();
+        const std::filesystem::path root = Vkm::Engine::Roots::projectRoot();
 
         Vkm::Engine::Project project;
         Vkm::Engine::loadProject(root, project);
@@ -48,7 +48,7 @@ int cook(int argc, char** argv) {
         // Stepped by hand: the range-for's error_code covers the constructor
         // alone, and a step that fails throws.
         namespace fs = std::filesystem;
-        const fs::path scenesDir = Vkm::Engine::ProjectPaths::scenes();
+        const fs::path scenesDir = Vkm::Engine::Roots::scenes();
         for (fs::directory_iterator it(scenesDir, ec), end; !ec && it != end; it.increment(ec)) {
             if (it->path().extension() == ".json") scenePaths.push_back(it->path());
         }
@@ -72,7 +72,8 @@ int cook(int argc, char** argv) {
         // The entry scene need not live in scenes/, and if it does it is
         // already above - so add it only when the sweep did not find it.
         if (!project.entryScene.empty()) {
-            const std::filesystem::path entry = root / project.entryScene;
+            const std::filesystem::path entry =
+                Vkm::Engine::Roots::resolveProjectPath(project.entryScene);
             const auto isEntry = [&](const std::filesystem::path& p) {
                 std::error_code cmpEc;
                 return std::filesystem::equivalent(p, entry, cmpEc);
@@ -151,15 +152,8 @@ int cook(int argc, char** argv) {
         // cooked/ that no record names is nobody's, and would ship in a package.
         Vkm::Engine::AssetLibrary::get().removeUnrecordedCooked();
 
-    } catch (const std::exception& e) {
-        LOG_FATAL("Exception: %s", e.what());
-        return EXIT_FAILURE;
-    } catch (...) {
-        LOG_FATAL("Unknown exception");
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+        return EXIT_SUCCESS;
+    });
 }
 
 } // namespace
@@ -167,6 +161,6 @@ int cook(int argc, char** argv) {
 int main(int argc, char** argv) {
     const int status = cook(argc, argv);
     // See ThreadPool::shutdown.
-    Vkm::Engine::ThreadPool::get().shutdown();
+    Vkm::Platform::ThreadPool::get().shutdown();
     return status;
 }

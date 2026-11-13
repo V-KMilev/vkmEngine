@@ -2,25 +2,26 @@
 
 #include <cstdlib>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 #include "core/engine.h"
-#include "input/camera_controller_system.h"
-#include "cook/recipe_registration.h"
-#include "platform/discrete_gpu.h"
-#include "project_boot.h"
+#include "view/camera_controller_system.h"
+#include "import/recipe_registration.h"
+#include "vkm_platform/process/discrete_gpu.h"
+#include "font_baker.h"
+#include "io/project/host_boot.h"
 #include "editor_system.h"
-#include "system/script/script_module.h"
-#include "gl_backend.h"
+#include "system/script/module/script_module.h"
 
+#include "app/backend_choice.h"
 #include "app/engine_app.h"
 
-VKM_PREFER_DISCRETE_GPU()
+VKM_PLATFORM_PREFER_DISCRETE_GPU()
 
 int main(int argc, char** argv) {
-    try {
+    const int status = Vkm::Engine::runHost([&] {
         // First: everything below logs to its file and resolves paths against its project.
-        if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
+        Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE");
         if (!Vkm::Engine::refuseExtraArgs(argc, argv, "vkm_editor")) return EXIT_FAILURE;
 
         // Before any scene I/O; see registerRecipeAssetFactories.
@@ -35,9 +36,10 @@ int main(int argc, char** argv) {
         // The default title is a placeholder: syncWindowTitle in editor_system.cpp writes the real one.
         Vkm::App::AppConfig config;
         config.startPaused = true;
-        auto sys = Vkm::App::setupEngineApp(engine, config, Vkm::Engine::GLBackend::windowSurface());
+        auto sys = Vkm::App::setupEngineApp(engine, config, Vkm::App::EditorBackend::windowSurface());
+        Vkm::Engine::ensureDefaultUIFont(engine.getResources(), engine.getWindow().displayHeight());
 
-        sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>(), engine.getWindow());
+        sys.render.setBackend(std::make_unique<Vkm::App::EditorBackend>(), engine.getWindow());
 
         // Registered by the authoring host only: right-drag grabs the pointer, which a
         // shipped game must not get unasked.
@@ -47,11 +49,11 @@ int main(int argc, char** argv) {
 
         engine.addSystem<Vkm::Engine::EditorSystem>(
             Vkm::Engine::SystemStage::Editor,
-            engine.getWindow().getWindowContext(),
+            engine.getWindow(),
             cameraController,
             sys.render,
-            engine.getRenderSettings(),
             sys.audio,
+            *sys.loading,
             sys.behaviors,
             scriptModule
         );
@@ -60,14 +62,9 @@ int main(int argc, char** argv) {
         // "Opening a project".
         engine.run();
 
-    } catch (const std::exception& e) {
-        LOG_FATAL("Exception: %s", e.what());
-        return EXIT_FAILURE;
-    } catch (...) {
-        LOG_FATAL("Unknown exception");
-        return EXIT_FAILURE;
-    }
-
-    LOG_INFO("Shutdown successfully!");
-    return 0;
+        return EXIT_SUCCESS;
+    });
+    // After the engine's teardown, which ends the run.
+    if (status == EXIT_SUCCESS) LOG_INFO("Shutdown successfully!");
+    return status;
 }
