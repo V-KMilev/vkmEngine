@@ -1,0 +1,278 @@
+{
+  "warmupSeconds": 10,
+  "seconds": 20,
+  "tiers": [
+    {
+      "tier": "Max",
+      "averageMs": 5.3,
+      "low1Ms": 7.6
+    },
+    {
+      "tier": "Performance",
+      "averageMs": 2.7,
+      "low1Ms": 4.1
+    }
+  ],
+  "views": [
+    {
+      "name": "spawn"
+    },
+    {
+      "name": "overview",
+      "position": [
+        0,
+        26,
+        -14
+      ],
+      "lookAt": [
+        0,
+        0,
+        40
+      ]
+    },
+    {
+      "name": "sea",
+      "position": [
+        -20,
+        4,
+        62
+      ],
+      "lookAt": [
+        10,
+        0,
+        120
+      ]
+    },
+    {
+      "name": "gallery",
+      "position": [
+        19,
+        2,
+        33
+      ],
+      "lookAt": [
+        19,
+        1.5,
+        42
+      ]
+    },
+    {
+      "name": "night",
+      "position": [
+        -12,
+        3,
+        24
+      ],
+      "lookAt": [
+        -14,
+        1.5,
+        40
+      ],
+      "sunElevation": -12
+    },
+    {
+      "name": "walk",
+      "path": [
+        {
+          "position": [
+            0,
+            3,
+            -10
+          ],
+          "lookAt": [
+            0,
+            2,
+            10
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            10,
+            2,
+            30
+          ]
+        },
+        {
+          "position": [
+            19,
+            2,
+            28
+          ],
+          "lookAt": [
+            19,
+            1.5,
+            42
+          ]
+        },
+        {
+          "position": [
+            19,
+            2,
+            36
+          ],
+          "lookAt": [
+            0,
+            2,
+            40
+          ]
+        },
+        {
+          "position": [
+            -12,
+            3,
+            24
+          ],
+          "lookAt": [
+            -14,
+            1.5,
+            40
+          ]
+        },
+        {
+          "position": [
+            -20,
+            4,
+            62
+          ],
+          "lookAt": [
+            10,
+            0,
+            120
+          ]
+        },
+        {
+          "position": [
+            0,
+            4,
+            50
+          ],
+          "lookAt": [
+            0,
+            1,
+            20
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            20
+          ],
+          "lookAt": [
+            0,
+            2,
+            -10
+          ]
+        }
+      ],
+      "lapSeconds": 40
+    },
+    {
+      "name": "turn",
+      "path": [
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            0.0,
+            2,
+            30.0
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            14.14,
+            2,
+            24.14
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            20.0,
+            2,
+            10.0
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            14.14,
+            2,
+            -4.14
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            0.0,
+            2,
+            -10.0
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            -14.14,
+            2,
+            -4.14
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            -20.0,
+            2,
+            10.0
+          ]
+        },
+        {
+          "position": [
+            0,
+            3,
+            10
+          ],
+          "lookAt": [
+            -14.14,
+            2,
+            24.14
+          ]
+        }
+      ],
+      "lapSeconds": 2
+    }
+  ]
+}

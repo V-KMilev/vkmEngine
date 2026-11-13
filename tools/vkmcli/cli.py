@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import textwrap
 
 from . import shell
+from .bench import cmd_bench
 from .build import cmd_build, cmd_cook
 from .doctor import cmd_doctor
 from .engine import development, native_python_on_windows, sdk_root, temp_dir_set, toolchain_first
@@ -16,38 +18,46 @@ from .shell import die
 from .toolchain import cmd_toolchain, module_compiler
 
 
-HELP = """\
-usage: vkm <command> [project] [options]
-
-The project tool for vkmEngine: it builds, runs and ships a game.
-
-A project is a directory holding a project.json. Every command but `new` takes
-its path, or finds it from the current directory - from any folder inside it.
-
-Make
-  new <name>    make a project from a template or an example (-t the_lab)
-
-Work on it
-  run           build, cook and play it            --players N: with a local server
-  edit          build it and open it in the editor
-  serve         build, cook and host it for players, with no window
-  build         only compile src/ into the gameplay module
-  cook          only turn source art into what the runtime reads
-
-Ship
-  package       build, cook and assemble the game a player gets, under dist/
-
-Look after
-  doctor        check the engine, the toolchain and the project, and say what to fix
-  toolchain     fetch the compiler and build tools the engine pins (build does it first)
-  clean         delete everything the commands above generated
-
-`vkm <command> -h` explains one, with examples. `vkm --version` names the engine.
-"""
+# Each command's heading in the help, whether it works on a project, and its summary: the help's line
+# for it, and the description its own -h opens with.
+COMMANDS = (
+    ("Make",       "new",       False, "make a project from a template or an example (-t the_lab)"),
+    ("Work on it", "run",       True,  "build, cook and play the project (--players N: with a local server)"),
+    ("Work on it", "edit",      True,  "build the project and open it in the editor"),
+    ("Work on it", "serve",     True,  "build, cook and host the project for players, with no window"),
+    ("Work on it", "build",     True,  "only compile the project's src/ into its gameplay module"),
+    ("Work on it", "cook",      True,  "only turn the project's source art into what the runtime reads"),
+    ("Ship",       "package",   True,  "build, cook and assemble the game a player gets, under dist/"),
+    ("Ship",       "bench",     True,  "time the packaged game at bench.json's views, against their budgets"),
+    ("Look after", "doctor",    True,  "check the engine, toolchain and project, and say what to fix"),
+    ("Look after", "toolchain", False, "fetch the compiler and tools the engine pins (build does it first)"),
+    ("Look after", "clean",     True,  "delete the builds, cooked assets and logs (--all: the packages too)"),
+)
 
 
-def subcommand(sub, parents, name: str, summary: str, examples: str, fn, project=True):
-    """One command's parser, with its examples under its options."""
+def overview() -> str:
+    """What `vkm` and `vkm -h` print: every command, under its heading."""
+    headings = {}
+    for heading, name, _, summary in COMMANDS:
+        headings.setdefault(heading, heading + "\n")
+        headings[heading] += f"  {name:<13} {summary}\n"
+    without = " and ".join(f"`{name}`" for _, name, project, _ in COMMANDS if not project)
+    projects = textwrap.fill(
+        f"A project is a directory holding a project.json. Every command but {without} takes its path, "
+        "or finds it from the current directory - from any folder inside it.",
+        width=80
+    )
+    return (
+        "usage: vkm <command> [project] [options]\n\n"
+        "The project tool for vkmEngine: it builds, runs and ships a game.\n\n"
+        f"{projects}\n\n" + "\n".join(headings.values()) + "\n"
+        "`vkm <command> -h` explains one, with examples. `vkm --version` names the engine.\n"
+    )
+
+
+def subcommand(sub, parents, name: str, examples: str, fn):
+    """One command's parser, its summary and project argument from COMMANDS, examples under its options."""
+    _, _, project, summary = next(row for row in COMMANDS if row[1] == name)
     p = sub.add_parser(
         name,
         parents=parents,
@@ -66,7 +76,7 @@ def main() -> int:
     native_python_on_windows()
     argv = sys.argv[1:]
     if not argv or argv[0] in ("-h", "--help"):
-        print(HELP, end="")
+        print(overview(), end="")
         return 0
     if argv[0] in ("-V", "--version"):
         root = sdk_root()
@@ -81,10 +91,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="vkm", usage="vkm <command> [project] [options]", add_help=False)
     sub = ap.add_subparsers(dest="cmd", metavar="<command>", required=True, prog="vkm")
 
-    p = subcommand(sub, [common], "new", "make a project from a template or an example", (
+    p = subcommand(sub, [common], "new", (
         "  vkm new mygame              a folder mygame/ here, then: cd mygame && vkm run\n"
         "  vkm new lab -t the_lab      a copy of an example, yours to change\n"
-    ), cmd_new, project=False)
+    ), cmd_new)
     p.add_argument("name", help="the folder to make, whose name the game takes")
     p.add_argument(
         "--template",
@@ -93,7 +103,7 @@ def main() -> int:
         help="the template or example to copy (default: default)"
     )
 
-    p = subcommand(sub, [common, builds], "run", "build, cook and play the project", (
+    p = subcommand(sub, [common, builds], "run", (
         "  vkm run                     play the project you are in\n"
         "  vkm run examples/the_lab\n"
         "  vkm run --players 2         a local server and two players, to test multiplayer\n"
@@ -103,17 +113,17 @@ def main() -> int:
     p.add_argument("--port", type=int, help="the port --players serves on (default: the project's netPort)")
     p.add_argument("--connect", metavar="HOST[:PORT]", help="join the game served there, not play alone")
 
-    subcommand(sub, [common, builds], "edit", "build the project and open it in the editor", (
+    subcommand(sub, [common, builds], "edit", (
         "  vkm edit                    a failed build still opens it, on the module built last\n"
     ), cmd_edit)
 
-    p = subcommand(sub, [common, builds], "serve", "build, cook and host the project, with no window", (
+    p = subcommand(sub, [common, builds], "serve", (
         "  vkm serve                   players join with: vkm run --connect <this machine>\n"
         "  vkm serve --port 28000\n"
     ), cmd_serve)
     p.add_argument("--port", type=int, help="port to listen on (default: the project's netPort)")
 
-    p = subcommand(sub, [common, builds], "build", "compile the project's src/ into its gameplay module", (
+    p = subcommand(sub, [common, builds], "build", (
         "  vkm build                   what run, edit, serve and package do first\n"
         "  vkm build -j 4              leave the machine some cores\n"
         "  vkm build -- -DMY_OPTION=ON pass arguments to CMake's configure\n"
@@ -121,11 +131,11 @@ def main() -> int:
     p.add_argument("-G", "--generator", help="CMake generator for a first configure (default: Ninja, if any)")
     p.add_argument("--compiler", help="C++ compiler for a first configure (default: the engine's own)")
 
-    subcommand(sub, [common], "cook", "turn the project's source art into what the runtime reads", (
+    subcommand(sub, [common], "cook", (
         "  vkm cook                    needs no window, so it runs on a build machine\n"
     ), cmd_cook)
 
-    p = subcommand(sub, [common, builds], "package", "build, cook and assemble the game a player gets", (
+    p = subcommand(sub, [common, builds], "package", (
         "  vkm package                 dist/<name>-<version>-<platform>/ on the shipping engine,\n"
         "                              and its symbols beside it\n"
         "  vkm package --archive       and a .zip (Windows) or .tar.gz of it, ready to hand out\n"
@@ -147,22 +157,26 @@ def main() -> int:
         help="keep the debug info in the binaries rather than beside them"
     )
 
-    subcommand(sub, [common], "doctor", "check the engine, the toolchain and the project", (
+    subcommand(sub, [common, builds], "bench", (
+        "  vkm bench                   a table, logs/bench/ with a picture of each view; fails over budget\n"
+    ), cmd_bench)
+
+    subcommand(sub, [common], "doctor", (
         "  vkm doctor                  start a bug report with what this prints\n"
     ), cmd_doctor)
 
-    p = subcommand(sub, [common], "toolchain", "fetch the compiler and build tools the engine pins", (
+    p = subcommand(sub, [common], "toolchain", (
         "  vkm toolchain               fetch what a build here uses; build does it the first time\n"
         "  vkm toolchain clang         the pinned Clang, and the C++ library it compiles against\n"
         "  vkm toolchain --path        print each one's bin/, to put on PATH\n"
         "  vkm toolchain python --dir  the pinned Python, which an SDK carries\n"
-    ), cmd_toolchain, project=False)
+    ), cmd_toolchain)
     p.add_argument("tools", nargs="*", help="which tools (default: what a build here uses)")
     where = p.add_mutually_exclusive_group()
     where.add_argument("--path", action="store_true", help="print only each tool's bin/, one per line")
     where.add_argument("--dir", action="store_true", help="print only each tool's folder, one per line")
 
-    p = subcommand(sub, [common], "clean", "delete everything the other commands generated", (
+    p = subcommand(sub, [common], "clean", (
         "  vkm clean                   build/ bin/ cooked/ logs/ - never your art, scenes or library/\n"
         "  vkm clean --all             and the packages under dist/\n"
     ), cmd_clean)
