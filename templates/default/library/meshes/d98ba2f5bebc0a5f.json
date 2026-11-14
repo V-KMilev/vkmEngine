@@ -1,0 +1,10 @@
+{
+  "name": "game:ball",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "resolution": 16
+    },
+    "type": "sphere"
+  }
+}

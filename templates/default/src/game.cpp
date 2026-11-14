@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "GAME"
-
 #include "game.h"
 
 namespace Game {
@@ -10,9 +8,9 @@ void Spinner::onStart() {
 
 void Spinner::onUpdate(float dt) {
     Transform* transform = tryGet<Transform>();
-    if (!transform || glm::dot(axis, axis) <= glm::epsilon<float>()) return;
+    if (!transform || glm::dot(spinAxis, spinAxis) <= glm::epsilon<float>()) return;
 
-    const glm::quat spin = glm::angleAxis(glm::radians(degreesPerSecond * dt), glm::normalize(axis));
+    const glm::quat spin = glm::angleAxis(glm::radians(degreesPerSecond * dt), glm::normalize(spinAxis));
     transform->rotation = glm::normalize(transform->rotation * spin);
 }
 

@@ -1,0 +1,457 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "Floor"
+      },
+      {
+        "name": "Cube"
+      },
+      {
+        "name": "material:default"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "game:cube"
+      },
+      {
+        "name": "game:ball"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "terrains": [],
+    "textures": []
+  },
+  "entities": [
+    {
+      "components": {
+        "Camera": {
+          "active": true,
+          "aspect": 0.0,
+          "fovY": 1.2217305,
+          "orthoHeight": 10.0,
+          "projection": "Perspective",
+          "viewmodelFovY": 0.0,
+          "zFar": 1000.0,
+          "zNear": 0.1
+        },
+        "Name": {
+          "value": "Camera"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            2.0,
+            7.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "id": 1
+    },
+    {
+      "components": {
+        "Light": {
+          "castShadows": true,
+          "color": [
+            0.9334719,
+            0.856407,
+            0.7492667
+          ],
+          "enabled": true,
+          "flicker": 0.0,
+          "inCaptures": true,
+          "innerConeAngle": 0.5,
+          "intensity": 3.0,
+          "movable": true,
+          "outerConeAngle": 0.785,
+          "radius": 10.0,
+          "shadowDistance": 100.0,
+          "shadowPriority": 0,
+          "sourceRadius": 0.008726646,
+          "type": "Directional"
+        },
+        "Name": {
+          "value": "Sun"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.91330075,
+            -0.3144747,
+            0.24471821,
+            0.08426324
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "id": 2
+    },
+    {
+      "components": {
+        "Collider": {
+          "enabled": true,
+          "isTrigger": false,
+          "parts": [
+            {
+              "center": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "halfExtents": [
+                6.0,
+                0.1,
+                6.0
+              ],
+              "halfHeight": 0.5,
+              "mesh": "",
+              "meshScale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "radius": 0.5,
+              "shape": "Box"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "Floor",
+          "mesh": "game:cube",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "Floor"
+        },
+        "Rigidbody": {
+          "angularDamping": 0.05,
+          "angularVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "canSleep": true,
+          "collidesWith": -1,
+          "freezeRotation": false,
+          "friction": 0.5,
+          "gravityScale": 1.0,
+          "layer": 1,
+          "linearDamping": 0.01,
+          "linearVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "motion": "Static",
+          "restitution": 0.2
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            -1.6,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            12.0,
+            0.2,
+            12.0
+          ]
+        }
+      },
+      "id": 3
+    },
+    {
+      "components": {
+        "Collider": {
+          "enabled": true,
+          "isTrigger": false,
+          "parts": [
+            {
+              "center": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "halfExtents": [
+                0.5,
+                0.5,
+                0.5
+              ],
+              "halfHeight": 0.5,
+              "mesh": "",
+              "meshScale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "radius": 0.5,
+              "shape": "Box"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "Cube",
+          "mesh": "game:cube",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "Spinner"
+        },
+        "Rigidbody": {
+          "angularDamping": 0.05,
+          "angularVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "canSleep": true,
+          "collidesWith": -1,
+          "freezeRotation": false,
+          "friction": 0.5,
+          "gravityScale": 1.0,
+          "layer": 1,
+          "linearDamping": 0.01,
+          "linearVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "motion": "Kinematic",
+          "restitution": 0.2
+        },
+        "Script": {
+          "behaviors": [
+            {
+              "properties": {
+                "degreesPerSecond": 90.0,
+                "spinAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ]
+              },
+              "type": "Spinner"
+            }
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "id": 4
+    },
+    {
+      "components": {
+        "Collider": {
+          "enabled": true,
+          "isTrigger": false,
+          "parts": [
+            {
+              "center": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "halfExtents": [
+                0.5,
+                0.5,
+                0.5
+              ],
+              "halfHeight": 0.0,
+              "mesh": "",
+              "meshScale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "radius": 0.3,
+              "shape": "Capsule"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "material:default",
+          "mesh": "game:ball",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "Ball"
+        },
+        "Rigidbody": {
+          "angularDamping": 0.05,
+          "angularVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "canSleep": true,
+          "collidesWith": -1,
+          "freezeRotation": false,
+          "friction": 0.5,
+          "gravityScale": 1.0,
+          "layer": 1,
+          "linearDamping": 0.01,
+          "linearVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 1.0,
+          "motion": "Dynamic",
+          "restitution": 0.2
+        },
+        "Transform": {
+          "position": [
+            0.2,
+            3.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.6,
+            0.6,
+            0.6
+          ]
+        }
+      },
+      "id": 5
+    }
+  ],
+  "environment": {
+    "acoustics": {
+      "enabled": true,
+      "reverb": 1.0
+    },
+    "fog": {
+      "albedo": [
+        0.8,
+        0.85,
+        1.0
+      ],
+      "anisotropy": 0.7,
+      "density": 0.03,
+      "enabled": false,
+      "height": 5.0,
+      "heightFalloff": 0.15,
+      "maxDistance": 100.0
+    },
+    "night": {
+      "moonIntensity": 1.2,
+      "moonlightColor": [
+        0.55,
+        0.65,
+        1.0
+      ],
+      "moonlightIntensity": 0.12,
+      "radiance": [
+        0.004,
+        0.006,
+        0.014
+      ]
+    },
+    "sky": {
+      "hdrPath": "",
+      "intensity": 1.0,
+      "lightColor": [
+        1.0,
+        0.96,
+        0.9
+      ],
+      "lightIntensity": 3.0,
+      "mie": 5.0,
+      "procedural": true,
+      "showSkybox": true,
+      "sunAzimuth": 30.0,
+      "sunDiscIntensity": 5.0,
+      "sunElevation": 38.0
+    },
+    "waves": {
+      "calmCenter": [
+        0.0,
+        0.0
+      ],
+      "calmRadius": 0.0,
+      "shape": {
+        "choppiness": 0.7,
+        "depth": 0.0,
+        "fetch": 100.0,
+        "heightScale": 1.0,
+        "maxWavelength": 200.0,
+        "minWavelength": 2.0,
+        "seed": 1,
+        "spread": 0.5,
+        "windDirection": 0.0,
+        "windSpeed": 8.0
+      },
+      "stillRadius": 0.0
+    }
+  },
+  "physics": {
+    "gravity": [
+      0.0,
+      -9.81,
+      0.0
+    ],
+    "solverIterations": 8
+  },
+  "version": 3
+}

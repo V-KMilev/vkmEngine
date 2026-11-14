@@ -1,0 +1,7 @@
+{
+  "name": "game:cube",
+  "source": {
+    "kind": "generator",
+    "type": "cube"
+  }
+}
