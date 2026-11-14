@@ -36,7 +36,8 @@ if [ -z "$version" ] && [ -n "${VKM_DOWNLOADS:-}" ]; then
     die "VKM_DOWNLOADS needs VKM_VERSION: there is no newest release to ask it for"
 fi
 if [ -z "$version" ]; then
-    latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")
+    latest=$(curl -fsSLI --retry 3 -o /dev/null -w '%{url_effective}' \
+        "https://github.com/$repo/releases/latest")
     version="${latest##*/v}"
 fi
 name="vkmEngine-$version-$platform-$compiler"
@@ -47,10 +48,11 @@ trap 'rm -rf "$work"' EXIT
 
 say "downloading $version, for $compiler"
 release="${VKM_DOWNLOADS:-https://github.com/$repo/releases/download/v$version}"
-curl -fL --progress-bar -o "$work/$archive" "$release/$archive" || die "no $archive in release v$version"
+curl -fL --retry 3 --progress-bar -o "$work/$archive" "$release/$archive" \
+    || die "no $archive in release v$version"
 
 # Checked before it is unpacked: a download cut short or changed on its way is not installed.
-curl -fsSL -o "$work/SHA256SUMS" "$release/SHA256SUMS" \
+curl -fsSL --retry 3 -o "$work/SHA256SUMS" "$release/SHA256SUMS" \
     || die "release v$version carries no SHA256SUMS to check $archive against"
 # A name marked '*' was summed in binary mode, as Windows builds of sha256sum write it.
 sum=$(awk -v name="$archive" '$2 == name || $2 == "*" name { print $1 }' "$work/SHA256SUMS")

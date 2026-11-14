@@ -218,7 +218,7 @@ def stamp_windows_exe(exe: Path, name: str, version: str, icon: Path) -> str | N
 
 # Engine data a package carries, as cmake/install.cmake installs it; the repo's
 # assets/ also holds sample art no game ships. shaders/ is also how
-# io/project_paths.cpp recognises a packaged layout.
+# io/project/roots.cpp recognizes a packaged layout.
 ENGINE_DATA = ("shaders", "assets/fonts", "assets/logo")
 
 
@@ -231,15 +231,20 @@ PROJECT_DATA = ("scenes", "prefabs", "cooked")
 
 
 # The recipes a game reads: a material's is its runtime form, every other kind
-# cooks to a binary.
+# cooks to a binary or, as a terrain, is read from its file.
 RUNTIME_LIBRARY = ("materials",)
+
+
+# The kinds whose source file is what the game reads, so it ships as it is.
+RUNTIME_SOURCES = ("terrain",)
 
 
 def import_sources(project: Path) -> set[Path]:
     """Every source file the cook imported from, as the manifest records it.
 
-    A package leaves these out; anything else in assets/ ships, since the runtime
-    opens some files by path. An unreadable manifest leaves nothing out.
+    A package leaves these out, but for the kinds the game reads from their source
+    (RUNTIME_SOURCES); anything else in assets/ ships, since the runtime opens some
+    files by path. An unreadable manifest leaves nothing out.
     """
     try:
         manifest = json.loads((project / "cooked" / "_manifest.json").read_text())
@@ -248,7 +253,9 @@ def import_sources(project: Path) -> set[Path]:
     rows = manifest.get("assets") if isinstance(manifest, dict) else None
     sources: set[Path] = set()
     for row in rows if isinstance(rows, list) else []:
-        files = row.get("sources") if isinstance(row, dict) else None
+        if not isinstance(row, dict) or row.get("type") in RUNTIME_SOURCES:
+            continue
+        files = row.get("sources")
         for path in files if isinstance(files, list) else []:
             if isinstance(path, str) and path:
                 sources.add((project / path).resolve())
@@ -286,7 +293,8 @@ def shipping_engine_for(root: Path, args) -> EngineBuild:
 def cmd_package(args) -> int:
     """Assemble a standalone game: the runtime renamed, its libraries, the module and the data it plays.
 
-    Source art and import recipes stay behind: the runtime reads only what was cooked.
+    Source art and import recipes stay behind: the runtime reads what was cooked, and a
+    terrain's file as it is.
     """
     start = time.monotonic()
     d = project_dir(args.project)
@@ -342,10 +350,11 @@ def cmd_package(args) -> int:
     if not copied:
         die(f"no engine libraries beside {runtime}; a package without them would run only on this machine")
 
-    # Not the ".loaded." copies a running host makes, nor an import library.
+    # Not the ".loaded." copies a running host makes, an import library, nor the stamp a development build
+    # leaves for the editor's reload (game.built).
     with step("the gameplay module"):
         for f in built.iterdir():
-            if f.is_file() and ".loaded." not in f.name and f.suffix not in (".a", ".lib"):
+            if f.is_file() and ".loaded." not in f.name and f.suffix not in (".a", ".lib", ".built"):
                 shutil.copy2(f, out / "bin" / f.name)
 
     for part in ENGINE_DATA:
@@ -359,13 +368,15 @@ def cmd_package(args) -> int:
                     ignore=lambda _dir, names: [n for n in names if n in LOGO_SOURCES]
                 )
 
-    # The game ships the engine's libraries, so it ships the engine's license.
-    if not (root / "LICENSE").is_file():
-        die(f"no LICENSE in {root}; its terms go with every copy of the engine's libraries")
-    with step("the engine's license", out / "LICENSE-vkmEngine.txt"):
-        shutil.copy2(root / "LICENSE", out / "LICENSE-vkmEngine.txt")
+    # The license of everything built into the game, the engine's and each library's, which the engine's
+    # build gathers and an SDK keeps at its root.
+    licenses = (engine.base if in_engine_tree(root) else root) / "licenses"
+    if not (licenses / "vkmEngine.txt").is_file():
+        die(f"no {licenses / 'vkmEngine.txt'}; the licenses go with every copy of the engine")
+    with step("the licenses", out / "licenses"):
+        shutil.copytree(licenses, out / "licenses")
 
-    # At the package root, which ProjectPaths::projectRoot falls back to.
+    # At the package root, which Roots::projectRoot falls back to.
     shutil.copy2(d / "project.json", out / "project.json")
     for part in PROJECT_DATA:
         if (d / part).is_dir():

@@ -38,7 +38,9 @@ def cmd_run(args) -> int:
         return rc
     if args.players:
         return play_together(d, args.players, args.port)
-    return run([development().host("vkm_runtime"), d, *(["--connect", args.connect] if args.connect else [])])
+    # In a window, whatever the player chose, so a run's frames compare with the last one's.
+    joins = ["--connect", args.connect] if args.connect else []
+    return run([development().host("vkm_runtime"), d, "--windowed", *joins])
 
 
 def cmd_serve(args) -> int:
@@ -66,17 +68,17 @@ def play_together(d: Path, players: int, port: int | None) -> int:
             show([server_exe, d, *serve_args])
         children.append(subprocess.Popen([str(server_exe), str(d), *serve_args]))
 
-        # A head start well inside the silence a client waits out (NetConnection::TIMEOUT_SECONDS).
+        # A head start well inside the silence a client waits out (Network::Connection::TIMEOUT_SECONDS).
         time.sleep(1.0)
         if children[0].poll() is not None:
             die(f"the server exited before any player started (code {children[0].returncode})")
 
         for n in range(1, players + 1):
-            client = [client_exe, d, "--connect", address]
+            client = [client_exe, d, "--connect", address, "--windowed"]
             if shell.VERBOSE:
                 show(client)
             # A log file of its own each.
-            env = {**os.environ, "VKM_LOG_SUFFIX": str(n)}
+            env = {**os.environ, "VKM_INSTANCE": str(n)}
             children.append(subprocess.Popen([str(c) for c in client], env=env))
 
         # Ends when any of them does.

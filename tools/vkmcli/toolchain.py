@@ -18,10 +18,12 @@ from .shell import EXE, die, megabytes, note, platform_tag
 # engine come from one compiler.
 TOOLCHAIN_FILE = TOOL_DIR / "toolchain.json"
 
-# Tries at a download a server failed - a 5xx, a dropped connection, a body cut short - each wait
-# twice the last, from DOWNLOAD_WAIT seconds. A refusal (4xx) or a wrong file is not tried again.
+# Tries at a download a server failed - a 5xx, a dropped connection, a body cut short, a connection
+# silent for DOWNLOAD_TIMEOUT seconds - each wait twice the last, from DOWNLOAD_WAIT seconds. A
+# refusal (4xx) or a wrong file is not tried again.
 DOWNLOAD_ATTEMPTS = 4
 DOWNLOAD_WAIT = 5
+DOWNLOAD_TIMEOUT = 60
 
 
 def tools_cache() -> Path:
@@ -86,7 +88,8 @@ class Tool:
             for attempt in range(DOWNLOAD_ATTEMPTS):
                 digest = hashlib.sha256()
                 try:
-                    with urllib.request.urlopen(self.url) as src, open(archive, "wb") as dst:
+                    response = urllib.request.urlopen(self.url, timeout=DOWNLOAD_TIMEOUT)
+                    with response as src, open(archive, "wb") as dst:
                         total = int(src.headers.get("Content-Length") or 0)
                         done = 0
                         shown = -1
