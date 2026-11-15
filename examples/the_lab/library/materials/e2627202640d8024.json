@@ -2,18 +2,12 @@
   "name": "lab:sea",
   "source": {
     "albedo": [
-      0.009999999776482582,
-      0.029999999329447746,
-      0.04500000178813934,
+      0.01,
+      0.03,
+      0.045,
       1.0
     ],
     "alphaCutoff": 0.5,
-    "anisotropy": 0.0,
-    "anisotropyDirection": [
-      1.0,
-      0.0,
-      0.0
-    ],
     "ao": 1.0,
     "attenuationColor": [
       1.0,
@@ -31,22 +25,21 @@
       0.0
     ],
     "emissiveStrength": 1.0,
-    "heightScale": 0.0,
-    "ior": 1.5,
+    "ior": 1.33,
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.05999999865889549,
+    "roughness": 0.06,
     "sheenColor": [
       0.0,
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
-    "subsurface": 0.0,
+    "sheenRoughness": 0.3,
+    "subsurface": 0.6,
     "subsurfaceColor": [
-      1.0,
-      1.0,
-      1.0
+      0.06,
+      0.22,
+      0.24
     ],
     "thicknessFactor": 0.0,
     "transmission": 0.0,
@@ -58,7 +51,6 @@
     "uvScale": [
       1.0,
       1.0
-    ],
-    "waves": true
+    ]
   }
 }

@@ -5,7 +5,7 @@
 
 #include "resource/asset_ref.h"
 #include "resource/asset/audio_clip_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -22,7 +22,7 @@ using namespace Vkm::Engine;
  * if the entity is on the wire - authored with a Kinematic body, not a Static one - and onStart
  * reports one that is not.
  */
-class LabSwitch : public ReflectedBehavior<LabSwitch> {
+class LabSwitch : public Behavior<LabSwitch> {
     public:
         void onStart() override;
         void onUpdate(float dt) override;
@@ -38,9 +38,9 @@ class LabSwitch : public ReflectedBehavior<LabSwitch> {
         std::optional<uint32_t> presses() const;
 
     public:
-        float reach = 2.5f;  ///< Metres from it a player can use it, across the ground.
+        float reach = 2.5f;
 
-        AssetRef<AudioClipAsset> click;  ///< Heard where it is, on each press.
+        AssetRef<AudioClipAsset> click;
 
     private:
         CountWatch m_heard;  ///< The presses, to click for each new one
@@ -48,7 +48,7 @@ class LabSwitch : public ReflectedBehavior<LabSwitch> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabSwitch)
-    VKM_F(reach)
-    VKM_F(click)
+VKM_BEHAVIOR(::Lab::LabSwitch)
+    VKM_F(reach, "Meters from it a player can use it, across the ground.")
+    VKM_F(click, "Heard where it is, on each press.")
 VKM_REFLECT_END()

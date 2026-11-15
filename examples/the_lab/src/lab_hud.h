@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -24,26 +24,30 @@ using namespace Vkm::Engine;
  * cheers a token found. Built on every end that draws; hidden while the game is paused, under the
  * pause menu.
  */
-class LabHud : public ReflectedBehavior<LabHud> {
+class LabHud : public Behavior<LabHud> {
     public:
         void onStart() override;
         void onUpdate(float dt) override;
         void onRealtimeUpdate(float dt) override;
 
     public:
-        float bannerSeconds = 3.5f;  ///< How long a banner stays up.
+        float bannerSeconds = 3.5f;
 
     private:
-        /// An area as the map and the banners use it.
+        /**
+         * @brief An area as the map and the banners use it.
+         */
         struct Area {
             EntityId    entity;
             std::string title;
             std::string blurb;
-            glm::vec2   centre{0.0f};
+            glm::vec2   center{0.0f};
             glm::vec2   size{0.0f};
         };
 
-        /// A character and its dot on the map.
+        /**
+         * @brief A character and its dot on the map.
+         */
         struct Pin {
             EntityId character;
             EntityId dot;
@@ -78,24 +82,6 @@ class LabHud : public ReflectedBehavior<LabHud> {
          */
         void cheerTokens(uint32_t tokens);
 
-        /**
-         * @brief A text element, shadowed, with nothing behind it.
-         *
-         * @param parent What it sits in.
-         * @param at     Its anchor and pivot.
-         * @param offset From the anchor, in canvas pixels.
-         * @param size   Its rect, in canvas pixels.
-         * @param pixels Its height.
-         * @return The element.
-         */
-        EntityId addText(
-            EntityId parent,
-            const glm::vec2& at,
-            const glm::vec2& offset,
-            const glm::vec2& size,
-            float pixels
-        );
-
         /// Where @p world lands on the map panel, in its pixels from its top left.
         glm::vec2 onMap(const glm::vec2& world) const;
 
@@ -107,12 +93,12 @@ class LabHud : public ReflectedBehavior<LabHud> {
         EntityId m_score{};
         EntityId m_banner{};
         EntityId m_bannerBlurb{};
-        EntityId m_hint{};  ///< The controls, named once every action is defined
+        EntityId m_hint{};
         EntityId m_map{};
 
         glm::vec2 m_worldMin{0.0f};
-        float     m_mapScale  = 1.0f;  ///< Map pixels a metre
-        glm::vec2 m_mapOrigin{0.0f};   ///< Where m_worldMin lands, in map pixels
+        float     m_mapScale = 1.0f;  ///< Map pixels a meter
+        glm::vec2 m_mapOrigin{0.0f};  ///< Where m_worldMin lands, in map pixels
 
         uint32_t   m_everyToken = 0;     ///< Every token's bit in the scene
         CountWatch m_tokens;             ///< The player's tokens, to cheer each new one
@@ -122,6 +108,6 @@ class LabHud : public ReflectedBehavior<LabHud> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabHud)
-    VKM_F(bannerSeconds)
+VKM_BEHAVIOR(::Lab::LabHud)
+    VKM_F(bannerSeconds, "How long a banner stays up.")
 VKM_REFLECT_END()

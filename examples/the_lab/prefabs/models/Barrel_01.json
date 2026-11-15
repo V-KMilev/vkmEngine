@@ -13,6 +13,7 @@
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
         "name": "assets/models/Barrel_01/textures/Barrel_01_explosive_diff_1k.jpg"
@@ -84,10 +85,10 @@
           ]
         }
       },
-      "parent": 0,
+      "parent": 1,
       "uid": 1
     }
   ],
   "nextUid": 2,
-  "version": 3
+  "version": 4
 }

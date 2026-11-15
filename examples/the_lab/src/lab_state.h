@@ -5,9 +5,10 @@
 
 #include <glm/glm.hpp>
 
-#include "core/math/axes.h"
+#include "vkm_network/bit_stream.h"
+
+#include "base/math/axes.h"
 #include "ecs/entity.h"
-#include "net/wire/bit_stream.h"
 
 namespace Vkm::Engine {
     class Scene;
@@ -42,54 +43,19 @@ struct LabTally {
  * it. The last shot travels as it landed, since only the server's rewound world knows where that was.
  */
 struct LabScore {
-    uint32_t  shots = 0;                                 ///< Shots fired; a rise is a shot to show.
+    uint32_t  shots      = 0;                            ///< Shots fired; a rise is a shot to show.
     glm::vec3 lastHit{0.0f};                             ///< Where the last shot struck, or where it ran out.
     glm::vec3 lastNormal = Vkm::Engine::Math::WORLD_UP;  ///< The surface it struck, facing the shooter.
-    LabShot   lastShot = LabShot::Miss;
+    LabShot   lastShot   = LabShot::Miss;
 
     uint32_t tokens = 0;  ///< A bit for each LabToken found, by its `index`.
 };
 
-/// The bits LabScore::tokens has room for: how many LabTokens a scene can hold.
 inline constexpr int TOKEN_BITS = std::numeric_limits<decltype(LabScore::tokens)>::digits;
+    ///< The bits LabScore::tokens has room for: how many LabTokens a scene can hold.
 
-/**
- * @brief Watches a replicated count and says when it rises, never for the value it first sees.
- *
- * A client starts before its first snapshot, so whatever the server counted before this end
- * looked would otherwise arrive as news. A fall is a reset, taken silently. Also fits a set of
- * bits that only gains them, such as LabScore::tokens. Fed only once the component is there.
- */
-class CountWatch {
-    public:
-        CountWatch() = default;
-        ~CountWatch() = default;
-
-        CountWatch(const CountWatch& other) = default;
-        CountWatch& operator=(const CountWatch& other) = default;
-
-        CountWatch(CountWatch && other) = default;
-        CountWatch& operator=(CountWatch && other) = default;
-
-    public:
-        /**
-         * @brief Whether @p now is above the count last seen; false for the first one seen.
-         *
-         * @param now The count as this end was last told.
-         * @return True once for each rise after the first value.
-         */
-        bool rose(uint32_t now);
-
-    private:
-        uint32_t m_seen    = 0;
-        bool     m_watched = false;  ///< Whether a value has been seen yet
-};
-
-void netEncode(const LabTally& value, Vkm::Engine::BitWriter& out);
-void netDecode(LabTally& value, Vkm::Engine::BitReader& in);
-
-void netEncode(const LabScore& value, Vkm::Engine::BitWriter& out);
-void netDecode(LabScore& value, Vkm::Engine::BitReader& in);
+void netEncode(const LabScore& value, Vkm::Network::BitWriter& out);
+void netDecode(LabScore& value, Vkm::Network::BitReader& in);
 
 /**
  * @brief Add the lab's own components to what replicates; called from vkmSetupNetwork.
@@ -109,3 +75,7 @@ void registerLabNetTypes();
 void reportIfSilenced(Vkm::Engine::Scene& scene, Vkm::Engine::EntityId entity, const char* who);
 
 } // namespace Lab
+
+VKM_REFLECT_BEGIN(::Lab::LabTally)
+    VKM_F(count)
+VKM_REFLECT_END()

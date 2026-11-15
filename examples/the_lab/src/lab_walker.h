@@ -7,7 +7,7 @@
 #include "ecs/entity.h"
 #include "resource/asset_ref.h"
 #include "resource/asset/animation_clip_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Lab {
 
@@ -22,7 +22,7 @@ using namespace Vkm::Engine;
  * a press. Its siblings on the character shoot (LabShooter), throw (LabThrower) and hold the
  * camera (LabFollowCamera).
  */
-class LabWalker : public ReflectedBehavior<LabWalker> {
+class LabWalker : public Behavior<LabWalker> {
     public:
         void onStart() override;
         void onFixedUpdate(float dt) override;
@@ -39,17 +39,17 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
         void knockDown(const glm::vec3& momentum, const glm::vec3& at);
 
     public:
-        float runSpeed    = 4.0f;   ///< Speed with nothing held, m/s
-        float walkSpeed   = 1.75f;  ///< With the walk key held, m/s: the walk clip's, so feet do not skate
-        float turnSpeed   = 12.0f;  ///< How fast it turns toward travel, per second
-        float fadeSeconds = 0.15f;  ///< Crossfade length between clips
+        float runSpeed    = 4.0f;
+        float walkSpeed   = 1.75f;
+        float turnSpeed   = 12.0f;
+        float fadeSeconds = 0.15f;
 
-        AssetRef<AnimationClipAsset> idleClip;  ///< Played standing still
-        AssetRef<AnimationClipAsset> walkClip;  ///< Played while walking
-        AssetRef<AnimationClipAsset> runClip;   ///< Played while moving otherwise
-        AssetRef<AnimationClipAsset> jumpClip;  ///< Played while airborne
+        AssetRef<AnimationClipAsset> idleClip;
+        AssetRef<AnimationClipAsset> walkClip;
+        AssetRef<AnimationClipAsset> runClip;
+        AssetRef<AnimationClipAsset> jumpClip;
 
-        float standUpAfter = 4.0f;  ///< Seconds a knocked-down character lies there; 0 keeps it down.
+        float standUpAfter = 4.0f;
 
     private:
         /**
@@ -74,22 +74,20 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
         void bounce();
 
     private:
-        EntityId m_animator{};
-        std::string m_playing;        ///< The clip last faded to, by name
-        float    m_downLeft = 0.0f;   ///< Seconds until a knocked-down character stands; the authority's
-        EntityId m_lastPad{};         ///< The jump pad underfoot last tick
+        std::string m_playing;    ///< The clip last faded to, by name
+        EntityId    m_lastPad{};  ///< The jump pad underfoot last tick
 };
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabWalker)
-    VKM_F(runSpeed)
-    VKM_F(walkSpeed)
-    VKM_F(turnSpeed)
-    VKM_F(fadeSeconds)
-    VKM_F(idleClip)
-    VKM_F(walkClip)
-    VKM_F(runClip)
-    VKM_F(jumpClip)
-    VKM_F(standUpAfter)
+VKM_BEHAVIOR(::Lab::LabWalker)
+    VKM_F(runSpeed, "Speed with nothing held, m/s")
+    VKM_F(walkSpeed, "With the walk key held, m/s: the walk clip's, so feet do not skate")
+    VKM_F(turnSpeed, "How fast it turns toward travel, per second")
+    VKM_F(fadeSeconds, "Crossfade length between clips")
+    VKM_F(idleClip, "Played standing still")
+    VKM_F(walkClip, "Played while walking")
+    VKM_F(runClip, "Played while moving otherwise")
+    VKM_F(jumpClip, "Played while airborne")
+    VKM_F(standUpAfter, "Seconds a knocked-down character lies there; 0 keeps it down.")
 VKM_REFLECT_END()

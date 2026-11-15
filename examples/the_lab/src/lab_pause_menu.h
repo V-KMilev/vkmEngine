@@ -6,8 +6,9 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
-#include "system/render/render_settings.h"
-#include "system/script/reflected_behavior.h"
+#include "io/project/render_settings.h"
+#include "system/script/behavior.h"
+#include "ecs/component/ui/ui_build.h"
 
 namespace Lab {
 
@@ -16,26 +17,23 @@ using namespace Vkm::Engine;
 /**
  * @brief Esc opens a menu over the frozen lab: Resume, Restart, and a page of graphics settings.
  *
- * Built once while time runs, then driven from onRealtimeUpdate - the only hook still running
- * once it has paused the world. See docs/reference/scripting.md. A setting applies as it is
- * changed: the quality tier is withPreset over the project's settings, and the rows under it
- * refine what the tier chose.
+ * Built once while time runs, as a canvas that pauses the game: its action opens and closes it,
+ * and while it shows the world stands still (docs/reference/ui.md). A setting applies as it is
+ * changed: the quality tier is Graphics::setQuality, and the rows under it refine what the tier
+ * chose; the last switches the window between fullscreen and windowed (Graphics::setWindowMode).
+ * The page opens on, and after each change shows, what the frame renders.
  */
-class LabPauseMenu : public ReflectedBehavior<LabPauseMenu> {
+class LabPauseMenu : public Behavior<LabPauseMenu> {
     public:
         void onStart() override;
         void onRealtimeUpdate(float dt) override;
 
     public:
-        float fadeSeconds = 0.18f;  ///< How long the menu takes to fade in.
+        float fadeSeconds = 0.18f;
 
     private:
-        /**
-         * @brief Show or hide the menu, pausing the world to match.
-         *
-         * @param open Whether the menu is up.
-         */
-        void setOpen(bool open);
+        /// Hide the menu, which lets the world run on.
+        void close();
 
         /**
          * @brief Show the settings page in place of the main one, or the main one back.
@@ -45,76 +43,47 @@ class LabPauseMenu : public ReflectedBehavior<LabPauseMenu> {
         void showSettings(bool settings);
 
         /**
-         * @brief A button with a centred caption.
+         * @brief The settings column's next row, stepping through @p options: "< option >" on its right.
          *
-         * @param parent  Page it sits on.
-         * @param caption What it says.
-         * @param eventId What its click is called.
-         * @param at      Its top middle, from the page's top middle, in canvas pixels.
-         * @param size    Its size, in canvas pixels.
-         * @return The button.
-         */
-        EntityId addButton(
-            EntityId parent,
-            const char* caption,
-            const std::string& eventId,
-            const glm::vec2& at,
-            const glm::vec2& size
-        );
-
-        /**
-         * @brief A row of the settings page with the setting's name on its left.
-         *
-         * @param name What the setting is called.
-         * @param y    Its top, in the page's canvas pixels.
-         * @return The row.
-         */
-        EntityId addRow(const char* name, float y);
-
-        /**
-         * @brief A settings row stepping through @p options: "< option >" on its right.
-         *
-         * @param name    What the setting is called.
-         * @param eventId What a step of it is called.
+         * @param name    What the setting is called, on the row's left.
          * @param options What it can be, in step order.
-         * @param y       Its top, in the page's canvas pixels.
          * @return The choice.
          */
-        EntityId addChoice(
-            const char* name,
-            const std::string& eventId,
-            std::vector<std::string> options,
-            float y
-        );
+        EntityId addChoice(const char* name, std::vector<std::string> options);
 
         /**
-         * @brief A settings row that is on or off: a switch on its right.
+         * @brief The settings column's next row, on or off: a switch on its right.
          *
-         * @param name    What the setting is called.
-         * @param eventId What a flip of it is called.
-         * @param y       Its top, in the page's canvas pixels.
+         * @param name What the setting is called, on the row's left.
          * @return The toggle.
          */
-        EntityId addToggle(const char* name, const std::string& eventId, float y);
+        EntityId addToggle(const char* name);
 
         /**
-         * @brief Set every row under the tier to what @p preset renders with.
-         *
-         * @param preset The tier.
+         * @brief Set every row to what the frame renders with, and the tier to the one in effect.
          */
-        void showTier(GraphicsPreset preset);
+        void showInEffect();
 
         /**
-         * @brief Render as the rows say: the chosen tier over the project's settings, refined by each row.
+         * @brief Set every row under the tier to @p settings.
+         *
+         * @param settings What the frame renders with.
+         */
+        void showRows(const RenderSettings& settings);
+
+        /**
+         * @brief Render as the rows say; an effect the project has off stays off.
          */
         void apply();
 
     private:
+        UI::Style m_style;  ///< The menu's look, set in onStart.
+
         EntityId m_canvas{};
         EntityId m_menu{};
         EntityId m_main{};
         EntityId m_settings{};
-        bool     m_open = false;
+        EntityId m_rows{};  ///< The settings page's column, which lays its rows out
         float    m_fade = 0.0f;
 
         EntityId m_quality{};
@@ -126,10 +95,11 @@ class LabPauseMenu : public ReflectedBehavior<LabPauseMenu> {
         EntityId m_reflections{};
         EntityId m_softShadows{};
         EntityId m_culling{};
+        EntityId m_fullscreen{};
 };
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabPauseMenu)
-    VKM_F(fadeSeconds)
+VKM_BEHAVIOR(::Lab::LabPauseMenu)
+    VKM_F(fadeSeconds, "How long the menu takes to fade in.")
 VKM_REFLECT_END()

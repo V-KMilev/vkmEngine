@@ -9,7 +9,7 @@
 #include "resource/asset_ref.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -25,20 +25,19 @@ using namespace Vkm::Engine;
  * prop is pushed. Every end that draws shows each shot from that score - a tracer, sparks, a sound,
  * and on scenery a scorch mark. The shot leaves along the view from the point the character's
  * LabFollowCamera follows; that camera lags a moving body, so then the shot runs a little off the
- * screen's centre.
+ * screen's center.
  */
-class LabShooter : public ReflectedBehavior<LabShooter> {
+class LabShooter : public Behavior<LabShooter> {
     public:
-        void onStart() override;
         void onUpdate(float dt) override;
         void onFixedUpdate(float dt) override;
 
     public:
-        std::string hitEffect = "prefabs/shot_hit.json";  ///< Made where a shot strikes, project-relative.
-        std::string tracer    = "prefabs/tracer.json";    ///< Made where a shot leaves, along it.
+        PrefabRef hitEffect{"prefabs/shot_hit.json"};
+        PrefabRef tracer{"prefabs/tracer.json"};
 
-        AssetRef<MaterialAsset>  scorch;  ///< Left where a shot strikes scenery, as a Decal.
-        AssetRef<AudioClipAsset> zap;     ///< Heard where a shot leaves.
+        AssetRef<MaterialAsset>  scorch;
+        AssetRef<AudioClipAsset> zap;
 
     private:
         /// Where a shot leaves: the point the camera follows, without its lag.
@@ -65,9 +64,9 @@ class LabShooter : public ReflectedBehavior<LabShooter> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabShooter)
-    VKM_F(hitEffect)
-    VKM_F(tracer)
-    VKM_F(scorch)
-    VKM_F(zap)
+VKM_BEHAVIOR(::Lab::LabShooter)
+    VKM_F(hitEffect, "Made where a shot strikes.")
+    VKM_F(tracer, "Made where a shot leaves, along it.")
+    VKM_F(scorch, "Left where a shot strikes scenery, as a Decal.")
+    VKM_F(zap, "Heard where a shot leaves.")
 VKM_REFLECT_END()

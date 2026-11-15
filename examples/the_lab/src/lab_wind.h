@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Lab {
 
@@ -15,22 +15,22 @@ using namespace Vkm::Engine;
  * the world's clock. Only where this end simulates the body; a banner is NetLocal, so every end
  * blows its own alike.
  */
-class LabWind : public ReflectedBehavior<LabWind> {
+class LabWind : public Behavior<LabWind> {
     public:
         void onFixedUpdate(float dt) override;
 
     public:
-        glm::vec3 direction{1.0f, 0.0f, 0.0f};  ///< Which way it blows; its length is the gust's push, m/s^2.
-        float     gustSeconds = 4.0f;           ///< Seconds from one gust to the next.
-        float     flutter     = 0.5f;           ///< How much quicker shakes ride on the gust, 0 to 1.
-        float     phase       = 0.0f;           ///< Share of a gust it is ahead of its neighbours.
+        glm::vec3 direction{1.0f, 0.0f, 0.0f};
+        float     gustSeconds = 4.0f;
+        float     flutter     = 0.5f;
+        float     phase       = 0.0f;
 };
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabWind)
-    VKM_F(direction)
-    VKM_F(gustSeconds)
-    VKM_F(flutter)
-    VKM_F(phase)
+VKM_BEHAVIOR(::Lab::LabWind)
+    VKM_F(direction, "Which way it blows; its length is the gust's push, m/s^2.")
+    VKM_F(gustSeconds, "Seconds from one gust to the next.")
+    VKM_F(flutter, "How much quicker shakes ride on the gust, 0 to 1.")
+    VKM_F(phase, "Share of a gust it is ahead of its neighbors.")
 VKM_REFLECT_END()

@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -20,7 +20,7 @@ using namespace Vkm::Engine;
  * destroyed after `lifetime` so a session cannot fill the world. Every end makes the `impact`
  * prefab where the crate is when it sees that count move.
  */
-class LabCrate : public ReflectedBehavior<LabCrate> {
+class LabCrate : public Behavior<LabCrate> {
     public:
         void onStart() override;
         void onUpdate(float dt) override;
@@ -28,20 +28,19 @@ class LabCrate : public ReflectedBehavior<LabCrate> {
         void onCollisionEnter(const Collision& hit) override;
 
     public:
-        float lifetime = 6.0f;  ///< Seconds it lasts once thrown.
+        float lifetime = 6.0f;
 
-        /// Prefab made where it first strikes something, project-relative; empty makes none.
-        std::string impact = "prefabs/impact.json";
+        PrefabRef impact{"prefabs/impact.json"};  ///< Prefab made where it first strikes something; empty
+                                                  ///< makes none.
 
     private:
         glm::vec3  m_momentum{0.0f};  ///< Before this tick's contacts, kg m/s; the authority's
-        float      m_age = 0.0f;      ///< Seconds since it was thrown; the authority's
         CountWatch m_strikes;         ///< The strikes, to puff for a new one
 };
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabCrate)
-    VKM_F(lifetime)
+VKM_BEHAVIOR(::Lab::LabCrate)
+    VKM_F(lifetime, "Seconds it lasts once thrown.")
     VKM_F(impact)
 VKM_REFLECT_END()

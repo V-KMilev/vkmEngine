@@ -9,13 +9,20 @@
     "meshes": [
       {
         "name": "assets/models/shrub_02/shrub_02.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/shrub_02/shrub_02.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/shrub_02/shrub_02.gltf:mesh0:lod2"
       }
     ],
     "skeletons": [],
     "sounds": [],
+    "terrains": [],
     "textures": [
       {
-        "name": "assets/models/shrub_02/shrub_02_diff_1k.jpg"
+        "name": "assets/models/shrub_02/shrub_02_diff_rgba_1k.png"
       },
       {
         "name": "assets/models/shrub_02/shrub_02_nor_gl_1k.jpg"
@@ -55,11 +62,28 @@
     },
     {
       "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 15.0,
+              "mesh": "assets/models/shrub_02/shrub_02.gltf:mesh0"
+            },
+            {
+              "maxDistance": 45.0,
+              "mesh": "assets/models/shrub_02/shrub_02.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 90.0,
+              "mesh": "assets/models/shrub_02/shrub_02.gltf:mesh0:lod2"
+            }
+          ]
+        },
         "Mesh": {
           "castShadows": true,
           "material": "assets/models/shrub_02/shrub_02.gltf:mat0",
           "mesh": "assets/models/shrub_02/shrub_02.gltf:mesh0",
-          "movable": true,
+          "movable": false,
           "seenBy": "All",
           "visible": true
         },
@@ -73,10 +97,10 @@
             0.0
           ],
           "rotation": [
-            0.708102822303772,
-            0.12589912116527557,
-            -0.6947680711746216,
-            0.006097283214330673
+            0.7081028,
+            0.12589912,
+            -0.6947681,
+            0.006097283
           ],
           "scale": [
             1.0,
@@ -85,10 +109,10 @@
           ]
         }
       },
-      "parent": 0,
+      "parent": 1,
       "uid": 1
     }
   ],
   "nextUid": 2,
-  "version": 3
+  "version": 4
 }

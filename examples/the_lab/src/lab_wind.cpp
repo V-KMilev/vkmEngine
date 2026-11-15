@@ -5,9 +5,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#include "base/math/cycle.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/scene.h"
-#include "net/net_session.h"
 
 namespace Lab {
 
@@ -28,14 +28,15 @@ void LabWind::onFixedUpdate(float dt) {
     if (!body || body->motion != RigidbodyMotion::Dynamic || gustSeconds <= 0.0f) return;
 
     // Inside a tick the world's clock is that tick's, the same at every end.
-    const double now   = net().worldTime(clock());
-    const double gusts = now / static_cast<double>(gustSeconds) + static_cast<double>(phase);
-    const double fast  = gusts * static_cast<double>(FLUTTER_RATE);
-    const auto   turn  = [](double turns) { return static_cast<float>(glm::fract(turns)); };
+    const double now   = worldTime();
+    const double every = gustSeconds;
+    const double quick = every / FLUTTER_RATE;
+    const float  ahead = phase * FLUTTER_RATE;
     const float  tau   = glm::two_pi<float>();
-    const float  gust  = LULL + (1.0f - LULL) * (0.5f - 0.5f * std::cos(tau * turn(gusts)));
-    const float  low   = std::sin(tau * turn(fast));
-    const float  high  = std::sin(tau * turn(fast * static_cast<double>(FLUTTER_RATIO)));
+    const float  rise  = 0.5f - 0.5f * std::cos(tau * (Math::cycle(now, every) + phase));
+    const float  gust  = LULL + (1.0f - LULL) * rise;
+    const float  low   = std::sin(tau * (Math::cycle(now, quick) + ahead));
+    const float  high  = std::sin(tau * (Math::cycle(now, quick / FLUTTER_RATIO) + ahead * FLUTTER_RATIO));
     const float  shake = 0.5f * (low + high);
 
     body->linearVelocity += direction * (gust * (1.0f + flutter * shake) * dt);

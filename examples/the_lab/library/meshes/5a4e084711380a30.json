@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/island_tree_02/island_tree_02.gltf:mesh1:lod2",
+  "source": {
+    "base": "assets/models/island_tree_02/island_tree_02.gltf:mesh1",
+    "kind": "decimate",
+    "ratio": 0.08
+  }
+}

@@ -5,16 +5,16 @@
 #include <glm/glm.hpp>
 
 #include "core/clock.h"
-#include "core/math/axes.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
+#include "base/math/axes.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/render/camera.h"
+#include "ecs/component/ui/ui_build.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_text.h"
 #include "ecs/scene.h"
-#include "system/physics/query/query.h"
-#include "system/ui/screen_view.h"
+#include "system/physics/query.h"
+#include "core/frame/screen_view.h"
 
 #include "lab_palette.h"
 
@@ -34,7 +34,7 @@ constexpr float FADE_RATE = 6.0f;
 // Scenery this much short of the label still hides it; what is just behind its point does not.
 constexpr float OCCLUSION_SLACK = 0.6f;
 
-// The narrowest band the fade spans, metres: with `fadeFrom` at or past `showWithin` it is a cut.
+// The narrowest band the fade spans, meters: with `fadeFrom` at or past `showWithin` it is a cut.
 constexpr float SHORTEST_FADE = 0.001f;
 
 } // namespace
@@ -43,10 +43,7 @@ void LabSign::onStart() {
     // A server draws nothing to read.
     if (!window()) return;
 
-    m_canvas = spawn("Sign Label");
-    UICanvas canvas;
-    canvas.sortOrder = LAYER_SIGNS;
-    scene().add(m_canvas, std::move(canvas));
+    m_canvas = UI::canvas(scene(), "Sign Label", LAYER_SIGNS);
 
     // Its bottom middle is the point it hangs over; the caption runs under the title.
     m_label = spawn("Label", m_canvas);
@@ -85,24 +82,23 @@ bool LabSign::isHidden(const glm::vec3& eye, const glm::vec3& point) {
     const float     distance = glm::length(toward);
     if (distance <= OCCLUSION_SLACK) return false;
     // Static and kinematic bodies - walls, platforms - not the players and props moving about.
-    QueryFilter filter;
-    filter.hitDynamic = false;
-    RayHit hit;
-    return raycast(scene(), eye, toward, distance - OCCLUSION_SLACK, hit, filter);
+    QueryFilter scenery;
+    scenery.hitDynamic = false;
+    return cast(eye, toward, distance - OCCLUSION_SLACK, scenery).has_value();
 }
 
 void LabSign::onRealtimeUpdate(float) {
     // The pause menu is drawn over the world; a label would show through it.
-    if (UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas)) canvas->visible = !clock().isPaused();
+    const bool frozen = clock().isPaused() || clock().isMenuShown();
+    if (UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas)) canvas->visible = !frozen;
 }
 
 void LabSign::onUpdate(float dt) {
     UIElement* label = scene().tryGet<UIElement>(m_label);
     const UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas);
-    const Transform* at = tryGet<Transform>();
-    if (!label || !canvas || !at) return;
+    if (!label || !canvas || !has<Transform>()) return;
 
-    const glm::vec3 point = resolvedWorldPosition(scene(), entity(), *at) + Math::WORLD_UP * height;
+    const glm::vec3 point = worldPosition() + Math::WORLD_UP * height;
     const std::optional<glm::vec2> onCanvas = screen().toCanvas(point, *canvas);
     const Transform* eye = scene().tryGet<Transform>(findActiveCamera(scene()));
     if (!onCanvas || !eye) {
@@ -112,10 +108,10 @@ void LabSign::onUpdate(float dt) {
 
     const float distance = glm::distance(eye->position, point);
     const float span     = glm::max(showWithin - fadeFrom, SHORTEST_FADE);
-    float       wanted   = glm::clamp((showWithin - distance) / span, 0.0f, 1.0f);
+    float wanted = glm::clamp((showWithin - distance) / span, 0.0f, 1.0f);
     if (wanted > 0.0f && isHidden(eye->position, point)) wanted = 0.0f;
     const float step = FADE_RATE * dt;
-    m_shown = m_shown < wanted ? glm::min(wanted, m_shown + step) : glm::max(wanted, m_shown - step);
+    m_shown         = m_shown < wanted ? glm::min(wanted, m_shown + step) : glm::max(wanted, m_shown - step);
     label->opacity  = m_shown;
     label->position = *onCanvas;
 }
