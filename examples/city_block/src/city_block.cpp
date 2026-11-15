@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "CITY"
-
 #include "city_block.h"
 
 #include <algorithm>
@@ -8,14 +6,14 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/math/rotation.h"
+#include "base/math/rotation.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/mesh.h"
-#include "resource/generate/mesh_generators.h"
+#include "io/asset/generate/mesh_generators.h"
 #include "resource/resource_manager.h"
 
 namespace City {
@@ -26,16 +24,16 @@ constexpr uint64_t CITY_SEED = 0xC17Bu;
 
 constexpr float FLOOR_HEIGHT  = 3.5f;
 constexpr float BUILDING_DEEP = 12.0f;  ///< From a building's street face back into its block.
-/// Metres ahead along the loop the camera looks at, so it turns through a corner, not at it.
-constexpr float LOOK_AHEAD    = 10.0f;
+constexpr float EYE_HEIGHT    = 1.7f;   ///< The camera's height above the street.
+constexpr float LOOK_AHEAD    = 10.0f;  ///< Meters ahead along the loop the camera looks at, so it turns
+                                        ///< through a corner, not at it.
 
-/// Each side of a block, as the way it faces out.
 const glm::vec3 BLOCK_SIDES[4] = {
     {0.0f, 0.0f, 1.0f},
     {1.0f, 0.0f, 0.0f},
     {0.0f, 0.0f, -1.0f},
     {-1.0f, 0.0f, 0.0f},
-};
+};  ///< Each side of a block, as the way it faces out.
 
 MaterialHandle makeMaterial(
     ResourceManager& resources,
@@ -54,26 +52,16 @@ MaterialHandle makeMaterial(
 } // namespace
 
 void CityBlock::onStart() {
+    // A scene load that fails starts this behavior again in the city it built.
     if (m_built) return;
     m_built = true;
     m_rng.seed(CITY_SEED);
 
-    Environment& environment = scene().environment();
-    environment.sky.showSkybox     = true;
-    environment.sky.procedural     = true;
-    environment.sky.sunElevation   = 38.0f;
-    environment.sky.sunAzimuth     = 35.0f;
-    environment.sky.lightIntensity = 3.0f;
-
     m_camera = findActiveCamera(scene());
-    if (Camera* camera = scene().tryGet<Camera>(m_camera)) {
-        camera->zFar  = CAMERA_FAR;
-        camera->zNear = 0.1f;
-    }
 
     m_cube     = resources().add(generateCube(), "city:cube");
-    m_sphere   = resources().add(generateSphere(12), "city:sphere");
-    m_cylinder = resources().add(generateCylinder(0.5f, 1.0f, 20), "city:cylinder");
+    m_sphere   = resources().add(generateSphere({12}), "city:sphere");
+    m_cylinder = resources().add(generateCylinder({0.5f, 1.0f, 20}), "city:cylinder");
 
     ResourceManager& res = resources();
     m_ground   = makeMaterial(res, "city:asphalt", {0.18f, 0.18f, 0.19f}, 0.9f, 0.0f);
@@ -91,7 +79,7 @@ void CityBlock::onStart() {
     glow.albedo           = {1.0f, 0.9f, 0.7f, 1.0f};
     glow.emission         = {1.0f, 0.85f, 0.6f};
     glow.emissiveStrength = 4.0f;
-    m_lampGlow = res.add(std::move(glow), "city:lamp_glow");
+    m_lampGlow            = res.add(std::move(glow), "city:lamp_glow");
 
     // The streets run between the blocks and round the grid's edge.
     const float pitch  = blockSize + streetWidth;
@@ -99,7 +87,7 @@ void CityBlock::onStart() {
     place(m_cube, m_ground, {0.0f, -0.5f, 0.0f}, {extent, 1.0f, extent});
 
     const float first = -0.5f * static_cast<float>(blocks - 1) * pitch;
-    // The street a quarter of the grid out from the centre; with an odd count, the one beside it.
+    // The street a quarter of the grid out from the center; with an odd count, the one beside it.
     m_loopRadius = std::max(1.0f, std::floor(static_cast<float>(blocks) * 0.25f)) * pitch
         - static_cast<float>(blocks % 2) * 0.5f * pitch;
     for (int z = 0; z < blocks; ++z) {
@@ -120,7 +108,7 @@ void CityBlock::place(
     const glm::vec3& scale,
     const glm::quat& rotation
 ) {
-    const EntityId entity = spawn();
+    const EntityId entity = scene().createEntity();
     // The city never moves: the renderer keeps what it works out about each prop.
     Mesh drawn{mesh, material};
     drawn.movable = false;
@@ -132,33 +120,33 @@ void CityBlock::place(
     scene().add(entity, std::move(transform));
 }
 
-void CityBlock::buildBlock(const glm::vec3& centre) {
+void CityBlock::buildBlock(const glm::vec3& center) {
     const float half = blockSize * 0.5f;
 
     // Three buildings a side, each facing its street; the corners are the side's first.
     for (const glm::vec3& outward : BLOCK_SIDES) {
         const glm::vec3 along(-outward.z, 0.0f, outward.x);
-        const float     span = blockSize / 3.0f;
+        const float span = blockSize / 3.0f;
         for (int b = 0; b < 3; ++b) {
             const float     offset = -half + span * (static_cast<float>(b) + 0.5f);
-            const glm::vec3 at     = centre + outward * (half - BUILDING_DEEP * 0.5f) + along * offset;
-            // Deep along its outward axis, a metre short of its span along the street.
+            const glm::vec3 at     = center + outward * (half - BUILDING_DEEP * 0.5f) + along * offset;
+            // Deep along its outward axis, a meter short of its span along the street.
             const glm::vec2 size = BUILDING_DEEP * glm::abs(glm::vec2(outward.x, outward.z))
                 + (span - 1.0f) * glm::abs(glm::vec2(along.x, along.z));
             buildBuilding(at, size, outward);
         }
 
-        // The pavement: lamps, then cars at the kerb.
-        const glm::vec3 kerb = centre + outward * (half + 2.0f);
+        // The sidewalk: lamps, then cars at the curb.
+        const glm::vec3 curb = center + outward * (half + 2.0f);
         for (int l = 0; l < lampsPerSide; ++l) {
-            const float     t  = (static_cast<float>(l) + 0.5f) / static_cast<float>(lampsPerSide) - 0.5f;
-            const glm::vec3 at = kerb + along * (t * blockSize);
+            const float t = (static_cast<float>(l) + 0.5f) / static_cast<float>(lampsPerSide) - 0.5f;
+            const glm::vec3 at = curb + along * (t * blockSize);
             place(m_cylinder, m_metal, at + glm::vec3(0.0f, 2.5f, 0.0f), {0.15f, 5.0f, 0.15f});
             place(m_sphere, m_lampGlow, at + glm::vec3(0.0f, 5.1f, 0.0f), glm::vec3(0.5f));
         }
-        const glm::vec3 lane = centre + outward * (half + 4.0f);
+        const glm::vec3 lane = center + outward * (half + 4.0f);
         for (int c = 0; c < carsPerSide; ++c) {
-            const float     t      = (static_cast<float>(c) + 0.5f) / static_cast<float>(carsPerSide) - 0.5f;
+            const float t = (static_cast<float>(c) + 0.5f) / static_cast<float>(carsPerSide) - 0.5f;
             const glm::vec3 at     = lane + along * (t * blockSize + m_rng.nextFloat(-2.0f, 2.0f));
             const glm::vec3 length = along * 4.2f + outward * 1.8f;
             const glm::vec3 body(std::abs(length.x), 0.8f, std::abs(length.z));
@@ -168,8 +156,8 @@ void CityBlock::buildBlock(const glm::vec3& centre) {
             // Wheels: the cylinder's axis turned from up onto the axle, across the car.
             const glm::quat axle = glm::angleAxis(glm::half_pi<float>(), along);
             for (int w = 0; w < 4; ++w) {
-                const float     ahead  = (w & 1) ? 1.4f : -1.4f;
-                const float     aside  = (w & 2) ? 0.8f : -0.8f;
+                const float ahead = (w & 1) ? 1.4f : -1.4f;
+                const float aside = (w & 2) ? 0.8f : -0.8f;
                 const glm::vec3 corner = along * ahead + outward * aside + glm::vec3(0.0f, 0.35f, 0.0f);
                 place(m_cylinder, m_cars[3], at + corner, {0.7f, 0.25f, 0.7f}, axle);
             }
@@ -177,26 +165,26 @@ void CityBlock::buildBlock(const glm::vec3& centre) {
     }
 }
 
-void CityBlock::buildBuilding(const glm::vec3& centre, const glm::vec2& size, const glm::vec3& outward) {
+void CityBlock::buildBuilding(const glm::vec3& center, const glm::vec2& size, const glm::vec3& outward) {
     const int   floors = m_rng.nextInt(4, 20);
     const float height = static_cast<float>(floors) * FLOOR_HEIGHT;
     place(
         m_cube,
         m_walls[m_rng.nextInt(0, 2)],
-        centre + glm::vec3(0.0f, height * 0.5f, 0.0f),
+        center + glm::vec3(0.0f, height * 0.5f, 0.0f),
         {size.x, height, size.y}
     );
 
     // The street face's details, a row a floor.
     const glm::vec3 along(-outward.z, 0.0f, outward.x);
     const float     width = std::abs(outward.x) > 0.5f ? size.y : size.x;
-    const glm::vec3 face  = centre + outward * (BUILDING_DEEP * 0.5f);
+    const glm::vec3 face  = center + outward * (BUILDING_DEEP * 0.5f);
     for (int f = 1; f < floors; ++f) {
         const float y = static_cast<float>(f) * FLOOR_HEIGHT;
         for (int d = 0; d < detailsPerFloor; ++d) {
-            const float     t  = (static_cast<float>(d) + 0.5f) / static_cast<float>(detailsPerFloor) - 0.5f;
+            const float t = (static_cast<float>(d) + 0.5f) / static_cast<float>(detailsPerFloor) - 0.5f;
             const glm::vec3 at = face + along * (t * width * 0.9f) + glm::vec3(0.0f, y, 0.0f);
-            const int       kind = m_rng.nextInt(0, 9);
+            const int kind = m_rng.nextInt(0, 9);
             if (kind < 6) {
                 // A window ledge.
                 const glm::vec3 ledge = along * 1.4f + outward * 0.35f;
@@ -233,8 +221,8 @@ glm::vec3 CityBlock::loopPoint(float distance) const {
     const float sideLength = radius * 2.0f;
     const float lap        = sideLength * 4.0f;
     const float d          = std::fmod(std::fmod(distance, lap) + lap, lap);
-    const int   side       = static_cast<int>(d / sideLength);
-    const float along      = d - static_cast<float>(side) * sideLength;
+    const int side = static_cast<int>(d / sideLength);
+    const float along = d - static_cast<float>(side) * sideLength;
 
     const glm::vec3 corners[4] = {
         {-radius, 0.0f, -radius},
@@ -252,11 +240,11 @@ void CityBlock::onUpdate(float dt) {
     Transform* view = scene().tryGet<Transform>(m_camera);
     if (!view) return;
 
-    m_travelled += dt * cameraSpeed;
+    m_traveled += dt * cameraSpeed;
 
     // It looks at the loop ahead of it, so it turns through a corner as a driver would.
-    const glm::vec3 position = loopPoint(m_travelled);
-    const glm::vec3 heading  = glm::normalize(loopPoint(m_travelled + LOOK_AHEAD) - position);
+    const glm::vec3 position = loopPoint(m_traveled);
+    const glm::vec3 heading  = glm::normalize(loopPoint(m_traveled + LOOK_AHEAD) - position);
 
     view->position = position + glm::vec3(0.0f, EYE_HEIGHT, 0.0f);
     view->rotation = Math::lookRotation(heading);

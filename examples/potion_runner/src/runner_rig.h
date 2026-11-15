@@ -11,8 +11,8 @@ using namespace Vkm::Engine;
 // clip carries footstep markers, so the sound follows the animation, not a timer.
 // Nothing is skinned: the limbs are boxes hung on the bones with BoneSockets.
 
-/// Asset names the Animator resolves the rig and clip by.
-inline constexpr const char* RUNNER_RIG_NAME  = "potion:rig";
+inline constexpr const char* RUNNER_RIG_NAME  = "potion:rig";  ///< Asset names the Animator resolves the rig
+                                                               ///< and clip by.
 inline constexpr const char* RUNNER_CLIP_NAME = "potion:stride";
 
 // The four limb bones; the rig's root carries no limb.
@@ -21,8 +21,7 @@ inline constexpr const char* RUNNER_BONE_ARM_R = "Arm R";
 inline constexpr const char* RUNNER_BONE_LEG_L = "Leg L";
 inline constexpr const char* RUNNER_BONE_LEG_R = "Leg R";
 
-/// Marker for a footfall, twice a cycle.
-inline constexpr const char* RUNNER_MARKER_FOOTSTEP = "footstep";
+inline constexpr const char* RUNNER_MARKER_FOOTSTEP = "footstep";  ///< Marker for a footfall, twice a cycle.
 
 /**
  * @brief Build the runner's rig: a root, and the four limb bones under it.

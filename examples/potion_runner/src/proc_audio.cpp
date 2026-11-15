@@ -8,9 +8,11 @@
 
 #include <glm/gtc/constants.hpp>
 
-#include "core/math/random.h"
+#include "base/math/random.h"
 
 namespace Potion {
+
+using namespace Vkm::Audio;
 
 namespace {
 
@@ -83,7 +85,7 @@ AudioClipAsset makeFootstepSound() {
 
         const float remaining = FOOTSTEP_SECONDS - t;
         const float envelope  = std::min(1.0f, std::min(t / ATTACK_SECONDS, remaining / RELEASE_SECONDS));
-        const float value = std::clamp((body + grit) * envelope, -1.0f, 1.0f);
+        const float value     = std::clamp((body + grit) * envelope, -1.0f, 1.0f);
         samples.push_back(static_cast<int16_t>(value * 32767.0f));
     }
 
@@ -117,7 +119,7 @@ AudioClipAsset makeCoinChime() {
         const float rise      = t / CHIME_ATTACK_SECONDS;
         const float fall      = remaining / CHIME_RELEASE_SECONDS;
         const float envelope  = std::min(1.0f, std::min(rise, fall));
-        const float value = std::clamp((low + high + strike) * envelope, -1.0f, 1.0f);
+        const float value     = std::clamp((low + high + strike) * envelope, -1.0f, 1.0f);
         samples.push_back(static_cast<int16_t>(value * 32767.0f));
     }
 

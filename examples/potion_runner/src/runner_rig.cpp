@@ -7,8 +7,8 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "core/math/axes.h"
-#include "ecs/component/core/transform.h"
+#include "base/math/axes.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Potion {
 
@@ -49,7 +49,7 @@ SkeletonAsset makeRunnerSkeleton() {
         rig.bones.push_back({name, parent});
         Transform bind;
         bind.position = position;
-        rig.bindPose.push_back(bind);
+        rig.bindPose.push_back(bind.pose());
         // Parented to the root, whose bind is identity, so its model-space bind is its own.
         rig.inverseBind.push_back(glm::inverse(Transform::computeModelMatrix(bind)));
     };
@@ -72,14 +72,14 @@ AnimationClipAsset makeRunnerStride() {
     for (size_t i = 0; i < std::size(LIMBS); ++i) {
         const LimbSpec& limb = LIMBS[i];
         ClipBone& bone = clip.bones[i + 1];
-        bone.rotation  = {static_cast<uint32_t>(clip.rotations.size()), STRIDE_KEYS + 1};
+        bone.rotation = {static_cast<uint32_t>(clip.rotations.size()), STRIDE_KEYS + 1};
 
         // The closing key repeats the opening one, so the loop seam does not step.
         for (uint32_t k = 0; k <= STRIDE_KEYS; ++k) {
             const float time = STRIDE_PERIOD * static_cast<float>(k) / static_cast<float>(STRIDE_KEYS);
             clip.rotationTimes.push_back(time);
             clip.rotations.push_back(
-                glm::angleAxis(swingAngle(limb.amplitude, time + limb.phase), Math::WORLD_AXIS_X)
+                glm::angleAxis(swingAngle(limb.amplitude, time + limb.phase), Math::WORLD_RIGHT)
             );
         }
     }
