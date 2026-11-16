@@ -27,6 +27,7 @@ jobs:
     name: Publish
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
@@ -68,12 +69,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" release/* --clobber
-            # A release its tag's deletion left a draft is published again; by version, so
-            # re-running an older one never makes it the latest.
-            gh api -X PATCH "$(gh release view "$TAG" --json apiUrl -q .apiUrl)" \
-              -f draft=false -f make_latest=legacy > /dev/null
-          else
-            gh release create "$TAG" release/* --title "vkmEngine ${TAG#v}" --notes-file notes.md
-          fi
+          publish() {
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              gh release upload "$TAG" release/* --clobber || return 1
+              # A release its tag's deletion left a draft is published again; by version, so
+              # re-running an older one never makes it the latest.
+              gh api -X PATCH "$(gh release view "$TAG" --json apiUrl -q .apiUrl)" \
+                -f draft=false -f make_latest=legacy > /dev/null
+            else
+              gh release create "$TAG" release/* --title "vkmEngine ${TAG#v}" --notes-file notes.md
+            fi
+          }
+          # An upload dropped on its way is tried again, over the release the last try made.
+          for attempt in 1 2 3; do
+            publish && exit 0
+            echo "publishing $TAG failed, try $attempt of 3" >&2
+            sleep 30
+          done
+          exit 1
