@@ -35,7 +35,7 @@ administrator: the engine in `~/.local/share/vkmEngine`
 (beside the engine on Windows), which the script puts on your PATH or tells you to, and
 **vkmEngine** in your app menu, which opens the editor. For Clang, give the
 script `VKM_COMPILER=clang` - on the shell's side of the pipe,
-`curl ... | VKM_COMPILER=clang sh`, or `$env:VKM_COMPILER = 'clang'` before
+`curl ... | VKM_COMPILER=clang sh`, or `$env:VKM_COMPILER = "clang"` before
 `irm` on Windows; for a release other than the newest, `VKM_VERSION=<version>`
 the same way. One engine is installed at a time. `uninstall.sh` in
 the engine's folder removes it on Linux, and Apps & features does on Windows -
@@ -61,7 +61,10 @@ vkm run
 
 A cube spinning over a floor under a directional light, until a dropped ball
 turns it the other way. `vkm new` copied the SDK's template and stamped your
-name and this SDK's version into it. `vkm run` compiled `src/` into the
+name and this SDK's version into it. The world is `scenes/main.json`, which
+`project.json`'s `entryScene` names: `vkm edit` opens it in the editor, and what
+you save there is what `vkm run` plays. A project that names no entry scene
+starts in the first scene Save As writes. `vkm run` compiled `src/` into the
 **gameplay module**, `bin/libgame.so` (`bin/game.dll` on Windows), cooked the
 assets, and handed the project to `vkm_runtime`, which loaded the module and ran
 it. Building and cooking are no-ops when nothing changed, so
@@ -74,7 +77,7 @@ vkm new lab -t the_lab          # or potion_runner, stress_arena, city_block
 ```
 
 The editor runs the same commands - New Project, File > Build Scripts and
-Package Game - and shows their output in its Build tab.
+Package Game - and shows their output in its Console's Build view.
 
 `engineVersion` in `project.json` records the engine a project was made for.
 Built against another *minor* release, configure stops and names both; set
@@ -102,33 +105,23 @@ mygame/
         cooked/       your assets in the form the runtime reads
         logs/         what each run said
         dist/         packaged games
+        editor_settings.json
+                      the editor's own state for this project
 ```
 
 A new `.cpp` under `src/` is in the next build. A library your code links is
-one `target_link_libraries(game_module PRIVATE ...)` in `CMakeLists.txt`. The
-engine is never rebuilt for your game.
+one `target_link_libraries(<target> PRIVATE ...)` in `CMakeLists.txt`, on the
+target its `vkm_add_gameplay_module` names: `game_module` in a new project, the
+example's own in a copy of one (`the_lab_module`). The engine is never rebuilt
+for your game.
 
 ## The commands
 
-| | |
-|---|---|
-| `vkm new <name>` | make a project from the template; `-t the_lab` copies an example |
-| `vkm run` | build, cook and play it |
-| `vkm run --players N` | the same, as a local server with N players joined to it - multiplayer from one terminal |
-| `vkm run --connect HOST[:PORT]` | join a game someone is serving |
-| `vkm edit` | build it and open it in the editor; a failed build still opens it |
-| `vkm serve` | build, cook and host it for players - `vkm_server`, no window, needs `vkmSetupNetwork` |
-| `vkm build` | only compile `src/` into the gameplay module |
-| `vkm cook` | only bake assets into the form the runtime reads - no window needed, so it runs on a build machine |
-| `vkm package` | build, cook and assemble the game a player gets, under `dist/` |
-| `vkm doctor` | check the engine, the toolchain and the project, and say what to fix |
-| `vkm toolchain` | fetch the pinned compiler, CMake and Ninja now, rather than at the first build |
-| `vkm clean` | delete what the commands generated: `build/ bin/ cooked/ logs/`, and `dist/` with `--all` |
-
-Each but `vkm new` and `vkm toolchain` takes an optional project path, and
-otherwise uses the project the current directory is in. `vkm <command> -h` shows
-a command's options with examples; `-v` shows every command it runs and their
-output.
+`vkm -h` lists them, from `new` to `clean`, and `vkm <command> -h` explains one
+with examples; `-v` shows every command it runs and their output. Each but `new`
+and `toolchain` finds the project from the folder it runs in, or takes its path.
+`vkm run --players N` plays it as a local server with N players joined to it -
+multiplayer from one terminal.
 
 ## Shipping
 
@@ -136,8 +129,10 @@ output.
 vkm package
 ```
 
-That cooks, builds your module against the **shipping engine**, then assembles
-everything a player needs - and only that:
+That cooks, builds your module against the **shipping engine** - asserts and debug
+drawing off ([building.md](reference/building.md#the-shipping-engine));
+`--development` takes the development engine, for testing - then assembles
+everything a player needs, and only that:
 
 ```
 dist/mygame-0.1.0-linux-x64/
@@ -146,22 +141,25 @@ dist/mygame-0.1.0-linux-x64/
     scenes/  prefabs/  cooked/    the world, and the art in the form it plays
     library/        your materials
     assets/         the engine's fonts and logo, and whatever the game still
-                    opens by name: environment maps, its icon
+                    opens by name: environment maps, terrains, its icon
     shaders/        the engine's
 ```
 
 **Source art stays behind**: your `.blend`, `.fbx`, `.gltf` and source
 textures are in `cooked/` in the only form the runtime opens, and of the import
 recipes only your materials ship, since their recipe *is* their runtime form. A
-file nothing imported - an `.hdr` your scene names, `assets/logo/icon.png` -
-ships as it is.
+`.terrain` file ships as it is, as the game reads it, and so does a file nothing
+imported - an `.hdr` your scene names, `assets/logo/icon.png`.
 
 The executable is `vkm_runtime` renamed for your game; the player runs
-`bin/mygame` and passes nothing. On Windows the package also writes the game's
-name, version and icon (`assets/logo/icon.png`, at most 256 pixels a side) into
-it. The folder is the whole product: nothing needs installing, and it carries
-the engine's license as `LICENSE-vkmEngine.txt`. `vkm package --archive` also
-packs it into a `.zip` on Windows, a `.tar.gz` elsewhere.
+`bin/mygame` and passes nothing, and it opens fullscreen until they choose a
+window (`Graphics::setWindowMode`, which keeps their choice). On Windows the
+package also writes the game's name, version and icon (`assets/logo/icon.png`,
+at most 256 pixels a side) into it. The folder is the whole product: nothing
+needs installing, and it carries every license of what is built into it in
+`licenses/`, the engine's - which is also each vkm library's - as
+`vkmEngine.txt`. `vkm package --archive` also packs it into a `.zip` on
+Windows, a `.tar.gz` elsewhere.
 
 Beside the folder, `dist/mygame-0.1.0-linux-x64-symbols/` holds the binaries' debug
 info. Keep it for every version you ship - a player's crash report is read
@@ -177,84 +175,14 @@ themselves. On Linux the environment decides:
 `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` before the command
 for NVIDIA's offload, `DRI_PRIME=1` for Mesa's.
 
-### The shipping engine
-
-A game ships on a second build of the engine in the SDK's `shipping/`, with
-asserts off ([building.md](reference/building.md#the-shipping-engine)).
-`vkm package --development` packages on the development engine instead, for
-testing.
-
 ## Writing a behavior
 
-A `Behavior` is a C++ class you attach to an entity: override the hooks you
-want, and list the fields a designer tunes in a reflect block, which makes them
-appear in the editor and survive a save. The template's `src/game.h` and
-`src/game.cpp` hold one, `Spinner`; cut to its core:
-
-```cpp
-// src/game.h
-#pragma once
-
-#include "system/script/behavior_api.h"
-
-namespace Game {
-
-// Your types stay in Game, never in Vkm::Engine; this makes the engine's reachable.
-using namespace Vkm::Engine;
-
-class Spinner : public ReflectedBehavior<Spinner> {
-    public:
-        void onUpdate(float dt) override;
-
-    public:
-        float degreesPerSecond = 90.0f;
-};
-
-} // namespace Game
-
-// At global scope, the type named in full. One VKM_F per field, no commas.
-VKM_REFLECT_BEGIN(::Game::Spinner)
-    VKM_F(degreesPerSecond)
-VKM_REFLECT_END()
-```
-
-```cpp
-// src/game.cpp
-#include "game.h"
-
-void Game::Spinner::onUpdate(float dt) {
-    Transform* transform = tryGet<Transform>();   // this entity's, or null
-    if (!transform) return;
-
-    const glm::quat spin = glm::angleAxis(glm::radians(degreesPerSecond * dt), Math::WORLD_AXIS_Y);
-    transform->rotation = glm::normalize(transform->rotation * spin);
-}
-```
-
-Register it in `src/module.cpp` so scenes can name it:
-
-```cpp
-VKM_MODULE_ENTRY
-void vkmRegisterBehaviors() {
-    Vkm::Engine::BehaviorRegistry::get().registerBehaviors<Game::Spinner>();
-}
-```
-
-[scripting.md](reference/scripting.md#your-first-behavior) walks a behavior end
-to end - attaching it, input, collisions, sound - and then the full lifecycle.
-
-## The module's entry points
-
-`src/module.cpp` defines the functions the host looks for, each marked
-`VKM_MODULE_ENTRY` ([scripting.md](reference/scripting.md#the-gameplay-module)).
-
-The template writes `vkmModuleEngineVersion`, `vkmRegisterBehaviors` and
-`vkmBuildScene`. If your project authors scenes in the
-editor, set `entryScene` in `project.json` and delete `vkmBuildScene`; if it is
-never played over a wire, leave `vkmSetupNetwork` out and the host runs offline.
-
-`vkm_runtime` refuses to start without the module, which is why `vkm run` builds
-first ([what each host does](reference/io.md#what-each-host-does-when-a-project-will-not-open)).
+A behavior is a C++ class you attach to an entity: it overrides the hooks it wants
+and lists the fields a designer tunes in a reflect block, which shows them in the
+editor and saves them. The template's `Spinner` is one
+(`templates/default/src/game.h`); [scripting.md](reference/scripting.md#your-first-behavior)
+walks a behavior end to end, and [recipes.md](recipes.md) has the common jobs in a
+few lines each.
 
 ## The toolchain pin
 
@@ -284,11 +212,9 @@ judges.
 ## The one convention that will catch you
 
 **Forward is `-Z`, screen-right is `+X`, up is `+Y`** - right-handed, glm's own
-convention, so `glm::quatLookAt` and the rest agree with the engine. Ask through
-`Math::computeForward`, `computeRight` and `computeUp` rather than writing an
-axis by hand. Screen-right is `cross(forward, up)`; `cross(up, forward)` is the
-mirror. Nothing errors when you get it wrong - the scene just looks wrong,
-usually unlit.
+convention. Ask through `Math::computeForward`, `computeRight` and `computeUp`
+rather than writing an axis by hand: nothing errors when one is wrong, and the
+scene just looks wrong, usually unlit.
 
 ## Where to go next
 

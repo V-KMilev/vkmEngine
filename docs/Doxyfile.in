@@ -2,7 +2,7 @@
 #
 # Configured by cmake/docs.cmake; build with `cmake --build build --target docs`.
 # The output is the public surface a project compiles against, which is why the
-# editor, the backend and the tools are excluded rather than merely deprioritised:
+# editor, the backend and the tools are excluded rather than merely deprioritized:
 # a reader looking for how to write gameplay should not have to walk past
 # GLForwardPass to find Behavior.
 
@@ -13,10 +13,13 @@ OUTPUT_DIRECTORY       = "@DOXYGEN_OUTPUT_DIR@"
 CREATE_SUBDIRS         = NO
 
 INPUT                  = "@CMAKE_SOURCE_DIR@/src/engine" \
+                         "@CMAKE_SOURCE_DIR@/modules/vkmPlatform/src" \
+                         "@CMAKE_SOURCE_DIR@/modules/vkmAudio/src" \
+                         "@CMAKE_SOURCE_DIR@/modules/vkmNetwork/src" \
+                         "@CMAKE_SOURCE_DIR@/modules/vkmPhysics/src" \
                          "@CMAKE_SOURCE_DIR@/docs/api"
 FILE_PATTERNS          = *.h *.hpp *.inl *.dox
 RECURSIVE              = YES
-EXCLUDE_PATTERNS       = */build_info.h
 EXCLUDE_SYMBOLS        = *::detail
 
 # Headers only. A .cpp holds implementation comments written for whoever changes
@@ -49,7 +52,7 @@ MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = YES
 PREDEFINED             = VKM_REFLECT_BEGIN(x)= \
                          VKM_REFLECT_END()= \
-                         VKM_F(x)= \
+                         VKM_F(...)= \
                          VKM_ENUM_NAMES(...)=
 
 GENERATE_HTML          = YES
