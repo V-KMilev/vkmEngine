@@ -5,7 +5,8 @@
 #
 # The project is the calling directory; the module is every .cpp under its src/,
 # which is also its include root. It is always named `game`, the name a host
-# loads, and lands in bin/ or VKM_MODULE_DIR.
+# loads, and lands in bin/, or VKM_MODULE_DIR, or for an example of an engine tree
+# but build/ beside that tree's hosts (VKM_TREE_EXAMPLE_MODULES, CMakeLists.txt).
 
 # vkm_gameplay_module_options(<target>)
 #
@@ -17,6 +18,15 @@ function(vkm_gameplay_module_options TARGET)
     # GCC marks inline and template statics STB_GNU_UNIQUE, and glibc never
     # unmaps a library that has one, so a reload would bind to the old copy.
     target_compile_options(${TARGET} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fno-gnu-unique>)
+
+    # Vectorized as GCC's -O2 does, as the engine is: its -O3 cost model takes
+    # loops it then compiles to wrong results (the engine's CMakeLists.txt).
+    target_compile_options(${TARGET} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fvect-cost-model=very-cheap>)
+
+    # Every file includes the engine's gameplay surface, compiled once. The log category is the
+    # build's, as a file's own #define would redefine the precompiled header's.
+    target_precompile_headers(${TARGET} PRIVATE <system/script/behavior_api.h>)
+    target_compile_definitions(${TARGET} PRIVATE VKM_LOG_CATEGORY="GAME")
 
     # No rpath: the host has loaded the engine, and the loader matches it by name.
     set_target_properties(${TARGET} PROPERTIES SKIP_BUILD_RPATH ON)
@@ -69,10 +79,15 @@ function(vkm_add_gameplay_module TARGET)
 
     target_include_directories(${TARGET} PRIVATE ${VKM_PROJECT_DIR}/src)
 
-    # bin/ is where a host looks; `vkm package` names its own for a shipping module.
+    # bin/ is where a host looks; `vkm package` names its own for a shipping module, and a tree
+    # but build/ puts an example's in bin/examples/<name>/ beside its hosts, the one place they
+    # look for it, whatever its build type.
     set(_dir ${VKM_PROJECT_DIR}/bin)
     if(VKM_MODULE_DIR)
         set(_dir ${VKM_MODULE_DIR})
+    elseif(VKM_TREE_EXAMPLE_MODULES)
+        get_filename_component(_name ${VKM_PROJECT_DIR} NAME)
+        set(_dir $<TARGET_FILE_DIR:vkm_core>/examples/${_name})
     endif()
 
     # The archive too, or Windows import libraries of two projects collide. No debug
@@ -86,5 +101,14 @@ function(vkm_add_gameplay_module TARGET)
     )
     if(WIN32)
         set_target_properties(${TARGET} PROPERTIES PREFIX "")
+    endif()
+
+    # Stamped once linked, so the editor reloads a whole library the moment one lands
+    # (ReloadWatcher); a shipping module is never reloaded.
+    if(NOT VKM_MODULE_DIR)
+        add_custom_command(TARGET ${TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E touch $<TARGET_FILE_DIR:${TARGET}>/game.built
+            VERBATIM
+        )
     endif()
 endfunction()

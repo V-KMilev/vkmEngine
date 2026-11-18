@@ -13,7 +13,7 @@
  *   PROFILE_GPU_SCOPE_NAMED(passName.c_str());  // dynamic name
  */
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 
 #if VKM_PROFILER
 

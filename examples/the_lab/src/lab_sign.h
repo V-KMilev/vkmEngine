@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Lab {
 
@@ -16,32 +16,32 @@ using namespace Vkm::Engine;
  *
  * The engine has no world-space UI, so the label is screen-space text placed each frame where
  * the entity's point lands on its canvas (ScreenView::toCanvas). It fades out between
- * `fadeFrom` and `showWithin` metres from the camera, and while scenery stands between the camera
+ * `fadeFrom` and `showWithin` meters from the camera, and while scenery stands between the camera
  * and it. It is hidden while the game is paused, and on a host that draws nothing it is never
  * built.
  */
-class LabSign : public ReflectedBehavior<LabSign> {
+class LabSign : public Behavior<LabSign> {
     public:
         void onStart() override;
         void onUpdate(float dt) override;
         void onRealtimeUpdate(float dt) override;
 
     public:
-        std::string title;    ///< The station's name, large.
-        std::string caption;  ///< What there is to see, under it.
+        std::string title;
+        std::string caption;
 
-        float height     = 2.4f;   ///< Metres above the entity the label hangs at.
-        float showWithin = 18.0f;  ///< Metres from the camera past which it is gone.
-        float fadeFrom   = 12.0f;  ///< Metres from the camera inside which it is whole.
+        float height     = 2.4f;
+        float showWithin = 18.0f;
+        float fadeFrom   = 12.0f;
 
     private:
         /**
-         * @brief Add a line of text to the label, centred and wrapped.
+         * @brief Add a line of text to the label, centered and wrapped.
          *
          * @param name Entity name of the line.
          * @param text What it says.
          * @param size Its height, in canvas pixels.
-         * @param ink  Its colour.
+         * @param ink  Its color.
          * @param y    How far down the label it starts, in canvas pixels.
          * @return The line.
          */
@@ -70,10 +70,10 @@ class LabSign : public ReflectedBehavior<LabSign> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabSign)
-    VKM_F(title)
-    VKM_F(caption)
-    VKM_F(height)
-    VKM_F(showWithin)
-    VKM_F(fadeFrom)
+VKM_BEHAVIOR(::Lab::LabSign)
+    VKM_F(title, "The station's name, large.")
+    VKM_F(caption, "What there is to see, under it.")
+    VKM_F(height, "Meters above the entity the label hangs at.")
+    VKM_F(showWithin, "Meters from the camera past which it is gone.")
+    VKM_F(fadeFrom, "Meters from the camera inside which it is whole.")
 VKM_REFLECT_END()

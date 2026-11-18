@@ -1,209 +1,196 @@
-# The vkm_core test suite. Covers engine logic that is pure computation over a
-# Scene, so the binary runs on a build machine with no GPU and no display. Built
-# with the engine, because a suite that is opt-in is a suite nobody runs.
+# The engine's tests. A test is TEST("what works") in tests/<area>/<topic>.cpp, the area being the
+# folder of the engine it tests (harness/check.h). Each runs in a process of its own and is a ctest
+# of its own, named "<area>: <what works>" and labeled with its area, so `ctest -R` picks by
+# promise, `ctest -L '^physics$'` by area and `ctest -j4` runs them side by side.
 #
-# A suite is tests/<area>/<suite>_tests.cpp, the area being the src folder it
-# tests, each ending in the one entry point main calls. Globbed rather than
-# listed, so adding one is a file and a row in suites.h - never an edit here
-# that only the link step would notice was missing. tests/render/ is the GPU
-# binary below, not part of this one.
-file(GLOB VKM_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*/*_tests.cpp)
-list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/render/[^/]+$")
+# Built with the engine, because a suite that is opt-in is a suite nobody runs. It needs no GPU and
+# no display: it links the engine, the asset pipeline and the editor's library, none of which names
+# a graphics API (the editor's GL renderer is the OpenGL backend's). The GPU tests are a binary of
+# their own below.
 
-# The src/editor files below depend on nothing else from it. PlaySnapshot is a
-# scene, a resource manager and the serializers; the undo machinery is a scene
-# and a CommandHost, the seam it asks the editor for rather than the editor's
-# whole state; the editor's view is a System over an InputMap of its own; a
-# content pack is files copied, and a project's terrain files read and written.
-# Compiled in here so each is tested without a window.
-#
-# Nothing else from src/editor belongs here. A file that needs ImGui is a file
-# this binary cannot take, and that is the line: this one runs on a build
-# machine with no GPU, no display and no graphics libraries.
-#
-# The cooker is the same case from src/tools: asset_cooker.cpp decides what a
-# cook re-bakes and reaches the importers only through the AssetFactory table,
-# so the suite compiles it alone and installs a stand-in importer, rather than
-# linking the whole of vkm_cook. The cook key, the mesh processing, the LOD
-# generation and the texture bake come with it, and with them meshoptimizer,
-# the mip filter and the block encoders; so does the model parse, and with it
-# cgltf, ufbx and MikkTSpace - plain CPU code with no dependencies of its own,
-# so the binary still needs nothing installed. The texture loaders come for the
-# recipe readers, and with them the stb decode vkm_core already holds.
+# Where the harness and the areas are, for a binary in a folder below them too (render/<api>/).
+set(VKM_TESTS_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Registers every test a binary lists as a ctest, when ctest runs: a test added is a test run, with
+# no list to keep. A multi-config generator builds the binary once per build type, so each gets a list
+# of its own, named in lower case as ctest -C matches a build type in any case; the file ctest includes
+# reads the one -C names, or fails one test when -C names none of them, so the run goes on. A
+# single-config generator's one list is that file itself.
+function(vkm_test_binary TARGET LABEL)
+    set(_include ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_tests.cmake)
+    set(_list ${_include})
+    get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(_multi_config)
+        set(_list ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_tests-$<LOWER_CASE:$<CONFIG>>.cmake)
+        string(REPLACE ";" ", " _types "${CMAKE_CONFIGURATION_TYPES}")
+        file(WRITE ${_include}
+            "string(TOLOWER \"\${CTEST_CONFIGURATION_TYPE}\" _vkm_config)\n"
+            "set(_vkm_list \"${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_tests-\${_vkm_config}.cmake\")\n"
+            "if(_vkm_config STREQUAL \"\" OR NOT EXISTS \"\${_vkm_list}\")\n"
+            "    set(_vkm_named \"${TARGET}: ctest -C names a build type it has\")\n"
+            "    add_test(\"\${_vkm_named}\" [==[${CMAKE_COMMAND}]==] -E echo \"run ctest -C, one of ${_types}\")\n"
+            "    set_tests_properties(\"\${_vkm_named}\" PROPERTIES WILL_FAIL ON LABELS [==[${LABEL}]==])\n"
+            "    return()\n"
+            "endif()\n"
+            "include(\"\${_vkm_list}\")\n"
+        )
+    endif()
+    string(CONCAT _content
+        "set(VKM_TEST_EXE [==[$<TARGET_FILE:${TARGET}>]==])\n"
+        "set(VKM_TEST_TARGET ${TARGET})\n"
+        "set(VKM_TEST_LABEL [==[${LABEL}]==])\n"
+        "set(VKM_TEST_DIR [==[${CMAKE_SOURCE_DIR}]==])\n"
+        "set(VKM_TEST_CMAKE [==[${CMAKE_COMMAND}]==])\n"
+        "include([==[${VKM_TESTS_DIR}/harness/discover.cmake]==])\n"
+    )
+    file(GENERATE OUTPUT ${_list} CONTENT "${_content}")
+    set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES ${_include})
+    target_include_directories(${TARGET} PRIVATE ${VKM_TESTS_DIR} ${CMAKE_SOURCE_DIR})
+endfunction()
+
+file(GLOB VKM_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*/*.cpp)
+list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/(harness|fixture|determinism)/")
+
+# The runtime's bench is built in too: tests/e2e/bench.cpp runs it on a game with no display.
 add_executable(vkm_engine_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/harness/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/harness/world.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/harness/lockstep.cpp
+    ${CMAKE_SOURCE_DIR}/app/runtime/bench_system.cpp
     ${VKM_TEST_SOURCES}
-    ${CMAKE_SOURCE_DIR}/src/editor/input/camera_controller_system.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/session/content_pack.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/session/play_snapshot.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/session/terrain_files.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/command/command_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/command/editor_commands.cpp
-    ${CMAKE_SOURCE_DIR}/src/editor/command/prefab_overrides.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/asset_cooker.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/bc4_encoder.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/cook_key.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/lod_generator.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/mesh_processing.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/cook/texture_bake.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/import/audio_loaders.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/import/model_source.cpp
-    ${CMAKE_SOURCE_DIR}/src/tools/import/texture_loaders.cpp
 )
-
-# ImGui's headers only, for EditorState; nothing here calls into ImGui.
-target_include_directories(vkm_engine_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/src/editor
-    $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>
-)
-
-# miniaudio's and stb_image's declarations for the audio and texture imports, and miniaudio's
-# definitions as vkm_core compiled it, as vkm_cook takes them (src/tools/CMakeLists.txt).
-target_include_directories(vkm_engine_tests SYSTEM PRIVATE
-    ${CMAKE_SOURCE_DIR}/modules/miniaudio
-    ${CMAKE_SOURCE_DIR}/modules/stb
-)
-target_compile_definitions(vkm_engine_tests PRIVATE
-    $<TARGET_PROPERTY:miniaudio,INTERFACE_COMPILE_DEFINITIONS>
-)
-
-# vkm_tools as well as the engine, for bakeFontSDF: the UI suite needs real
-# glyph metrics to assert what a line of text lays out as, and baking is how
-# they are got without a GL context. It is the runtime-safe half of the tools -
-# stb_truetype and the image decoders - so it pulls in no importer and this
-# binary still runs on a machine with no graphics libraries at all.
-#
-# vkm_render for the same reason: it is the backend-neutral half of rendering -
-# the view, the settings and the probe-grid repair a bake finishes on the CPU -
-# and names no graphics library either. Bare, not vkmEngine::, because it is not
-# an exported target: a project never links it (cmake/install.cmake says why).
-# The backend is what this binary must not take, and that is a separate target.
 target_link_libraries(vkm_engine_tests PRIVATE
-    vkmEngine::vkm_core
+    vkm_editor
+    vkm_pipeline
+    vkm_loader
     vkm_render
-    vkm_tools
-    meshoptimizer
-    stb_image_resize
-    bc7e
-    cgltf
-    ufbx
-    mikktspace
+    vkmEngine::vkm_core
     vkmEngine::vkm_warnings
 )
+vkm_test_binary(vkm_engine_tests "")
 
-# The transport suite opens a socket of its own, to send the zero-length
-# datagram UdpSocket refuses to emit. vkm_core links ws2_32 PRIVATE - it is an
-# implementation detail of its own sockets, not part of what it offers - so a
-# caller that calls socket() itself asks for the library itself.
-if(WIN32)
-    target_link_libraries(vkm_engine_tests PRIVATE ws2_32)
-    # Linux's 8 MB main-thread stack, not Windows' 1 MB: std::regex recurses once per character it
-    # matches, and docs_tests.cpp matches whole source files.
-    if(MSVC)
-        target_link_options(vkm_engine_tests PRIVATE /STACK:8388608)
-    else()
-        target_link_options(vkm_engine_tests PRIVATE -Wl,--stack,8388608)
+# The gameplay modules the tests load (tests/fixture/): `game`, built as a project's is and twice, so a
+# reload can be seen running the new build; and the ones a host refuses or plays only offline. Built
+# outside bin/, which `vkm package` carries into a game; a test copies one into its project's bin/.
+function(vkm_fixture_module NAME SOURCE)
+    add_library(vkm_fixture_${NAME} MODULE ${CMAKE_CURRENT_SOURCE_DIR}/fixture/${SOURCE})
+    target_compile_definitions(vkm_fixture_${NAME} PRIVATE ${ARGN})
+    set_target_properties(vkm_fixture_${NAME} PROPERTIES
+        OUTPUT_NAME              ${NAME}
+        DEBUG_POSTFIX            ""
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test_fixtures
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test_fixtures
+    )
+    if(WIN32)
+        set_target_properties(vkm_fixture_${NAME} PROPERTIES PREFIX "")
     endif()
-endif()
+    add_dependencies(vkm_engine_tests vkm_fixture_${NAME})
+endfunction()
 
-# Where the shipped example projects are, so a test can open the scene of record
-# and check the format still reads it. A packaged SDK has no examples/ - the
-# test that uses this says so and passes rather than failing on a missing file.
+foreach(_build 1 2)
+    vkm_fixture_module(game_v${_build} game.cpp VKM_FIXTURE_BUILD=${_build})
+    vkm_gameplay_module_options(vkm_fixture_game_v${_build})
+endforeach()
+vkm_fixture_module(game_stale refused.cpp VKM_FIXTURE_VERSION="0.0.0" VKM_FIXTURE_REGISTERS)
+vkm_fixture_module(game_unversioned refused.cpp VKM_FIXTURE_REGISTERS)
+vkm_fixture_module(game_unregistering refused.cpp VKM_FIXTURE_VERSION=VKM_ENGINE_VERSION)
+vkm_fixture_module(game_offline refused.cpp VKM_FIXTURE_VERSION=VKM_ENGINE_VERSION VKM_FIXTURE_REGISTERS)
+foreach(_refused stale unversioned unregistering offline)
+    target_link_libraries(vkm_fixture_game_${_refused} PRIVATE vkmEngine::vkm_core)
+endforeach()
+
+# The hosts the end-to-end tests run as a user does, built before the tests that run them.
+add_dependencies(vkm_engine_tests vkm_cook_app vkm_runtime_app vkm_server_app)
 target_compile_definitions(vkm_engine_tests PRIVATE
-    VKM_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
-    VKM_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs"
-    VKM_ENGINE_DIR="${CMAKE_SOURCE_DIR}"
+    VKM_TEST_MODULE_DIR="$<TARGET_FILE_DIR:vkm_fixture_game_v1>"
+    VKM_TEST_MODULE_PREFIX="$<TARGET_FILE_PREFIX:vkm_fixture_game_v1>"
+    VKM_TEST_MODULE_SUFFIX="$<TARGET_FILE_SUFFIX:vkm_fixture_game_v1>"
+    VKM_TEST_HOST_DIR="$<TARGET_FILE_DIR:vkm_cook_app>"
+    VKM_TEST_HOST_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
+    VKM_TEST_EXAMPLE_MODULE="$<TARGET_FILE:the_lab_module>"
 )
 
-# No arguments runs every suite, which is what CI wants. Naming one or more
-# runs just those, for the person working on it:
-#     ./build/bin/vkm_engine_tests solver wire
-#     ./build/bin/vkm_engine_tests --list
-add_test(NAME vkm_engine COMMAND vkm_engine_tests)
-
-# A real gameplay module for the script suite. ScriptModule loads a shared
-# library, checks what it exports and drops what it registered before unmapping
-# it - none of which can be exercised against anything but an actual module.
-#
-# Declared here rather than through vkm_add_gameplay_module: that helper names
-# its output `game` and puts it in a project's bin/, which is the one shape this
-# must not take. How it compiles and links is the helper's own
-# vkm_gameplay_module_options, so the reload test unloads a module built the way
-# a game's is. Its name is copied deliberately - MODULE, no debug postfix, and
-# the empty prefix under Windows - so the file the loader is pointed at is named
-# the way a shipped game's is: a libtest_module.dll where a real module is
-# game.dll would make the suite skip itself on Windows.
-#
-# Built outside bin/, which is the engine's own: `vkm package` carries every
-# library there into a game, and a test fixture is no part of one.
-set(VKM_TEST_FIXTURE_DIR ${CMAKE_BINARY_DIR}/test_fixtures)
-add_library(vkm_test_module MODULE ${CMAKE_CURRENT_SOURCE_DIR}/script/test_module.cpp)
-vkm_gameplay_module_options(vkm_test_module)
-target_include_directories(vkm_test_module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set_target_properties(vkm_test_module PROPERTIES
-    OUTPUT_NAME              test_module
-    DEBUG_POSTFIX            ""
-    LIBRARY_OUTPUT_DIRECTORY ${VKM_TEST_FIXTURE_DIR}
-    RUNTIME_OUTPUT_DIRECTORY ${VKM_TEST_FIXTURE_DIR}
+# Determinism: the lab and the arena, each cooked first, played 600 ticks at 1, 2 and 3 steps a frame
+# must hash as recorded (tests/determinism/physics_hash.cpp), and log no error. A change that is meant to
+# move a body - the physics, a library's pin, an example - records the new hash here.
+add_executable(vkm_physics_hash ${CMAKE_CURRENT_SOURCE_DIR}/determinism/physics_hash.cpp)
+target_link_libraries(vkm_physics_hash PRIVATE
+    vkm_render
+    vkm_loader
+    vkmEngine::vkm_core
+    vkm_build_info
+    vkmEngine::vkm_warnings
 )
-if(WIN32)
-    set_target_properties(vkm_test_module PROPERTIES PREFIX "")
-endif()
-add_dependencies(vkm_engine_tests vkm_test_module)
-target_compile_definitions(vkm_engine_tests PRIVATE VKM_TEST_MODULE_DIR="${VKM_TEST_FIXTURE_DIR}")
+target_include_directories(vkm_physics_hash PRIVATE ${CMAKE_SOURCE_DIR})
+add_dependencies(vkm_physics_hash the_lab_module stress_arena_module)
+set(_vkm_logged_error "\\[(ERROR|FATAL)\\]")
+foreach(_run "the_lab 7dd0ecc88244a6e1" "stress_arena 1f0c8224b31c51e8")
+    separate_arguments(_run)
+    list(GET _run 0 _example)
+    list(GET _run 1 _hash)
+    set(_project ${CMAKE_SOURCE_DIR}/examples/${_example})
+    add_test(NAME "determinism: ${_example} is cooked" COMMAND $<TARGET_FILE:vkm_cook_app> ${_project})
+    set_tests_properties("determinism: ${_example} is cooked" PROPERTIES
+        LABELS                  determinism
+        FIXTURES_SETUP          cooked_${_example}
+        FAIL_REGULAR_EXPRESSION ${_vkm_logged_error}
+        TIMEOUT                 1800
+    )
+    foreach(_steps 1 2 3)
+        set(_name "determinism: ${_example} hashes as recorded at ${_steps} steps a frame")
+        add_test(NAME ${_name} COMMAND $<TARGET_FILE:vkm_physics_hash> ${_project} 600 ${_steps} ${_hash})
+        set_tests_properties(${_name} PROPERTIES
+            LABELS                  determinism
+            FIXTURES_REQUIRED       cooked_${_example}
+            FAIL_REGULAR_EXPRESSION ${_vkm_logged_error}
+            TIMEOUT                 600
+        )
+    endforeach()
+endforeach()
 
-# The project tool, run as a user runs it (tests/tools/vkm_tool.cmake). Only for
-# the build tree at build/, the one the tool finds the engine in.
+# The project tool, run as a user runs it: a ctest for each file of tests/cli/ (one whose name starts
+# with `_` is a helper). A test that drives the engine's build skips unless this is the build vkm finds.
 find_package(Python3 3.8 COMPONENTS Interpreter QUIET)
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/build" _vkm_tool_build)
-file(REAL_PATH "${CMAKE_BINARY_DIR}" _vkm_this_build)
-if(Python3_Interpreter_FOUND AND _vkm_this_build STREQUAL _vkm_tool_build)
-    add_test(NAME vkm_tool
-        COMMAND ${CMAKE_COMMAND}
-            -DPYTHON=${Python3_EXECUTABLE}
-            -DVKM=${CMAKE_SOURCE_DIR}/tools/vkm.py
-            -DWORK=${VKM_TEST_FIXTURE_DIR}/vkm_tool
-            -DEXE=${CMAKE_EXECUTABLE_SUFFIX}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/vkm_tool.cmake
-    )
-endif()
-
-# How the project tool fetches a pinned tool from a server that fails, against a local one.
 if(Python3_Interpreter_FOUND)
-    add_test(NAME vkm_download
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/vkm_download_tests.py
-            ${CMAKE_SOURCE_DIR}/tools
-    )
+    target_compile_definitions(vkm_engine_tests PRIVATE VKM_TEST_PYTHON="${Python3_EXECUTABLE}")
+    file(GLOB VKM_CLI_TESTS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cli/*.py)
+    list(FILTER VKM_CLI_TESTS EXCLUDE REGEX "/_[^/]*$")
+    foreach(_test IN LISTS VKM_CLI_TESTS)
+        get_filename_component(_name ${_test} NAME_WE)
+        add_test(NAME "cli: ${_name}" COMMAND ${Python3_EXECUTABLE} ${_test})
+        set_tests_properties("cli: ${_name}" PROPERTIES
+            LABELS           cli
+            SKIP_RETURN_CODE 77
+            TIMEOUT          600
+            ENVIRONMENT      "VKM_TEST_BUILD=${CMAKE_BINARY_DIR};VKM_TEST_SCRATCH=${CMAKE_BINARY_DIR}/test_scratch/cli"
+        )
+    endforeach()
+
+    # The docs and the tree agree where a machine can tell (tests/docs/check_docs.py).
+    add_test(NAME "docs: the docs and the tree agree"
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/check_docs.py ${CMAKE_SOURCE_DIR})
+    set_tests_properties("docs: the docs and the tree agree" PROPERTIES LABELS docs TIMEOUT 120)
 endif()
 
-# The GPU suite, built only where EGL can be found.
-#
-# Separate from vkm_engine_tests on purpose: that binary must stay runnable on a
-# machine with no GPU and no graphics libraries at all, and linking EGL into it
-# would end that. This one links EGL, opens the device directly, and skips at
-# runtime when there is no device to open - so it is green on a build machine and
-# useful on a workstation.
-find_package(OpenGL QUIET COMPONENTS EGL)
-if(TARGET OpenGL::EGL)
-    add_executable(vkm_render_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/render/render_tests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/render/golden_tests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/render/egl_context.cpp
-    )
-    target_include_directories(vkm_render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/render)
-
-    # vkm_backend_gl as well as vkm_gl: the suite compiles the shipped shaders
-    # with the backend's own prelude, which is GLBackend's to build. Nothing here
-    # opens a window - the EGL context above is the whole GL surface.
-    target_link_libraries(vkm_render_tests PRIVATE vkm_backend_gl vkm_gl vkm_log OpenGL::EGL)
-
-    # Where the shaders are. The loader resolves their paths against the working
-    # directory, which the suite sets to this root before it loads any.
-    target_compile_definitions(vkm_render_tests PRIVATE VKM_ENGINE_ROOT="${CMAKE_SOURCE_DIR}")
-    set_target_properties(vkm_render_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-    add_test(NAME render COMMAND vkm_render_tests)
-    message(STATUS "EGL found - the GPU test suite (vkm_render_tests) is built")
-else()
-    message(STATUS "EGL not found - the GPU test suite is skipped")
+# GL's error check is compiled into a Debug build alone, whatever the generator (modules/CMakeLists.txt):
+# vkmOpenGL's objects call it in the configuration ctest -C names exactly when that is Debug.
+if(CMAKE_NM)
+    set(_name "build: GL's error check is compiled into a Debug build alone")
+    add_test(NAME ${_name}
+        COMMAND ${CMAKE_COMMAND} "-DOBJECTS=$<JOIN:$<TARGET_OBJECTS:vkm_opengl>,|>" -DNM=${CMAKE_NM}
+            -DCHECKS=$<CONFIG:Debug> -P ${CMAKE_SOURCE_DIR}/modules/vkmOpenGL/tests/error_check.cmake)
+    set_tests_properties(${_name} PROPERTIES LABELS build)
 endif()
+
+# A multi-config tree that took VKM_PROFILER's default carries no Tracy in any build type (CMakeLists.txt):
+# no object of vkm_core calls into it.
+if(CMAKE_NM AND _vkm_multi_config AND VKM_PROFILER_DEFAULTED)
+    set(_name "build: a multi-config build carries no Tracy unless asked")
+    add_test(NAME ${_name}
+        COMMAND ${CMAKE_COMMAND} "-DOBJECTS=$<JOIN:$<TARGET_OBJECTS:vkm_core>,|>" -DNM=${CMAKE_NM}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/build/no_tracy.cmake)
+    set_tests_properties(${_name} PROPERTIES LABELS build)
+endif()
+
+# The GPU tests, a binary for each graphics backend (tests/render/<api>/).
+add_subdirectory(render/opengl)

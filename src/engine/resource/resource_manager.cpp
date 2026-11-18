@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "RESOURCE"
+
 #include "resource/resource_manager.h"
 
 #include <atomic>
@@ -41,15 +43,24 @@ void ResourceManager::swap(ResourceManager& other) noexcept {
     ++other.m_epoch;
     ++m_revision;
     ++other.m_revision;
-    LOG_INFO_C("RESOURCE", "Swap committed");
+    LOG_INFO("Swap committed");
+}
+
+template<typename T>
+void ResourceManager::makeSlot() {
+    m_slots.ensure<T>([] {
+        auto slot = std::make_unique<TypedSlot>();
+        slot->storage = std::make_unique<SparseSet<T>>();
+        return slot;
+    });
 }
 
 void ResourceManager::makeEngineSlots() {
-#define VKM_ASSET_SLOT(tag, type, name, dir) getSlot<type>();
+#define VKM_ASSET_SLOT(tag, type, name, dir, cooked) makeSlot<type>();
     VKM_ASSET_KINDS(VKM_ASSET_SLOT)
 #undef VKM_ASSET_SLOT
     // Not a library kind - fonts are baked, not cooked - but an engine type.
-    getSlot<FontAsset>();
+    makeSlot<FontAsset>();
 }
 
 } // namespace Vkm::Engine

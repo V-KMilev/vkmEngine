@@ -1,44 +1,33 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
 #include "ecs/entity.h"
 #include "ecs/scene.h"
-#include "system/script/behavior.h"
+#include "ecs/component/script/script_component.h"
+#include "system/script/behavior_base.h"
 #include "system/script/behavior_registry.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief A behavior whose type the registry does not know, kept verbatim.
+ * @brief Remove @p sc's constructed behavior at @p index, each held one keeping its place among the rest.
  *
- * Usually the module is missing or failed to build. Written back unread (see
- * ComponentSerializer), so a save meanwhile loses nothing.
+ * @param sc    The component.
+ * @param index Its position in ScriptComponent::behaviors; past the end removes nothing.
  */
-struct UnknownBehavior {
-    std::string type;
-    std::string properties;  ///< Its property object, as JSON text, untouched.
-
-    /// Position in the list read from; list order is run order, so it must survive a save.
-    size_t index = 0;
-};
-
-/**
- * @brief ECS component attaching owned, polymorphic Behaviors to an entity.
- *
- * Move-only, the documented exception to the plain-aggregate rule (code-style.md
- * section 10.1); duplication deep-copies through Behavior::clone().
- */
-struct ScriptComponent {
-    std::vector<std::unique_ptr<Behavior>> behaviors;
-
-    /// Behaviors held as text because no type of that name is registered.
-    std::vector<UnknownBehavior> unknown;
-};
+inline void removeBehavior(ScriptComponent& sc, size_t index) {
+    if (index >= sc.behaviors.size()) return;
+    sc.behaviors.erase(sc.behaviors.begin() + static_cast<std::ptrdiff_t>(index));
+    for (UnknownBehavior& held : sc.unknown) {
+        if (held.constructedBefore > index) --held.constructedBefore;
+    }
+}
 
 /**
  * @brief Report a behavior added in code whose type the registry does not know.
@@ -58,7 +47,7 @@ void reportUnregisteredBehavior(const char* typeName);
  * spinner.degreesPerSecond = 180.0f;
  * @endcode
  *
- * @tparam T Behavior subclass with a VKM_REFLECT block, default-constructible.
+ * @tparam T A behavior with a VKM_BEHAVIOR block, default-constructible.
  * @param scene  Scene holding the entity.
  * @param entity Entity to attach it to; must be alive.
  * @return The new behavior, owned by the entity's ScriptComponent.

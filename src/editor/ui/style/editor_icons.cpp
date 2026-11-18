@@ -1,0 +1,207 @@
+#include "ui/style/editor_icons.h"
+
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
+#include <cstdio>
+
+#include "ui/style/editor_style.h"
+
+namespace Vkm::Engine {
+
+namespace {
+
+ImFont* g_iconFont = nullptr;
+
+// EditorIcon -> Lucide codepoint (lucide-static font/info.json); the trailing 0 catches an out-of-range cast.
+ImWchar iconCodepoint(EditorIcon icon) {
+    switch (icon) {
+        case EditorIcon::Select:     return 0xe1c3;  // mouse-pointer-2
+        case EditorIcon::Move:       return 0xe121;  // move
+        case EditorIcon::Rotate:     return 0xe149;  // rotate-cw
+        case EditorIcon::Scale:      return 0xe2ec;  // scaling
+        case EditorIcon::SpaceLocal: return 0xe2fe;  // axis-3d
+        case EditorIcon::SpaceWorld: return 0xe0e8;  // globe
+        case EditorIcon::Snap:       return 0xe2b5;  // magnet
+        case EditorIcon::Focus:      return 0xe29e;  // focus
+        case EditorIcon::Trash:      return 0xe18e;  // trash-2
+        case EditorIcon::Play:       return 0xe13c;  // play
+        case EditorIcon::Pause:      return 0xe12e;  // pause
+        case EditorIcon::Stop:       return 0xe167;  // square
+        case EditorIcon::Step:       return 0xe160;  // skip-forward
+        case EditorIcon::Loop:       return 0xe146;  // repeat
+        case EditorIcon::Key:        return 0xe2d2;  // diamond (keyframe)
+        case EditorIcon::Plus:       return 0xe13d;  // plus
+        case EditorIcon::Cross:      return 0xe1b2;  // x
+        case EditorIcon::Entity:     return 0xe061;  // box
+        case EditorIcon::Mesh:       return 0xe524;  // cuboid
+        case EditorIcon::Camera:     return 0xe1a5;  // video
+        case EditorIcon::LightDir:   return 0xe178;  // sun
+        case EditorIcon::LightPoint: return 0xe1c2;  // lightbulb
+        case EditorIcon::LightSpot:  return 0xe0d3;  // flashlight
+        case EditorIcon::Anim:       return 0xe0d0;  // film
+        case EditorIcon::Probe:      return 0xe3e7;  // orbit
+        case EditorIcon::Volume:     return 0xe0e9;  // grid-3x3
+        case EditorIcon::Decal:      return 0xe302;  // sticker
+        case EditorIcon::Particle:   return 0xe412;  // sparkles
+        case EditorIcon::UIWidget:   return 0xe426;  // app-window
+        case EditorIcon::Audio:      return 0xe1ab;  // volume-2
+        case EditorIcon::Audio2D:    return 0xe1a9;  // volume
+        case EditorIcon::Listener:   return 0xe382;  // ear
+        case EditorIcon::FrameAll:   return 0xe257;  // scan
+        case EditorIcon::Perspective:  return 0xe524;  // cuboid
+        case EditorIcon::Orthographic: return 0xe167;  // square
+        case EditorIcon::UICanvas:   return 0xe291;  // frame
+        case EditorIcon::UIText:     return 0xe198;  // type
+        case EditorIcon::UIImage:    return 0xe0f6;  // image
+        case EditorIcon::UIScroll:   return 0xe2ed;  // scroll
+        case EditorIcon::UISlider:   return 0xe29a;  // sliders-horizontal
+        case EditorIcon::UIToggle:   return 0xe18c;  // toggle-right
+        case EditorIcon::UIChoice:   return 0xe293;  // chevrons-left-right
+        case EditorIcon::UIButton:   return 0xe202;  // square-mouse-pointer
+        case EditorIcon::Cube:       return 0xe061;  // box
+        case EditorIcon::Sphere:     return 0xe076;  // circle
+        case EditorIcon::Plane:      return 0xe167;  // square
+        case EditorIcon::Pyramid:    return 0xe52c;  // pyramid
+        case EditorIcon::Cone:       return 0xe523;  // cone
+        case EditorIcon::Triangle:   return 0xe192;  // triangle
+        case EditorIcon::Empty:      return 0xe4b0;  // circle-dashed
+        case EditorIcon::Import:     return 0xe22f;  // import
+        case EditorIcon::Colliders:  return 0xe1cb;  // box-select
+        case EditorIcon::Material:   return 0xe1dd;  // palette
+        case EditorIcon::Texture:    return 0xe0f6;  // image
+        case EditorIcon::Skeleton:   return 0xe358;  // bone
+        case EditorIcon::Character:  return 0xe21e;  // person-standing
+        case EditorIcon::Ragdoll:    return 0xe358;  // bone
+        case EditorIcon::Joint:      return 0xe103;  // link-2
+        case EditorIcon::Prefab:     return 0xe129;  // package
+        case EditorIcon::Socket:     return 0xe12d;  // paperclip
+        case EditorIcon::Terrain:    return 0xe231;  // mountain
+        case EditorIcon::Raise:      return 0xe1e4;  // arrow-big-up
+        case EditorIcon::Lower:      return 0xe1e1;  // arrow-big-down
+        case EditorIcon::Smooth:     return 0xe38b;  // spline
+        case EditorIcon::Flatten:    return 0xe43c;  // fold-vertical
+        case EditorIcon::Paint:      return 0xe2e7;  // paintbrush
+        case EditorIcon::Plants:     return 0xe1eb;  // sprout
+        case EditorIcon::Info:       return 0xe0f9;  // info
+        case EditorIcon::Warning:    return 0xe193;  // alert-triangle
+        case EditorIcon::Error:      return 0xe084;  // circle-x
+        case EditorIcon::Check:      return 0xe07c;  // check-circle
+        case EditorIcon::More:       return 0xe0b7;  // ellipsis-vertical
+        case EditorIcon::Search:     return 0xe151;  // search
+        case EditorIcon::Copy:       return 0xe09e;  // copy
+        case EditorIcon::Terminal:   return 0xe181;  // terminal
+        case EditorIcon::ArrowDown:  return 0xe042;  // arrow-down
+        case EditorIcon::ArrowUp:    return 0xe04a;  // arrow-up
+        case EditorIcon::ChevronDown:  return 0xe06d;  // chevron-down
+        case EditorIcon::ChevronRight: return 0xe06f;  // chevron-right
+        case EditorIcon::Ellipsis:   return 0xe0b6;  // ellipsis
+        case EditorIcon::Weight:     return 0xe530;  // weight
+        case EditorIcon::Script:     return 0xe0c3;  // file-code
+        case EditorIcon::Levels:     return 0xe52a;  // layers-2
+        case EditorIcon::Water:      return 0xe283;  // waves-horizontal
+        case EditorIcon::Fog:        return 0xe214;  // cloud-fog
+        case EditorIcon::NetLocal:   return 0xe45d;  // unplug
+        case EditorIcon::Grid:       return 0xe0e9;  // grid-3x3
+        case EditorIcon::Eye:        return 0xe0ba;  // eye
+        case EditorIcon::EyeOff:     return 0xe0bb;  // eye-off
+        case EditorIcon::Lock:       return 0xe10b;  // lock
+        case EditorIcon::LockOpen:   return 0xe10c;  // lock-open
+        case EditorIcon::None:       break;
+    }
+    return 0;
+}
+
+// Encode one codepoint as UTF-8 (Lucide sits in the U+E000 private area: 3 bytes).
+void encodeUtf8(ImWchar cp, char out[5]) {
+    out[0] = static_cast<char>(0xE0 | ((cp >> 12) & 0x0F));
+    out[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    out[2] = static_cast<char>(0x80 | (cp & 0x3F));
+    out[3] = '\0';
+    out[4] = '\0';
+}
+
+} // namespace
+
+bool loadEditorIconFont(const char* path) {
+    ImGuiIO& io = ImGui::GetIO();
+    g_iconFont = io.Fonts->AddFontFromFileTTF(path, EditorStyle::REFERENCE_FONT_SIZE);
+    return g_iconFont != nullptr;
+}
+
+void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col) {
+    if (icon == EditorIcon::None) return;
+    if (g_iconFont) {
+        if (const ImWchar cp = iconCodepoint(icon)) {
+            // Lucide art fills ~20/24 of its em; 2.3r fills the caller's (c, r) frame.
+            const float sz = std::round(std::max(8.0f, r * 2.3f));
+            char txt[5];
+            encodeUtf8(cp, txt);
+
+            // Center on the glyph's bounds, not the em box: icon fonts hang art off the baseline.
+            ImVec2 pos;
+            ImFontBaked* baked   = g_iconFont->GetFontBaked(sz);
+            const ImFontGlyph* g = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(cp)) : nullptr;
+            if (g) {
+                pos = ImVec2(
+                    std::floor(c.x - (g->X0 + g->X1) * 0.5f),
+                    std::floor(c.y - (g->Y0 + g->Y1) * 0.5f)
+                );
+            } else {
+                const ImVec2 ts = g_iconFont->CalcTextSizeA(sz, FLT_MAX, 0.0f, txt);
+                pos = ImVec2(std::floor(c.x - ts.x * 0.5f), std::floor(c.y - sz * 0.5f));
+            }
+            dl->AddText(g_iconFont, sz, pos, col, txt);
+            return;
+        }
+    }
+
+    // No icon font: one neutral primitive, so a button still looks clickable.
+    r = std::max(3.0f, std::round(r));
+    c = ImVec2(std::floor(c.x) + 0.5f, std::floor(c.y) + 0.5f);
+    const float th = std::max(1.0f, std::round(r * 0.20f));
+    dl->AddRect(
+        ImVec2(c.x - r * 0.7f, c.y - r * 0.7f),
+        ImVec2(c.x + r * 0.7f, c.y + r * 0.7f),
+        col,
+        r * 0.25f,
+        0,
+        th
+    );
+}
+
+bool iconButton(
+    const char* idStr,
+    EditorIcon icon,
+    bool active,
+    bool enabled,
+    const char* tooltip,
+    float size
+) {
+    if (!enabled) ImGui::BeginDisabled();
+    if (active) {
+        // Hover still brightens an active tool, or it feels dead under the cursor.
+        ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
+    }
+
+    char id[48];
+    snprintf(id, sizeof(id), "###%s", idStr);
+    bool pressed = ImGui::Button(id, ImVec2(size, size));
+
+    ImVec2 mn = ImGui::GetItemRectMin();
+    ImVec2 mx = ImGui::GetItemRectMax();
+    ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+    ImU32 col = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    drawEditorIcon(ImGui::GetWindowDrawList(), icon, c, size * 0.34f, col);
+
+    if (active) ImGui::PopStyleColor(2);
+    if (!enabled) ImGui::EndDisabled();
+
+    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", tooltip);
+
+    return pressed;
+}
+
+} // namespace Vkm::Engine

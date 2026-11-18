@@ -3,24 +3,25 @@
 #include "offline/gl_irradiance_baker.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 #include <GL/glew.h>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
+#include "vkm_opengl/buffer/readback_buffer.h"
+#include "vkm_opengl/core/context.h"
+#include "vkm_opengl/target/render_buffer.h"
+#include "vkm_opengl/texture/cube_faces.h"
 
-#include "gl_context.h"
-#include "gl_error_handle.h"
 #include "gl_profiler.h"
-#include "gl_render_buffer.h"
 
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
-#include "debug/profiler.h"
-#include "offline/gl_cubemap.h"
-#include "offline/gl_scene_capture.h"
-#include "gl_view.h"
-#include "storage/gl_ibl.h"
+#include "base/profile/profiler.h"
+#include "offline/capture/gl_scene_capture.h"
+#include "asset/gl_asset_mirror.h"
+#include "storage/light/gl_ibl.h"
 #include "system/render/probe_fill.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_view.h"
@@ -31,10 +32,11 @@ namespace {
 
 constexpr float CAPTURE_FAR = 500.0f;
 
-/// Widest the atlas grows before it takes another row of tiles.
 constexpr int MAX_ATLAS_WIDTH = static_cast<int>(BACKEND_MIN_TEXTURE_EDGE);
+    ///< Widest the atlas grows before it takes another row of tiles.
 
-// The probes sit at texel centres, so a (worldPos - boxMin) / boxSize lookup interpolates them.
+// The probes sit at texel centers, so a (worldPos - boxMin) / boxSize lookup interpolates them; the
+// relight places them so too (shaders/opengl/offline/irradiance/relight).
 glm::vec3 probePosition(const IrradianceVolumeData& data, uint32_t cell) {
     const glm::uvec3 res(data.resolutionX, data.resolutionY, data.resolutionZ);
     const glm::uvec3 at(cell % res.x, (cell / res.x) % res.y, cell / (res.x * res.y));
@@ -48,8 +50,8 @@ uint32_t cellCount(const IrradianceVolumeData& data) {
 } // namespace
 
 GLIrradianceBaker::GLIrradianceBaker(GLSceneCapture& capture)
-    : m_relight("shaders/irradiance/relight")
-    , m_fill("shaders/irradiance/fill")
+    : m_relight("shaders/opengl/offline/irradiance/relight")
+    , m_fill("shaders/opengl/offline/irradiance/fill")
     , m_capture(capture) {}
 
 GLIrradianceBaker::~GLIrradianceBaker() = default;
@@ -62,34 +64,34 @@ void GLIrradianceBaker::ensureAtlas(uint32_t probes) {
     m_tilesPerRow = tilesPerRow;
     if (m_atlas && m_atlas->getWidth() == width && m_atlas->getHeight() == height) return;
 
-    Vkm::GL::Texture2DParams params;
+    Vkm::OpenGL::Texture2DParams params;
     params.width           = width;
     params.height          = height;
     params.internalFormat  = GL_RGBA32UI;
     params.format          = GL_RGBA_INTEGER;
     params.type            = GL_UNSIGNED_INT;
-    params.minFilter       = Vkm::GL::TextureMinFilter::Nearest;
-    params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
+    params.minFilter       = Vkm::OpenGL::TextureMinFilter::Nearest;
+    params.magFilter       = Vkm::OpenGL::TextureMagFilter::Nearest;
     params.generateMipmaps = false;
-    m_atlas = std::make_unique<Vkm::GL::Texture2D>("irradiance_surfels", params);
+    m_atlas                = std::make_unique<Vkm::OpenGL::Texture2D>("irradiance_surfels", params);
 
     m_fbo.attachTexture(GL_COLOR_ATTACHMENT0, m_atlas->getID());
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 void GLIrradianceBaker::update(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     GLIrradianceVolume& volume,
     const RenderView& view,
-    GLView& glView,
+    GLAssetMirror& mirror,
     const GLIBL& globalIBL,
     const CaptureLighting& lighting
 ) {
-    if (!view.hasIrradianceVolume) {
+    if (!view.lists.hasIrradianceVolume) {
         release(volume);
         return;
     }
-    const IrradianceVolumeData& data = view.irradianceVolume;
+    const IrradianceVolumeData& data = view.lists.irradianceVolume;
     const Signature want{
         data.center,
         data.halfExtents,
@@ -102,10 +104,19 @@ void GLIrradianceBaker::update(
     m_asked.see(want);
     const bool settled = asked || m_asked.settled() || !m_bakedFrom.baked();
     if (settled && m_bakedFrom.changed(want)) {
-        volume.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
-        bake(gl, volume, data, view, glView, globalIBL);
+        beginBake(gl, volume, data);
         m_litBy.changed(lighting);
         m_relightAsked = false;
+    }
+    // A bake under way takes its slice, or its verdicts, before anything relights; the grid shown
+    // stays until it ends.
+    if (m_bake != Bake::None) {
+        PROFILE_SCOPE("Render/IrradianceBake");
+        PROFILE_GPU_SCOPE("Render/IrradianceBake");
+        if (m_bake == Bake::Capturing) captureSlice(gl, view, mirror, globalIBL, view.bakeBudget);
+        // A bake asked for whole waits for its verdicts, as it did for its captures.
+        if (m_bake == Bake::Judging && view.bakeBudget <= 0.0f) Vkm::OpenGL::finish();
+        if (m_bake == Bake::Judging) finishBake(gl, volume, view, mirror, globalIBL);
         return;
     }
 
@@ -121,13 +132,18 @@ void GLIrradianceBaker::update(
     PROFILE_SCOPE("Render/IrradianceRelight");
     PROFILE_GPU_SCOPE("Render/IrradianceRelight");
     if (!relighting()) m_relightAsked = false;
-    relight(gl, volume, data, view, glView, globalIBL);
+    relight(gl, volume, data, view, mirror, globalIBL);
 }
 
 void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
     if (!m_atlas && !volume.isReady()) return;
     // Detached first: a texture a framebuffer still holds outlives its delete.
     m_fbo.attachTexture(GL_COLOR_ATTACHMENT0, 0);
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
+    m_captureDepth.reset();
+    m_bake = Bake::None;
+    m_verdicts.reset();
+    m_verdictsBack.reset();
     m_atlas.reset();
     for (GLIrradianceVolume& scratch : m_scratch) scratch.release();
     volume.release();
@@ -136,30 +152,108 @@ void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
     m_relightAsked = false;
 }
 
-void GLIrradianceBaker::bake(
-    Vkm::GL::Context& gl,
+void GLIrradianceBaker::beginBake(
+    Vkm::OpenGL::Context& gl,
     GLIrradianceVolume& volume,
-    const IrradianceVolumeData& data,
-    const RenderView& view,
-    GLView& glView,
-    const GLIBL& globalIBL
+    const IrradianceVolumeData& data
 ) {
-    // Down until this bake succeeds: every early way out leaves the grid not holding this volume.
-    volume.setBaked(false);
     m_nextBounce = 0;
-
-    const uint32_t cells = cellCount(data);
-    if (cells == 0) return;
+    m_bake       = Bake::None;
+    m_baking     = data;
+    m_cells      = cellCount(data);
+    m_captured   = 0;
+    if (m_cells == 0) {
+        volume.setUnbaked();
+        return;
+    }
 
     for (GLIrradianceVolume& scratch : m_scratch) {
         scratch.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
     }
+    ensureAtlas(m_cells);
+
+    // A verdict a probe; a bake cut short leaves its verdicts unread.
+    const auto bytes = static_cast<uint32_t>(m_cells * sizeof(uint32_t));
+    if (!m_verdicts || m_verdicts->getSize() != bytes) {
+        m_verdicts     = std::make_unique<Vkm::OpenGL::ShaderStorageBuffer>(nullptr, bytes, GL_DYNAMIC_COPY);
+        m_verdictsBack = std::make_unique<Vkm::OpenGL::ReadbackBuffer>(bytes);
+    }
+    m_verdictsBack->drop();
+
+    m_captureDepth = std::make_unique<Vkm::OpenGL::RenderBuffer>();
+    m_captureDepth->storage(
+        GLDepth::EYE_FORMAT,
+        static_cast<int32_t>(m_atlas->getWidth()),
+        static_cast<int32_t>(m_atlas->getHeight())
+    );
+
+    // Once for every tile: zero is the sky, and each face's depth is its own tile's.
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, m_captureDepth->getID());
+    gl.setDepthWrite(true);
+    const uint32_t sky[4] = {0, 0, 0, 0};
+    m_fbo.clearColor(0, sky);
+    m_fbo.clearDepth(GLDepth::EYE_CLEAR);
+    m_bake = Bake::Capturing;
+}
+
+void GLIrradianceBaker::captureSlice(
+    Vkm::OpenGL::Context& gl,
+    const RenderView& view,
+    GLAssetMirror& mirror,
+    const GLIBL& globalIBL,
+    float budget
+) {
+    using Wall = std::chrono::steady_clock;
+    const Wall::time_point until = Wall::now() + std::chrono::duration_cast<Wall::duration>(
+        std::chrono::duration<float>(std::max(budget, 0.0f))
+    );
 
     // The shadowed sun's map covers the volume's box: every probe sits inside it.
+    const IrradianceVolumeData& data = m_baking;
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
-    m_capture.begin(gl, view, glView, globalIBL, static_cast<float>(FACE_SIZE), box);
-    captureSurfels(gl, data);
-    listLights(view, data, glView);
+    m_capture.begin(gl, view, mirror, globalIBL, static_cast<float>(FACE_SIZE), box);
+
+    m_fbo.bind();
+    gl.setDepthWrite(true);
+    do {
+        const uint32_t cell = m_captured++;
+        const auto x = static_cast<int32_t>((cell % m_tilesPerRow) * 6 * FACE_SIZE);
+        const auto y = static_cast<int32_t>((cell / m_tilesPerRow) * FACE_SIZE);
+        const GLSceneCapture::AttachFace tile = [&](int face) {
+            gl.setViewport(x + face * FACE_SIZE, y, FACE_SIZE, FACE_SIZE);
+        };
+        m_capture.captureSurfels(gl, probePosition(data, cell), CAPTURE_FAR, tile);
+    } while (m_captured < m_cells && (budget <= 0.0f || Wall::now() < until));
+    m_fbo.unbind();
+    if (m_captured < m_cells) return;
+
+    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
+    m_captureDepth.reset();
+
+    // The first gather judges every probe, under this slice's lights; the frame does not wait for
+    // the verdicts, which come back through a fence.
+    listLights(view, data, mirror);
+    gather(0, data, globalIBL);
+    Vkm::OpenGL::memoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    m_verdictsBack->capture(*m_verdicts);
+    m_bake = Bake::Judging;
+}
+
+void GLIrradianceBaker::finishBake(
+    Vkm::OpenGL::Context& gl,
+    GLIrradianceVolume& volume,
+    const RenderView& view,
+    GLAssetMirror& mirror,
+    const GLIBL& globalIBL
+) {
+    if (!m_verdictsBack->arrived()) return;
+    m_bake = Bake::None;
+
+    // The gathers after the first are lit as a relight's are, by this frame's lights.
+    const IrradianceVolumeData& data = m_baking;
+    const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
+    m_capture.beginLighting(gl, view, mirror, box);
+    listLights(view, data, mirror);
     if (!light(volume, data, globalIBL)) {
         LOG_WARNING(
             "Irradiance volume at (%.1f, %.1f, %.1f): every one of its %u probes is inside "
@@ -167,15 +261,19 @@ void GLIrradianceBaker::bake(
             data.center.x,
             data.center.y,
             data.center.z,
-            cells
+            m_cells
         );
+        volume.setUnbaked();
         return;
     }
-
-    volume.setBaked(true);
+    // The grids the relights gather into trade with the frame's, so hold its size.
+    for (GLIrradianceVolume& scratch : m_scratch) {
+        scratch.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
+    }
+    volume.setBaked(data);
     LOG_INFO(
         "Irradiance volume baked: %ux%ux%u probes at (%.1f, %.1f, %.1f), %d bounces; %u were inside "
-        "geometry and are filled from their neighbours",
+        "geometry and are filled from their neighbors",
         data.resolutionX,
         data.resolutionY,
         data.resolutionZ,
@@ -188,16 +286,16 @@ void GLIrradianceBaker::bake(
 }
 
 void GLIrradianceBaker::relight(
-    Vkm::GL::Context& gl,
+    Vkm::OpenGL::Context& gl,
     GLIrradianceVolume& volume,
     const IrradianceVolumeData& data,
     const RenderView& view,
-    GLView& glView,
+    GLAssetMirror& mirror,
     const GLIBL& globalIBL
 ) {
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
-    m_capture.beginLighting(gl, view, glView, box);
-    listLights(view, data, glView);
+    m_capture.beginLighting(gl, view, mirror, box);
+    listLights(view, data, mirror);
     gather(m_nextBounce, data, globalIBL);
     repair(m_scratch[m_nextBounce % 2]);
     if (++m_nextBounce < BOUNCES) return;
@@ -206,44 +304,15 @@ void GLIrradianceBaker::relight(
     volume.swapGrid(m_scratch[(BOUNCES - 1) % 2]);
 }
 
-void GLIrradianceBaker::captureSurfels(Vkm::GL::Context& gl, const IrradianceVolumeData& data) {
-    const uint32_t cells = cellCount(data);
-    ensureAtlas(cells);
-
-    // A depth as large as the atlas, for the capture alone: a relight reads the surfels, not it.
-    Vkm::GL::RenderBuffer depth;
-    const auto width  = static_cast<int32_t>(m_atlas->getWidth());
-    const auto height = static_cast<int32_t>(m_atlas->getHeight());
-    depth.storage(GLDepth::EYE_FORMAT, width, height);
-
-    // Once for every tile: zero is the sky, and each face's depth is its own tile's.
-    m_fbo.bind();
-    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, depth.getID());
-    gl.setDepthWrite(true);
-    const GLuint sky[4] = {0, 0, 0, 0};
-    VKM_GL_CHECK(glClearBufferuiv(GL_COLOR, 0, sky));
-    gl.clear(false, true, false, GLDepth::EYE_CLEAR);
-
-    for (uint32_t cell = 0; cell < cells; ++cell) {
-        const auto x = static_cast<int32_t>((cell % m_tilesPerRow) * 6 * FACE_SIZE);
-        const auto y = static_cast<int32_t>((cell / m_tilesPerRow) * FACE_SIZE);
-        const GLSceneCapture::AttachFace tile = [&](int face) {
-            gl.setViewport(x + face * FACE_SIZE, y, FACE_SIZE, FACE_SIZE);
-        };
-        m_capture.captureSurfels(gl, probePosition(data, cell), CAPTURE_FAR, tile);
-    }
-    m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, 0);
-    m_fbo.unbind();
-}
-
 bool GLIrradianceBaker::light(
     GLIrradianceVolume& volume,
     const IrradianceVolumeData& data,
     const GLIBL& globalIBL
 ) {
-    for (int bounce = 0; bounce < BOUNCES; ++bounce) {
+    if (recordRepair(data) == cellCount(data)) return false;
+    repair(m_scratch[0]);
+    for (int bounce = 1; bounce < BOUNCES; ++bounce) {
         gather(bounce, data, globalIBL);
-        if (bounce == 0 && recordRepair(m_scratch[0], data) == cellCount(data)) return false;
         repair(m_scratch[bounce % 2]);
     }
     volume.swapGrid(m_scratch[(BOUNCES - 1) % 2]);
@@ -261,13 +330,13 @@ void GLIrradianceBaker::repair(GLIrradianceVolume& grid) {
         m_fill.dispatch(GLBindings::ComputeGroups::covering(m_refused, GLBindings::ComputeGroups::FILL));
     }
     // The next gather samples it, and the frame after the trade.
-    VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+    Vkm::OpenGL::memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
 void GLIrradianceBaker::gather(int bounce, const IrradianceVolumeData& data, const GLIBL& globalIBL) {
-    GLIrradianceVolume&       target   = m_scratch[bounce % 2];
+    GLIrradianceVolume& target = m_scratch[bounce % 2];
     const GLIrradianceVolume* previous = bounce > 0 ? &m_scratch[(bounce - 1) % 2] : nullptr;
-    const bool                hasIBL   = globalIBL.isReady();
+    const bool hasIBL = globalIBL.isReady();
 
     m_relight.bind();
     m_relight.setUniform1i("u_faceSize", FACE_SIZE);
@@ -282,7 +351,7 @@ void GLIrradianceBaker::gather(int bounce, const IrradianceVolumeData& data, con
         "u_faceToWorld[5]",
     };
     for (int face = 0; face < 6; ++face) {
-        const glm::mat3 toWorld = glm::transpose(glm::mat3(GLCubemap::faceView(face, glm::vec3(0.0f))));
+        const glm::mat3 toWorld = glm::transpose(glm::mat3(Vkm::OpenGL::cubeFaceView(face, glm::vec3(0.0f))));
         m_relight.setUniformMatrix3fv(FACE_TO_WORLD[face], toWorld);
     }
 
@@ -302,26 +371,28 @@ void GLIrradianceBaker::gather(int bounce, const IrradianceVolumeData& data, con
     for (int i = 0; i < GLIrradianceVolume::SH_COEFFS; ++i) {
         target.bindImage(i, static_cast<uint32_t>(i), GL_WRITE_ONLY);
     }
+    m_verdicts->bindBase(GLBindings::SSBOBindingPoints::IRRADIANCE_VERDICT);
     m_relight.dispatch(cellCount(data));
-    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT));
+    Vkm::OpenGL::memoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT);
 }
 
 namespace {
 
-// The words listLights() writes, as shaders/irradiance/relight reads them: a count, then where
-// the list begins, for the directional lights, for those reaching out of the box, then per cell.
-constexpr size_t DIRECTIONAL_HEAD = 0;
-constexpr size_t OUTSIDE_HEAD     = 2;
-constexpr size_t CELL_HEADS       = 4;
+constexpr auto DIRECTIONAL_HEAD = static_cast<size_t>(GLIrradianceBaker::RELIGHT_DIRECTIONAL_HEAD);
+constexpr auto OUTSIDE_HEAD     = static_cast<size_t>(GLIrradianceBaker::RELIGHT_OUTSIDE_HEAD);
 
 /// Where @p cell's light count sits; where its list begins is the word after.
 size_t cellHead(uint32_t cell) {
-    return CELL_HEADS + 2 * static_cast<size_t>(cell);
+    return static_cast<size_t>(GLIrradianceBaker::RELIGHT_CELL_HEADS) + 2 * static_cast<size_t>(cell);
 }
 
 } // namespace
 
-void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolumeData& data, GLView& glView) {
+void GLIrradianceBaker::listLights(
+    const RenderView& view,
+    const IrradianceVolumeData& data,
+    GLAssetMirror& mirror
+) {
     const glm::ivec3 grid(data.resolutionX, data.resolutionY, data.resolutionZ);
     const uint32_t   cells   = cellCount(data);
     const glm::vec3  boxMin  = data.center - data.halfExtents;
@@ -332,10 +403,10 @@ void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolum
     m_directional.clear();
     m_outside.clear();
     m_reaches.clear();
-    const size_t count = std::min<size_t>(view.lights.size(), Config::MAX_LIGHTS);
+    const size_t count = std::min<size_t>(view.lists.lights.size(), Config::MAX_LIGHTS);
     for (size_t i = 0; i < count; ++i) {
-        const LightData& light = view.lights[i];
-        const auto       index = static_cast<uint32_t>(i);
+        const LightData& light = view.lists.lights[i];
+        const auto index = static_cast<uint32_t>(i);
         if (light.type == LightType::Directional) {
             m_directional.push_back(index);
             continue;
@@ -390,30 +461,29 @@ void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolum
     m_cellFill.assign(cells, 0u);
     for (const auto& [cell, light] : m_reaches) {
         const uint32_t n = m_lightWords[cellHead(cell)];
-        uint32_t&      k = m_cellFill[cell];
+        uint32_t& k = m_cellFill[cell];
         if (k < n) m_lightWords[m_lightWords[cellHead(cell) + 1] + k++] = light;
     }
 
     const auto bytes = static_cast<uint32_t>(m_lightWords.size() * sizeof(uint32_t));
-    const Vkm::GL::BufferSpan lists = glView.stream().write(m_lightWords.data(), bytes);
-    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::RELIGHT_LIGHTS, lists);
+    const Vkm::OpenGL::BufferSpan lists = mirror.stream().write(m_lightWords.data(), bytes);
+    Vkm::OpenGL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::RELIGHT_LIGHTS, lists);
 }
 
-uint32_t GLIrradianceBaker::recordRepair(const GLIrradianceVolume& judged, const IrradianceVolumeData& data) {
-    ProbeGridSH grid;
-    judged.download(grid);
-    const uint32_t cells = cellCount(data);
+uint32_t GLIrradianceBaker::recordRepair(const IrradianceVolumeData& data) {
+    const uint32_t  cells    = cellCount(data);
+    const uint32_t* verdicts = static_cast<const uint32_t*>(m_verdictsBack->data());
     std::vector<bool> trusted(cells);
     uint32_t refused = 0;
     for (uint32_t i = 0; i < cells; ++i) {
-        trusted[i] = probeTrusted(grid[0][i]);
+        trusted[i] = verdicts[i] != 0;
         if (!trusted[i]) ++refused;
     }
     m_refused = 0;
     if (refused == 0 || refused == cells) return refused;
 
     // A target per refused probe, three words, then its sources, two words each (see
-    // shaders/irradiance/fill).
+    // shaders/opengl/offline/irradiance/fill).
     const std::vector<ProbeFill> fills =
         probeFillWeights(trusted, data.resolutionX, data.resolutionY, data.resolutionZ);
     std::vector<uint32_t> words(3 * fills.size());
@@ -428,7 +498,7 @@ uint32_t GLIrradianceBaker::recordRepair(const GLIrradianceVolume& judged, const
             words.push_back(bits);
         }
     }
-    m_repair = std::make_unique<Vkm::GL::ShaderStorageBuffer>(
+    m_repair = std::make_unique<Vkm::OpenGL::ShaderStorageBuffer>(
         words.data(),
         static_cast<uint32_t>(words.size() * sizeof(uint32_t)),
         GL_STATIC_DRAW

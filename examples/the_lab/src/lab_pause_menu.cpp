@@ -5,11 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <utility>
 
-#include "core/clock.h"
-#include "core/event/event_bus.h"
-#include "core/reflect.h"
+#include "base/event/event_bus.h"
+#include "core/graphics.h"
+#include "base/reflect/enum_names.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_choice.h"
@@ -19,37 +20,36 @@
 #include "ecs/component/ui/ui_toggle.h"
 #include "ecs/scene.h"
 #include "net/net_session.h"
-#include "platform/input/input_map.h"
-#include "platform/window/glfw_include.h"
-#include "system/ui/ui_events.h"
+#include "core/input_map.h"
+#include "ecs/component/ui/ui_build.h"
+#include "core/frame/ui_events.h"
 
 #include "lab_actions.h"
 #include "lab_palette.h"
 
 namespace Lab {
 
+using namespace Vkm::Platform;
+
 namespace {
 
-const glm::vec4 GREY  {0.62f, 0.68f, 0.78f, 1.00f};
+const glm::vec4 GRAY  {0.62f, 0.68f, 0.78f, 1.00f};
 const glm::vec4 ACCENT{0.14f, 0.62f, 0.86f, 0.96f};
 const glm::vec4 HOT   {0.24f, 0.78f, 1.00f, 0.98f};
 const glm::vec4 OFF   {0.22f, 0.25f, 0.32f, 0.96f};
 
-// A step of any of these is a change of setting, applied at once.
-const std::string QUALITY       = "setting:quality";
-const std::string ANTI_ALIASING = "setting:antiAliasing";
-const std::string SHADOWS       = "setting:shadows";
-const std::string RENDER_SCALE  = "setting:renderScale";
-const std::string BLOOM         = "setting:bloom";
-const std::string OCCLUSION     = "setting:occlusion";
-const std::string REFLECTIONS   = "setting:reflections";
-const std::string SOFT_SHADOWS  = "setting:softShadows";
-const std::string CULLING       = "setting:culling";
+const glm::vec2 BUTTON{240.0f, 52.0f};
 
-constexpr float    ROW_WIDTH       = 500.0f;
-constexpr float    ROW_HEIGHT      = 40.0f;
-constexpr float    ROW_STEP        = 46.0f;
-constexpr float    RENDER_SCALES[] = {0.5f, 0.67f, 0.85f, 1.0f};
+// A settings row is its name, at the left of the settings column; its control rides the right end.
+const glm::vec2 ROW{500.0f, 40.0f};
+const UIElement LABEL  = UIElement::at({0.0f, 0.5f}, {0.0f, 0.0f}, ROW);
+const UIElement CHOICE = UIElement::at({1.0f, 0.5f}, {0.0f, 0.0f}, {240.0f, ROW.y});
+const UIElement SWITCH = UIElement::at({1.0f, 0.5f}, {-78.0f, 0.0f}, {84.0f, 36.0f});
+
+constexpr float ROW_GAP         = 6.0f;
+constexpr float ROWS_TOP        = 92.0f;
+constexpr float BACK_GAP        = 14.0f;  // more room above the Back button than between the rows
+constexpr float RENDER_SCALES[] = {0.5f, 0.67f, 0.85f, 1.0f};
 
 /**
  * @brief The index of the entry of @p values nearest @p value.
@@ -104,19 +104,19 @@ std::vector<std::string> renderScaleNames() {
 } // namespace
 
 void LabPauseMenu::onStart() {
-    // Defined on every end, with or without the menu: see lab_actions.h.
-    input().define(ACTION_MENU, { InputBinding{InputSource::Key, GLFW_KEY_ESCAPE, 1.0f} });
 
-    // Offline only: in a session the clock is the session's, client spawns take
-    // server-owned slots, and a restart would load a scene under every player.
+    // Offline only: in a session the clock is the session's, and a restart would load a scene
+    // under every player.
     if (!net().isOffline()) return;
 
-    // Built now, while time runs: a behavior spawned while paused would never start.
-    m_canvas = spawn("Pause Menu");
-    UICanvas canvas;
-    canvas.sortOrder = LAYER_MENU;
-    canvas.visible   = false;
-    scene().add(m_canvas, std::move(canvas));
+    // Built now, while time runs: a behavior spawned while paused would never start. Shown, the
+    // canvas holds the world and frees the cursor, and the menu action opens and closes it.
+    m_canvas = UI::canvas(scene(), "Pause Menu", LAYER_MENU);
+    UICanvas& canvas = scene().get<UICanvas>(m_canvas);
+
+    canvas.visible      = false;
+    canvas.pausesGame   = true;
+    canvas.toggleAction = ACTION_MENU;
 
     // The whole screen, faded as one.
     m_menu = spawn("Menu", m_canvas);
@@ -141,76 +141,86 @@ void LabPauseMenu::onStart() {
         return id;
     };
 
+    m_style.button = ACCENT;
+    m_style.hover  = HOT;
+    m_style.accent = ACCENT;
+    m_style.text   = WHITE;
+    const auto button = [&](EntityId parent, const char* caption, float y) {
+        return UI::button(scene(), parent, UIElement::at({0.5f, 0.0f}, {0.0f, y}, BUTTON), caption, m_style);
+    };
+
     m_main = page("Main", "PAUSED", {420.0f, 330.0f});
-    addButton(m_main, "RESUME",   "lab:resume",   {0.0f, 100.0f}, {240.0f, 52.0f});
-    addButton(m_main, "SETTINGS", "lab:settings", {0.0f, 164.0f}, {240.0f, 52.0f});
-    addButton(m_main, "RESTART",  "lab:restart",  {0.0f, 228.0f}, {240.0f, 52.0f});
+    onClick(button(m_main, "RESUME", 100.0f), [this] { close(); });
+    onClick(button(m_main, "SETTINGS", 164.0f), [this] { showSettings(true); });
+    // The restart takes the menu with the old world, so the new one runs.
+    onClick(button(m_main, "RESTART", 228.0f), [this] { restartScene(); });
 
     const EntityId hint = spawn("Hint", m_main);
     scene().add(hint, UIElement::at({0.5f, 0.0f}, {0.0f, 292.0f}, {380.0f, 22.0f}));
     UIText hintText;
-    hintText.text      = keyFor(input(), ACTION_MENU) + " closes this too";
+    hintText.text      = input().keyName(ACTION_MENU) + " closes this too";
     hintText.pixelSize = 15.0f;
-    hintText.color     = GREY;
+    hintText.color     = GRAY;
     hintText.align     = UIText::Align::Center;
     scene().add(hint, std::move(hintText));
 
-    m_settings = page("Settings", "SETTINGS", {560.0f, 610.0f});
-    float y = 92.0f;
-    m_quality      = addChoice("Quality", QUALITY, qualityNames(), y);
-    m_antiAliasing = addChoice("Anti-aliasing", ANTI_ALIASING, antiAliasingNames(), y += ROW_STEP);
-    m_shadows      = addChoice("Shadow detail", SHADOWS, shadowNames(), y += ROW_STEP);
-    m_renderScale  = addChoice("Render scale", RENDER_SCALE, renderScaleNames(), y += ROW_STEP);
-    m_bloom        = addToggle("Bloom", BLOOM, y += ROW_STEP);
-    m_occlusion    = addToggle("Ambient occlusion", OCCLUSION, y += ROW_STEP);
-    m_reflections  = addToggle("Reflections", REFLECTIONS, y += ROW_STEP);
-    m_softShadows  = addToggle("Soft shadows", SOFT_SHADOWS, y += ROW_STEP);
-    m_culling      = addToggle("Occlusion culling", CULLING, y += ROW_STEP);
-    addButton(m_settings, "BACK", "lab:back", {0.0f, y + ROW_STEP + 14.0f}, {240.0f, 52.0f});
+    const UIElement rows = UIElement::at({0.5f, 0.0f}, {0.0f, ROWS_TOP}, {ROW.x, 0.0f});
 
-    // The page opens on High without applying it: the frame keeps the project's settings until a
-    // row changes.
-    scene().get<UIChoice>(m_quality).index = static_cast<int>(GraphicsPreset::High);
-    showTier(GraphicsPreset::High);
+    m_settings = page("Settings", "SETTINGS", {560.0f, 656.0f});
+    m_rows     = UI::column(scene(), m_settings, rows, ROW_GAP);
+
+    m_quality      = addChoice("Quality", qualityNames());
+    m_antiAliasing = addChoice("Anti-aliasing", antiAliasingNames());
+    m_shadows      = addChoice("Shadow detail", shadowNames());
+    m_renderScale  = addChoice("Render scale", renderScaleNames());
+    m_bloom        = addToggle("Bloom");
+    m_occlusion    = addToggle("Ambient occlusion");
+    m_reflections  = addToggle("Reflections");
+    m_softShadows  = addToggle("Soft shadows");
+    m_culling      = addToggle("Occlusion culling");
+    m_fullscreen   = addToggle("Fullscreen");
+    onClick(button(m_rows, "BACK", BACK_GAP), [this] { showSettings(false); });
+
+    showInEffect();
     showSettings(false);
 
-    subscribe([this](const UIClickEvent& e) {
-        if (e.eventId == "lab:resume") setOpen(false);
-        else if (e.eventId == "lab:settings") showSettings(true);
-        else if (e.eventId == "lab:back") showSettings(false);
-        else if (e.eventId == "lab:restart") {
-            // Unpause first: the clock survives the restart and this behavior does not.
-            setOpen(false);
-            restartScene();
-        }
+    // A setting applies as it is changed, and the page then shows what the frame draws: a row the
+    // project has off stays off.
+    onChange(m_quality, [this](float tier) {
+        graphics().setQuality(static_cast<GraphicsPreset>(std::lround(tier)));
+        showInEffect();
     });
-
-    subscribe([this](const UIValueEvent& e) {
-        if (e.eventId.rfind("setting:", 0) != 0) return;
-        if (e.eventId == QUALITY) showTier(static_cast<GraphicsPreset>(std::lround(e.value)));
-        apply();
+    for (const EntityId setting : {
+             m_antiAliasing, m_shadows, m_renderScale, m_bloom, m_occlusion, m_reflections, m_softShadows,
+             m_culling
+         }) {
+        onChange(setting, [this](float) {
+            apply();
+            showInEffect();
+        });
+    }
+    // The window is the player's choice too, kept with the rest.
+    onChange(m_fullscreen, [this](float on) {
+        graphics().setWindowMode(on > 0.5f ? WindowMode::Fullscreen : WindowMode::Windowed);
     });
 }
 
 void LabPauseMenu::onRealtimeUpdate(float dt) {
     if (!net().isOffline()) return;
 
-    // Opening lives here, not in onUpdate: both hooks see the same press, so an
-    // onUpdate that opened would have this line close it again.
-    if (input().pressed(ACTION_MENU)) setOpen(!m_open);
+    // Closed, by its action or by Resume, it opens on the main page again.
+    const bool open = scene().get<UICanvas>(m_canvas).visible;
+    if (!open) showSettings(false);
 
-    const float target = m_open ? 1.0f : 0.0f;
+    const float target = open ? 1.0f : 0.0f;
     const float step   = fadeSeconds > 0.0f ? dt / fadeSeconds : 1.0f;
     m_fade = m_fade < target ? std::min(target, m_fade + step) : std::max(target, m_fade - step);
 
     if (UIElement* menu = scene().tryGet<UIElement>(m_menu)) menu->opacity = m_fade;
 }
 
-void LabPauseMenu::setOpen(bool open) {
-    m_open = open;
-    if (!open) showSettings(false);
-    scene().get<UICanvas>(m_canvas).visible = open;
-    clock().setPaused(open);
+void LabPauseMenu::close() {
+    scene().get<UICanvas>(m_canvas).visible = false;
 }
 
 void LabPauseMenu::showSettings(bool settings) {
@@ -218,127 +228,37 @@ void LabPauseMenu::showSettings(bool settings) {
     scene().get<UIElement>(m_settings).visible = settings;
 }
 
-EntityId LabPauseMenu::addButton(
-    EntityId parent,
-    const char* caption,
-    const std::string& eventId,
-    const glm::vec2& at,
-    const glm::vec2& size
-) {
-    const EntityId id = spawn(caption, parent);
-    scene().add(id, UIElement::at({0.5f, 0.0f}, at, size));
-    UIButton button;
-    button.eventId     = eventId;
-    button.normalColor = ACCENT;
-    button.hoverColor  = HOT;
-    scene().add(id, std::move(button));
-    UIText text;
-    text.text      = caption;
-    text.pixelSize = 22.0f;
-    text.color     = WHITE;
-    text.align     = UIText::Align::Center;
-    text.valign    = UIText::VAlign::Middle;
-    scene().add(id, std::move(text));
-    return id;
+EntityId LabPauseMenu::addChoice(const char* name, std::vector<std::string> options) {
+    const EntityId row = UI::text(scene(), m_rows, LABEL, name, m_style);
+    return UI::choice(scene(), row, CHOICE, std::move(options), 0, m_style);
 }
 
-EntityId LabPauseMenu::addRow(const char* name, float y) {
-    const EntityId row = spawn(name, m_settings);
-    scene().add(row, UIElement::at({0.5f, 0.0f}, {0.0f, y}, {ROW_WIDTH, ROW_HEIGHT}));
-    UIText text;
-    text.text      = name;
-    text.pixelSize = 22.0f;
-    text.color     = WHITE;
-    text.valign    = UIText::VAlign::Middle;
-    scene().add(row, std::move(text));
-    return row;
+EntityId LabPauseMenu::addToggle(const char* name) {
+    UI::Style off = m_style;
+    off.button = OFF;
+    const EntityId row = UI::text(scene(), m_rows, LABEL, name, m_style);
+    return UI::toggle(scene(), row, SWITCH, false, off);
 }
 
-EntityId LabPauseMenu::addChoice(
-    const char* name,
-    const std::string& eventId,
-    std::vector<std::string> options,
-    float y
-) {
-    const EntityId row = addRow(name, y);
-
-    // The choice is its own text: the option shown between its arrows.
-    const EntityId choice = spawn("Choice", row);
-    scene().add(choice, UIElement::at({1.0f, 0.5f}, {0.0f, 0.0f}, {240.0f, ROW_HEIGHT}));
-    UIText shown;
-    shown.pixelSize = 22.0f;
-    shown.color     = HOT;
-    shown.align     = UIText::Align::Center;
-    shown.valign    = UIText::VAlign::Middle;
-    scene().add(choice, std::move(shown));
-
-    const auto arrow = [&](const char* caption, const glm::vec2& side) {
-        const EntityId id = spawn(caption, choice);
-        scene().add(id, UIElement::at(side, {0.0f, 0.0f}, {ROW_HEIGHT, ROW_HEIGHT}));
-        UIButton button;
-        button.eventId     = eventId;
-        button.normalColor = ACCENT;
-        button.hoverColor  = HOT;
-        scene().add(id, std::move(button));
-        UIText text;
-        text.text      = caption;
-        text.pixelSize = 22.0f;
-        text.color     = WHITE;
-        text.align     = UIText::Align::Center;
-        text.valign    = UIText::VAlign::Middle;
-        scene().add(id, std::move(text));
-        return id;
-    };
-
-    UIChoice steps;
-    steps.options = std::move(options);
-    steps.back    = arrow("<", {0.0f, 0.5f});
-    steps.next    = arrow(">", {1.0f, 0.5f});
-    steps.text    = choice;
-    scene().add(choice, std::move(steps));
-    return choice;
+void LabPauseMenu::showInEffect() {
+    // None when no tier is what the frame draws, which the row shows blank.
+    const std::optional<GraphicsPreset> tier = graphics().quality();
+    scene().get<UIChoice>(m_quality).index = tier ? static_cast<int>(*tier) : -1;
+    showRows(graphics().settings());
+    scene().get<UIToggle>(m_fullscreen).on = window() && window()->mode() == WindowMode::Fullscreen;
 }
 
-EntityId LabPauseMenu::addToggle(const char* name, const std::string& eventId, float y) {
-    const EntityId row = addRow(name, y);
-
-    const EntityId toggle = spawn("Toggle", row);
-    scene().add(toggle, UIElement::at({1.0f, 0.5f}, {-78.0f, 0.0f}, {84.0f, 36.0f}));
-    UIButton button;
-    button.eventId            = eventId;
-    button.normalColor        = OFF;
-    button.hoverColor         = HOT;
-    button.shape.cornerRadius = 18.0f;
-    scene().add(toggle, std::move(button));
-
-    // The knob slides to the end that says the state; a press on it is a press on the switch.
-    const EntityId knob = spawn("Knob", toggle);
-    UIElement at = UIElement::at({0.0f, 0.5f}, {0.0f, 0.0f}, {28.0f, 28.0f});
-    at.blocksPointer = false;
-    scene().add(knob, std::move(at));
-    UIImage dot{WHITE, {}, {}};
-    dot.shape.cornerRadius = 14.0f;
-    scene().add(knob, std::move(dot));
-
-    UIToggle flip;
-    flip.onColor = ACCENT;
-    flip.knob    = knob;
-    scene().add(toggle, std::move(flip));
-    return toggle;
-}
-
-void LabPauseMenu::showTier(GraphicsPreset preset) {
-    const RenderSettings tier = withPreset(projectRender(), preset);
+void LabPauseMenu::showRows(const RenderSettings& settings) {
     const auto show = [&](EntityId row, int index) { scene().get<UIChoice>(row).index = index; };
     const auto flip = [&](EntityId row, bool on) { scene().get<UIToggle>(row).on = on; };
-    show(m_antiAliasing, nearestIndex(RenderSettings::MSAA_SAMPLE_COUNTS, tier.msaaSamples));
-    show(m_shadows,      nearestIndex(RenderSettings::SHADOW_RESOLUTIONS, tier.shadowResolution));
-    show(m_renderScale,  nearestIndex(RENDER_SCALES, tier.renderScale));
-    flip(m_bloom,        tier.bloom);
-    flip(m_occlusion,    tier.gtao);
-    flip(m_reflections,  tier.ssr);
-    flip(m_softShadows,  tier.softShadows);
-    flip(m_culling,      tier.occlusionCulling);
+    show(m_antiAliasing, nearestIndex(RenderSettings::MSAA_SAMPLE_COUNTS, settings.msaaSamples));
+    show(m_shadows,      nearestIndex(RenderSettings::SHADOW_RESOLUTIONS, settings.shadowResolution));
+    show(m_renderScale,  nearestIndex(RENDER_SCALES, settings.renderScale));
+    flip(m_bloom,        settings.bloom);
+    flip(m_occlusion,    settings.gtao);
+    flip(m_reflections,  settings.ssr);
+    flip(m_softShadows,  settings.softShadows);
+    flip(m_culling,      settings.occlusionCulling);
 }
 
 void LabPauseMenu::apply() {
@@ -348,22 +268,16 @@ void LabPauseMenu::apply() {
     };
     const auto on = [&](EntityId row) { return scene().get<UIToggle>(row).on; };
 
-    // The project's look is kept: a switch turns off what the project has on, never the reverse.
-    // Culling changes no picture, only what the GPU is spared, so it is the player's either way.
-    const RenderSettings& project = projectRender();
-    const int last    = static_cast<int>(GraphicsPreset::Count) - 1;
-    const int quality = std::clamp(scene().get<UIChoice>(m_quality).index, 0, last);
-
-    RenderSettings r   = withPreset(project, static_cast<GraphicsPreset>(quality));
+    RenderSettings r = graphics().settings();
     r.msaaSamples      = pick(m_antiAliasing, RenderSettings::MSAA_SAMPLE_COUNTS);
     r.shadowResolution = pick(m_shadows, RenderSettings::SHADOW_RESOLUTIONS);
     r.renderScale      = pick(m_renderScale, RENDER_SCALES);
-    r.bloom            = project.bloom && on(m_bloom);
-    r.gtao             = project.gtao && on(m_occlusion);
-    r.ssr              = project.ssr && on(m_reflections);
-    r.softShadows      = project.softShadows && on(m_softShadows);
+    r.bloom            = on(m_bloom);
+    r.gtao             = on(m_occlusion);
+    r.ssr              = on(m_reflections);
+    r.softShadows      = on(m_softShadows);
     r.occlusionCulling = on(m_culling);
-    render()           = r;
+    graphics().set(r);
 }
 
 } // namespace Lab

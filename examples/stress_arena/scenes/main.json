@@ -1,0 +1,182 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [],
+    "meshes": [],
+    "skeletons": [],
+    "sounds": [],
+    "terrains": [],
+    "textures": []
+  },
+  "entities": [
+    {
+      "components": {
+        "Camera": {
+          "active": true,
+          "aspect": 0.0,
+          "fovY": 1.2217305,
+          "orthoHeight": 10.0,
+          "projection": "Perspective",
+          "viewmodelFovY": 0.0,
+          "zFar": 600.0,
+          "zNear": 0.2
+        },
+        "Name": {
+          "value": "Camera"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            26.0,
+            -95.0
+          ],
+          "rotation": [
+            -4.357664e-08,
+            -3.4295562e-09,
+            0.9969173,
+            0.0784591
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "id": 1
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "StressArena"
+        },
+        "Script": {
+          "behaviors": [
+            {
+              "properties": {
+                "animatedCount": 1500,
+                "blastInterval": 6.0,
+                "cameraCutInterval": 0.0,
+                "cameraLoopTime": 48.0,
+                "debrisRate": 45.0,
+                "decalCount": 80,
+                "droneCount": 40,
+                "emitterCount": 40,
+                "lightCount": 220,
+                "lodEnabled": true,
+                "movingLights": 90,
+                "physicsBodies": 220,
+                "propCount": 4000,
+                "pulsingMaterials": 6,
+                "reflectionProbes": 4,
+                "scriptedCamera": true,
+                "shadowLights": 2,
+                "towerCount": 180,
+                "uiWidgetCount": 48,
+                "uniqueMaterials": 12
+              },
+              "type": "StressArena"
+            }
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "id": 2
+    }
+  ],
+  "environment": {
+    "acoustics": {
+      "enabled": true,
+      "reverb": 1.0
+    },
+    "fog": {
+      "albedo": [
+        0.8,
+        0.85,
+        1.0
+      ],
+      "anisotropy": 0.7,
+      "density": 0.006,
+      "enabled": true,
+      "height": 18.0,
+      "heightFalloff": 0.05,
+      "maxDistance": 100.0
+    },
+    "night": {
+      "moonIntensity": 1.2,
+      "moonlightColor": [
+        0.55,
+        0.65,
+        1.0
+      ],
+      "moonlightIntensity": 0.12,
+      "radiance": [
+        0.004,
+        0.006,
+        0.014
+      ]
+    },
+    "sky": {
+      "hdrPath": "",
+      "intensity": 1.0,
+      "lightColor": [
+        1.0,
+        0.96,
+        0.9
+      ],
+      "lightIntensity": 3.2,
+      "mie": 3.5,
+      "procedural": true,
+      "showSkybox": true,
+      "sunAzimuth": -145.0,
+      "sunDiscIntensity": 5.0,
+      "sunElevation": 70.0
+    },
+    "waves": {
+      "calmCenter": [
+        0.0,
+        0.0
+      ],
+      "calmRadius": 0.0,
+      "shape": {
+        "choppiness": 0.7,
+        "depth": 0.0,
+        "fetch": 100.0,
+        "heightScale": 1.0,
+        "maxWavelength": 200.0,
+        "minWavelength": 2.0,
+        "seed": 1,
+        "spread": 0.5,
+        "windDirection": 0.0,
+        "windSpeed": 8.0
+      },
+      "stillRadius": 0.0
+    }
+  },
+  "physics": {
+    "gravity": [
+      0.0,
+      -18.0,
+      0.0
+    ],
+    "solverIterations": 8
+  },
+  "version": 3
+}

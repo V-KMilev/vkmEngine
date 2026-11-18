@@ -1,29 +1,18 @@
 #pragma once
 
-#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-#include "core/math/random.h"
+#include "base/math/random.h"
 #include "core/system.h"
-#include "ecs/component/render/particle_emitter.h"
-#include "system/particle/live_particles.h"
-#include "system/physics/query/query.h"
+#include "ecs/component/effect/particle_emitter.h"
+#include "core/frame/live_particles.h"
+#include "system/physics/query.h"
 
 namespace Vkm::Engine {
 
 class Scene;
-
-/**
- * @brief The emitter whose particles fire @p child's ParticleTrigger: its parent, when both carry a
- *        ParticleEmitter.
- *
- * @param scene Scene holding @p child and its parent.
- * @param child An entity with a ParticleTrigger.
- * @return The parent, or a null id when nothing fires it.
- */
-EntityId triggeringEmitter(const Scene& scene, EntityId child);
 
 /**
  * @brief Steps every ParticleEmitter's CPU particle simulation.
@@ -33,7 +22,12 @@ EntityId triggeringEmitter(const Scene& scene, EntityId child);
  * every particle it emits. A colliding emitter's particles ask the physics world's
  * bodies where they are this frame.
  *
- * Publishes FrameContext::particles every frame, paused ones too.
+ * Publishes FrameProducts::particles every frame, paused ones too.
+ *
+ * While the world stands still in an authoring host it plays the host's effect preview
+ * (HostChrome::effectPreview) on the frame's time: it steps only the previewed emitters, plays a
+ * burst once a run, restarts a spent one after PREVIEW_REST, and destroys and writes nothing. Each
+ * start and stop of a preview clears the pools.
  */
 class ParticleSystem : public System {
     public:
@@ -66,23 +60,9 @@ class ParticleSystem : public System {
     private:
         static constexpr uint64_t SEED = 0x9E3779B97F4A7C15ULL;  ///< What m_rng starts each world from.
 
-        /// Where a sub-emitter's particles are to be born, collected through the walk.
-        struct TriggeredSpawn {
-            EntityId  emitter;
-            glm::vec3 position;
-            glm::vec3 velocity;  ///< The parent particle's, scaled by the child's inheritVelocity.
-            uint32_t  count;
-        };
-
-        /// A sub-emitter under its parent.
-        struct ChildLink {
-            uint32_t        parentSlot;
-            EntityId        child;
-            ParticleTrigger trigger;
-            float           inheritVelocity;  ///< The child's ParticleEmitter::inheritVelocity.
-        };
-
-        /// Where a spawn comes from: a point in the world, the emitter's frame, and what it adds.
+        /**
+         * @brief Where a spawn comes from: a point in the world, the emitter's frame, and what it adds.
+         */
         struct Origin {
             glm::vec3 position;
             glm::mat3 frame;     ///< The emitter's world rotation: its shape's axes.
@@ -107,31 +87,6 @@ class ParticleSystem : public System {
         );
 
         /**
-         * @brief Queue each sub-emitter of @p emitter that answers @p event, for a particle there.
-         *
-         * @param emitter  The parent.
-         * @param event    What befell the particle.
-         * @param particle The parent particle.
-         */
-        void trigger(EntityId emitter, ParticleEvent event, const Particle& particle);
-
-        /**
-         * @brief The sub-emitters of the emitter in @p slot, a run of m_links.
-         *
-         * @param slot The parent's entity slot.
-         * @return The run's first link and one past its last.
-         */
-        std::pair<const ChildLink*, const ChildLink*> childrenOf(uint32_t slot) const;
-
-        /**
-         * @brief Whether no sub-emitter under the emitter in @p slot, however deep, has a particle.
-         *
-         * @param slot The parent's entity slot.
-         * @return True when destroying it would cut no sub-emitter's particle short.
-         */
-        bool quiet(uint32_t slot) const;
-
-        /**
          * @brief Step @p pool's particles @p dt seconds: forces, collisions, ageing and trails.
          *
          * @param ctx     The frame, whose scene a colliding emitter asks.
@@ -149,25 +104,21 @@ class ParticleSystem : public System {
         );
 
     private:
-        /**
-         * @brief The generator every spawn draws from, reseeded with each world.
-         *
-         * Not Math::Random::rng(), which is per-thread and clock-seeded: a world
-         * loaded again draws the same sequence (spawn timing still follows
-         * the frame delta).
-         */
-        Math::Rng m_rng{SEED};
+        Math::Rng m_rng{SEED};  ///< The generator every spawn draws from, reseeded with each world. Not
+                                ///< Math::Random::rng(), which is per-thread and clock-seeded: a world loaded
+                                ///< again draws the same sequence (spawn timing still follows the frame
+                                ///< delta).
 
         LiveParticles m_live;
         uint64_t      m_step  = 0;     ///< Stamped into a pool's `seen`.
         uint64_t      m_epoch = 0;     ///< The Scene::epoch() the pools belong to.
         float         m_time  = 0.0f;  ///< Seconds simulated in this world, which drift the swirl.
 
+        bool     m_previewing      = false;  ///< Last update played a host's preview.
+        uint64_t m_previewRestarts = 0;      ///< The preview's restart count it played to.
+
         std::vector<EntityId> m_spent;  ///< Emitters done with, to destroy after the walk.
 
-        /// Each sub-emitter with an emitter parent, by that parent's slot, gathered each step.
-        std::vector<ChildLink> m_links;
-        std::vector<TriggeredSpawn> m_triggered;  ///< Spawns the walk queued, born after it.
         QueryParts m_struck;  ///< What a colliding emitter's particles may strike this step.
 };
 

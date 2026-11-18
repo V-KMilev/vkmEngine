@@ -19,29 +19,34 @@ namespace Vkm::Engine {
  * The identity is (type, name) alone; where its files sit is derived from it, so a record names no paths.
  */
 struct AssetRecord {
-    AssetType   type = AssetType::Mesh;
-    std::string name;
-    /**
-     * @brief What the cooked file was last baked from: the recipe, its source art's bytes, and the
-     *        recorded key of any asset it derives from.
-     *
-     * Not the cooker or the layout: AssetCook::cacheKey adds those when it names the file.
-     */
-    uint64_t    recipeHash = 0;
-    /**
-     * @brief The source-art files the cook read and folded into recipeHash, as project references
-     *        (AssetCooker::sourceFiles).
-     *
-     * Recorded so the cook that hashes them is their one owner (see import_sources in
-     * `tools/vkmcli/package.py`).
-     */
-    std::vector<std::string> sources;
+    AssetType                type         = AssetType::Mesh;
+    std::string              name;
+    uint64_t                 recipeHash   = 0;                ///< What the cooked file was last baked from:
+                                                              ///< the recipe, its source art's bytes, and the
+                                                              ///< recorded key of any asset it derives from.
+                                                              ///< Not the cooker or the layout:
+                                                              ///< AssetCook::cacheKey adds those when it
+                                                              ///< names the file.
+    std::vector<std::string> sources;                         ///< The source-art files the cook read and
+                                                              ///< folded into recipeHash, as project
+                                                              ///< references (AssetCooker::sourceFiles):
+                                                              ///< recorded so the cook that hashes them is
+                                                              ///< their one owner (see import_sources in
+                                                              ///< `tools/vkmcli/package.py`).
+    uint64_t                 documentHash = 0;                ///< The recipe document's own hash when it was
+                                                              ///< cooked, which a load checks the file
+                                                              ///< against. recipeHash folds in the art's
+                                                              ///< bytes, too costly to reread on every load;
+                                                              ///< an edited recipe is caught by this alone.
+
+    /// The documentHash of @p recipe: what a cook records and a load compares.
+    static uint64_t documentHashOf(const nlohmann::json& recipe);
 };
 
 /**
  * @brief In-memory view of the on-disk asset database manifest.
  *
- * The manifest (`ProjectPaths::assetManifest()`) holds every asset's identity (type + name) and recipe
+ * The manifest (`Roots::assetManifest()`) holds every asset's identity (type + name) and recipe
  * hash; scene asset references resolve through it. File locations derive from the identity:
  * recipePath() / cookedPath() use an opaque UID (a content hash of type+name), since a raw asset name
  * may contain path separators or colons.
@@ -101,6 +106,15 @@ class AssetLibrary {
         std::vector<std::string> namesOf(AssetType type) const;
 
         /**
+         * @brief Moved by every change to the records: a load, an upsert, a removal.
+         *
+         * So a view built from namesOf() can tell it still holds.
+         *
+         * @return The count of changes so far.
+         */
+        uint64_t revision() const { return m_revision; }
+
+        /**
          * @brief Absolute path to the recipe file of (@p type, @p name).
          *
          * Derived from the identity, so writer and readers cannot disagree about where it is.
@@ -143,7 +157,8 @@ class AssetLibrary {
          * @brief Write @p source as the recipe file for (@p type, @p name).
          *
          * Written to a temporary and renamed over the file: a cook cannot regenerate a recipe, and one
-         * truncated in place would be recorded current and refused by every later load.
+         * truncated in place would be recorded current and refused by every later load. A file that
+         * already says @p source is left as it is.
          *
          * @param type Asset type half of the identity.
          * @param name Asset name half of the identity.
@@ -222,6 +237,7 @@ class AssetLibrary {
 
     private:
         std::unordered_map<std::string, AssetRecord> m_records;  ///< Keyed by key(type, name).
+        uint64_t                                     m_revision = 0;
 };
 
 } // namespace Vkm::Engine

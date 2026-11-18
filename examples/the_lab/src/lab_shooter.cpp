@@ -1,29 +1,23 @@
-#define VKM_LOG_CATEGORY "LAB"
-
 #include "lab_shooter.h"
 
 #include <glm/gtx/quaternion.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/math/axes.h"
-#include "core/math/rotation.h"
-#include "ecs/component/core/transform.h"
+#include "base/math/axes.h"
+#include "base/math/rotation.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
-#include "ecs/component/render/decal.h"
-#include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/effect/decal.h"
+#include "ecs/component/effect/particle_emitter.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "io/scene/prefab.h"
 #include "net/net_session.h"
-#include "net/prediction/rewind.h"
-#include "net/wire/protocol.h"
-#include "platform/input/input_map.h"
-#include "platform/window/glfw_include.h"
+#include "net/latency/rewind.h"
+#include "core/input_map.h"
 #include "resource/resource_manager.h"
-#include "system/audio/audio_events.h"
-#include "system/physics/query/query.h"
+#include "system/physics/query.h"
 
 #include "lab_actions.h"
 #include "lab_follow_camera.h"
@@ -45,28 +39,24 @@ constexpr float PROP_PUSH = 12.0f;
 // Scorch marks one shooter leaves before the oldest goes.
 constexpr size_t MAX_SCORCHES = 40;
 
-// A scorch mark's size across, and how deep into the surface it reaches, metres.
+// A scorch mark's size across, and how deep into the surface it reaches, meters.
 constexpr float SCORCH_SIZE  = 0.32f;
 constexpr float SCORCH_DEPTH = 0.3f;
 
-// How fast a tracer's streak flies, m/s, and how far from the muzzle it starts, metres.
+// How fast a tracer's streak flies, m/s, and how far from the muzzle it starts, meters.
 constexpr float TRACER_SPEED = 90.0f;
 constexpr float TRACER_START = 0.6f;
 
-// A shot shorter than this shows no tracer, metres.
+// A shot shorter than this shows no tracer, meters.
 constexpr float SHORTEST_TRACER = 0.05f;
 
-// The shortest a tracer flies, metres, so a point-blank shot still flashes.
+// The shortest a tracer flies, meters, so a point-blank shot still flashes.
 constexpr float SHORTEST_FLIGHT = 0.1f;
 
 // A surface's normal this near vertical is a floor or a ceiling.
 constexpr float FLOOR_NORMAL = 0.9f;
 
 } // namespace
-
-void LabShooter::onStart() {
-    input().define(ACTION_FIRE, { InputBinding{InputSource::Key, GLFW_KEY_F, 1.0f} });
-}
 
 glm::vec3 LabShooter::muzzle() {
     const Transform* body = tryGet<Transform>();
@@ -80,26 +70,23 @@ void LabShooter::onFixedUpdate(float) {
     // Down, the ragdoll has the body and the shot waits until it stands.
     const Ragdoll* ragdoll = tryGet<Ragdoll>();
     if (ragdoll && ragdoll->active) return;
-    if (input().pressed(command(), ACTION_FIRE)) fire();
+    if (pressed(ACTION_FIRE)) fire();
 }
 
 void LabShooter::fire() {
     // Authority only: a client draws other players in the past on purpose.
-    if (!isAuthority(net().role())) return;
+    if (!isAuthority()) return;
     LabScore* score = tryGet<LabScore>();
     if (!score) return;
 
     const glm::vec3 from = muzzle();
     const glm::vec3 look = Math::computeForward(command().view);
-    // The muzzle stands inside the shooter's own capsule.
-    QueryFilter filter;
-    filter.ignore = entity();
-    RayHit hit;
-    bool struck = false;
+    // The muzzle stands inside the shooter's own capsule, which cast() passes over.
+    std::optional<RayHit> struck;
     {
         // Offline there is no history and nothing moves.
         NetSession::Rewind rewound(net(), scene(), entity());
-        struck = raycast(scene(), from, look, SHOT_RANGE, hit, filter);
+        struck = cast(from, look, SHOT_RANGE);
     }
 
     ++score->shots;
@@ -112,19 +99,21 @@ void LabShooter::fire() {
     LOG_INFO(
         "Shot from player entity %u hit entity %u at %.2f m",
         entity().slot(),
-        hit.entity.slot(),
-        hit.distance
+        struck->entity.slot(),
+        struck->distance
     );
-    score->lastHit    = hit.point;
-    score->lastNormal = hit.normal;
-    Rigidbody* struckBody = scene().tryGet<Rigidbody>(hit.entity);
-    const bool scenery = struckBody && struckBody->motion == RigidbodyMotion::Static;
-    score->lastShot = scenery ? LabShot::World : LabShot::Prop;
+    Rigidbody* struckBody = scene().tryGet<Rigidbody>(struck->entity);
+    const bool scenery    = struckBody && struckBody->motion == RigidbodyMotion::Static;
+
+    score->lastHit    = struck->point;
+    score->lastNormal = struck->normal;
+    score->lastShot   = scenery ? LabShot::World : LabShot::Prop;
 
     // Read inside the rewind, acted on in the present.
-    const EntityId struckCharacter = HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene(), hit.entity);
+    const EntityId struckCharacter =
+        HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene(), struck->entity);
     if (LabWalker* other = findBehavior<LabWalker>(struckCharacter)) {
-        other->knockDown(look * SHOT_PUSH, hit.point);
+        other->knockDown(look * SHOT_PUSH, struck->point);
         score->lastShot = LabShot::Player;
         return;
     }
@@ -149,16 +138,14 @@ void LabShooter::showShot() {
     if (length < SHORTEST_TRACER) return;
     const glm::vec3 along = path / length;
 
-    if (const AudioClipHandle sound = resources().find(zap)) {
-        events().emit(PlaySoundEvent::at(sound, from));
-    }
+    playSoundAt(zap, from);
 
     // The streak leaves along the shot and dies where it struck.
     if (!tracer.empty()) {
         Transform start;
         start.position = from + along * TRACER_START;
         start.rotation = glm::rotation(Math::WORLD_UP, along);
-        const EntityId streak = Prefab::instantiate(scene(), resources(), tracer, start);
+        const EntityId streak = instantiate(tracer, start);
         if (ParticleEmitter* emitter = scene().tryGet<ParticleEmitter>(streak)) {
             const float flight = glm::max(length - TRACER_START, SHORTEST_FLIGHT) / TRACER_SPEED;
             emitter->speed    = {TRACER_SPEED, TRACER_SPEED};
@@ -170,7 +157,7 @@ void LabShooter::showShot() {
     Transform impact;
     impact.position = score->lastHit;
     impact.rotation = glm::rotation(Math::WORLD_UP, score->lastNormal);
-    if (!hitEffect.empty()) Prefab::instantiate(scene(), resources(), hitEffect, impact);
+    if (!hitEffect.empty()) instantiate(hitEffect, impact);
 
     // Scenery keeps a mark; a prop moves on and a player gets up.
     if (score->lastShot == LabShot::World) leaveScorch(score->lastHit, score->lastNormal);

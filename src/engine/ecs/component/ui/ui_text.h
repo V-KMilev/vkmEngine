@@ -5,45 +5,44 @@
 
 #include <glm/glm.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
 
 namespace Vkm::Engine {
 
-/**
- * @brief The font a UIText names unless told otherwise; a host with a window bakes it.
- */
-inline constexpr const char* DEFAULT_UI_FONT = "ui:roboto";
+inline constexpr const char* DEFAULT_UI_FONT = "ui:roboto";  ///< The font a UIText names unless told
+                                                             ///< otherwise; a host with a window bakes it.
 
 /**
  * @brief Text drawn within its element's rect, on as many lines as it breaks into.
  *
- * The font is a name, not a handle, because a name is what a scene file can hold;
- * it is resolved through ResourceManager::findByName each frame. Text taller than
- * the rect overflows unless an ancestor clips (clipChildren, or a UIScroll).
+ * The font is a name the host's baked fonts are found by each frame (docs/reference/ui.md, "Fonts").
+ * Text taller than the rect overflows unless an ancestor clips (clipChildren, or a UIScroll).
  */
 struct UIText {
     enum class Align  : uint8_t { Left, Center, Right, Count };
     enum class VAlign : uint8_t { Top, Middle, Bottom, Count };
 
-    /// How far the shadow falls, down and right, in the text's heights.
-    static constexpr float SHADOW_DROP = 1.0f / 16.0f;
+    static constexpr float SHADOW_DROP = 1.0f / 16.0f;  ///< How far the shadow falls, down and right, in the
+                                                        ///< text's heights.
 
-    /// UTF-8; what the font does not cover draws nothing.
-    std::string text;
-    /// Baked SDF font asset name; nothing draws if unresolved.
-    std::string font      = DEFAULT_UI_FONT;
+    std::string text;                                  ///< UTF-8; what the font does not cover draws nothing.
+    std::string font      = DEFAULT_UI_FONT;           ///< Baked SDF font asset name; nothing draws if
+                                                       ///< unresolved.
     float       pixelSize = 32.0f;                     ///< Text height in canvas reference pixels.
     glm::vec4   color     = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Straight (non-premultiplied) RGBA.
     Align       align     = Align::Left;               ///< Horizontal alignment within the element rect.
-    VAlign      valign    = VAlign::Top;               ///< Vertical alignment within the element rect.
-    /// A drop shadow under the text, down and right by SHADOW_DROP of its height, so it reads
-    /// over the scene without a panel behind it; none while transparent.
-    glm::vec4   shadow    = {0.0f, 0.0f, 0.0f, 0.0f};
+    VAlign      valign    = VAlign::Top;               ///< Vertical alignment of the whole block within the
+                                                       ///< element rect, which does not bound it: clip above
+                                                       ///< it if it may overflow.
+    glm::vec4   shadow    = {0.0f, 0.0f, 0.0f, 0.0f};  ///< A drop shadow under the text, down and right by
+                                                       ///< SHADOW_DROP of its height, so it reads over the
+                                                       ///< scene without a panel behind it; none while
+                                                       ///< transparent.
 
-    /**
-     * @brief Whether a line too wide for the element rect breaks onto the next.
-     */
-    bool wrap = false;
+    bool wrap = false;  ///< Whether a line too wide for the element rect breaks onto the next. It breaks at
+                        ///< the last space that fits, or mid-word for a word wider than the rect. A newline
+                        ///< always breaks; walkGlyphs is the one line walk.
 };
 
 } // namespace Vkm::Engine
@@ -54,11 +53,11 @@ VKM_ENUM_NAMES(::Vkm::Engine::UIText::VAlign, "Top", "Middle", "Bottom")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::UIText)
     VKM_F(text)
-    VKM_F(font)
-    VKM_F(pixelSize)
+    VKM_F(font, "The baked font it is drawn with")
+    VKM_F(pixelSize, 1.0f, 512.0f, "Text height in reference pixels")
     VKM_F(color)
     VKM_F(align)
     VKM_F(valign)
-    VKM_F(shadow)
-    VKM_F(wrap)
+    VKM_F(shadow, "A drop shadow, so it reads over the scene; none while clear")
+    VKM_F(wrap, "Breaks a line too wide for the element")
 VKM_REFLECT_END()

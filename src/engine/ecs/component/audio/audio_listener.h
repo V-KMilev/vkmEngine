@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -10,20 +10,16 @@ class Scene;
 /**
  * @brief The ear: the pose every spatial source is heard relative to.
  *
- * One is active at a time: the lowest-slot enabled one with a Transform; not tied to the camera.
- * With none, spatial sources stay silent while 2D ones play on.
+ * One is heard at a time: the lowest-slot one with active set and a Transform; not tied to the camera.
+ * With none, the active camera hears, at unity gain (AudioSystem::updateListener).
  */
 struct AudioListener {
     bool active = true;
 
-    /**
-     * @brief Master gain for everything this listener hears.
-     *
-     * A linear gain, not a perceptual slider position: drive it with position^2 or a
-     * decibel curve. A negative or non-finite value is heard as silence, since an
-     * infinite master gain would take the whole mix non-finite.
-     */
-    float volume = 1.0f;
+    float volume = 1.0f;  ///< Master gain for everything this listener hears: linear, not a slider's
+                          ///< position, so drive it with position^2 or a decibel curve. A negative or
+                          ///< non-finite value is heard as silence, as an infinite master gain would take the
+                          ///< whole mix non-finite.
 };
 
 /**
@@ -39,6 +35,6 @@ EntityId findActiveListener(const Scene& scene);
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::AudioListener)
-    VKM_F(active)
-    VKM_F(volume)
+    VKM_F(active, "One listener is heard: of several, the lowest-numbered entity")
+    VKM_F(volume, 0.0f, 1.0f, "Master gain for everything it hears")
 VKM_REFLECT_END()

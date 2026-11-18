@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/shrub_02/shrub_02.gltf:mesh2:lod1",
+  "source": {
+    "base": "assets/models/shrub_02/shrub_02.gltf:mesh2",
+    "kind": "decimate",
+    "ratio": 0.3
+  }
+}

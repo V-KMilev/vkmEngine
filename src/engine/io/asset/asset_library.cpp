@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <system_error>
 #include <unordered_set>
@@ -13,26 +14,41 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/fnv1a.h"
-#include "io/asset/asset_cook.h"
-#include "io/json_file.h"
-#include "io/project_paths.h"
+#include "base/hash/fnv1a.h"
+#include "io/asset/cooked/asset_cook.h"
+#include "io/json/json_file.h"
+#include "io/json/json_number.h"
+#include "io/project/roots.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-constexpr uint32_t MANIFEST_VERSION = 2;
+constexpr uint32_t MANIFEST_VERSION = 3;
 
-// Directory an asset type keeps its files in, under both library() and cooked(); from the kind list, so
-// the directory and the kind are one row.
-#define VKM_ASSET_DIR(tag, type, name, dir) dir,
-constexpr const char* TYPE_DIRS[] = { VKM_ASSET_KINDS(VKM_ASSET_DIR) };
+/**
+ * @brief A kind and the directory it keeps its files in, under both library() and cooked().
+ */
+struct KindDir {
+    AssetType   type = AssetType::Count;
+    const char* dir  = nullptr;
+};
+
+// In AssetType's order, from the kind list, so the directory and the kind are one row.
+#define VKM_ASSET_DIR(tag, type, name, dir, cooked) KindDir{AssetType::tag, #dir},
+constexpr KindDir KIND_DIRS[] = { VKM_ASSET_KINDS(VKM_ASSET_DIR) };
 #undef VKM_ASSET_DIR
 
 } // namespace
+
+uint64_t AssetRecord::documentHashOf(const nlohmann::json& recipe) {
+    // As writeRecipe writes it, so the recipe in memory and the one read back hash alike.
+    nlohmann::json written = recipe;
+    detail::tidyNumbers(written, "Asset library recipe");
+    return fnv1a64(written.dump());
+}
 
 AssetLibrary& AssetLibrary::get() {
     static AssetLibrary s_instance;
@@ -51,7 +67,7 @@ std::string AssetLibrary::uidFor(AssetType type, const std::string& name) {
 }
 
 std::filesystem::path AssetLibrary::recipePath(AssetType type, const std::string& name) {
-    return ProjectPaths::library() / TYPE_DIRS[static_cast<size_t>(type)] / (uidFor(type, name) + ".json");
+    return Roots::library() / KIND_DIRS[static_cast<size_t>(type)].dir / (uidFor(type, name) + ".json");
 }
 
 std::filesystem::path AssetLibrary::cookedPath(AssetType type, const std::string& name, uint64_t recipeHash) {
@@ -64,7 +80,7 @@ std::filesystem::path AssetLibrary::cookedPath(AssetType type, const std::string
         "%016llx",
         static_cast<unsigned long long>(AssetCook::cacheKey(recipeHash, type))
     );
-    return ProjectPaths::cooked() / TYPE_DIRS[static_cast<size_t>(type)]
+    return Roots::cooked() / KIND_DIRS[static_cast<size_t>(type)].dir
         / (uidFor(type, name) + "-" + key.data() + ".vkmc");
 }
 
@@ -84,10 +100,22 @@ bool AssetLibrary::writeRecipe(AssetType type, const std::string& name, const nl
     nlohmann::json doc;
     doc["name"]   = name;
     doc["source"] = source;
-    return detail::writeJsonFile(recipePath(type, name), doc, "Asset library recipe");
+    detail::tidyNumbers(doc, "Asset library recipe");
+
+    // A record that already says this is left as written - a re-cook rewrites nothing an author
+    // reads. Compared as text: a 1 equals a 1.0 as a value, but not in the hash of the file.
+    const std::filesystem::path path = recipePath(type, name);
+    std::error_code ec;
+    nlohmann::json written;
+    if (std::filesystem::exists(path, ec) && detail::readJsonFile(path, written, "Asset library recipe")
+        && written.dump() == doc.dump()) {
+        return true;
+    }
+    return detail::writeJsonFile(path, doc, "Asset library recipe");
 }
 
 void AssetLibrary::load(Truth truth) {
+    ++m_revision;
     m_records.clear();
     loadManifest();
     if (truth == Truth::Recipes) dropRowsWithoutRecipes();
@@ -110,7 +138,7 @@ void AssetLibrary::dropRowsWithoutRecipes() {
 }
 
 void AssetLibrary::loadManifest() {
-    const std::filesystem::path path = ProjectPaths::assetManifest();
+    const std::filesystem::path path = Roots::assetManifest();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
         LOG_INFO("Asset library manifest not found (%s); starting empty", path.string().c_str());
@@ -123,7 +151,7 @@ void AssetLibrary::loadManifest() {
     // Derived data: a manifest this build cannot read is refused, not half-understood; re-cooking
     // recovers. nlohmann throws on a field of the wrong type.
     try {
-        const uint32_t version = doc.value("manifestVersion", 0u);
+        const uint32_t version = detail::numberAt(doc, "manifestVersion", 0u);
         if (version != MANIFEST_VERSION) {
             LOG_ERROR(
                 "Asset library: manifest %s is version %u, not %u; starting empty (re-cook the project)",
@@ -147,9 +175,10 @@ void AssetLibrary::loadManifest() {
                 LOG_WARNING("Asset library: entry with unknown type '%s', skipping", typeStr.c_str());
                 continue;
             }
-            r.name       = entry.value("name", std::string{});
-            r.recipeHash = entry.value("hash", uint64_t{0});
-            r.sources    = entry.value("sources", std::vector<std::string>{});
+            r.name         = entry.value("name", std::string{});
+            r.recipeHash   = detail::numberAt(entry, "hash", uint64_t{0});
+            r.sources      = entry.value("sources", std::vector<std::string>{});
+            r.documentHash = detail::numberAt(entry, "document", uint64_t{0});
             if (r.name.empty()) {
                 LOG_WARNING("Asset library: entry with empty name, skipping");
                 continue;
@@ -171,8 +200,8 @@ void AssetLibrary::loadManifest() {
 
 void AssetLibrary::adoptUnrecordedRecipes() {
     size_t adopted = 0;
-    for (size_t t = 0; t < std::size(TYPE_DIRS); ++t) {
-        const std::filesystem::path dir = ProjectPaths::library() / TYPE_DIRS[t];
+    for (const KindDir& kind : KIND_DIRS) {
+        const std::filesystem::path dir = Roots::library() / kind.dir;
         std::error_code ec;
         for (const auto& file : std::filesystem::directory_iterator(dir, ec)) {
             if (file.path().extension() != ".json") continue;
@@ -184,7 +213,7 @@ void AssetLibrary::adoptUnrecordedRecipes() {
             if (name == doc.end() || !name->is_string()) continue;
 
             AssetRecord r;
-            r.type = static_cast<AssetType>(t);
+            r.type = kind.type;
             r.name = name->get<std::string>();
             // A file not named for its identity was copied in by hand; recipePath would never find it.
             if (r.name.empty() || file.path().stem() != uidFor(r.type, r.name)) {
@@ -218,10 +247,11 @@ std::vector<std::string> AssetLibrary::namesOf(AssetType type) const {
 void AssetLibrary::upsert(AssetRecord record) {
     const std::string k = key(record.type, record.name);
     m_records[k] = std::move(record);
+    ++m_revision;
 }
 
 void AssetLibrary::remove(AssetType type, const std::string& name) {
-    m_records.erase(key(type, name));
+    if (m_records.erase(key(type, name)) > 0) ++m_revision;
 }
 
 size_t AssetLibrary::removeUnrecordedCooked() const {
@@ -232,10 +262,10 @@ size_t AssetLibrary::removeUnrecordedCooked() const {
     }
 
     std::vector<std::filesystem::path> orphans;
-    for (const char* dir : TYPE_DIRS) {
+    for (const KindDir& kind : KIND_DIRS) {
         std::error_code ec;
         // Stepped by hand: the range-for's error_code covers only the constructor, and a failed step throws.
-        const std::filesystem::path folder = ProjectPaths::cooked() / dir;
+        const std::filesystem::path folder = Roots::cooked() / kind.dir;
         for (std::filesystem::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
             std::error_code statError;
             if (it->is_regular_file(statError) && recorded.count(it->path().string()) == 0) {
@@ -274,11 +304,12 @@ bool AssetLibrary::save() const {
         entry["type"] = Reflect::enumName(r.type);
         entry["hash"] = r.recipeHash;
         if (!r.sources.empty()) entry["sources"] = r.sources;
+        entry["document"] = r.documentHash;
         assets.push_back(std::move(entry));
     }
     doc["assets"] = std::move(assets);
 
-    return detail::writeJsonFile(ProjectPaths::assetManifest(), doc, "Asset library manifest");
+    return detail::writeJsonFile(Roots::assetManifest(), doc, "Asset library manifest");
 }
 
 } // namespace Vkm::Engine

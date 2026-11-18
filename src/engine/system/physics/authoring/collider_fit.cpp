@@ -1,14 +1,15 @@
 #include "system/physics/authoring/collider_fit.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
 #include <glm/glm.hpp>
 
+#include "vkm_physics/geometry/triangle.h"
+
 #include "resource/asset/mesh_asset.h"
-#include "system/physics/collision/triangle.h"
-#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
@@ -21,13 +22,14 @@ constexpr float MIN_ADVANCE = 1e-6f;
 // may be any size.
 constexpr float CROSSING_MERGE_FRACTION = 1e-3f;
 
-// A centre takes the signed scale (a mirrored mesh's box sits mirrored), a half-extent its magnitude.
-// The floor applies after the scale, so its millimetre is a world millimetre.
+// A center takes the signed scale (a mirrored mesh's box sits mirrored), a half-extent its magnitude.
+// The floor applies after the scale, so its millimeter is a world millimeter.
 ColliderPart boxSpanning(const glm::vec3& lo, const glm::vec3& hi, const glm::vec3& scale) {
     ColliderPart box;
-    box.center      = (lo + hi) * 0.5f * scale;
     const glm::vec3 half = (hi - lo) * 0.5f * glm::abs(scale);
-    box.halfExtents = glm::max(half, glm::vec3(Physics::MIN_HALF_EXTENT));
+
+    box.center      = (lo + hi) * 0.5f * scale;
+    box.halfExtents = glm::max(half, glm::vec3(MIN_HALF_EXTENT));
     return box;
 }
 
@@ -52,11 +54,11 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
         if (idx >= vertexCount) return { boxSpanning(bmin, bmax, scale) };
     }
 
-    const int       R        = detail;
-    const glm::vec3 cell     = ext / static_cast<float>(R);
+    const int R = detail;
+    const glm::vec3 cell = ext / static_cast<float>(R);
     const glm::vec3 dir(1.0f, 0.0f, 0.0f);
-    const float     xStart   = bmin.x - cell.x;  // ray origin: outside on -X
-    const float     mergeEps = cell.x * CROSSING_MERGE_FRACTION;
+    const float xStart   = bmin.x - cell.x;  // ray origin: outside on -X
+    const float mergeEps = cell.x * CROSSING_MERGE_FRACTION;
 
     std::vector<ColliderPart> boxes;
     std::vector<float>        xs;   // surface crossing x-coords, reused per column
@@ -74,7 +76,7 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
                 const glm::vec3& b = mesh.vertices[mesh.indices[i + 1]].position;
                 const glm::vec3& c = mesh.vertices[mesh.indices[i + 2]].position;
                 float t = 0.0f;
-                if (rayTriangle(o, dir, a, b, c, t) && t > MIN_ADVANCE) xs.push_back(o.x + t);
+                if (Physics::rayTriangle(o, dir, a, b, c, t) && t > MIN_ADVANCE) xs.push_back(o.x + t);
             }
             if (xs.size() < 2) continue;
             std::sort(xs.begin(), xs.end());
@@ -109,6 +111,50 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
         return { boxSpanning(bmin, bmax, scale) };
     }
     return boxes;
+}
+
+namespace {
+
+/// Each axis of @p scale at least @p least in size, its sign kept: a mirrored mesh stays mirrored.
+glm::vec3 signedAtLeast(const glm::vec3& scale, float least) {
+    glm::vec3 held;
+    for (int axis = 0; axis < 3; ++axis) {
+        held[axis] = std::copysign(std::max(std::abs(scale[axis]), least), scale[axis]);
+    }
+    return held;
+}
+
+} // namespace
+
+std::vector<ColliderPart> rescaleParts(
+    std::vector<ColliderPart> parts,
+    const glm::vec3& from,
+    const glm::vec3& to
+) {
+    glm::vec3 change(1.0f);
+    for (int axis = 0; axis < 3; ++axis) {
+        if (from[axis] != 0.0f) change[axis] = to[axis] / from[axis];
+    }
+    if (change == glm::vec3(1.0f)) return parts;
+
+    const glm::vec3 size  = glm::abs(change);
+    const float     girth = std::sqrt(size.x * size.z);
+    const glm::vec3 least(MIN_HALF_EXTENT);
+
+    for (ColliderPart& part : parts) {
+        if (part.shape == ColliderShape::Terrain) continue;
+        // Height takes Y's change and the radius the girth's; what the radius gives up or takes goes to
+        // the half height, nothing at all when Y and the girth change alike.
+        const float radius = std::max(part.radius * girth, MIN_HALF_EXTENT);
+        const float rest   = part.radius * size.y - radius;
+
+        part.center      *= change;
+        part.halfExtents  = glm::max(part.halfExtents * size, least);
+        part.meshScale    = signedAtLeast(part.meshScale * change, MIN_HALF_EXTENT);
+        part.halfHeight   = std::max(part.halfHeight * size.y + rest, 0.0f);
+        part.radius       = radius;
+    }
+    return parts;
 }
 
 } // namespace Vkm::Engine

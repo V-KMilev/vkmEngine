@@ -1,4 +1,4 @@
-# vkmEngine License 1.0
+# vkmEngine License 2.0
 
 Required Notice: Copyright (c) 2025-2026 Vilimir-K. Milev (https://vkmengine.com)
 
@@ -12,10 +12,18 @@ strict obligations and conditions to all your licenses.
 The **licensor** is Vilimir-K. Milev, the copyright holder named in the
 Required Notice above.
 
-The **engine** is the software these terms come with: vkmEngine's source code,
-tools, data files and documentation, and anything built from them.
+The **engine** is the software these terms come with: vkmEngine and its
+libraries, their source code, tools, data files and documentation, and anything
+built from them.
 
-The **official repository** is https://github.com/V-KMilev/vkmEngine.
+A **library** is a part of the engine that the licensor keeps in an official
+repository of its own, such as vkmLog. These terms come with each library too,
+and hold for a library used alone as for the engine: for a library used without
+the rest of the engine, the engine in these terms is that library.
+
+An **official repository** is one the licensor keeps for the engine,
+https://github.com/V-KMilev/vkmEngine, or for a library, the repository of the
+library's name beside it, such as https://github.com/V-KMilev/vkmLog.
 
 A **product** is a game or other application that you make with the engine,
 whose value to its users comes substantially from your own content and
@@ -25,7 +33,7 @@ functionality rather than from the engine itself.
 version of it in any form, other than as part of a product.
 
 A **contribution** is a change or addition to the engine that you submit to the
-licensor for inclusion in the official repository.
+licensor for inclusion in an official repository.
 
 **You** are the individual or entity agreeing to these terms, and **your
 company** is any legal entity, sole proprietorship or other kind of
@@ -45,7 +53,7 @@ subject to the limitations and conditions below.
 
 You may make, sell, give away and otherwise distribute products, for any
 purpose and on any terms you choose, with no fee or royalty to the licensor. A
-product may include the engine, changed or not, only in compiled form - its
+product may include the engine, changed or not, only in compiled form - built
 libraries and executables - together with the data files the product needs to
 run, and only as part of that product.
 
@@ -58,7 +66,7 @@ Except as allowed under Sharing Changes below, you may not distribute, publish,
 sell, sublicense or otherwise make engine code available to anyone.
 
 You may not offer the engine, or any changed version of it, on its own or as
-the main part of anything you offer, as an engine, framework, software
+the main part of anything you offer, as an engine, library, framework, software
 development kit, editor, toolkit or service for making software, or as any
 other product that competes with the engine.
 
@@ -66,10 +74,11 @@ other product that competes with the engine.
 
 You may share changed engine code only:
 
-1. as a contribution, submitted to the official repository; or
+1. as a contribution, submitted to the official repository of the code you
+   changed; or
 
-2. in a fork of the official repository hosted on GitHub, kept within the
-   official repository's fork network, that keeps these terms.
+2. in a fork of that official repository hosted on GitHub, kept within its fork
+   network, that keeps these terms.
 
 Anyone who gets engine code from such a fork gets it only under these terms.
 

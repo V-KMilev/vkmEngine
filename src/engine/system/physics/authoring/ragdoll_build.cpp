@@ -11,32 +11,33 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/math/rotation.h"
+#include "base/math/rotation.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/hierarchy_operations.h"
-#include "ecs/physics_settings.h"
-#include "system/physics/ragdoll_system.h"
-#include "system/physics/tolerance.h"
+#include "ecs/settings/physics_settings.h"
+#include "system/physics/authoring/collider_fit.h"
 
 namespace Vkm::Engine {
 
 namespace {
+
+constexpr float MIN_BONE_LENGTH = 0.06f;  ///< Meters: a shorter bone gets no body, and follows its parent.
 
 // Model-space transform of every bone at bind; the format orders parents first, so one pass.
 std::vector<glm::mat4> bindModel(const SkeletonAsset& rig) {
     std::vector<glm::mat4> model(rig.bones.size(), glm::mat4(1.0f));
     for (size_t i = 0; i < rig.bones.size(); ++i) {
         const glm::mat4 local = i < rig.bindPose.size()
-            ? Transform::computeModelMatrix(rig.bindPose[i])
+            ? Transform::computeModelMatrix(Transform::fromPose(rig.bindPose[i]))
             : glm::mat4(1.0f);
         const int32_t parent = rig.bones[i].parent;
         model[i] = parent >= 0 ? model[parent] * local : local;
@@ -66,7 +67,7 @@ void clearRagdoll(Scene& scene, EntityId rigEntity) {
 
     // The bit goes back: the owner's mask is serialized, and left cleared it ignores a whole layer.
     if (Rigidbody* owner = scene.tryGet<Rigidbody>(rigEntity)) {
-        owner->collidesWith |= ragdoll.boneLayer;
+        owner->collidesWith |= Ragdoll::BONE_LAYER;
     }
     scene.remove<Ragdoll>(rigEntity);
 }
@@ -90,7 +91,7 @@ uint32_t buildRagdoll(
         HierarchyOperations::computeWorldMatrix(scene, frameEntity);
 
     const std::vector<glm::mat4> bind = bindModel(rig);
-    const std::vector<int32_t> child = firstChildren(rig);
+    const std::vector<int32_t> child  = firstChildren(rig);
 
     // Two passes: a body's mass is its share of the whole ragdoll's volume.
     std::vector<EntityId> bodyOf(rig.bones.size(), EntityId{});
@@ -102,32 +103,32 @@ uint32_t buildRagdoll(
     for (size_t i = 0; i < rig.bones.size(); ++i) {
         if (child[i] < 0) continue;
 
-        const glm::vec3 head = glm::vec3(rigModel * bind[i][3]);
-        const glm::vec3 tail = glm::vec3(rigModel * bind[child[i]][3]);
+        const glm::vec3 head  = glm::vec3(rigModel * bind[i][3]);
+        const glm::vec3 tail  = glm::vec3(rigModel * bind[child[i]][3]);
         const glm::vec3 along = tail - head;
-        const float length = glm::length(along);
-        if (length < settings.minBoneLength) continue;
+        const float length    = glm::length(along);
+        if (length < MIN_BONE_LENGTH) continue;
 
-        const float radius = glm::max(length * settings.thickness, Physics::MIN_HALF_EXTENT);
+        const float radius = glm::max(length * settings.thickness, MIN_HALF_EXTENT);
         // The caps add the radius, so the half-height stops short of the bone's ends, not wedging limbs.
-        const float halfHeight = glm::max(length * 0.5f - radius, Physics::MIN_HALF_EXTENT);
+        const float halfHeight = glm::max(length * 0.5f - radius, MIN_HALF_EXTENT);
 
         const EntityId body = scene.createEntity();
         // The rig's namespace (Mixamo's "mixamorig:") is noise in an entity's label.
         scene.add(body, makeName(std::string(unqualifiedBoneName(rig.bones[i].name)).c_str()));
 
         // A capsule stands along local +Y.
-        const glm::quat aim = glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f), along / length);
-        const glm::vec3 centre = (head + tail) * 0.5f;
+        const glm::quat aim    = glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f), along / length);
+        const glm::vec3 center = (head + tail) * 0.5f;
 
         Transform transform;
-        transform.position = centre;
+        transform.position = center;
         transform.rotation = aim;
         scene.add(body, std::move(transform));
 
         ColliderPart part;
-        part.shape = ColliderShape::Capsule;
-        part.radius = radius;
+        part.shape      = ColliderShape::Capsule;
+        part.radius     = radius;
         part.halfHeight = halfHeight;
         Collider collider;
         collider.parts = { part };
@@ -144,9 +145,9 @@ uint32_t buildRagdoll(
         RagdollBone entry;
         entry.bone = static_cast<int32_t>(i);
         entry.body = body;
-        // The body is centred on the limb, the bone at its head.
+        // The body is centered on the limb, the bone at its head.
         const glm::mat4 bodyModel =
-            glm::translate(glm::mat4(1.0f), centre) * glm::mat4_cast(aim);
+            glm::translate(glm::mat4(1.0f), center) * glm::mat4_cast(aim);
         entry.bodyFromBone = glm::inverse(bodyModel) * (rigModel * bind[i]);
         ragdoll.bones.push_back(entry);
     }
@@ -157,7 +158,7 @@ uint32_t buildRagdoll(
             "buildRagdoll: no bone of '%s' is longer than %.3f m, so "
             "there is nothing to build; the previous ragdoll is cleared",
             rig.name().c_str(),
-            static_cast<double>(settings.minBoneLength)
+            static_cast<double>(MIN_BONE_LENGTH)
         );
         return 0;
     }
@@ -175,8 +176,8 @@ uint32_t buildRagdoll(
             ? settings.mass * (volumes[entry.bone] / totalVolume)
             : settings.mass / static_cast<float>(ragdoll.bones.size());
         body.canSleep = true;
-        body.layer = settings.boneLayer;
-        body.collidesWith &= ~settings.boneLayer;
+        body.layer    = Ragdoll::BONE_LAYER;
+        body.collidesWith &= ~Ragdoll::BONE_LAYER;
         scene.add(entry.body, std::move(body));
     }
 
@@ -184,7 +185,7 @@ uint32_t buildRagdoll(
     std::vector<float> carriedMass(rig.bones.size(), 0.0f);
     std::vector<glm::vec3> carriedMoment(rig.bones.size(), glm::vec3(0.0f));
     for (const RagdollBone& entry : ragdoll.bones) {
-        const float mass = scene.get<Rigidbody>(entry.body).mass;
+        const float mass   = scene.get<Rigidbody>(entry.body).mass;
         const glm::vec3 at = scene.get<Transform>(entry.body).position;
         for (int32_t bone = entry.bone; bone >= 0; bone = bodiedAncestor(bone)) {
             carriedMass[bone] += mass;
@@ -202,23 +203,22 @@ uint32_t buildRagdoll(
         const Transform& up   = scene.get<Transform>(bodyOf[ancestor]);
 
         Joint joint;
-        joint.type = JointType::Point;
+        joint.type      = JointType::Point;
         joint.connected = bodyOf[ancestor];
         // Anchors are local: the pivot in each body's frame.
         joint.anchor = glm::conjugate(self.rotation) * (pivot - self.position);
         joint.connectedAnchor =
             glm::conjugate(up.rotation) * (pivot - up.position);
-        joint.stiffness = settings.stiffness;
 
         // muscle of what holds the carried mass level about the pivot.
-        const float carried = carriedMass[entry.bone];
-        const glm::vec3 centre = carriedMoment[entry.bone] / carried;
-        joint.holdTorque = settings.muscle * carried * gravity * glm::length(centre - pivot);
+        const float carried    = carriedMass[entry.bone];
+        const glm::vec3 center = carriedMoment[entry.bone] / carried;
+        joint.holdTorque = settings.muscle * carried * gravity * glm::length(center - pivot);
         scene.add(entry.body, std::move(joint));
     }
 
     if (Rigidbody* owner = scene.tryGet<Rigidbody>(rigEntity)) {
-        owner->collidesWith &= ~settings.boneLayer;
+        owner->collidesWith &= ~Ragdoll::BONE_LAYER;
     }
 
     // Parented last: everything above works in world space, so the frame changes once.
@@ -226,8 +226,7 @@ uint32_t buildRagdoll(
     scene.add(root, makeName("Ragdoll"));
     scene.add(root, Transform{});
     HierarchyOperations::setParent(scene, root, rigEntity);
-    ragdoll.root = root;
-    ragdoll.boneLayer = settings.boneLayer;
+    ragdoll.root     = root;
     ragdoll.rigScale = glm::length(glm::vec3(rigModel[0]));
 
     const glm::mat4 toParent =

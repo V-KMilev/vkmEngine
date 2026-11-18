@@ -14,8 +14,8 @@ endif()
 
 set(PROJECT_NAME vkmEngine)
 set(PROJECT_VERSION_MAJOR 1)
-set(PROJECT_VERSION_MINOR 0)
-set(PROJECT_VERSION_PATCH 15)
+set(PROJECT_VERSION_MINOR 1)
+set(PROJECT_VERSION_PATCH 0)
 
 project(
     ${PROJECT_NAME}
@@ -56,11 +56,23 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     )
 endif()
 
-# The engine a shipped game runs on, as a build tree of its own: optimised, no
+# The engine a shipped game runs on, as a build tree of its own: optimized, no
 # profiler, debug info kept for crash reports. It builds the runtime and the
-# server alone - the examples' modules would land where the development hosts
-# load them.
+# server alone, and no example's module.
 option(VKM_SHIPPING "Build the engine a shipped game runs on" OFF)
+
+# Where the examples' modules land. build/, the tree tools/vkm builds a project
+# against, writes each into its example's bin/, where every host looks. Any other
+# tree that builds them - Clang's, a sanitizer's, a cross-build - keeps each beside
+# its own hosts, in bin/examples/<name>/, and its hosts load an example's from
+# there (Roots::gameplayModule), so no host runs a module another tree built. The
+# two compared as the disk has them: the source may be reached through a link.
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/build" _vkm_primary_tree)
+file(REAL_PATH "${CMAKE_BINARY_DIR}" _vkm_this_tree)
+set(VKM_TREE_EXAMPLE_MODULES OFF)
+if(NOT VKM_SHIPPING AND NOT _vkm_this_tree STREQUAL _vkm_primary_tree)
+    set(VKM_TREE_EXAMPLE_MODULES ON)
+endif()
 
 # VKM_ASSERT and assert() in every build but the shipping one, whatever its
 # NDEBUG (src/engine/CMakeLists.txt). Off for a tree that profiles.
@@ -76,7 +88,7 @@ if(VKM_SHIPPING)
 endif()
 
 # Single-config generators leave CMAKE_BUILD_TYPE empty, which silently means
-# "no optimisation and no debug info". Name the default instead of inheriting it.
+# "no optimization and no debug info". Name the default instead of inheriting it.
 get_property(_vkm_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(NOT _vkm_multi_config AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -84,14 +96,17 @@ if(NOT _vkm_multi_config AND NOT CMAKE_BUILD_TYPE)
     message(STATUS "No build type specified - defaulting to RelWithDebInfo")
 endif()
 
-# This block is the only thing that turns Tracy off: debug/profiler.h keys on
-# VKM_PROFILER alone and knows nothing about the build type.
+# This block is the only thing that turns Tracy off: base/profile/profiler.h keys on
+# VKM_PROFILER alone and knows nothing about the build type. A multi-config generator
+# names no build type here, so it profiles only when asked, and then in every one: a
+# Release build carries no Tracy unless the developer says so.
 if(NOT DEFINED VKM_PROFILER)
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(_vkm_multi_config OR CMAKE_BUILD_TYPE STREQUAL "Release")
         set(VKM_PROFILER OFF CACHE BOOL "Enable Tracy CPU + GPU profiling")
     else()
         set(VKM_PROFILER ON  CACHE BOOL "Enable Tracy CPU + GPU profiling")
     endif()
+    set(VKM_PROFILER_DEFAULTED ON CACHE INTERNAL "VKM_PROFILER took the engine's default")
 endif()
 
 # The compiler's runtime libraries (GCC's or LLVM's), copied beside the
@@ -99,6 +114,13 @@ endif()
 # line. On Windows they sit beside the compiler, or in a cross toolchain's target
 # bin/; on Linux the compiler names them, and a system compiler's are the system's own.
 set(VKM_COMPILER_RUNTIME "")
+# Beside every executable: a multi-config generator puts each build type's in a folder of its own.
+set(_vkm_runtime_outputs ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+if(_vkm_multi_config)
+    list(TRANSFORM CMAKE_CONFIGURATION_TYPES PREPEND "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/"
+        OUTPUT_VARIABLE _vkm_runtime_outputs)
+endif()
+list(GET _vkm_runtime_outputs 0 _vkm_runtime_installed)
 if(MINGW)
     get_filename_component(_vkm_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(_vkm_runtime_dirs ${_vkm_compiler_bin})
@@ -108,8 +130,10 @@ if(MINGW)
     foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libc++.dll libunwind.dll)
         foreach(_dir ${_vkm_runtime_dirs})
             if(EXISTS "${_dir}/${_dll}")
-                file(COPY "${_dir}/${_dll}" DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-                list(APPEND VKM_COMPILER_RUNTIME "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_dll}")
+                foreach(_out ${_vkm_runtime_outputs})
+                    file(COPY "${_dir}/${_dll}" DESTINATION "${_out}")
+                endforeach()
+                list(APPEND VKM_COMPILER_RUNTIME "${_vkm_runtime_installed}/${_dll}")
                 break()
             endif()
         endforeach()
@@ -124,10 +148,12 @@ else()
         )
         file(REAL_PATH "${_vkm_found}" _vkm_found)
         if(EXISTS "${_vkm_found}" AND NOT _vkm_found MATCHES "^/(usr|lib)")
-            file(MAKE_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-            # Under the soname the loader asks for, not the versioned file name.
-            file(COPY_FILE "${_vkm_found}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_lib}" ONLY_IF_DIFFERENT)
-            list(APPEND VKM_COMPILER_RUNTIME "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_lib}")
+            foreach(_out ${_vkm_runtime_outputs})
+                file(MAKE_DIRECTORY "${_out}")
+                # Under the soname the loader asks for, not the versioned file name.
+                file(COPY_FILE "${_vkm_found}" "${_out}/${_lib}" ONLY_IF_DIFFERENT)
+            endforeach()
+            list(APPEND VKM_COMPILER_RUNTIME "${_vkm_runtime_installed}/${_lib}")
         endif()
     endforeach()
 endif()
@@ -142,8 +168,11 @@ if(VKM_SANITIZE)
     add_link_options(-fsanitize=${VKM_SANITIZE})
 endif()
 
-# Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
-include(cmake/git_metadata.cmake)
+# GCC vectorizes as its -O2 does in every build: the pinned GCC's -O3 cost model takes loops
+# the -O2 one leaves and compiles some to wrong results - per-axis tests summed over an array
+# of records. Every target, the submodules too; a gameplay module is built alike
+# (cmake/gameplay_module.cmake).
+add_compile_options($<$<CXX_COMPILER_ID:GNU>:-fvect-cost-model=very-cheap>)
 
 # Warning flags shared by every first-party target. GCC/Clang dialect only -
 # MSVC spells these differently, so the generator expression leaves it alone.
@@ -162,7 +191,7 @@ set(_vkm_gcc_warnings
     -Wunused-variable     # a local nothing reads is code that stopped being run
     -Wunused-value        # an expression computed and thrown away
     -Wformat=2            # includes -Wformat-nonliteral: a printf format chosen at
-                          # run time is a label today and undefined behaviour the
+                          # run time is a label today and undefined behavior the
                           # day somebody puts a % in one of its branches
     -Wnon-virtual-dtor    # deleting a derived object through a base without one
     -Woverloaded-virtual  # an overload that hides a virtual instead of overriding it
@@ -178,24 +207,28 @@ target_compile_options(vkm_warnings INTERFACE
     $<$<CXX_COMPILER_ID:Clang>:-Werror=documentation>
 )
 
-# Compile-time build metadata, baked into the binary through the facade in
-# debug/build_info.h. Defined before the subdirectories so each target can link
-# it where it is defined.
+# Build metadata: the name, version and root as compile definitions, and the git metadata in
+# build_stamp.h, which the vkm_build_stamp target writes at every build when a commit or a branch
+# changed it (cmake/build_stamp.cmake), so a binary names the commits it was built from. A target
+# including build_stamp.h depends on vkm_build_stamp. Defined before the subdirectories so each
+# target can link it where it is defined.
 add_library(vkm_build_info INTERFACE)
 target_compile_definitions(vkm_build_info INTERFACE
     APP_NAME="${PROJECT_NAME}"
-    APP_BRANCH="${PROJECT_BRANCH}"
-    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
     APP_ROOT_DIR="${CMAKE_SOURCE_DIR}"
-
     APP_VERSION="${PROJECT_VERSION}"
-    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
+)
+target_include_directories(vkm_build_info INTERFACE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>)
 
-    VKM_GL_VERSION="${VKM_GL_VERSION}"
-    VKM_GL_COMMIT_HASH="${VKM_GL_COMMIT_HASH}"
-
-    VKM_LOG_VERSION="${VKM_LOG_VERSION}"
-    VKM_LOG_COMMIT_HASH="${VKM_LOG_COMMIT_HASH}"
+find_package(Git QUIET)
+add_custom_target(vkm_build_stamp
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DGIT=${GIT_EXECUTABLE}
+        -DOUT=${CMAKE_BINARY_DIR}/generated/build_stamp.h
+        -P ${CMAKE_SOURCE_DIR}/cmake/build_stamp.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/build_stamp.h
+    VERBATIM
 )
 
 # Testing has to be enabled in the *top-level* directory or CMake writes no test
@@ -206,7 +239,8 @@ enable_testing()
 add_subdirectory(modules)
 
 add_subdirectory(src/engine)
-add_subdirectory(src/tools)
+add_subdirectory(src/loader)
+add_subdirectory(src/pipeline)
 if(NOT VKM_SHIPPING)
     add_subdirectory(src/editor)
 endif()

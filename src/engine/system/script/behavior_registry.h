@@ -6,20 +6,20 @@
 #include <unordered_map>
 #include <vector>
 
-#include "core/reflect.h"
-#include "system/script/behavior.h"
+#include "base/reflect/reflect.h"
+#include "system/script/behavior_base.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief Name -> factory registry for Behavior subclasses.
+ * @brief Name -> factory registry for behaviors.
  *
- * A gameplay module registers its types from vkmRegisterBehaviors. One per process,
- * since game-DLL code must reach it.
+ * A gameplay module registers its types from vkmRegisterBehaviors, which VKM_GAME_MODULE writes.
+ * One per process, since game-DLL code must reach it.
  */
 class BehaviorRegistry {
     public:
-        using Factory = std::function<std::unique_ptr<Behavior>()>;
+        using Factory = std::function<std::unique_ptr<BehaviorBase>()>;
 
     public:
         ~BehaviorRegistry() = default;
@@ -39,11 +39,7 @@ class BehaviorRegistry {
          * The same string typeName() returns, so the save and load keys cannot differ. A
          * duplicate name logs a warning and overwrites the existing factory.
          *
-         * @code
-         * BehaviorRegistry::get().registerBehaviors<Spinner, Health, Door>();
-         * @endcode
-         *
-         * @tparam Ts Behavior subclasses with VKM_REFLECT blocks, default-constructible.
+         * @tparam Ts Behaviors with VKM_BEHAVIOR blocks, default-constructible.
          */
         template<typename... Ts>
         void registerBehaviors() {
@@ -56,7 +52,7 @@ class BehaviorRegistry {
          * @param name Registered type name.
          * @return The new instance, or nullptr, logged, when the name is unknown.
          */
-        std::unique_ptr<Behavior> create(const std::string& name) const;
+        std::unique_ptr<BehaviorBase> create(const std::string& name) const;
 
         /**
          * @brief Report whether @p name has a registered factory.

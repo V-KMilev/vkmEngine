@@ -8,7 +8,7 @@
 #include "ecs/entity.h"
 #include "resource/asset_ref.h"
 #include "resource/asset/audio_clip_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -28,19 +28,22 @@ using namespace Vkm::Engine;
  * when one is found bursts its child emitter named `Burst` and chimes. The child named `Gem`
  * turns and bobs.
  */
-class LabToken : public ReflectedBehavior<LabToken> {
+class LabToken : public Behavior<LabToken> {
     public:
         void onStart() override;
+
+        /// Its bit in LabScore::tokens; none for an index out of range.
+        uint32_t bit() const;
         void onUpdate(float dt) override;
         void onTriggerEnter(EntityId other) override;
 
     public:
-        int   index   = 0;      ///< Its bit in LabScore::tokens, 0 to 31; unique in the scene.
-        float spin    = 90.0f;  ///< Degrees a second the gem turns.
-        float bob     = 0.12f;  ///< Metres the gem rises and falls.
-        int   sparkle = 60;     ///< Particles the burst makes when it is found.
+        int   index   = 0;
+        float spin    = 90.0f;
+        float bob     = 0.12f;
+        int   sparkle = 60;
 
-        AssetRef<AudioClipAsset> chime;  ///< Heard where it is found.
+        AssetRef<AudioClipAsset> chime;
 
     private:
         /**
@@ -59,20 +62,12 @@ class LabToken : public ReflectedBehavior<LabToken> {
         bool                  m_hidden = false;  ///< Whether show() last hid it
 };
 
-/**
- * @brief The bits of every LabToken in @p scene.
- *
- * @param scene Scene to search.
- * @return A mask with each token's `index` set.
- */
-uint32_t everyToken(Scene& scene);
-
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabToken)
-    VKM_F(index)
-    VKM_F(spin)
-    VKM_F(bob)
-    VKM_F(sparkle)
-    VKM_F(chime)
+VKM_BEHAVIOR(::Lab::LabToken)
+    VKM_F(index, "Its bit in LabScore::tokens, 0 to 31; unique in the scene.")
+    VKM_F(spin, "Degrees a second the gem turns.")
+    VKM_F(bob, "Meters the gem rises and falls.")
+    VKM_F(sparkle, "Particles the burst makes when it is found.")
+    VKM_F(chime, "Heard where it is found.")
 VKM_REFLECT_END()

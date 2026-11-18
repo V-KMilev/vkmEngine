@@ -2,20 +2,24 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
+#include "ui/window_names.h"
 #include "core/system.h"
 #include "editor_context.h"
 #include "editor_state.h"
 #include "input/editor_keybinds.h"
 #include "ui/editor_dialogs.h"
 #include "ui/editor_widgets.h"
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
+#include "ui/rows.h"
 
-#include "platform/threading/thread_pool.h"
-#include "platform/window/window_manager.h"
-#include "input/camera_controller_system.h"
+#include "vkm_platform/threading/thread_pool.h"
+#include "vkm_platform/window/window_manager.h"
+#include "view/camera_controller_system.h"
 
 namespace Vkm::Engine {
 
@@ -25,7 +29,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
     // A capture lives only while its row is on screen: every shortcut stands down for it.
     bool keybindsShown = false;
     const ImVec2 size(EditorStyle::px(620.0f), EditorStyle::px(480.0f));
-    if (!beginToolWindow("Preferences", state.showPreferences, size)) {
+    if (!beginToolWindow(PREFERENCES_WINDOW, state.showPreferences, size)) {
         m_rebindTarget = nullptr;
         return;
     }
@@ -63,88 +67,65 @@ void PreferencesPanel::draw(EditorContext& ec) {
 }
 
 void PreferencesPanel::drawCameraSection(EditorContext& ec) {
-    auto& s = ec.state.prefs.camera;
-    propDrag("Move Speed", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
-    propDrag("Speed Boost", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
-    propDrag("Look Sens.", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
-    propDrag("Zoom Sens.", &s.zoomSensitivity, 0.001f, 0.001f, 1.0f, "%.3f");
-    const float pitchLimit = CameraControllerSystem::Settings::PITCH_LIMIT;
-    propDrag("Min Pitch", &s.minPitch, 0.5f, -pitchLimit, 0.0f, "%.0f deg");
-    propDrag("Max Pitch", &s.maxPitch, 0.5f, 0.0f, pitchLimit, "%.0f deg");
+    using Settings = CameraControllerSystem::Settings;
+    Rows<Settings> rows(ec.state.prefs.camera, {}, nullptr);
+    rows.row<&Settings::moveSpeed>("%.1f m/s");
+    rows.row<&Settings::speedBoost>("%.1fx");
+    rows.row<&Settings::lookSensitivity>("%.4f");
+    rows.row<&Settings::dollyStep>("%.2f");
+    rows.row<&Settings::minPitch>("%.0f deg");
+    rows.row<&Settings::maxPitch>("%.0f deg");
     ImGui::Spacing();
-    if (ImGui::Button("Reset to Defaults")) s = CameraControllerSystem::Settings{};
+    if (ImGui::Button("Reset to Defaults")) ec.state.prefs.camera = Settings{};
 }
 
 void PreferencesPanel::drawGizmoSection(EditorState& state) {
-    ImGui::SeparatorText("Snapping");
-    propCheckbox("Snap Enabled", &state.prefs.snapEnabled, "Hold Ctrl to snap while it is off");
-
+    Rows<Preferences> rows(state.prefs, {}, nullptr);
+    rows.row<&Preferences::snapEnabled>();
+    rows.row<&Preferences::snapTranslate>("%.2f m");
+    rows.row<&Preferences::snapRotate>("%.0f deg");
+    rows.row<&Preferences::snapScale>("%.2f");
     ImGui::Spacing();
-    propDrag("Translate", &state.prefs.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
-    propDrag("Rotate", &state.prefs.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
-    propDrag("Scale", &state.prefs.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
-
-    ImGui::Spacing();
-    ImGui::TextDisabled("The active tool and Local/World space are on the viewport's tool strip.");
+    cardNote(Note::Info, "The tool and its Local or World space are on the viewport's tool strip.");
 }
 
 void PreferencesPanel::drawDisplaySection(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    auto& window = ctx.window;
+    Platform::WindowManager& window = ec.frame.window;
     ImGui::Text("Resolution: %zux%zu", window.getWidth(), window.getHeight());
-    ImGui::Text("Worker threads: %zu", ThreadPool::get().threadCount());
-
+    ImGui::Text("Worker threads: %zu", Platform::ThreadPool::get().threadCount());
     ImGui::Spacing();
-    ImGui::SeparatorText("Interface");
-    // Multiplies the display's content scale: a large monitor at 100% still wants bigger text.
-    // See docs/reference/editor.md.
-    const char* uiScaleTooltip =
-        "How much bigger the editor is than the display asks for. Follows you rather than the project.";
-    propDrag(
-        "UI Scale",
-        &ec.state.prefs.uiScale,
-        0.05f,
-        Preferences::MIN_UI_SCALE,
-        Preferences::MAX_UI_SCALE,
-        "%.2fx",
-        uiScaleTooltip
-    );
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Reset##uiscale")) ec.state.prefs.uiScale = 1.0f;
 
     // Applied by EditorSystem outside a play session, where a game may set the window up itself.
-    Preferences& prefs = ec.state.prefs;
-    ImGui::Spacing();
-    ImGui::SeparatorText("Window Mode");
-    if (ImGui::RadioButton("Windowed", prefs.windowMode == WindowMode::Windowed))
-        prefs.windowMode = WindowMode::Windowed;
-    ImGui::SameLine(0, EditorStyle::px(16.0f));
-    if (ImGui::RadioButton("Fullscreen", prefs.windowMode == WindowMode::Fullscreen))
-        prefs.windowMode = WindowMode::Fullscreen;
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("VSync");
-    propCheckbox("Sync", &prefs.vsync, "Sync to the display's refresh");
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Frame Cap");
-    propRow("FPS Limit", "Frames per second the window is held to; 0 is unlimited", [&] {
+    Rows<Preferences> rows(ec.state.prefs, {}, nullptr);
+    rows.row<&Preferences::uiScale>("%.2fx");
+    rows.row<&Preferences::windowMode>();
+    rows.row<&Preferences::vsync>();
+    // A step taken at once, typed text once the field lets go - on Enter or leaving it - not per
+    // keystroke: "120" typed would hold the window to 1 and then 12 on the way. InputInt takes no
+    // EnterReturnsTrue (ImGui asserts it), so whether the text field was the one edited is asked:
+    // InputScalar names it by the label, as it pushes the label and takes "" inside.
+    rows.rowWith<&Preferences::fpsCap>([&](int& cap, const FieldInfo& info) {
         ImGui::SetNextItemWidth(EditorStyle::px(80.0f));
-        return ImGui::InputInt("##v", &m_fpsLimitEdit, 30);
+        const ImGuiID field   = ImGui::GetID("##v");
+        const bool    changed = ImGui::InputInt("##v", &m_fpsLimitEdit, 30, 100);
+        m_fpsLimitEdit = std::clamp(m_fpsLimitEdit, static_cast<int>(info.min), static_cast<int>(info.max));
+        const bool taken = (changed && ImGui::GetActiveID() != field) || ImGui::IsItemDeactivatedAfterEdit();
+        if (taken) cap = m_fpsLimitEdit;
+        return taken;
     });
-    m_fpsLimitEdit = std::max(0, m_fpsLimitEdit);
-    ImGui::SameLine();
-    if (ImGui::Button("Apply##fps")) prefs.fpsCap = m_fpsLimitEdit;
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", m_fpsLimitEdit == 0 ? "(unlimited)" : "");
 }
 
 void PreferencesPanel::drawKeybindsSection(EditorState& state) {
-    auto isConflict = [&](const KeyBind& b) {
-        if (b.key == ImGuiKey_None) return false;
-        int n = 0;
-        for (const KeybindEntry& e : KEYBINDS) if (state.prefs.keybinds.*e.field == b) ++n;
-        return n > 1;
+    // The other actions bound as @p b is, a line each; empty when none is.
+    auto sharedWith = [&](const char* label, const KeyBind& b) {
+        std::string others;
+        if (b.key == ImGuiKey_None) return others;
+        for (const KeybindEntry& e : KEYBINDS) {
+            if (std::strcmp(e.label, label) == 0 || !(state.prefs.keybinds.*e.field == b)) continue;
+            others += others.empty() ? "" : "\n";
+            others += e.label;
+        }
+        return others;
     };
 
     auto drawKeybindRow = [&](const char* label, KeyBind& bind) {
@@ -165,13 +146,12 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
             m_rebindTarget = label;
         }
 
-        if (isConflict(bind)) {
+        if (const std::string others = sharedWith(label, bind); !others.empty()) {
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
             ImGui::TextUnformatted("(!)");
             ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("This shortcut is also bound to another action.");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Also bound to:\n%s", others.c_str());
         }
 
         if (m_rebindTarget == label) {
@@ -217,7 +197,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     ImGui::Spacing();
     if (ImGui::Button("Reset Keybinds")) {
         state.prefs.keybinds = EditorKeybinds{};
-        m_rebindTarget = nullptr;
+        m_rebindTarget       = nullptr;
     }
 }
 

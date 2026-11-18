@@ -1,7 +1,7 @@
 #include "ecs/component/ui/ui_canvas.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/scene/hierarchy.h"
 #include "ecs/hierarchy_operations.h"
 
 namespace Vkm::Engine {

@@ -1,142 +1,88 @@
 /**
 @file structure.dox
-@brief Directory documentation, so the generated site has a shape.
-
-Doxygen's default output for this engine would be one flat list of hundreds of
-declarations in `Vkm::Engine`, which is accurate and useless. These `@dir` blocks
-give the site the structure the source tree already has, without putting an
-`@ingroup` line on every declaration - a tax the source would pay forever to
-serve the site.
+@brief Directory documentation, so the generated site has the shape the source tree has.
 */
 
 /** @dir src/engine/ecs
     @brief The ECS: entities, the open type-erased Scene, and every component.
 
-    Open and registration-free. A component is any plain struct; the storage is
-    one sparse set per type, and entity ids are generational so a stale one is
-    caught rather than reused. */
+    Storing a component needs no registration. Saving one needs a reflect block and a row
+    in VKM_SCENE_COMPONENTS (io/scene/scene_components.h); replicating one,
+    NetSchema::replicate. */
 
 /** @dir src/engine/ecs/component
-    @brief The components the engine itself understands.
-
-    Data only - no methods that do work, no base class. A system somewhere reads
-    each of these; a game adds its own the same way. */
+    @brief The components the engine itself understands: plain data that systems read. */
 
 /** @dir src/engine/core
-    @brief Foundations: the frame contract, events, math, memory, hashing.
+    @brief The Engine and its frame: the stages, the System contract and FrameContext, the clock,
+    the host's chrome and its debug view, the graphics settings, the input map, and opening a
+    project. */
 
-    `System` and `FrameContext` live here, which is where the shape of a frame is
-    actually defined. */
+/** @dir src/engine/base
+    @brief The foundation: what every other folder stands on. It includes nothing in the engine
+    above it. */
 
-/** @dir src/engine/core/math
-    @brief Vector and matrix helpers on top of glm, and the engine's axis convention.
-
-    Ask an orientation through computeForward / computeRight / computeUp rather
-    than writing an axis by hand. */
+/** @dir src/engine/base/math
+    @brief Vector and matrix helpers on top of glm, and the engine's axis convention. */
 
 /** @dir src/engine/resource
-    @brief Assets: owned once by ResourceManager, referenced by Handle, named for serialization.
+    @brief Assets: owned once by ResourceManager, referenced by Handle, named for serialization. */
 
-    The name is the identity. A handle is a slot plus a generation and is only
-    meaningful to the manager that minted it, so what a scene file stores is the
-    name and what it resolves against is whatever manager is loading it. */
-
-/** @dir src/engine/resource/generate
+/** @dir src/engine/io/asset/generate
     @brief Procedural meshes, textures and materials a game can build at run time.
 
-    Here rather than in the tools module because a project links the engine and
-    not the tools: a game that generates its world needs a cube without importing
-    one. */
+    In the engine rather than the tools because a project links the engine and not the
+    tools. */
 
 /** @dir src/engine/io
-    @brief Reading and writing: scenes, prefabs, the project file, cooked assets.
+    @brief Reading and writing: scenes, prefabs, the project file, cooked assets. */
 
-    Each format has a version gate of its own, and what it refuses differs by
-    format; none of them grows a back-compatibility read path - see
-    guides/engine.md section 5.1. */
+/** @dir src/engine/core/frame
+    @brief What one frame's systems hand each other, below every system: the products FrameContext
+    names (Visibility, PoseBuffer, UIDrawData and the rest) and the events the systems post. */
 
 /** @dir src/engine/system
-    @brief The per-frame systems, one directory each.
+    @brief The per-frame systems, a directory per subject, each registered at one stage.
 
-    Each is registered at exactly one stage and talks to the others only through
-    FrameContext. The stage order is Input, Simulation, Transform, Visibility,
-    Render, Editor, declared once as SystemStage in core/system.h; app/engine_app.h
+    The stage order is declared once, as SystemStage in core/system.h; app/engine_app.h
     places each system at its stage. */
 
 /** @dir src/engine/system/render
-    @brief The engine's whole view of rendering: RenderBackend, RenderView, EditorRenderHooks.
-
-    Deliberately small. Passes are a backend implementation detail and nothing
-    above this seam knows one exists. */
+    @brief The engine's whole view of rendering: RenderBackend, RenderView, EditorRenderHooks. */
 
 /** @dir src/engine/system/physics
-    @brief Rigid bodies, collision, joints, ragdolls, character control and queries.
-
-    Deterministic by construction: the solver canonicalises on storage slot, so
-    the same world steps the same way twice. */
+    @brief Rigid bodies, collision, joints, ragdolls, character control and queries. */
 
 /** @dir src/engine/system/script
-    @brief The gameplay boundary: Behavior, BehaviorContext, and the module that loads a game's code.
-
-    This is the surface a game is actually written against. */
+    @brief The gameplay boundary: Behavior, BehaviorContext, and the module that loads a game's code. */
 
 /** @dir src/engine/system/hierarchy
-    @brief Parent-child links, and the world transform resolved from them each frame.
-
-    An unconditional pass over a flat array rather than dirty flags: a second
-    source of truth about whether a matrix is current is what produces
-    invisible-object bugs nobody can reproduce. */
+    @brief Parent-child links, and the world transform resolved from them each frame. */
 
 /** @dir src/engine/system/ui
-    @brief In-game UI: an ECS-authored tree resolved into one draw list per frame.
+    @brief In-game UI: an ECS-authored tree resolved into one draw list per frame; not the editor's ImGui. */
 
-    Not the editor's UI, which is ImGui and lives in src/editor. Nothing here
-    reaches ImGui at all. */
+/** @dir src/engine/base/container
+    @brief The containers everything else is built on: SparseSet, SlotAllocator, TypeRegistry. */
 
-/** @dir src/engine/core/memory
-    @brief The containers everything else is built on: SparseSet, SlotAllocator, TypeRegistry.
-
-    None of them knows what it holds. The Scene pairs the first two to make
-    entities and the third to make component storage; the ResourceManager and the
-    EventBus pair them differently to make assets and event buses. */
-
-/** @dir src/engine/core/event
-    @brief The typed event bus, and the per-type bus it is made of.
-
-    Infrastructure rather than a system: the Engine owns one by value like the
-    Clock, and the loop flushes it at the top of the Simulation stage. */
+/** @dir src/engine/base/event
+    @brief The typed event bus, and the per-type bus it is made of. */
 
 /** @dir src/engine/debug
-    @brief Diagnostics: the Tracy profiler facade, the recoverable-error sink, a fault latch and the screenshot writer.
-
-    Engine code includes the profiler facade rather than Tracy. The profiler compiles to
-    nothing when it is off; reportError always logs, and also records into the
-    editor's error log when a host has installed one. */
+    @brief Diagnostics: world drawing (DebugDraw, DebugPalette) in draw/, and the recoverable-error sink and a fault latch in error/. */
 
 /** @dir src/engine/system/animation
-    @brief Clips, skeletal posing, bone sockets and the pose buffer a frame publishes.
-
-    A clip is simulation, so its time advances on the tick; the pose it names is
-    published on FrameContext for the Visibility and Render stages to read. */
+    @brief Clips, skeletal posing and bone sockets. */
 
 /** @dir src/engine/system/audio
-    @brief The mixer seam: voices, spatialization and the one place miniaudio is reached.
-
-    No device is a normal state - the engine runs silently rather than refusing
-    to run. Main-thread only; see the reference page before lending it one. */
+    @brief The audio system: the scene's sources and listener, mixed by vkmAudio, and the acoustics' rays cast over the physics. */
 
 /** @dir src/engine/system/visibility
-    @brief What the camera can see: frustum, distance and screen-size culling.
-
-    A flat parallel sweep rather than a spatial structure, which at this entity
-    count has no build cost, no staleness and no second answer about where
-    things are. */
+    @brief What the camera can see: frustum, distance and screen-size culling. */
 
 /** @dir src/engine/net
-    @brief Networking: transport, wire format, replication and client prediction.
-
-    NetSession brackets the frame rather than taking part in it, and offline it
-    answers yes to everything - so single-player is unchanged by its existence. */
+    @brief Networking: transport, wire format, replication and hiding the latency. */
 
 /** @dir src/engine/platform
-    @brief The seam onto the operating system: window, input, threads, shared libraries, sockets. */
+    @brief The engine's input vocabulary over vkmPlatform's devices: bindings and their names, and the
+    tick's command. The window, threads and processes are vkmPlatform's (modules/vkmPlatform). */

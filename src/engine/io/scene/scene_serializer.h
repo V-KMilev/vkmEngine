@@ -1,14 +1,15 @@
 #pragma once
 
+#include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "ecs/component/core/missing_assets.h"
+#include "ecs/component/scene/missing_assets.h"
 #include "ecs/entity.h"
-#include "ecs/entity_mapping.h"
-#include "io/scene/prefab.h"
+#include "io/scene/entity_mapping.h"
 
 namespace Vkm::Engine {
 
@@ -19,7 +20,7 @@ class ResourceManager;
  * @brief Save / load a Scene + the assets it references to/from JSON.
  *
  * An `assets` block sits beside `entities`, rebuilt through
- * AssetSerializer::loadAssets; components name assets by `name`.
+ * SceneAssets::loadAssets; components name assets by `name`.
  *
  * load() stages the scene and the asset graph and swaps both in only on full
  * success; loadFromString() stages the scene only. Entities return to their
@@ -83,6 +84,31 @@ namespace SceneSerializer {
     );
 
     /**
+     * @brief What a load leaves unread of one file, each key once, for its warning.
+     */
+    struct UnreadKeys {
+        std::set<std::string> components;  ///< Component keys no row of the format has.
+        std::set<std::string> fields;      ///< Keys a component's save never writes, as "Key.field": a
+                                           ///< field renamed or removed since the file was written.
+    };
+
+    /**
+     * @brief Add to @p unread what a load leaves unread of @p components, one entity's block.
+     *
+     * @param components JSON object written by saveComponents; anything else holds nothing.
+     * @param unread     Receives each key not read.
+     */
+    void collectUnread(const nlohmann::json& components, UnreadKeys& unread);
+
+    /**
+     * @brief Warn once of each key in @p unread.
+     *
+     * @param unread What collectUnread gathered over one file.
+     * @param source The file, for the message.
+     */
+    void warnUnread(const UnreadKeys& unread, const char* source);
+
+    /**
      * @brief Save @p scene + the assets it references to @p path.
      *
      * @param scene     Scene to write.
@@ -139,22 +165,23 @@ namespace SceneSerializer {
      *        saveToString(), replacing @p scene and merging into @p resources.
      *
      * The scene swaps in as in load(); the asset graph is not swapped, so every
-     * handle issued from it stays valid. The document stores an instance as a
-     * reference, so @p instanceSlots restores where its own entities stood.
+     * handle issued from it stays valid. The document names entities by slot
+     * alone, so @p generations restores their ids.
      *
      * @param text A document from saveToString().
      * @param scene Scene to replace on success.
      * @param resources Asset graph to resolve against, added to only where a
      *        name is absent.
-     * @param instanceSlots Optional: Prefab::instanceSlotsOf the source world;
-     *        without it an instance's entities take whatever slots are free.
+     * @param generations Optional: Scene::slotGenerations of the source world, so
+     *        every entity in its slot comes back under the id it had there;
+     *        without it every slot starts at generation 0, as a file's do.
      * @return true on success; false (and a logged error) on failure.
      */
     [[nodiscard]] bool loadFromString(
         const std::string& text,
         Scene& scene,
         ResourceManager& resources,
-        const Prefab::InstanceSlots* instanceSlots = nullptr
+        const std::vector<uint32_t>* generations = nullptr
     );
 
 } // namespace SceneSerializer

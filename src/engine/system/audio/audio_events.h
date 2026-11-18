@@ -2,8 +2,10 @@
 
 #include <glm/glm.hpp>
 
+#include "vkm_audio/device.h"
+
+#include "ecs/entity.h"
 #include "resource/asset/audio_clip_asset.h"
-#include "system/audio/audio_device.h"
 
 namespace Vkm::Engine {
 
@@ -13,13 +15,17 @@ namespace Vkm::Engine {
  * For when no AudioSource fits: a sound on an entity about to go, or one that must
  * overlap itself. There is no id, so it cannot be stopped or moved; `loop` is ignored.
  * A request made during Simulation is heard the same frame; at the voice ceiling it
- * may be dropped (AudioDevice::play).
+ * may be dropped (Audio::Device::play).
  *
  *   events().emit(PlaySoundEvent::at(m_chime, transform->position));
  */
 struct PlaySoundEvent {
-    AudioClipHandle clip;
-    VoiceParams     params;
+    AudioClipHandle    clip;
+    Audio::VoiceParams params;            ///< Its `occlusion` and `reverb` are AudioSystem's to set.
+    bool               acoustics = true;  ///< Whether the world's colliders shape it, as
+                                          ///< AudioSource::acoustics: false cuts through.
+    EntityId           from{};            ///< The entity it sounds from, whose own body does not muffle it;
+                                          ///< none for no entity's.
 
     /**
      * @brief A request to hear @p clip once, from @p position.

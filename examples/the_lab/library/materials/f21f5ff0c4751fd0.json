@@ -2,18 +2,12 @@
   "name": "lab:wood",
   "source": {
     "albedo": [
-      0.36000001430511475,
-      0.2199999988079071,
-      0.11999999731779099,
+      0.36,
+      0.22,
+      0.12,
       1.0
     ],
     "alphaCutoff": 0.5,
-    "anisotropy": 0.0,
-    "anisotropyDirection": [
-      1.0,
-      0.0,
-      0.0
-    ],
     "ao": 1.0,
     "attenuationColor": [
       1.0,
@@ -31,7 +25,6 @@
       0.0
     ],
     "emissiveStrength": 1.0,
-    "heightScale": 0.0,
     "ior": 1.5,
     "metallic": 0.0,
     "normalScale": 1.0,
@@ -41,7 +34,7 @@
       0.0,
       0.0
     ],
-    "sheenRoughness": 0.30000001192092896,
+    "sheenRoughness": 0.3,
     "subsurface": 0.0,
     "subsurfaceColor": [
       1.0,
@@ -58,7 +51,6 @@
     "uvScale": [
       1.0,
       1.0
-    ],
-    "waves": false
+    ]
   }
 }

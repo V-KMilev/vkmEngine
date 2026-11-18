@@ -7,15 +7,16 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/clock.h"
-#include "core/math/rotation.h"
+#include "core/host_chrome.h"
+#include "base/math/rotation.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
-#include "system/physics/query/query.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/scene/world_transform.h"
+#include "system/physics/query.h"
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 
 namespace Vkm::Engine {
 
@@ -38,15 +39,16 @@ glm::vec3 discPoint(Math::Rng& rng, float radius, bool rim) {
 
 /// A point drawn in a box of @p half, or on its surface, each face by its area.
 glm::vec3 boxPoint(Math::Rng& rng, const glm::vec3& half, bool surface) {
-    glm::vec3 p(
-        rng.nextFloat(-half.x, half.x),
-        rng.nextFloat(-half.y, half.y),
-        rng.nextFloat(-half.z, half.z)
-    );
+    // Drawn in named order: a constructor's arguments run in an order each compiler picks, so one
+    // seed would make other particles in another build.
+    const float x = rng.nextFloat(-half.x, half.x);
+    const float y = rng.nextFloat(-half.y, half.y);
+    const float z = rng.nextFloat(-half.z, half.z);
+    glm::vec3 p(x, y, z);
     if (!surface) return p;
     const glm::vec3 area(half.y * half.z, half.x * half.z, half.x * half.y);
-    const float     pick = rng.nextFloat(0.0f, area.x + area.y + area.z);
-    const int       axis = pick < area.x ? 0 : pick < area.x + area.y ? 1 : 2;
+    const float pick = rng.nextFloat(0.0f, area.x + area.y + area.z);
+    const int axis   = pick < area.x ? 0 : pick < area.x + area.y ? 1 : 2;
     p[axis] = rng.nextBool() ? half[axis] : -half[axis];
     return p;
 }
@@ -88,6 +90,7 @@ void shapeOf(const ParticleEmitter& emitter, Math::Rng& rng, glm::vec3& point, g
         case EmitShape::Disc: {
             point = discPoint(rng, radius, emitter.fromSurface);
             const float out = glm::length(point);
+
             direction = out > 1e-6f ? point / out : discPoint(rng, 1.0f, true);
             return;
         }
@@ -101,20 +104,17 @@ void shapeOf(const ParticleEmitter& emitter, Math::Rng& rng, glm::vec3& point, g
 /// The rotation in @p model, its scale taken out.
 glm::mat3 rotationOf(const glm::mat4& model) { return glm::mat3_cast(Math::worldRotationOf(model)); }
 
-/// How far a struck particle is set off the surface, metres.
-constexpr float BACK_OFF = 1e-3f;
+constexpr float BACK_OFF = 1e-3f;  ///< How far a struck particle is set off the surface, meters.
+
+constexpr float MAX_PREVIEW_STEP = 0.1f;  ///< The longest step a preview takes, seconds, so a hitch in the
+                                          ///< host does not jump an effect.
+
+constexpr float PREVIEW_REST = 0.6f;  ///< Seconds a previewed effect lies finished before it starts over.
 
 /// A rate as spawned: none for a negative or non-finite one, which would count no whole particles.
 float rateOf(float rate) { return std::isfinite(rate) ? std::max(rate, 0.0f) : 0.0f; }
 
 } // namespace
-
-EntityId triggeringEmitter(const Scene& scene, EntityId child) {
-    const Hierarchy* at = scene.tryGet<Hierarchy>(child);
-    const bool fired = scene.has<ParticleEmitter>(child) && at && at->parent
-        && scene.has<ParticleEmitter>(at->parent);
-    return fired ? at->parent : EntityId{};
-}
 
 glm::vec3 ParticleSystem::swirlAt(const glm::vec3& position, float time) {
     // Each axis reads only the other two, so the field has no divergence.
@@ -158,35 +158,6 @@ bool ParticleSystem::spawn(
         pool.trails.resize(pool.particles.size() * LiveParticles::TRAIL_POINTS, p.position);
     }
     pool.fired = true;
-    trigger(pool.emitter, ParticleEvent::Birth, p);
-    return true;
-}
-
-std::pair<const ParticleSystem::ChildLink*, const ParticleSystem::ChildLink*>
-ParticleSystem::childrenOf(uint32_t slot) const {
-    const auto bySlot = [](const ChildLink& link, uint32_t at) { return link.parentSlot < at; };
-    const auto first  = std::lower_bound(m_links.begin(), m_links.end(), slot, bySlot);
-    auto       last   = first;
-    while (last != m_links.end() && last->parentSlot == slot) ++last;
-    return {m_links.data() + (first - m_links.begin()), m_links.data() + (last - m_links.begin())};
-}
-
-void ParticleSystem::trigger(EntityId emitter, ParticleEvent event, const Particle& particle) {
-    if (m_links.empty()) return;
-    const auto [first, last] = childrenOf(emitter.slot());
-    for (const ChildLink* link = first; link != last; ++link) {
-        if (link->trigger.event != event || link->trigger.count == 0) continue;
-        const glm::vec3 inherited = particle.velocity * link->inheritVelocity;
-        m_triggered.push_back({link->child, particle.position, inherited, link->trigger.count});
-    }
-}
-
-bool ParticleSystem::quiet(uint32_t slot) const {
-    const auto [first, last] = childrenOf(slot);
-    for (const ChildLink* link = first; link != last; ++link) {
-        const LiveParticles::Pool* pool = m_live.poolOf(link->child);
-        if ((pool && !pool->particles.empty()) || !quiet(link->child.slot())) return false;
-    }
     return true;
 }
 
@@ -198,7 +169,7 @@ void ParticleSystem::step(
     float dt
 ) {
     constexpr uint32_t POINTS = LiveParticles::TRAIL_POINTS;
-    const bool  trails     = emitter.render == ParticleRender::Trail;
+    const bool trails = emitter.render == ParticleRender::Trail;
     const float keep       = std::exp(-std::max(emitter.drag, 0.0f) * dt);
     const float scale      = std::max(emitter.turbulenceScale, 1e-3f);
     const float trailEvery = std::max(emitter.trailLength, 1e-3f) / static_cast<float>(POINTS);
@@ -208,9 +179,8 @@ void ParticleSystem::step(
         glm::vec3  reach(0.0f);
         Math::AABB around{pool.particles.front().position, pool.particles.front().position};
         for (const Particle& p : pool.particles) {
-            around.min = glm::min(around.min, p.position);
-            around.max = glm::max(around.max, p.position);
-            reach      = glm::max(reach, glm::abs(p.velocity));
+            around.expand(p.position);
+            reach = glm::max(reach, glm::abs(p.velocity));
         }
         const float     swirl = SWIRL_REACH * std::max(emitter.turbulence, 0.0f);
         const glm::vec3 pull  = glm::abs(emitter.acceleration) + swirl;
@@ -257,16 +227,10 @@ void ParticleSystem::step(
             // Back off the surface, and turn what ran into it back out, as much as bounce keeps.
             p.position = hit.point + hit.normal * BACK_OFF;
             if (into < 0.0f) p.velocity -= (1.0f + std::max(emitter.bounce, 0.0f)) * into * hit.normal;
-            if (counts) {
-                p.age += std::max(emitter.lifeLostOnHit, 0.0f) * p.lifetime;
-                trigger(id, ParticleEvent::Collision, p);
-            }
+            if (counts) p.age += std::max(emitter.lifeLostOnHit, 0.0f) * p.lifetime;
         }
 
-        if (p.age >= p.lifetime) {
-            trigger(id, ParticleEvent::Death, p);
-            continue;
-        }
+        if (p.age >= p.lifetime) continue;
 
         if (!trails) {
             p.trailCount = 0;
@@ -281,7 +245,7 @@ void ParticleSystem::step(
             }
         }
 
-        // Kept in birth order, a ribbon's and a trail's along with it.
+        // Kept in birth order, a trail's along with it.
         if (kept != i && trails) std::copy(trail, trail + POINTS, pool.trails.data() + kept * POINTS);
         pool.particles[kept++] = p;
     }
@@ -303,36 +267,47 @@ void ParticleSystem::update(FrameContext& ctx) {
         m_time = 0.0f;
     }
 
-    const float dt = ctx.clock.getSimDelta();
+    // A world standing still plays what an authoring host asks to see, on the frame's own time,
+    // and changes nothing of the scene doing so.
+    const HostChrome::EffectPreview& preview = ctx.chrome.effectPreview;
+    float dt = ctx.clock.getSimDelta();
+    const bool previewing = dt <= 0.0f && ctx.chrome.authoring && preview.playing;
+    // The playbar's speed slows a preview too, for looking at an effect closely.
+    const float previewStep = ctx.clock.getDeltaTime() * ctx.clock.getHostScale();
+    if (previewing) dt = preview.paused ? 0.0f : std::min(previewStep, MAX_PREVIEW_STEP);
+    if (previewing != m_previewing || (previewing && preview.restarts != m_previewRestarts)) {
+        // Started, stopped or started over: from nothing live, and from the stream's start.
+        m_live.pools.clear();
+        m_rng.seed(SEED);
+        m_time            = 0.0f;
+        m_previewing      = previewing;
+        m_previewRestarts = preview.restarts;
+    }
+    const auto previewed = [&](EntityId id) {
+        if (preview.all) return true;
+        bool under = false;
+        HierarchyOperations::forSelfAndAncestors(scene, id, [&](EntityId at) {
+            under = std::find(preview.roots.begin(), preview.roots.end(), at) != preview.roots.end();
+            return !under;
+        });
+        return under;
+    };
+
     if (dt <= 0.0f) {
-        // An emitter moved while nothing steps - dragged in a paused editor - has not travelled.
+        // An emitter moved while nothing steps - dragged in a paused editor - has not traveled.
         for (auto& [slot, pool] : m_live.pools) pool.placed = false;
         return;
     }
     ++m_step;
     m_time += dt;
 
-    // Which emitters have sub-emitters, and on what, by the parent's slot.
-    m_links.clear();
-    scene.forEach<ParticleTrigger>([&](EntityId child, const ParticleTrigger& trigger) {
-        const EntityId parent = triggeringEmitter(scene, child);
-        if (!parent) return;
-        const float inherit = scene.get<ParticleEmitter>(child).inheritVelocity;
-        m_links.push_back({parent.slot(), child, trigger, inherit});
-    });
-    // By parent, then child: a parent's sub-emitters in one order everywhere, which the stream follows.
-    const auto byParent = [](const ChildLink& a, const ChildLink& b) {
-        return a.parentSlot != b.parentSlot ? a.parentSlot < b.parentSlot : a.child.slot() < b.child.slot();
-    };
-    std::sort(m_links.begin(), m_links.end(), byParent);
-
     m_spent.clear();
-    m_triggered.clear();
     scene.forEach<ParticleEmitter, Transform>(
         [&](EntityId id, ParticleEmitter& emitter, const Transform& transform) {
+            if (previewing && !previewed(id)) return;
             LiveParticles::Pool& pool = m_live.pools[id.slot()];
             if (pool.emitter != id) {
-                pool = LiveParticles::Pool{};
+                pool         = LiveParticles::Pool{};
                 pool.emitter = id;
             }
             pool.seen = m_step;
@@ -347,25 +322,22 @@ void ParticleSystem::update(FrameContext& ctx) {
             pool.lastOrigin = here;
             pool.placed     = true;
 
-            // A sub-emitter spawns only when its parent's particles trigger it, and never is spent.
-            if (scene.has<ParticleTrigger>(id)) {
-                emitter.burst = 0;
-                return;
-            }
-
             // Spent whole, as far as the cap allows: a burst is one moment, not a debt. Fired even
-            // when the cap lets none through, or a puff of no room would wait forever.
-            pool.fired = pool.fired || emitter.burst > 0;
-            for (uint32_t i = 0; i < emitter.burst && spawn(pool, emitter, origin, 0.0f); ++i) {}
-            emitter.burst = 0;
+            // when the cap lets none through, or a puff of no room would wait forever. A preview
+            // plays it once a run and leaves the authored burst as it is.
+            const uint32_t burst = previewing && pool.previewFired ? 0u : emitter.burst;
+            pool.fired        = pool.fired || burst > 0;
+            pool.previewFired = previewing;
+            for (uint32_t i = 0; i < burst && spawn(pool, emitter, origin, 0.0f); ++i) {}
+            if (!previewing) emitter.burst = 0;
 
             if (emitter.emitting) {
                 pool.spawnAccumulator += rateOf(emitter.rate) * dt;
-                pool.metreAccumulator += rateOf(emitter.ratePerMetre) * glm::length(moved);
+                pool.meterAccumulator += rateOf(emitter.ratePerMeter) * glm::length(moved);
                 const auto byTime     = static_cast<uint32_t>(pool.spawnAccumulator);
-                const auto byDistance = static_cast<uint32_t>(pool.metreAccumulator);
+                const auto byDistance = static_cast<uint32_t>(pool.meterAccumulator);
                 pool.spawnAccumulator -= static_cast<float>(byTime);
-                pool.metreAccumulator -= static_cast<float>(byDistance);
+                pool.meterAccumulator -= static_cast<float>(byDistance);
 
                 // Spread along the step: each is born where the emitter was when it fell due, as
                 // old as the time since. Only the fraction survives at capacity, or a saturated
@@ -381,35 +353,22 @@ void ParticleSystem::update(FrameContext& ctx) {
 
             // Never fired is not spent: an emitter waiting for gameplay's burst stays.
             const bool spent = pool.fired && !emitter.emitting && pool.particles.empty();
-            if (emitter.destroyWhenSpent && spent) m_spent.push_back(id);
+            if (previewing) {
+                // Finished, a preview starts it over after a breath, and destroys nothing.
+                pool.previewRest = spent ? pool.previewRest + dt : 0.0f;
+                if (pool.previewRest >= PREVIEW_REST) {
+                    pool.previewFired = false;
+                    pool.fired        = false;
+                    pool.previewRest  = 0.0f;
+                }
+            } else if (emitter.destroyWhenSpent && spent) {
+                m_spent.push_back(id);
+            }
         }
     );
 
-    // Born after the walk, which a sub-emitter's own step has passed: they start next frame. By
-    // index, for a birth here may queue its own children's.
-    EntityId  framed;
-    glm::mat3 frame(1.0f);
-    for (size_t q = 0; q < m_triggered.size(); ++q) {
-        const TriggeredSpawn queued = m_triggered[q];
-        const ParticleEmitter* emitter = scene.tryGet<ParticleEmitter>(queued.emitter);
-        const Transform*       local   = scene.tryGet<Transform>(queued.emitter);
-        const auto             pool    = m_live.pools.find(queued.emitter.slot());
-        const bool live = pool != m_live.pools.end() && pool->second.emitter == queued.emitter;
-        if (!emitter || !local || !live) continue;
-        // A burst of deaths queues one child many times in a row: its frame is worked out once.
-        if (queued.emitter != framed) {
-            framed = queued.emitter;
-            frame  = rotationOf(resolvedWorldMatrix(scene, queued.emitter, *local));
-        }
-        const Origin origin{queued.position, frame, queued.velocity};
-        for (uint32_t i = 0; i < queued.count && spawn(pool->second, *emitter, origin, 0.0f); ++i) {}
-    }
-
-    // Outside the walk, which a destroy would disturb; once its sub-emitters' particles are gone
-    // too, for they go with it.
-    for (const EntityId id : m_spent) {
-        if (quiet(id.slot())) HierarchyOperations::destroyHierarchy(scene, id);
-    }
+    // Outside the walk, which a destroy would disturb.
+    for (const EntityId id : m_spent) HierarchyOperations::destroyHierarchy(scene, id);
 
     // An emitter removed or destroyed since leaves a pool nothing reads.
     for (auto it = m_live.pools.begin(); it != m_live.pools.end();) {

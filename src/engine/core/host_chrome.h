@@ -1,117 +1,108 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
+
+#include "core/render_mode.h"
+#include "ecs/entity.h"
+
+namespace Vkm::Platform {
+class WindowManager;
+} // namespace Vkm::Platform
 
 namespace Vkm::Engine {
 
-class WindowManager;
 
 /**
  * @brief What an authoring host tells the engine about the frame it draws over.
  *
  * The host frames the engine's output: panels around a scene rect, taking the
- * pointer over them. Readers take it off the frame context; unset, it is the
- * whole window with nothing captured.
+ * pointer over them; whether the world is open to edit; the effects it previews
+ * while the world stands still; and what it has the frame display. Readers take it
+ * off the frame context; unset, it is the whole window with nothing captured.
  *
  * Written in the Editor stage, so earlier stages see the previous frame's rect.
  */
-class HostChrome {
-    public:
-        /**
-         * @brief A rect in framebuffer pixels, origin at the top left.
-         */
-        struct ViewportRect {
-            uint32_t x      = 0;
-            uint32_t y      = 0;
-            uint32_t width  = 0;
-            uint32_t height = 0;
-        };
+struct HostChrome {
+    /**
+     * @brief A rect in framebuffer pixels, origin at the top left.
+     */
+    struct ViewportRect {
+        uint32_t x      = 0;
+        uint32_t y      = 0;
+        uint32_t width  = 0;
+        uint32_t height = 0;
+    };
 
-    public:
-        HostChrome()  = default;
-        ~HostChrome() = default;
+    /**
+     * @brief What of the world's effects an authoring host plays while the world stands still.
+     */
+    struct EffectPreview {
+        bool                  playing  = false;  ///< Whether to play them at all.
+        bool                  paused   = false;  ///< Held where they are, still drawn.
+        bool                  all      = false;  ///< Every emitter, not only those under `roots`.
+        std::vector<EntityId> roots;             ///< Whose subtrees play: an editor's selection.
+        uint64_t              restarts = 0;      ///< Moved to start them over from nothing.
+    };
 
-        HostChrome(const HostChrome& other) = default;
-        HostChrome& operator=(const HostChrome& other) = default;
+    /**
+     * @brief What a host has the frame display: a debug view in place of the picture, and the
+     *        world grid. A game's frame is the picture, with no grid.
+     */
+    struct Display {
+        RenderMode mode{};  ///< The composite's output; RenderMode::Lit is the picture.
 
-        HostChrome(HostChrome && other) = default;
-        HostChrome& operator=(HostChrome && other) = default;
-
-    public:
-        /**
-         * @brief Declare the rect inside the window the 3D scene renders into.
-         *
-         * @param x     Left edge in framebuffer pixels; scale screen coordinates
-         *              by WindowManager::framebufferScale first.
-         * @param y     Top edge, same units.
-         * @param width Zero means the whole window.
-         * @param height Zero means the whole window.
-         */
-        void setViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-            m_viewport = ViewportRect{x, y, width, height};
-        }
+        // The world grid: each axis's line, and the plane of every two axes on.
+        bool gridAxisX = false;
+        bool gridAxisY = false;
+        bool gridAxisZ = false;
 
         /**
-         * @brief The declared rect, resolved against the window it sits in.
+         * @brief Whether the grid draws at all.
          *
-         * @param window Window the scene is drawn into; fills a zero extent.
-         * @return Rect in framebuffer pixels, zero-sized only if the window is.
+         * @return True when any of its axes is on.
          */
-        ViewportRect viewport(const WindowManager& window) const;
+        bool gridShown() const { return gridAxisX || gridAxisY || gridAxisZ; }
+    };
 
-        /**
-         * @brief Declare that the host's own UI, not the scene, has the devices.
-         *
-         * Separate, since a focused text field takes the keyboard while the
-         * pointer is over the viewport, and a panel takes the pointer unfocused.
-         *
-         * @param pointer  Host UI is under the cursor or dragging, or the host
-         *                 has taken the view from the game (an ejected session).
-         * @param keyboard A field is typed into, a popup or rebind waits for a
-         *                 key, or the host has taken the view from the game.
-         */
-        void setCapture(bool pointer, bool keyboard) {
-            m_capturePointer  = pointer;
-            m_captureKeyboard = keyboard;
-        }
+    ViewportRect          viewport;                 ///< The rect the 3D scene renders into, in framebuffer
+                                                    ///< pixels (WindowManager::framebufferScale); a zero
+                                                    ///< extent is the whole window, as viewportIn() says.
+    bool                  capturePointer  = false;  ///< The host's UI has the pointer: under the cursor,
+                                                    ///< dragging, or the view taken from the game (an
+                                                    ///< ejected session). A panel takes it unfocused.
+    bool                  captureKeyboard = false;  ///< The host's UI has the keyboard: a field typed into,
+                                                    ///< a popup or rebind waiting for a key, or the view
+                                                    ///< taken from the game; even with the pointer outside.
+    bool                  authoring       = false;  ///< The host may change the world this frame, so nothing
+                                                    ///< is kept for a Mesh being fixed (Mesh::movable): the
+                                                    ///< author moves fixed things too.
+    EffectPreview         effectPreview;            ///< What plays while authoring, the world standing still;
+                                                    ///< played so, an effect changes nothing of the scene.
+    std::vector<uint32_t> hiddenInView;             ///< Slots, each subtree whole, whose meshes the authored
+                                                    ///< world leaves out: the editor's eye on a Hierarchy
+                                                    ///< row.
+    bool                  coverNextWorld  = false;  ///< The next world to arrive is covered by the loading
+                                                    ///< screen until ready, though authored: a project or
+                                                    ///< scene opened. Set before the load; see
+                                                    ///< takeCoverNextWorld().
+    Display               display;                  ///< What the frame displays: a debug view, the grid.
 
-        /**
-         * @brief Whether the host's UI owns the pointer this frame.
-         *
-         * @return The last setCapture() pointer flag.
-         */
-        bool capturesPointer() const { return m_capturePointer; }
+    /**
+     * @brief The declared rect, resolved against the window it sits in.
+     *
+     * @param window Window the scene is drawn into; fills a zero extent.
+     * @return Rect in framebuffer pixels, zero-sized only if the window is.
+     */
+    ViewportRect viewportIn(const Platform::WindowManager& window) const;
 
-        /**
-         * @brief Whether the host's UI owns the keyboard this frame.
-         *
-         * @return The last setCapture() keyboard flag.
-         */
-        bool capturesKeyboard() const { return m_captureKeyboard; }
-
-        /**
-         * @brief Declare whether the host may change the world this frame: an editor outside a
-         *        running session, or with its panels shown.
-         *
-         * A world being authored keeps nothing between frames on the strength of a Mesh being
-         * fixed (Mesh::movable): the author moves fixed things too.
-         *
-         * @param authoring Whether the world is open to the host's edits.
-         */
-        void setAuthoring(bool authoring) { m_authoring = authoring; }
-
-        /**
-         * @brief Whether the host may change the world this frame.
-         *
-         * @return The last setAuthoring() flag; false in a host that never sets it.
-         */
-        bool authoring() const { return m_authoring; }
-
-    private:
-        ViewportRect m_viewport;
-        bool m_capturePointer  = false;
-        bool m_captureKeyboard = false;
-        bool m_authoring       = false;
+    /**
+     * @brief Whether coverNextWorld was set since this was last called; clears it.
+     *
+     * @return The request.
+     */
+    bool takeCoverNextWorld() { return std::exchange(coverNextWorld, false); }
 };
 
 } // namespace Vkm::Engine

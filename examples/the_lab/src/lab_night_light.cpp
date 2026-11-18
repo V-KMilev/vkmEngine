@@ -1,15 +1,14 @@
 #include "lab_night_light.h"
 
-#include "ecs/component/render/light.h"
+#include "ecs/component/light/light.h"
 #include "ecs/component/render/mesh.h"
-#include "ecs/environment.h"
-#include "ecs/hierarchy_operations.h"
+#include "ecs/settings/environment.h"
 #include "ecs/scene.h"
 
 namespace Lab {
 
 void LabNightLight::onStart() {
-    m_glow = HierarchyOperations::findNamed(scene(), entity(), "Glow");
+    m_glow = findPart("Glow");
 }
 
 void LabNightLight::onUpdate(float) {

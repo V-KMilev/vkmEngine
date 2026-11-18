@@ -1,36 +1,48 @@
 # Ours.
-[submodule "modules/vkmGL"]
-	path = modules/vkmGL
-	url = https://github.com/V-KMilev/vkmGL.git
 [submodule "modules/vkmLog"]
 	path = modules/vkmLog
 	url = https://github.com/V-KMilev/vkmLog.git
+	branch = master
+[submodule "modules/vkmPlatform"]
+	path = modules/vkmPlatform
+	url = https://github.com/V-KMilev/vkmPlatform.git
+	branch = master
+[submodule "modules/vkmAudio"]
+	path = modules/vkmAudio
+	url = https://github.com/V-KMilev/vkmAudio.git
+	branch = master
+[submodule "modules/vkmNetwork"]
+	path = modules/vkmNetwork
+	url = https://github.com/V-KMilev/vkmNetwork.git
+	branch = master
+[submodule "modules/vkmPhysics"]
+	path = modules/vkmPhysics
+	url = https://github.com/V-KMilev/vkmPhysics.git
+	branch = master
+[submodule "modules/vkmOpenGL"]
+	path = modules/vkmOpenGL
+	url = https://github.com/V-KMilev/vkmOpenGL.git
+	branch = master
+[submodule "modules/vkmVulkan"]
+	path = modules/vkmVulkan
+	url = https://github.com/V-KMilev/vkmVulkan.git
+	branch = master
 
-# Shared dependencies the engine owns. glm and glfw appear in engine API and
-# platform code; stb decodes images and bakes font atlases. vkmGL consumes these
-# rather than vendoring its own, so a second backend can too.
+# Shared dependencies the engine owns. glm appears in engine API; stb decodes images
+# and bakes font atlases. vkmOpenGL, vkmAudio, vkmNetwork and vkmPhysics take the
+# engine's glm rather than vendoring their own, as a second backend will.
 [submodule "modules/glm"]
 	path = modules/glm
 	url = https://github.com/g-truc/glm.git
-[submodule "modules/glfw"]
-	path = modules/glfw
-	url = https://github.com/glfw/glfw.git
 [submodule "modules/stb"]
 	path = modules/stb
 	url = https://github.com/nothings/stb.git
 
-# Audio. Public domain, one header plus the implementation unit beside it; the
-# engine owns the device behind it and nothing else includes it.
-[submodule "modules/miniaudio"]
-	path = modules/miniaudio
-	url = https://github.com/mackron/miniaudio.git
-
-# Editor and asset pipeline. Built only when the editor is, and linked through
-# vkm_cook, never by the runtime: a shipped game imports nothing. cgltf reads
-# glTF and GLB, ufbx reads FBX and OBJ, MikkTSpace gives imported meshes the
-# tangents normal maps are baked against, meshoptimizer simplifies LOD levels
-# and orders every cooked mesh for the GPU, and basis_universal supplies its
-# scalar BC7 encoder - one file of it is compiled, so it is cloned shallow.
+# Editor and asset pipeline. Built only when the editor is, and linked by it and
+# vkm_cook, never by the runtime: a shipped game imports nothing and draws no
+# ImGui. cgltf reads glTF and GLB, ufbx reads FBX and OBJ, MikkTSpace gives imported
+# meshes the tangents normal maps are baked against, meshoptimizer simplifies LOD
+# levels and orders every cooked mesh for the GPU, and xatlas unwraps lightmap UVs.
 [submodule "modules/imgui"]
 	path = modules/imgui
 	url = https://github.com/ocornut/imgui.git
@@ -47,15 +59,11 @@
 [submodule "modules/meshoptimizer"]
 	path = modules/meshoptimizer
 	url = https://github.com/zeux/meshoptimizer.git
-[submodule "modules/basis_universal"]
-	path = modules/basis_universal
-	url = https://github.com/BinomialLLC/basis_universal.git
-	shallow = true
-[submodule "modules/freetype"]
-	path = modules/freetype
-	url = https://github.com/freetype/freetype.git
+[submodule "modules/xatlas"]
+	path = modules/xatlas
+	url = https://github.com/jpcy/xatlas.git
 
-# Serialization and profiling.
+# Serialization, linked by vkm_core, and profiling, linked by it with VKM_PROFILER.
 [submodule "modules/json"]
 	path = modules/json
 	url = https://github.com/nlohmann/json

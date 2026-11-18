@@ -6,20 +6,18 @@
 
 #include "ecs/entity.h"
 #include "ui/editor_widgets.h"
+#include "ui/euler_cache.h"
 
 namespace Vkm::Engine {
 
 struct Animation;
 struct EditorContext;
 struct Transform;
-class SceneIOController;
 
 /**
- * @brief Keyframe editing for the selected entity's Animation component.
+ * @brief Keyframe editing for the selected entity's Animation component; the playhead poses its Transform.
  *
- * A transport, a draggable three-lane timeline and a table per track, all posing the
- * entity's Transform as the playhead moves. Its drag state and euler caches must survive
- * frames spent behind another tab.
+ * Its drag state and euler caches must survive frames spent behind another tab.
  */
 class AnimationPanel {
     public:
@@ -37,32 +35,21 @@ class AnimationPanel {
          * @brief Draw the tab: the editor for the selection, or what is missing.
          *
          * @param ec The frame's editor context.
-         * @param sceneIO Play state: decides whether a scrub is authoring.
          */
-        void draw(EditorContext& ec, SceneIOController& sceneIO);
+        void draw(EditorContext& ec);
 
     private:
         /**
          * @brief Draw the whole editor over one Animation, and record the edit.
          *
-         * One composite step per changed frame: the Animation and the authored Transform the
-         * pose writes, since AnimationSystem does not re-pose outside play. One composite
-         * because CommandStack::push merges only into the top. During play the pose is
-         * left out; Stop discards it.
+         * Pushes one composite step per changed frame, the Transform the pose wrote included.
          *
          * @param ec The frame's editor context.
-         * @param sceneIO Play state.
          * @param anim The animation being edited.
          * @param transform Posed as the playhead moves.
          * @param entity Owner of both, for the undo command.
          */
-        void drawEditor(
-            EditorContext& ec,
-            SceneIOController& sceneIO,
-            Animation& anim,
-            Transform& transform,
-            EntityId entity
-        );
+        void drawEditor(EditorContext& ec, Animation& anim, Transform& transform, EntityId entity);
 
         /**
          * @brief The shared clip transport, then Set Key and the length field.
@@ -115,37 +102,21 @@ class AnimationPanel {
         /**
          * @brief Draw the disabled editor and the offer to add the component.
          *
-         * The real editor over a throwaway Animation, safe because disabled widgets report no
-         * change: no undo step, no pose.
-         *
          * @param ec The frame's editor context.
-         * @param sceneIO Play state.
          * @param entity The selection, which has no Animation.
          * @param transform Its transform, left unposed.
          */
-        void drawAddOffer(
-            EditorContext& ec,
-            SceneIOController& sceneIO,
-            EntityId entity,
-            Transform& transform
-        );
+        void drawAddOffer(EditorContext& ec, EntityId entity, Transform& transform);
 
     private:
-        /**
-         * @brief The dragged keyframe's track: -1 none, else 0/1/2 for position, rotation, scale.
-         *
-         * By index, not time: float equality breaks once the drag retimes it.
-         */
-        int    m_dotTrack = -1;
-        size_t m_dotIndex = 0;
+        int    m_dotTrack = -1;    ///< The dragged keyframe's lane: 0/1/2 position/rotation/scale, -1 none.
+        size_t m_dotIndex = 0;     ///< By index, not time: float equality breaks once the drag retimes it.
+        float  m_dotFromX = 0.0f;  ///< Where the pointer took the dot, screen pixels.
+        float  m_dotFrom  = 0.0f;  ///< The key's time then, seconds.
+        float  m_timeHeld = 0.0f;  ///< A key's Time cell as dragged: the track takes it once let go.
 
-        /**
-         * @brief One euler cache per rotation keyframe row.
-         *
-         * Not one shared cache: EulerCache reseeds when its key changes, so the next row
-         * would reseed it every frame.
-         */
-        std::unordered_map<int, EulerCache<int>> m_rotationEulers;
+        std::unordered_map<int, EulerCache<int>> m_rotationEulers;  ///< One per rotation key row: a shared
+                                                                    ///< EulerCache would reseed every frame.
 };
 
 } // namespace Vkm::Engine

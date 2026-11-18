@@ -1,6 +1,42 @@
 {
+  "actions": {
+    "Toggle/Animation": [
+      "6"
+    ],
+    "Toggle/Camera": [
+      "F"
+    ],
+    "Toggle/Decals": [
+      "7"
+    ],
+    "Toggle/Fog": [
+      "8"
+    ],
+    "Toggle/Lights": [
+      "1"
+    ],
+    "Toggle/Particles": [
+      "4"
+    ],
+    "Toggle/Physics": [
+      "5"
+    ],
+    "Toggle/Props": [
+      "3"
+    ],
+    "Toggle/Reset": [
+      "0"
+    ],
+    "Toggle/Shadows": [
+      "2"
+    ],
+    "Toggle/UI": [
+      "9"
+    ]
+  },
   "description": "A profiling load that drives every subsystem at once.",
-  "engineVersion": "1.0.15",
-  "entryScene": "",
-  "name": "Stress Arena"
+  "engineVersion": "1.1.0",
+  "entryScene": "scenes/main.json",
+  "name": "Stress Arena",
+  "picture": "picture.png"
 }

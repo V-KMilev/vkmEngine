@@ -5,17 +5,16 @@
 #include <limits>
 
 #include "core/clock.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/scene/world_transform.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_text.h"
 #include "ecs/scene.h"
 #include "net/net_session.h"
-#include "platform/input/input_map.h"
-#include "platform/window/glfw_include.h"
-#include "system/script/script_component.h"
+#include "core/input_map.h"
+#include "ecs/component/ui/ui_build.h"
 
 #include "lab_actions.h"
 #include "lab_area.h"
@@ -60,17 +59,26 @@ const Control CONTROLS[] = {
 // Between two controls in the hint.
 constexpr const char* CONTROL_GAP = "   ";
 
+// The HUD's look at a text height: white over a shadow, read over any part of the lab.
+UI::Style hudText(float pixels) {
+    UI::Style style;
+    style.textSize = pixels;
+    style.text     = WHITE;
+    style.shadow   = SHADOW;
+    return style;
+}
+
 int countOf(uint32_t bits) {
     return static_cast<int>(std::bitset<TOKEN_BITS>(bits).count());
 }
 
 // The controls, each named by the key bound to it.
 std::string controlsHint(const InputMap& input, bool offline) {
-    const std::string move = keyFor(input, ACTION_FORWARD) + keyFor(input, ACTION_LEFT)
-        + keyFor(input, ACTION_BACK) + keyFor(input, ACTION_RIGHT);
+    const std::string move = input.keyName(ACTION_FORWARD) + input.keyName(ACTION_LEFT)
+        + input.keyName(ACTION_BACK) + input.keyName(ACTION_RIGHT);
     std::string hint = move + " move";
     for (const Control& control : CONTROLS) {
-        const std::string key = keyFor(input, control.action);
+        const std::string key = input.keyName(control.action);
         if (key.empty() || (control.offlineOnly && !offline)) continue;
         hint += CONTROL_GAP + key + " " + control.does;
     }
@@ -79,49 +87,23 @@ std::string controlsHint(const InputMap& input, bool offline) {
 
 } // namespace
 
-EntityId LabHud::addText(
-    EntityId parent,
-    const glm::vec2& at,
-    const glm::vec2& offset,
-    const glm::vec2& size,
-    float pixels
-) {
-    const EntityId id = spawn("Text", parent);
-    UIElement element = UIElement::at(at, offset, size);
-    element.blocksPointer = false;
-    scene().add(id, std::move(element));
-    UIText words;
-    words.pixelSize = pixels;
-    words.color     = WHITE;
-    words.shadow    = SHADOW;
-    words.align     = UIText::Align::Center;
-    if (at.x < 0.25f) words.align = UIText::Align::Left;
-    if (at.x > 0.75f) words.align = UIText::Align::Right;
-    scene().add(id, std::move(words));
-    return id;
-}
-
 void LabHud::onStart() {
-    // Defined on every end, a server too: see lab_actions.h.
-    input().define(ACTION_MAP, { InputBinding{InputSource::Key, GLFW_KEY_M, 1.0f} });
 
-    scene().forEach<ScriptComponent, Transform>([&](EntityId id, ScriptComponent&, Transform& at) {
-        if (const LabArea* area = findBehavior<LabArea>(id)) {
-            const glm::vec3 centre = resolvedWorldPosition(scene(), id, at);
-            m_areas.push_back({id, area->title, area->blurb, {centre.x, centre.z}, area->size});
-        }
+    forEachBehavior<LabArea>([&](EntityId id, const LabArea& area) {
+        const Transform* at = scene().tryGet<Transform>(id);
+        if (!at) return;
+        const glm::vec3 center = resolvedWorldPosition(scene(), id, *at);
+        m_areas.push_back({id, area.title, area.blurb, {center.x, center.z}, area.size});
     });
     std::sort(m_areas.begin(), m_areas.end(), [](const Area& a, const Area& b) {
         return a.entity.slot() < b.entity.slot();
     });
-    m_everyToken = everyToken(scene());
+    m_everyToken = 0;
+    forEachBehavior<LabToken>([&](EntityId, const LabToken& token) { m_everyToken |= token.bit(); });
 
     if (!window()) return;
 
-    m_canvas = spawn("HUD");
-    UICanvas canvas;
-    canvas.sortOrder = LAYER_HUD;
-    scene().add(m_canvas, std::move(canvas));
+    m_canvas = UI::canvas(scene(), "HUD", LAYER_HUD);
 
     const EntityId cross = spawn("Crosshair", m_canvas);
     UIElement dot = UIElement::at({0.5f, 0.5f}, {0.0f, 0.0f}, {8.0f, 8.0f});
@@ -133,14 +115,16 @@ void LabHud::onStart() {
     pip.shape.borderColor  = SHADOW;
     scene().add(cross, std::move(pip));
 
-    m_score = addText(m_canvas, {0.0f, 0.0f}, {36.0f, 28.0f}, {700.0f, 200.0f}, 26.0f);
-
-    m_banner = addText(m_canvas, {0.5f, 0.0f}, {0.0f, 70.0f}, {1200.0f, 70.0f}, 54.0f);
-    m_bannerBlurb = addText(m_canvas, {0.5f, 0.0f}, {0.0f, 140.0f}, {1100.0f, 40.0f}, 26.0f);
+    const auto line = [&](const glm::vec2& at, const glm::vec2& offset, const glm::vec2& size, float pixels) {
+        return UI::text(scene(), m_canvas, UIElement::at(at, offset, size), "", hudText(pixels));
+    };
+    m_score       = line({0.0f, 0.0f}, {36.0f, 28.0f}, {700.0f, 200.0f}, 26.0f);
+    m_banner      = line({0.5f, 0.0f}, {0.0f, 70.0f}, {1200.0f, 70.0f}, 54.0f);
+    m_bannerBlurb = line({0.5f, 0.0f}, {0.0f, 140.0f}, {1100.0f, 40.0f}, 26.0f);
+    m_hint        = line({0.5f, 1.0f}, {0.0f, -24.0f}, {1600.0f, 30.0f}, 20.0f);
     scene().get<UIText>(m_bannerBlurb).color = SOFT;
-
-    m_hint = addText(m_canvas, {0.5f, 1.0f}, {0.0f, -24.0f}, {1600.0f, 30.0f}, 20.0f);
-    scene().get<UIText>(m_hint).color = SOFT;
+    scene().get<UIText>(m_hint).color        = SOFT;
+    scene().get<UIText>(m_hint).text         = controlsHint(input(), net().isOffline());
 
     buildMap();
 }
@@ -151,6 +135,7 @@ glm::vec2 LabHud::onMap(const glm::vec2& world) const {
 
 void LabHud::buildMap() {
     m_map = spawn("Map", m_canvas);
+
     UIElement panel = UIElement::at({0.5f, 0.5f}, {0.0f, 0.0f}, MAP_SIZE);
     panel.visible       = false;
     panel.blocksPointer = false;
@@ -159,16 +144,17 @@ void LabHud::buildMap() {
     back.shape.cornerRadius = 18.0f;
     scene().add(m_map, std::move(back));
 
-    const EntityId title = addText(m_map, {0.5f, 0.0f}, {0.0f, 14.0f}, {MAP_SIZE.x, 40.0f}, 30.0f);
-    scene().get<UIText>(title).text = "THE LAB  -  " + keyFor(input(), ACTION_MAP) + " closes the map";
+    const UIElement top = UIElement::at({0.5f, 0.0f}, {0.0f, 14.0f}, {MAP_SIZE.x, 40.0f});
+    const std::string closes = "THE LAB  -  " + input().keyName(ACTION_MAP) + " closes the map";
+    UI::text(scene(), m_map, top, closes, hudText(30.0f));
     if (m_areas.empty()) return;
 
     // The areas' bounds, fitted into the panel below its title; north is up, so -Z is up.
     glm::vec2 lo{std::numeric_limits<float>::max()};
     glm::vec2 hi{std::numeric_limits<float>::lowest()};
     for (const Area& area : m_areas) {
-        lo = glm::min(lo, area.centre - area.size * 0.5f);
-        hi = glm::max(hi, area.centre + area.size * 0.5f);
+        lo = glm::min(lo, area.center - area.size * 0.5f);
+        hi = glm::max(hi, area.center + area.size * 0.5f);
     }
     const glm::vec2 room   = MAP_SIZE - glm::vec2(2.0f * MAP_MARGIN, 2.0f * MAP_MARGIN + 30.0f);
     const glm::vec2 extent = glm::max(hi - lo, glm::vec2(1.0f));
@@ -178,20 +164,18 @@ void LabHud::buildMap() {
 
     for (const Area& area : m_areas) {
         const LabArea* source = findBehavior<LabArea>(area.entity);
-        const EntityId patch  = spawn("Area", m_map);
-        const glm::vec2 size  = area.size * m_mapScale - glm::vec2(6.0f);
-        UIElement rect = UIElement::at({0.0f, 0.0f}, onMap(area.centre) - size * 0.5f, size);
+        const EntityId patch = spawn("Area", m_map);
+        const glm::vec2 size = area.size * m_mapScale - glm::vec2(6.0f);
+        UIElement rect = UIElement::at({0.0f, 0.0f}, onMap(area.center) - size * 0.5f, size);
         rect.blocksPointer = false;
         scene().add(patch, std::move(rect));
         UIImage fill{source ? source->color : SOFT, {}, {}};
         fill.shape.cornerRadius = 10.0f;
         scene().add(patch, std::move(fill));
 
-        const EntityId name = addText(patch, {0.5f, 0.5f}, {0.0f, 0.0f}, size, 22.0f);
-        UIText& text = scene().get<UIText>(name);
-        text.text   = area.title;
-        text.valign = UIText::VAlign::Middle;
-        text.wrap   = true;
+        const UIElement middle = UIElement::at({0.5f, 0.5f}, {0.0f, 0.0f}, size);
+        const EntityId  name   = UI::text(scene(), patch, middle, area.title, hudText(22.0f));
+        scene().get<UIText>(name).wrap = true;
     }
 
     for (const EntityId character : authoredCharacters(scene())) {
@@ -213,10 +197,11 @@ void LabHud::updateMap() {
     for (const Pin& pin : m_pins) {
         UIElement* dot = scene().tryGet<UIElement>(pin.dot);
         const Transform* body = scene().tryGet<Transform>(pin.character);
-        if (!dot || !body) continue;
-        // Offline only the seat is played. Online a client is not told which seats are taken, so
-        // every character shows, a free seat where it was authored.
-        dot->visible  = !net().isOffline() || pin.character == you;
+        if (!dot) continue;
+        // Offline only the seat is played, and the others leave the world. Online a client is not told
+        // which seats are taken, so every character shows, a free seat where it was authored.
+        dot->visible = body && (!net().isOffline() || pin.character == you);
+        if (!body) continue;
         dot->position = onMap({body->position.x, body->position.z}) - glm::vec2(DOT * 0.5f);
         if (UIImage* disc = scene().tryGet<UIImage>(pin.dot)) {
             disc->color = pin.character == you ? YOU : OTHERS;
@@ -233,7 +218,7 @@ void LabHud::showBanner(const std::string& title, const std::string& blurb) {
 void LabHud::nameArea(const glm::vec2& feet) {
     int inside = -1;
     for (size_t i = 0; i < m_areas.size(); ++i) {
-        const glm::vec2 offset = glm::abs(feet - m_areas[i].centre);
+        const glm::vec2 offset = glm::abs(feet - m_areas[i].center);
         if (offset.x <= m_areas[i].size.x * 0.5f && offset.y <= m_areas[i].size.y * 0.5f) {
             inside = static_cast<int>(i);
             break;
@@ -264,11 +249,7 @@ void LabHud::onUpdate(float dt) {
     if (!m_canvas) return;
     const EntityId you = localCharacter(scene(), net());
 
-    // Here, not at onStart: by the first update every behavior has started and defined its action.
-    UIText& hint = scene().get<UIText>(m_hint);
-    if (hint.text.empty()) hint.text = controlsHint(input(), net().isOffline());
-
-    if (input().pressed(ACTION_MAP)) {
+    if (pressed(ACTION_MAP)) {
         if (UIElement* map = scene().tryGet<UIElement>(m_map)) map->visible = !map->visible;
     }
     const UIElement* map = scene().tryGet<UIElement>(m_map);
@@ -280,7 +261,8 @@ void LabHud::onUpdate(float dt) {
     }
     if (score) cheerTokens(score->tokens);
 
-    m_bannerLeft = std::max(0.0f, m_bannerLeft - dt);
+    // Seen, not just shown: the banner for where the player starts would fade under the cover.
+    if (!isCovered()) m_bannerLeft = std::max(0.0f, m_bannerLeft - dt);
     const float shown = std::min(1.0f, m_bannerLeft / BANNER_FADE);
     scene().get<UIElement>(m_banner).opacity      = shown;
     scene().get<UIElement>(m_bannerBlurb).opacity = shown;
@@ -294,7 +276,8 @@ void LabHud::onUpdate(float dt) {
 }
 
 void LabHud::onRealtimeUpdate(float) {
-    if (UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas)) canvas->visible = !clock().isPaused();
+    const bool frozen = clock().isPaused() || clock().isMenuShown();
+    if (UICanvas* canvas = scene().tryGet<UICanvas>(m_canvas)) canvas->visible = !frozen;
 }
 
 } // namespace Lab

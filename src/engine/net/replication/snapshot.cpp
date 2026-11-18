@@ -4,9 +4,9 @@
 
 #include <algorithm>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "net/replication/names.h"
@@ -17,33 +17,24 @@ namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief How far behind the newest snapshot an acknowledgement can still arrive.
- *
- * Past this the snapshot is given up on and what it said is resent.
- */
-constexpr uint16_t ACK_WINDOW = 64;
+constexpr uint16_t ACK_WINDOW = 64;  ///< How far behind the newest snapshot an acknowledgement can still
+                                     ///< arrive. Past this the snapshot is given up on and what it said is
+                                     ///< resent.
 
-/**
- * @brief Slots reported gone in one snapshot.
- *
- * The rest go in the next snapshot; they are gathered until confirmed.
- */
-constexpr uint32_t MAX_LOST_PER_SNAPSHOT = 64;
+constexpr uint32_t MAX_LOST_PER_SNAPSHOT = 64;  ///< Slots reported gone in one snapshot. The rest go in the
+                                                ///< next snapshot; they are gathered until confirmed.
 
-/**
- * @brief A gap this small is written in seven bits; larger ones pay a full slot index.
- */
-constexpr uint32_t SMALL_GAP = 128;
+constexpr uint32_t SMALL_GAP = 128;  ///< A gap this small is written in seven bits; larger ones pay a full
+                                     ///< slot index.
 constexpr uint32_t LARGE_GAP_BITS = 24;
 
-void writeGap(BitWriter& out, uint32_t gap) {
+void writeGap(Network::BitWriter& out, uint32_t gap) {
     const bool small = gap < SMALL_GAP;
     out.boolean(small);
     out.bits(gap, small ? 7 : LARGE_GAP_BITS);
 }
 
-uint32_t readGap(BitReader& in) {
+uint32_t readGap(Network::BitReader& in) {
     const bool small = in.boolean();
     return in.bits(small ? 7 : LARGE_GAP_BITS);
 }
@@ -57,21 +48,23 @@ uint32_t gapBits(uint32_t gap) {
  * @brief One entity that differs from what the receiver confirmed, ready to write.
  */
 struct Candidate {
-    /// One encoded component, parallel to a set bit of the mask below.
+    /**
+     * @brief One encoded component, parallel to a set bit of the mask below.
+     */
     struct Encoded {
         std::vector<uint8_t> bytes;
-        uint32_t             bits = 0;   ///< Not bytes * 8; the tail is padding.
+        uint32_t             bits = 0;  ///< Not bytes * 8; the tail is padding.
         uint32_t             type = 0;
     };
 
     EntityId             entity;       ///< Which occupant of the slot this is.
-    uint32_t             slot  = 0;
-    uint32_t             mask  = 0;
+    uint32_t             slot    = 0;
+    uint32_t             mask    = 0;
     uint32_t             removed = 0;  ///< The types the receiver holds and the entity no longer does.
     std::vector<Encoded> components;
-    uint32_t             bits  = 0;
-    uint32_t             age   = 0;    ///< Snapshots since last confirmed.
-    bool                 owner = false;
+    uint32_t             bits    = 0;
+    uint32_t             age     = 0;  ///< Snapshots since last confirmed.
+    bool                 owner   = false;
 };
 
 static_assert(
@@ -83,17 +76,16 @@ static_assert(
  * @brief Encode everything about one entity that differs from what was confirmed.
  *
  * Encoded per connection though the bytes are the same for every peer; see
- * engine.md, "Encoding a snapshot once per peer".
+ * decisions.md, "Encoding a snapshot once per peer".
  *
  * @param scene     The authoritative world.
  * @param schema    What replicates.
- * @param sequence  The snapshot being written, to age what was confirmed against.
  * @param entity    The entity to encode.
  * @param owner     Whether it is the receiver's own, which is resent unchanged.
  * @param silenced  Whether its state stays off the wire; only its NetSpawn is
  *                  then considered.
  * @param spawnType NetSpawn's index in @p schema, or -1 when it has none.
- * @param baseline  What this receiver has confirmed.
+ * @param baseline  What this receiver has confirmed, and how long ago.
  * @param scratch   Reused encode buffer, so an unchanged component costs no
  *                  allocation.
  * @param out       Filled with what differs.
@@ -102,7 +94,6 @@ static_assert(
 bool buildCandidate(
     const Scene& scene,
     const NetSchema& schema,
-    uint16_t sequence,
     EntityId entity,
     bool owner,
     bool silenced,
@@ -130,7 +121,7 @@ bool buildCandidate(
             continue;
         }
 
-        BitWriter writer(scratch, MAX_COMPONENT_BYTES);
+        Network::BitWriter writer(scratch, MAX_COMPONENT_BYTES);
         row.encode(scene, entity, writer);
         writer.finish();
         if (writer.overflowed()) {
@@ -150,7 +141,8 @@ bool buildCandidate(
         const bool resent = owner && !isSpawn;
         if (!resent && confirmed && confirmed->bytes == scratch) continue;
 
-        const uint32_t age = confirmed ? static_cast<uint16_t>(sequence - confirmed->sequence) : UINT16_MAX;
+        const uint64_t since = confirmed ? baseline.nextOrder() - confirmed->order : UINT16_MAX;
+        const uint32_t age   = static_cast<uint32_t>(std::min<uint64_t>(since, UINT16_MAX));
         oldest = std::max(oldest, age);
 
         out.mask |= 1u << type;
@@ -159,7 +151,7 @@ bool buildCandidate(
     }
 
     if (out.mask == 0 && out.removed == 0) return false;
-    out.age   = oldest;
+    out.age = oldest;
     // The mask, the bit that says whether removals follow, and their mask.
     out.bits += typeCount + 1 + (out.removed != 0 ? typeCount : 0);
     return true;
@@ -168,8 +160,9 @@ bool buildCandidate(
 /**
  * @brief What one call of writeSnapshot works in, kept between calls.
  *
- * Cleared, not rebuilt, so the lists keep their capacity across peers and
- * rounds; what outlives the call is copied into the pending record.
+ * Cleared, not rebuilt, so these lists keep their capacity across peers and
+ * rounds, though each Candidate's own lists are made afresh; what outlives the
+ * call is copied into the pending record.
  */
 struct SnapshotScratch {
     std::vector<EntityId>   lost;
@@ -186,7 +179,8 @@ thread_local SnapshotScratch t_scratch;
  *
  * The write decides who really fits, since an id's gap is unknown until the
  * order is; here each costs its smallest, so the packet is not left part
- * empty. The owner is taken whatever is left.
+ * empty. The owner is taken whatever is left, unless it would not fit a snapshot even first: then
+ * it cannot go at all, and taking it would leave the whole snapshot unsent.
  *
  * @param candidates Every entity that differs, in priority order.
  * @param budgetBits The ceiling for the body.
@@ -203,6 +197,12 @@ void chooseWithinBudget(
 ) {
     for (Candidate& candidate : candidates) {
         const uint32_t cost = candidate.bits + gapBits(1) + 1;
+        // Its gap is from the entry before it, so never wider than its own slot.
+        if (candidate.owner && usedBits + candidate.bits + gapBits(candidate.slot) + 1 > budgetBits) {
+            ++stats.entitiesDeferred;
+            stats.ownerTooLarge = true;
+            continue;
+        }
         if (usedBits + cost > budgetBits && !candidate.owner) {
             ++stats.entitiesDeferred;
             continue;
@@ -230,7 +230,7 @@ void writeChosen(
     uint32_t typeCount,
     uint32_t budgetBits,
     uint32_t writtenBits,
-    BitWriter& writer,
+    Network::BitWriter& writer,
     NetBaseline::Pending& pending,
     NetSnapshotStats& stats
 ) {
@@ -283,6 +283,7 @@ const NetBaseline::Confirmed* NetBaseline::find(EntityId entity, uint32_t type) 
 }
 
 void NetBaseline::hold(Pending && pending) {
+    pending.order = ++m_held;
     m_pending.push_back(std::move(pending));
 }
 
@@ -294,30 +295,42 @@ void NetBaseline::confirm(uint16_t sequence) {
     );
     if (found == m_pending.end()) return;
 
+    // Acknowledgements arrive newest first: what an older one says of a slot that has since
+    // been emptied or taken is moot.
+    const auto isNewer = [&found](uint64_t said) { return said > found->order; };
+
     for (Pending::Change& change : found->changes) {
+        const auto vacated = m_vacated.find(change.slot);
+        if (vacated != m_vacated.end() && isNewer(vacated->second)) continue;
+
         EntityRecord& record = m_entities[change.slot];
 
-        // The occupant changed since: nothing confirmed is true of the new one.
-        if (record.entity != change.entity) record = EntityRecord{change.entity, {}};
+        // Another occupant: nothing confirmed of one is true of the other.
+        if (record.entity != change.entity) {
+            if (record.entity && isNewer(record.seated)) continue;
+            record = EntityRecord{change.entity, found->order, {}};
+        }
         if (record.components.size() <= change.type) record.components.resize(change.type + 1);
 
         Confirmed& confirmed = record.components[change.type];
 
-        // A bounded distance, not plain newer-than: a component idle past half
-        // the sequence space would invert it and be resent forever. A removal is
-        // a change like any: a late older one must not bring the component back.
-        const uint16_t heldIsNewerBy = static_cast<uint16_t>(confirmed.sequence - found->sequence);
-        if (confirmed.folded && heldIsNewerBy != 0 && heldIsNewerBy <= ACK_WINDOW) continue;
+        // By the baseline's own count, which never wraps: a component idle for a whole turn of the
+        // sequence is still older. A removal is a change like any: a late older one must not bring
+        // the component back.
+        if (confirmed.folded && isNewer(confirmed.order)) continue;
 
         confirmed.bytes    = std::move(change.bytes);
-        confirmed.sequence = found->sequence;
+        confirmed.order    = found->order;
         confirmed.held     = !change.removed;
         confirmed.folded   = true;
     }
     // Only the reported occupant: whatever took the slot since may be confirmed.
     for (EntityId gone : found->forgotten) {
         const auto record = m_entities.find(gone.slot());
-        if (record != m_entities.end() && record->second.entity == gone) m_entities.erase(record);
+        if (record != m_entities.end() && record->second.entity == gone) {
+            m_entities.erase(record);
+            m_vacated[gone.slot()] = found->order;
+        }
     }
 
     m_pending.erase(found);
@@ -330,6 +343,13 @@ void NetBaseline::expire(uint16_t sequence) {
         [sequence](const Pending& p) { return static_cast<uint16_t>(sequence - p.sequence) > ACK_WINDOW; }
     );
     m_pending.erase(expired, m_pending.end());
+
+    // Kept while a snapshot older than the emptying can still be confirmed.
+    uint64_t oldest = UINT64_MAX;
+    for (const Pending& p : m_pending) oldest = std::min(oldest, p.order);
+    for (auto it = m_vacated.begin(); it != m_vacated.end();) {
+        it = it->second < oldest ? m_vacated.erase(it) : std::next(it);
+    }
 }
 
 void NetBaseline::gatherLost(const Scene& scene, std::vector<EntityId>& out) const {
@@ -348,7 +368,7 @@ NetSnapshotStats writeSnapshot(
     uint16_t sequence,
     const NetBudget& budget,
     NetBaseline& baseline,
-    BitWriter& out
+    Network::BitWriter& out
 ) {
     PROFILE_SCOPE("writeSnapshot");
     NetSnapshotStats stats;
@@ -357,11 +377,11 @@ NetSnapshotStats writeSnapshot(
 
     baseline.expire(sequence);
 
-    SnapshotScratch&         scratch    = t_scratch;
-    std::vector<EntityId>&   lost       = scratch.lost;
-    std::vector<uint32_t>&   unreported = scratch.unreported;
-    std::vector<Candidate>&  candidates = scratch.candidates;
-    std::vector<Candidate*>& chosen     = scratch.chosen;
+    SnapshotScratch& scratch = t_scratch;
+    std::vector<EntityId>& lost = scratch.lost;
+    std::vector<uint32_t>& unreported = scratch.unreported;
+    std::vector<Candidate>& candidates = scratch.candidates;
+    std::vector<Candidate*>& chosen = scratch.chosen;
     unreported.clear();
     candidates.clear();
     chosen.clear();
@@ -375,7 +395,7 @@ NetSnapshotStats writeSnapshot(
     stats.entitiesLost = static_cast<uint32_t>(lost.size());
 
     const uint32_t ownerSlot = budget.owner ? budget.owner.slot() : UINT32_MAX;
-    const int      spawnType = schema.indexOf(NET_SPAWN_TYPE);
+    const int spawnType = schema.indexOf(NET_SPAWN_TYPE);
 
     scene.forEachEntity([&](EntityId entity) {
         ++stats.entitiesConsidered;
@@ -394,7 +414,6 @@ NetSnapshotStats writeSnapshot(
         if (buildCandidate(
             scene,
             schema,
-            sequence,
             entity,
             entity.slot() == ownerSlot,
             silenced,
@@ -443,7 +462,7 @@ NetSnapshotStats writeSnapshot(
     }
 
     NetBaseline::Pending pending;
-    pending.sequence  = sequence;
+    pending.sequence = sequence;
     pending.forgotten.assign(lost.begin(), lost.end());
 
     writeChosen(chosen, typeCount, budgetBits, written, out, pending, stats);
@@ -459,7 +478,7 @@ NetSnapshotStats writeSnapshot(
 bool readSnapshot(
     Scene& scene,
     const NetSchema& schema,
-    BitReader& reader,
+    Network::BitReader& reader,
     NetNames& names,
     std::vector<EntityId>* touched,
     std::vector<EntityId>* lost

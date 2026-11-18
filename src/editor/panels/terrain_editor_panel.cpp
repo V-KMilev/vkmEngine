@@ -12,14 +12,14 @@
 
 #include <imgui.h>
 
-#include "command/editor_commands.h"
-#include "core/reflect.h"
+#include "undo/asset_commands.h"
+#include "base/reflect/enum_names.h"
 #include "core/system.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/render/terrain.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/landscape/terrain.h"
 #include "ecs/scene.h"
-#include "editor_actions.h"
+#include "actions/create_entity.h"
 #include "editor_context.h"
 #include "editor_state.h"
 #include "input/editor_keybinds.h"
@@ -29,16 +29,41 @@
 #include "resource/resource_manager.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/terrain/terrain_brush.h"
-#include "ui/asset_combo.h"
-#include "ui/editor_icons.h"
-#include "ui/editor_style.h"
+#include "ui/asset/asset_combo.h"
+#include "ui/style/editor_icons.h"
+#include "ui/style/editor_style.h"
 #include "ui/editor_widgets.h"
+#include "ui/asset/asset_labels.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/// The tools in the order their tiles stand, each with its glyph.
+/**
+ * @brief A plant layer's settings without its painted density, a grid too big to copy every frame.
+ *
+ * Naming every member makes one added to TerrainFoliage fail to compile here until it is copied too.
+ *
+ * @param layer The plant layer copied.
+ * @return Its settings, the density empty.
+ */
+TerrainFoliage settingsOf(const TerrainFoliage& layer) {
+    const auto& [parts, density, perSquareMeter, minScale, maxScale, maxDistance, seed, castShadows] = layer;
+    static_cast<void>(density);
+    TerrainFoliage plant;
+    plant.parts          = parts;
+    plant.perSquareMeter = perSquareMeter;
+    plant.minScale       = minScale;
+    plant.maxScale       = maxScale;
+    plant.maxDistance    = maxDistance;
+    plant.seed           = seed;
+    plant.castShadows    = castShadows;
+    return plant;
+}
+
+/**
+ * @brief The tools in the order their tiles stand, each with its glyph.
+ */
 struct ToolTile {
     TerrainTool tool;
     EditorIcon  icon;
@@ -52,8 +77,7 @@ constexpr ToolTile TOOLS[] = {
     {TerrainTool::Plants,  EditorIcon::Plants},
 };
 
-/// Samples across the brush's profile.
-constexpr int PROFILE_SAMPLES = 48;
+constexpr int PROFILE_SAMPLES = 48;  ///< Samples across the brush's profile.
 
 /// An entity's name, or what it is when it has none.
 std::string entityName(const Scene& scene, EntityId id) {
@@ -62,36 +86,13 @@ std::string entityName(const Scene& scene, EntityId id) {
 }
 
 /**
- * @brief An asset's name cut to a tile's caption: its file's stem and what it is of that file, or
- *        with no file in the name, what follows its prefix.
- *
- * "material:default" reads "default", "a/rocks.gltf:mesh0" "rocks mesh0".
- *
- * @param name The asset's name.
- * @return The caption.
- */
-std::string shortName(const std::string& name) {
-    const size_t slash = name.find_last_of('/');
-    std::string  tail  = slash == std::string::npos ? name : name.substr(slash + 1);
-    std::string  part;
-    if (const size_t colon = tail.find(':'); colon != std::string::npos) {
-        part = tail.substr(colon + 1);
-        tail = tail.substr(0, colon);
-    }
-    if (const size_t dot = tail.find_last_of('.'); dot != std::string::npos && dot > 0) tail.resize(dot);
-    if (slash == std::string::npos && !part.empty()) return part;
-    std::replace(part.begin(), part.end(), ':', ' ');
-    return part.empty() ? tail : tail + " " + part;
-}
-
-/**
  * @brief What a tile's face shows.
  */
 struct Tile {
-    GpuTextureId picture = 0;     ///< 0 shows the glyph instead.
-    ImVec4       tint{1.0f, 1.0f, 1.0f, 1.0f};  ///< The picture's tint, or the glyph's colour.
-    EditorIcon   glyph = EditorIcon::Material;
-    int          badge = 0;       ///< A number in its corner, the layer's; 0 for none.
+    GpuTextureId picture = 0;                   ///< 0 shows the glyph instead.
+    ImVec4       tint{1.0f, 1.0f, 1.0f, 1.0f};  ///< The picture's tint, or the glyph's color.
+    EditorIcon   glyph   = EditorIcon::Material;
+    int          badge   = 0;                   ///< A number in its corner, the layer's; 0 for none.
 };
 
 /**
@@ -126,9 +127,9 @@ bool pictureTile(
         dl->AddImageRounded(imTexture(tile.picture), min, max, ImVec2(0, 1), ImVec2(1, 0), shade, round);
     } else {
         dl->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_FrameBg), round);
-        const ImVec4 glyphColour(tile.tint.x, tile.tint.y, tile.tint.z, 0.8f);
-        const ImVec2 centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
-        drawEditorIcon(dl, tile.glyph, centre, face * 0.22f, ImGui::GetColorU32(glyphColour));
+        const ImVec4 glyphColor(tile.tint.x, tile.tint.y, tile.tint.z, 0.8f);
+        const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        drawEditorIcon(dl, tile.glyph, center, face * 0.22f, ImGui::GetColorU32(glyphColor));
     }
     if (tile.badge > 0) {
         char number[16];
@@ -136,14 +137,14 @@ bool pictureTile(
         const ImVec2 text = ImGui::CalcTextSize(number);
         const float  pad  = EditorStyle::px(3.0f);
         const ImVec2 corner(min.x + pad + text.x + 2.0f * pad, min.y + pad + text.y);
-        const ImU32  back = ImGui::GetColorU32(EditorStyle::OVERLAY_BG);
+        const ImU32 back = ImGui::GetColorU32(EditorStyle::OVERLAY_BG);
         dl->AddRectFilled(ImVec2(min.x + pad, min.y + pad), corner, back, pad);
         dl->AddText(ImVec2(min.x + 2.0f * pad, min.y + pad), ImGui::GetColorU32(ImGuiCol_Text), number);
     }
-    const bool  hovered = ImGui::IsItemHovered();
+    const bool hovered = ImGui::IsItemHovered();
     if (hovered && !tooltip.empty()) ImGui::SetTooltip("%s", tooltip.c_str());
     const float edge    = EditorStyle::px(on ? 2.5f : 1.0f);
-    const ImU32 border  = on ? ImGui::GetColorU32(EditorStyle::Accent::TERRAIN)
+    const ImU32 border  = on ? ImGui::GetColorU32(EditorStyle::ACCENT)
         : ImGui::GetColorU32(hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Border);
     dl->AddRect(min, max, border, round, 0, edge);
     clippedLine(caption, face, !on);
@@ -162,7 +163,7 @@ GpuTextureId albedoPicture(
     return material && material->albedoTexture ? hooks.textureId(material->albedoTexture) : 0;
 }
 
-/// A material's albedo colour, its tile's tint.
+/// A material's albedo color, its tile's tint.
 ImVec4 albedoTint(const ResourceManager& resources, MaterialHandle handle) {
     const MaterialAsset* material = resources.tryGet(handle);
     if (!material) return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
@@ -179,22 +180,10 @@ float tileEdge(float least, int& columns) {
 
 } // namespace
 
-void followTerrainSelection(EditorState& state, const Scene& scene) {
-    // On a change of selection only, so a terrain chosen in the window holds until the next.
-    TerrainToolSettings& brush    = state.terrainTool;
-    const EntityId       selected = state.selectedEntity;
-    if (selected != brush.followed) {
-        brush.followed = selected;
-        if (selected && scene.isAlive(selected) && scene.has<Terrain>(selected)) brush.target = selected;
-    }
-    const EntityId target = brush.target;
-    if (target && (!scene.isAlive(target) || !scene.has<Terrain>(target))) state.terrainTool.target = {};
-}
-
 void TerrainEditorPanel::draw(EditorContext& ec) {
-    Scene&           scene     = ec.frame.scene;
+    Scene& scene = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
-    EditorState&     state     = ec.state;
+    EditorState& state = ec.state;
 
     // With none chosen, the scene's first terrain: the window is never empty while there is one.
     if (!terrainToolTarget(ec)) {
@@ -209,8 +198,8 @@ void TerrainEditorPanel::draw(EditorContext& ec) {
         drawEmptyState(ec);
         return;
     }
-    Terrain&            component = scene.get<Terrain>(target);
-    const TerrainAsset* terrain   = resources.tryGet(component.terrain);
+    Terrain& component = scene.get<Terrain>(target);
+    const TerrainAsset* terrain = resources.tryGet(component.terrain);
     if (!terrain) {
         drawTargetRow(ec, nullptr);
         ImGui::TextColored(EditorStyle::DANGER, "This entity's Terrain names no terrain asset.");
@@ -233,19 +222,10 @@ void TerrainEditorPanel::draw(EditorContext& ec) {
     ImGui::Spacing();
     drawGrid(*terrain, edits);
     if (!edits.empty()) {
-        TerrainAsset after(*terrain);
-        for (const auto& edit : edits) edit(after);
-        // Swapped in, the copy holds what was there: the step's before.
-        TerrainAsset installed(after);
-        resources.swapValue(component.terrain, installed);
-        auto edit = std::make_unique<TerrainEditCommand>(
-            resources,
-            component.terrain,
-            std::move(installed),
-            std::move(after),
-            "Edit Terrain"
-        );
-        state.pushStep(std::move(edit));
+        const auto all = [&](TerrainAsset& live) {
+            for (const auto& edit : edits) edit(live);
+        };
+        TerrainEditCommand::apply(resources, state, component.terrain, all, "Edit Terrain");
     }
 }
 
@@ -258,7 +238,7 @@ void TerrainEditorPanel::drawEmptyState(EditorContext& ec) {
     );
     const char* label = "Create Terrain";
     const float width = ImGui::CalcTextSize(label).x + 2.0f * ImGui::GetStyle().FramePadding.x;
-    centreNextItem(width);
+    centerNextItem(width);
     if (ImGui::Button(label)) {
         const EntityId made = EditorActions::createEntity(
             ec.frame.scene,
@@ -271,8 +251,8 @@ void TerrainEditorPanel::drawEmptyState(EditorContext& ec) {
 }
 
 void TerrainEditorPanel::drawTargetRow(EditorContext& ec, const TerrainAsset* terrain) {
-    Scene&         scene  = ec.frame.scene;
-    EditorState&   state  = ec.state;
+    Scene& scene = ec.frame.scene;
+    EditorState& state = ec.state;
     const EntityId target = state.terrainTool.target;
 
     // Which terrain, from the scene's; Select puts it in the Inspector and the hierarchy.
@@ -287,7 +267,7 @@ void TerrainEditorPanel::drawTargetRow(EditorContext& ec, const TerrainAsset* te
         EditorIcon::Terrain,
         ImVec2(at.x + icon * 0.5f, at.y + icon * 0.5f),
         icon * 0.36f,
-        ImGui::GetColorU32(EditorStyle::Accent::TERRAIN)
+        ImGui::GetColorU32(ImGuiCol_Text)
     );
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button - gap);
@@ -317,39 +297,37 @@ void TerrainEditorPanel::drawTools(EditorContext& ec) {
     sectionLabel("Tools");
 
     // Six a row when they fit, else three: never a row of four and two.
-    const float gap     = ImGui::GetStyle().ItemSpacing.x;
-    const float avail   = ImGui::GetContentRegionAvail().x;
-    const int   columns = avail >= 6.0f * EditorStyle::px(56.0f) + 5.0f * gap ? 6 : 3;
-    const float gaps    = gap * static_cast<float>(columns - 1);
-    const float width   = std::floor((avail - gaps) / static_cast<float>(columns));
-    const float height  = EditorStyle::px(54.0f);
-    ImDrawList* dl      = ImGui::GetWindowDrawList();
+    const float gap    = ImGui::GetStyle().ItemSpacing.x;
+    const float avail  = ImGui::GetContentRegionAvail().x;
+    const int columns  = avail >= 6.0f * EditorStyle::px(56.0f) + 5.0f * gap ? 6 : 3;
+    const float gaps   = gap * static_cast<float>(columns - 1);
+    const float width  = std::floor((avail - gaps) / static_cast<float>(columns));
+    const float height = EditorStyle::px(54.0f);
+    ImDrawList* dl     = ImGui::GetWindowDrawList();
     for (size_t t = 0; t < std::size(TOOLS); ++t) {
         const ToolTile& tile = TOOLS[t];
-        const bool      on   = brush.tool == tile.tool;
+        const bool on = brush.tool == tile.tool;
         if (t % static_cast<size_t>(columns) != 0) ImGui::SameLine();
         ImGui::PushID(static_cast<int>(t));
         const ImVec2 min = ImGui::GetCursorScreenPos();
         if (ImGui::InvisibleButton("##tool", ImVec2(width, height))) {
             brush.tool = on ? TerrainTool::None : tile.tool;
         }
-        const bool   hovered = ImGui::IsItemHovered();
+        const bool hovered = ImGui::IsItemHovered();
         const ImVec2 max(min.x + width, min.y + height);
         const float  round = EditorStyle::px(5.0f);
-        ImVec4       fill  = EditorStyle::Accent::TERRAIN;
-        fill.w             = 0.32f;
-        const ImU32  back  = on ? ImGui::GetColorU32(fill)
+        const ImU32  back  = on ? ImGui::GetColorU32(ImGuiCol_Header)
             : ImGui::GetColorU32(hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
         dl->AddRectFilled(min, max, back, round);
-        const ImU32  accent = ImGui::GetColorU32(EditorStyle::Accent::TERRAIN);
+        const ImU32 accent = ImGui::GetColorU32(EditorStyle::ACCENT);
         if (on) dl->AddRect(min, max, accent, round, 0, EditorStyle::px(1.5f));
         const char*  label = Reflect::enumName(tile.tool);
         const ImVec2 text  = ImGui::CalcTextSize(label);
         const float  glyph = EditorStyle::px(9.0f);
-        const ImVec2 centre((min.x + max.x) * 0.5f, min.y + height * 0.38f);
-        const ImU32  ink   = ImGui::GetColorU32(on ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-        drawEditorIcon(dl, tile.icon, centre, glyph, on ? accent : ink);
-        dl->AddText(ImVec2(centre.x - text.x * 0.5f, max.y - text.y - EditorStyle::px(5.0f)), ink, label);
+        const ImVec2 center((min.x + max.x) * 0.5f, min.y + height * 0.38f);
+        const ImU32 ink = ImGui::GetColorU32(on ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+        drawEditorIcon(dl, tile.icon, center, glyph, on ? accent : ink);
+        dl->AddText(ImVec2(center.x - text.x * 0.5f, max.y - text.y - EditorStyle::px(5.0f)), ink, label);
         if (hovered) ImGui::SetTooltip("%s", terrainToolHint(tile.tool));
         ImGui::PopID();
     }
@@ -393,10 +371,10 @@ void TerrainEditorPanel::drawBrush(EditorContext& ec) {
     for (int k = 0; k <= PROFILE_SAMPLES; ++k) {
         const float across = 2.0f * static_cast<float>(k) / PROFILE_SAMPLES - 1.0f;
         const float lift   = TerrainBrush::falloff(dab, std::abs(across));
-        const float x = min.x + pad + (width - 2.0f * pad) * static_cast<float>(k) / PROFILE_SAMPLES;
+        const float x      = min.x + pad + (width - 2.0f * pad) * static_cast<float>(k) / PROFILE_SAMPLES;
         points[k] = ImVec2(x, max.y - pad - (height - 2.0f * pad) * lift);
     }
-    const ImU32 line = ImGui::GetColorU32(EditorStyle::Accent::TERRAIN);
+    const ImU32 line = ImGui::GetColorU32(EditorStyle::ACCENT);
     dl->AddPolyline(points, PROFILE_SAMPLES + 1, line, 0, EditorStyle::px(1.5f));
 
     if (brush.tool == TerrainTool::Flatten) {
@@ -420,20 +398,20 @@ void TerrainEditorPanel::drawLayers(EditorContext& ec, const TerrainAsset& terra
     sectionLabel("Paint Layers");
 
     // A click on a layer picks it and the Paint tool.
-    int         columns = 0;
-    const float face    = std::min(tileEdge(EditorStyle::px(64.0f), columns), EditorStyle::px(96.0f));
-    const int   perRow  = std::max(1, std::min<int>(columns, static_cast<int>(terrain.layers.size())));
+    int columns = 0;
+    const float face = std::min(tileEdge(EditorStyle::px(64.0f), columns), EditorStyle::px(96.0f));
+    const int perRow = std::max(1, std::min<int>(columns, static_cast<int>(terrain.layers.size())));
     for (size_t l = 0; l < terrain.layers.size(); ++l) {
         if (l % static_cast<size_t>(perRow) != 0) ImGui::SameLine();
         const MaterialHandle layer = terrain.layers[l];
         const MaterialAsset* asset = resources.tryGet(layer);
         char id[32];
         std::snprintf(id, sizeof(id), "layer%zu", l);
-        const std::string  caption = asset ? shortName(asset->name()) : std::string("(empty)");
-        const bool         on      = brush.tool == TerrainTool::Paint && brush.layer == l;
+        const std::string caption = asset ? assetShortName(asset->name()) : std::string("(empty)");
+        const bool on = brush.tool == TerrainTool::Paint && brush.layer == l;
         const GpuTextureId picture = albedoPicture(resources, ec.hooks, layer);
-        const std::string  named   = asset ? asset->name() : std::string("No material");
-        const std::string  tip     = named + "\nClick to paint it";
+        const std::string named = asset ? asset->name() : std::string("No material");
+        const std::string tip   = named + "\nClick to paint it";
         const Tile tile{picture, albedoTint(resources, layer), EditorIcon::Material, static_cast<int>(l + 1)};
         if (pictureTile(id, tile, caption.c_str(), on, face, tip)) {
             brush.layer = static_cast<uint32_t>(l);
@@ -442,15 +420,18 @@ void TerrainEditorPanel::drawLayers(EditorContext& ec, const TerrainAsset& terra
     }
 
     // The picked layer's settings, whichever tool is up.
-    const size_t      picked   = std::min<size_t>(brush.layer, terrain.layers.size() - 1);
-    MaterialHandle    material = terrain.layers[picked];
-    float             tiling   = terrain.layerTiling[picked];
-    const std::string label    = "Layer " + std::to_string(picked + 1);
+    const size_t picked = std::min<size_t>(brush.layer, terrain.layers.size() - 1);
+    MaterialHandle material = terrain.layers[picked];
+    float tiling = terrain.layerTiling[picked];
+    const std::string label = "Layer " + std::to_string(picked + 1);
     ImGui::PushID("layer");
-    if (pickAsset<MaterialAsset>("##LayerPick", label.c_str(), resources, material)) {
-        edits.emplace_back([picked, material](TerrainAsset& a) { a.layers[picked] = material; });
+    if (pickAsset<MaterialAsset>("##LayerPick", label.c_str(), resources, ec.state, material)) {
+        edits.emplace_back([picked, material](TerrainAsset& a) {
+            a.layers[picked] = material;
+            a.unresolvedLayers[picked].clear();  // the slot is set: what it named is replaced
+        });
     }
-    const char* tileTooltip = "Metres one repeat of its maps spans";
+    const char* tileTooltip = "Meters one repeat of its maps spans";
     if (propDrag("Tile Size", &tiling, 0.05f, 0.1f, 1000.0f, "%.2f m", tileTooltip)) {
         edits.emplace_back([picked, tiling](TerrainAsset& a) { a.layerTiling[picked] = tiling; });
     }
@@ -463,10 +444,10 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     sectionLabel("Plants");
 
     // A click on a plant picks it and the Plants tool; the last tile adds one.
-    int          columns = 0;
-    const float  face    = std::min(tileEdge(EditorStyle::px(64.0f), columns), EditorStyle::px(96.0f));
-    const size_t count   = terrain.foliage.size();
-    const size_t tiles   = count + (count < TerrainAsset::MAX_FOLIAGE ? 1 : 0);
+    int columns = 0;
+    const float face = std::min(tileEdge(EditorStyle::px(64.0f), columns), EditorStyle::px(96.0f));
+    const size_t count = terrain.foliage.size();
+    const size_t tiles = count + (count < TerrainAsset::MAX_FOLIAGE ? 1 : 0);
     for (size_t f = 0; f < tiles; ++f) {
         if (f % static_cast<size_t>(columns) != 0) ImGui::SameLine();
         char id[32];
@@ -485,14 +466,14 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
             }
             continue;
         }
-        const TerrainFoliage& plant    = terrain.foliage[f];
-        const MaterialHandle  material = plant.parts.empty() ? MaterialHandle{} : plant.parts[0].material;
-        const MeshHandle      meshName = plant.parts.empty() ? MeshHandle{} : plant.parts[0].mesh;
-        const MeshAsset*      mesh     = resources.tryGet(meshName);
-        const MaterialAsset*  look     = resources.tryGet(material);
-        const std::string     caption  = mesh ? shortName(mesh->name()) : std::string("(no mesh)");
-        const bool            on       = brush.tool == TerrainTool::Plants && brush.foliage == f;
-        const std::string     tip      = (mesh ? mesh->name() : std::string("No mesh")) + "\n"
+        const TerrainFoliage& plant = terrain.foliage[f];
+        const MaterialHandle material = plant.parts.empty() ? MaterialHandle{} : plant.parts[0].material;
+        const MeshHandle meshName = plant.parts.empty() ? MeshHandle{} : plant.parts[0].mesh;
+        const MeshAsset* mesh = resources.tryGet(meshName);
+        const MaterialAsset* look = resources.tryGet(material);
+        const std::string caption = mesh ? assetShortName(mesh->name()) : std::string("(no mesh)");
+        const bool on = brush.tool == TerrainTool::Plants && brush.foliage == f;
+        const std::string tip = (mesh ? mesh->name() : std::string("No mesh")) + "\n"
             + (look ? look->name() : std::string("No material")) + "\nClick to grow it";
         const Tile tile{
             albedoPicture(resources, ec.hooks, material),
@@ -515,8 +496,8 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     // The picked plant layer's settings: a copy edited, put back whole but for its painted density.
     // Another terrain, or an undone Add, can leave the pick past the end: the last layer, then.
     const size_t picked = std::min<size_t>(brush.foliage, count - 1);
-    brush.foliage       = static_cast<uint32_t>(picked);
-    TerrainFoliage plant = terrain.foliage[picked];
+    brush.foliage = static_cast<uint32_t>(picked);
+    TerrainFoliage plant = settingsOf(terrain.foliage[picked]);
     if (plant.parts.empty()) plant.parts.emplace_back();
     bool edited = false;
     ImGui::PushID("plant");
@@ -524,10 +505,18 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     int removed = -1;
     for (size_t p = 0; p < plant.parts.size(); ++p) {
         ImGui::PushID(static_cast<int>(p));
-        const bool        several = plant.parts.size() > 1;
-        const std::string label   = several ? "Part " + std::to_string(p + 1) : std::string("Mesh");
-        edited |= pickAsset<MeshAsset>("##PartMesh", label.c_str(), resources, plant.parts[p].mesh);
-        edited |= pickAsset<MaterialAsset>("##PartMaterial", "Material", resources, plant.parts[p].material);
+        const bool several = plant.parts.size() > 1;
+        const std::string label = several ? "Part " + std::to_string(p + 1) : std::string("Mesh");
+        // A slot set replaces what its file named.
+        if (pickAsset<MeshAsset>("##PartMesh", label.c_str(), resources, ec.state, plant.parts[p].mesh)) {
+            plant.parts[p].unresolvedMesh.clear();
+            edited = true;
+        }
+        MaterialHandle& partMaterial = plant.parts[p].material;
+        if (pickAsset<MaterialAsset>("##PartMaterial", "Material", resources, ec.state, partMaterial)) {
+            plant.parts[p].unresolvedMaterial.clear();
+            edited = true;
+        }
         if (several && ImGui::SmallButton("Remove Part")) removed = static_cast<int>(p);
         ImGui::PopID();
     }
@@ -539,8 +528,8 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
         plant.parts.emplace_back();
         edited = true;
     }
-    const char* densityTooltip = "Plants a square metre where it is painted full";
-    edited |= propDrag("Per m2", &plant.perSquareMetre, 0.01f, 0.0f, 100.0f, "%.2f", densityTooltip);
+    const char* densityTooltip = "Plants a square meter where it is painted full";
+    edited |= propDrag("Per m2", &plant.perSquareMeter, 0.01f, 0.0f, 100.0f, "%.2f", densityTooltip);
     edited |= propDrag("Min Scale", &plant.minScale, 0.01f, 0.05f, plant.maxScale, "%.2f");
     edited |= propDrag("Max Scale", &plant.maxScale, 0.01f, plant.minScale, 20.0f, "%.2f");
     edited |= propDrag("Draw Distance", &plant.maxDistance, 0.5f, 1.0f, 2000.0f, "%.0f m");
@@ -551,7 +540,6 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
     ImGui::PopStyleColor();
     ImGui::PopID();
     if (edited) {
-        plant.density.clear();
         edits.emplace_back([picked, plant](TerrainAsset& a) {
             std::vector<uint8_t> density = std::move(a.foliage[picked].density);
             a.foliage[picked]         = plant;
@@ -569,7 +557,7 @@ void TerrainEditorPanel::drawPlants(EditorContext& ec, const TerrainAsset& terra
 void TerrainEditorPanel::drawGrid(const TerrainAsset& terrain, Edits& edits) {
     sectionLabel("Grid");
     float size = terrain.size;
-    const char* sizeTooltip = "Metres a side; the ground stretches with it";
+    const char* sizeTooltip = "Meters a side; the ground stretches with it";
     if (propDrag("Size", &size, 0.5f, 8.0f, 8192.0f, "%.0f m", sizeTooltip)) {
         edits.emplace_back([size](TerrainAsset& a) { a.size = size; });
     }
@@ -582,9 +570,9 @@ void TerrainEditorPanel::drawGrid(const TerrainAsset& terrain, Edits& edits) {
     }
     std::vector<const char*> labels;
     for (const std::string& n : names) labels.push_back(n.c_str());
-    const auto at   = std::find(resolutions.begin(), resolutions.end(), terrain.resolution);
-    int        pick = at == resolutions.end() ? 0 : static_cast<int>(at - resolutions.begin());
-    const int   count             = static_cast<int>(labels.size());
+    const auto at = std::find(resolutions.begin(), resolutions.end(), terrain.resolution);
+    int pick = at == resolutions.end() ? 0 : static_cast<int>(at - resolutions.begin());
+    const int count = static_cast<int>(labels.size());
     const char* resolutionTooltip = "Vertices a side; the shape, paint and plants carry over";
     if (propIndexCombo("Resolution", labels.data(), count, &pick, resolutionTooltip)) {
         const uint32_t to = resolutions[static_cast<size_t>(pick)];

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <string_view>
@@ -10,7 +11,8 @@ namespace Vkm::Engine {
  * @brief A reflected field's name as the inspector labels it: "degreesPerSecond" -> "Degrees Per Second".
  *
  * Breaks at lower/digit-to-capital, before an acronym's last capital ("maxHPValue" ->
- * "Max HP Value") and at an underscore. The serialized key stays the raw name.
+ * "Max HP Value") and at an underscore; a word the engine shortens is said in full or capitalized
+ * whole ("fovY" -> "FOV Y", "valign" -> "Vertical Align"). The serialized key stays the raw name.
  *
  * @param name The field's name, as VKM_F records it.
  * @return The words, space-separated.
@@ -31,7 +33,7 @@ inline std::string fieldLabel(std::string_view name) {
         }
         if (i > 0 && isUpper(c)) {
             const char before = name[i - 1];
-            const bool afterWord = isLower(before) || isDigit(before);
+            const bool afterWord   = isLower(before) || isDigit(before);
             const bool endsAcronym = isUpper(before) && i + 1 < name.size() && isLower(name[i + 1]);
             if (afterWord || endsAcronym) wordStart = true;
         }
@@ -39,14 +41,34 @@ inline std::string fieldLabel(std::string_view name) {
         label += wordStart ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
         wordStart = false;
     }
-    return label;
+
+    // A word as fieldLabel spells it, and as it is said.
+    constexpr std::string_view WORDS[][2] = {
+        {"Fov", "FOV"},   {"Lod", "LOD"},     {"Uv", "UV"},   {"Hdr", "HDR"},   {"Gi", "GI"},
+        {"Ui", "UI"},     {"Id", "ID"},       {"Ao", "AO"},   {"Ior", "IOR"},   {"Fps", "FPS"},
+        {"Gtao", "GTAO"}, {"Ssr", "SSR"},     {"Msaa", "MSAA"}, {"Lut", "LUT"}, {"Vsync", "VSync"},
+        {"Valign", "Vertical Align"},
+    };
+    std::string said;
+    said.reserve(label.size() + 8);
+    std::size_t start = 0;
+    while (start < label.size()) {
+        const std::size_t end = std::min(label.find(' ', start), label.size());
+        std::string_view  word(label.data() + start, end - start);
+        for (const auto& [spelled, spoken] : WORDS) {
+            if (word == spelled) word = spoken;
+        }
+        if (!said.empty()) said += ' ';
+        said += word;
+        start = end + 1;
+    }
+    return said;
 }
 
 /**
- * @brief Whether a vector field named @p name edits as a colour.
+ * @brief Whether a vector field named @p name edits as a color.
  *
- * The name is all a reflected field carries: a glm::vec3 then edits as RGB, a glm::vec4 as
- * RGBA.
+ * The name is all a reflected field carries: a glm::vec3 then edits as RGB, a glm::vec4 as RGBA.
  *
  * @param name The field's name, as VKM_F records it.
  * @return True when the name ends in "color", in any case.

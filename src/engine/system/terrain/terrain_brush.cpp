@@ -8,16 +8,9 @@ namespace Vkm::Engine::TerrainBrush {
 
 namespace {
 
-/// Local metres of grid vertex @p i along either axis.
+/// Local meters of grid vertex @p i along either axis.
 float coordinate(const TerrainAsset& terrain, int i) {
     return static_cast<float>(i) * terrain.spacing() - 0.5f * terrain.size;
-}
-
-/// Whether @p terrain's arrays hold its grid, which a dab may then write.
-bool sound(const TerrainAsset& terrain) {
-    const size_t side = terrain.resolution;
-    return TerrainAsset::validResolution(terrain.resolution) && terrain.heights.size() == side * side
-        && terrain.weights.size() == side * side * 4;
 }
 
 /**
@@ -42,7 +35,7 @@ Region eachUnder(const TerrainAsset& terrain, const Dab& dab, Fn&& fn) {
     for (int j = region.j0; j <= region.j1; ++j) {
         for (int i = region.i0; i <= region.i1; ++i) {
             const glm::vec2 at(coordinate(terrain, i), coordinate(terrain, j));
-            const float     share = dab.strength * falloff(dab, glm::distance(at, dab.centre));
+            const float share = dab.strength * falloff(dab, glm::distance(at, dab.center));
             if (share > 0.0f) fn(static_cast<size_t>(j) * terrain.resolution + i, share);
         }
     }
@@ -73,14 +66,14 @@ float falloff(const Dab& dab, float distance) {
 
 Region reach(const TerrainAsset& terrain, const Dab& dab) {
     Region region;
-    if (!sound(terrain) || dab.radius <= 0.0f) return region;
+    if (!terrain.holdsGrid() || dab.radius <= 0.0f) return region;
     const int   last   = static_cast<int>(terrain.resolution) - 1;
     const float toGrid = 1.0f / terrain.spacing();
     const float half   = 0.5f * terrain.size;
-    region.i0 = std::max(static_cast<int>(std::ceil((dab.centre.x - dab.radius + half) * toGrid)), 0);
-    region.j0 = std::max(static_cast<int>(std::ceil((dab.centre.y - dab.radius + half) * toGrid)), 0);
-    region.i1 = std::min(static_cast<int>(std::floor((dab.centre.x + dab.radius + half) * toGrid)), last);
-    region.j1 = std::min(static_cast<int>(std::floor((dab.centre.y + dab.radius + half) * toGrid)), last);
+    region.i0 = std::max(static_cast<int>(std::ceil((dab.center.x - dab.radius + half) * toGrid)), 0);
+    region.j0 = std::max(static_cast<int>(std::ceil((dab.center.y - dab.radius + half) * toGrid)), 0);
+    region.i1 = std::min(static_cast<int>(std::floor((dab.center.x + dab.radius + half) * toGrid)), last);
+    region.j1 = std::min(static_cast<int>(std::floor((dab.center.y + dab.radius + half) * toGrid)), last);
     return region;
 }
 
@@ -91,7 +84,7 @@ bool hit(
     float range,
     float& t
 ) {
-    if (!sound(terrain)) return false;
+    if (!terrain.holdsGrid()) return false;
     // Only the span over the grid's square is marched.
     const float half = 0.5f * terrain.size;
     float enter = 0.0f;
@@ -114,7 +107,7 @@ bool hit(
         return p.y - terrain.heightAt(p.x, p.z);
     };
     const float step = 0.5f * terrain.spacing();
-    float       was  = enter;
+    float was = enter;
     if (above(was) < 0.0f) return false;  // starts under the surface
     for (float s = enter + step;; s += step) {
         const float at = std::min(s, leave);
@@ -133,14 +126,27 @@ bool hit(
     }
 }
 
-Region raise(TerrainAsset& terrain, const Dab& dab, float metres) {
-    return eachUnder(terrain, dab, [&](size_t at, float share) { terrain.heights[at] += metres * share; });
+Region raise(TerrainAsset& terrain, const Dab& dab, float meters) {
+    return eachUnder(terrain, dab, [&](size_t at, float share) { terrain.heights[at] += meters * share; });
 }
 
 Region smooth(TerrainAsset& terrain, const Dab& dab) {
-    // Each mean from the heights before the dab, so the result is the same in any visiting order.
-    const std::vector<float> before = terrain.heights;
+    // Each mean from the heights before the dab, so the result is the same in any visiting order:
+    // those under it, and a vertex round them, which their means read.
+    const Region under = reach(terrain, dab);
+    if (under.empty()) return under;
     const int side = static_cast<int>(terrain.resolution);
+    const int a0   = std::max(under.i0 - 1, 0);
+    const int a1   = std::min(under.i1 + 1, side - 1);
+    const int b0   = std::max(under.j0 - 1, 0);
+    const int b1   = std::min(under.j1 + 1, side - 1);
+    const int wide = a1 - a0 + 1;
+    std::vector<float> before(static_cast<size_t>(wide) * (b1 - b0 + 1));
+    for (int b = b0; b <= b1; ++b) {
+        const auto row = terrain.heights.begin() + static_cast<ptrdiff_t>(b) * side;
+        std::copy(row + a0, row + a1 + 1, before.begin() + static_cast<ptrdiff_t>(b - b0) * wide);
+    }
+    const auto was = [&](int a, int b) { return before[static_cast<size_t>(b - b0) * wide + (a - a0)]; };
     return eachUnder(terrain, dab, [&](size_t at, float share) {
         const int i = static_cast<int>(at % terrain.resolution);
         const int j = static_cast<int>(at / terrain.resolution);
@@ -148,11 +154,11 @@ Region smooth(TerrainAsset& terrain, const Dab& dab) {
         int   count = 0;
         for (int b = std::max(j - 1, 0); b <= std::min(j + 1, side - 1); ++b) {
             for (int a = std::max(i - 1, 0); a <= std::min(i + 1, side - 1); ++a) {
-                sum += before[static_cast<size_t>(b) * side + a];
+                sum += was(a, b);
                 ++count;
             }
         }
-        terrain.heights[at] += (sum / static_cast<float>(count) - before[at]) * std::min(share, 1.0f);
+        terrain.heights[at] += (sum / static_cast<float>(count) - was(i, j)) * std::min(share, 1.0f);
     });
 }
 
@@ -163,12 +169,12 @@ Region flatten(TerrainAsset& terrain, const Dab& dab, float height) {
 }
 
 Region paint(TerrainAsset& terrain, const Dab& dab, uint32_t layer) {
-    if (layer >= MaterialAsset::MAX_LAYERS) return {};
+    if (layer >= TerrainAsset::WEIGHTS_PER_VERTEX) return {};
     return eachUnder(terrain, dab, [&](size_t at, float share) {
         // The others fade; the painted layer takes what they give up.
-        uint8_t* shares = &terrain.weights[at * 4];
-        int      others = 0;
-        for (uint32_t c = 0; c < 4; ++c) {
+        uint8_t* shares = &terrain.weights[at * TerrainAsset::WEIGHTS_PER_VERTEX];
+        int others = 0;
+        for (uint32_t c = 0; c < TerrainAsset::WEIGHTS_PER_VERTEX; ++c) {
             if (c == layer) continue;
             shares[c] = toward(shares[c], 0.0f, share);
             others += shares[c];
@@ -178,7 +184,7 @@ Region paint(TerrainAsset& terrain, const Dab& dab, uint32_t layer) {
 }
 
 Region grow(TerrainAsset& terrain, const Dab& dab, uint32_t foliage, float target) {
-    if (foliage >= terrain.foliage.size() || !sound(terrain)) return {};
+    if (foliage >= terrain.foliage.size() || !terrain.holdsGrid()) return {};
     std::vector<uint8_t>& density = terrain.foliage[foliage].density;
     density.resize(terrain.heights.size(), 0);
     const float full = std::clamp(target, 0.0f, 1.0f) * 255.0f;

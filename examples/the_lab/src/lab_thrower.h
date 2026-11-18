@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Lab {
 
@@ -15,16 +15,15 @@ using namespace Vkm::Engine;
  * joiners too - builds it, and what it does next is the crate's own (LabCrate). Offline only the
  * seat throws.
  */
-class LabThrower : public ReflectedBehavior<LabThrower> {
+class LabThrower : public Behavior<LabThrower> {
     public:
-        void onStart() override;
         void onFixedUpdate(float dt) override;
 
     public:
-        std::string crate = "prefabs/crate.json";  ///< The prefab thrown, project-relative.
+        PrefabRef crate{"prefabs/crate.json"};
 
-        float speed    = 14.0f;  ///< Launch speed along the character's facing, m/s.
-        float cooldown = 0.4f;   ///< Seconds between two throws.
+        float speed    = 14.0f;
+        float cooldown = 0.4f;
 
     private:
         float m_wait = 0.0f;  ///< Seconds until the next throw; the authority's
@@ -32,8 +31,8 @@ class LabThrower : public ReflectedBehavior<LabThrower> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabThrower)
-    VKM_F(crate)
-    VKM_F(speed)
-    VKM_F(cooldown)
+VKM_BEHAVIOR(::Lab::LabThrower)
+    VKM_F(crate, "The prefab thrown.")
+    VKM_F(speed, "Launch speed along the character's facing, m/s.")
+    VKM_F(cooldown, "Seconds between two throws.")
 VKM_REFLECT_END()

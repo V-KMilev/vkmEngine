@@ -1,0 +1,282 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <vector>
+
+#include <glm/glm.hpp>
+
+#include "vkm_opengl/shader/shader.h"
+
+#include "base/math/aabb.h"
+#include "frame/gl_camera.h"
+#include "frame/light/gl_lights.h"
+#include "frame/draw/gl_instance_batcher.h"
+#include "offline/capture/gl_capture_shadow.h"
+#include "system/render/data/irradiance_volume_data.h"
+
+namespace Vkm::OpenGL {
+    class Context;
+}
+
+namespace Vkm::Engine {
+
+class GLForwardPrograms;
+class GLIBL;
+class GLIrradianceVolume;
+class GLMesh;
+class GLObjectBuffer;
+class GLAssetMirror;
+struct RenderObjects;
+struct RenderView;
+
+/**
+ * @brief Offline capture of the opaque scene + skybox into the six faces of a cube.
+ *
+ * Full forward PBR and the global sky, lit by direct lights, the global IBL and, where one is
+ * lent (setAmbientVolume), an irradiance volume: probes, clusters and screen-space inputs off,
+ * which is also the recursion guard. The destination arrives as a face-attach callback, as
+ * GLCubeConvolver takes its own. The shadowed sun casts through GLCaptureShadow's map.
+ *
+ * begin() prepares what every face of every position shares, and captureCube() draws one cube
+ * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
+ * surfaces; the caller owns the FBO and the state around the loop. beginLighting() prepares the
+ * lights and the sun's map alone, for a relight of what was captured. Lent to every consumer (see
+ * GLBackend); it draws with the forward programs (GLForwardPrograms) and the unit cube it borrows.
+ * It binds its own camera, lights and shadow blocks and the 2D shadow slot, so capture at the end
+ * of a frame.
+ */
+class GLSceneCapture {
+    public:
+        /**
+         * @brief Points the draws at a face of the destination: attaches it, or sets its viewport.
+         */
+        using AttachFace = std::function<void(int face)>;
+
+        /**
+         * @brief Compile the capture programs, drawing the sky with @p cube.
+         *
+         * @param cube     The backend's unit cube, outliving this capture.
+         * @param objects  The backend's object buffer, outliving this capture; a capture draws
+         *                 through the frame's uploaded transforms, so it runs inside that frame.
+         * @param programs The backend's forward programs, outliving this capture: what it draws with.
+         */
+        GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects, GLForwardPrograms& programs);
+        ~GLSceneCapture();
+
+        GLSceneCapture(const GLSceneCapture& other) = delete;
+        GLSceneCapture& operator=(const GLSceneCapture& other) = delete;
+
+        GLSceneCapture(GLSceneCapture && other) = delete;
+        GLSceneCapture& operator=(GLSceneCapture && other) = delete;
+
+    public:
+        /**
+         * @brief Prepare the scene the captures after it draw.
+         *
+         * Takes the view's scene-wide objects, not the camera's, as GLAssetMirror::sync readied them in
+         * @p mirror this frame, and draws the sun's map fitted to @p region, or binds one kept for
+         * the same sun and region (GLCaptureShadow).
+         * The captured surfaces take their ambient from the sky until setAmbientVolume().
+         *
+         * @param gl       Live GL context the shadow map is drawn on.
+         * @param view     Supplies the objects and the lights.
+         * @param mirror   GPU resource mirror the capture draws through.
+         * @param ibl      Global IBL: the ambient term while capturing, and the background.
+         * @param faceSize Face resolution, every face camera's viewport.
+         * @param region   World box the captures describe (a probe's influence box, an irradiance
+         *                 volume), which the sun's shadow covers; outside is unshadowed.
+         */
+        void begin(
+            Vkm::OpenGL::Context& gl,
+            const RenderView& view,
+            GLAssetMirror& mirror,
+            const GLIBL& ibl,
+            float faceSize,
+            const Math::AABB& region
+        );
+
+        /**
+         * @brief Prepare what lights the scene - the lights, and the sun's map fitted to @p region -
+         *        and none of what a capture draws.
+         *
+         * For a pass that lights what was captured before (GLIrradianceBaker::relight). A map
+         * kept for the same sun and region is bound, not drawn again (GLCaptureShadow).
+         *
+         * @param gl     Live GL context the shadow map is drawn on.
+         * @param view   Supplies the lights and the casters.
+         * @param mirror GPU resource mirror the casters draw through.
+         * @param region World box the sun's shadow covers.
+         */
+        void beginLighting(
+            Vkm::OpenGL::Context& gl,
+            const RenderView& view,
+            GLAssetMirror& mirror,
+            const Math::AABB& region
+        );
+
+        /**
+         * @brief Light the captured surfaces inside @p box from @p volume rather than the sky.
+         *
+         * Their diffuse ambient is the volume's wherever it covers them, with no fade at the
+         * box's faces, so a wall on a face takes none of the sky, and their reflection of the sky
+         * is dimmed by it as the frame dims it (Lazarov). Outside the box they keep the sky's.
+         * Holds until the next begin().
+         *
+         * @param volume A grid other than the one being written, outliving the captures; null
+         *               for the sky alone.
+         * @param box    The volume as the frame asks for it; @p volume lies where it was baked.
+         */
+        void setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box);
+
+        /**
+         * @brief Draw the six faces of one cube centered on @p position.
+         *
+         * @param gl       Live GL context the capture draws on.
+         * @param position World-space center the six faces look out from.
+         * @param farPlane Capture far plane; geometry beyond it misses the cube.
+         * @param attach   Attaches the destination face + its viewport, once per face.
+         */
+        void captureCube(
+            Vkm::OpenGL::Context& gl,
+            const glm::vec3& position,
+            float farPlane,
+            const AttachFace& attach
+        );
+
+        /**
+         * @brief Draw face @p face of the cube captureCube() draws, alone.
+         *
+         * For a capture spread over frames; begin() must have run in the same frame, since the
+         * frame between rebinds the camera, lights and shadow blocks.
+         *
+         * @param gl       Live GL context the capture draws on.
+         * @param face     Cube face index (0..5).
+         * @param position World-space center the face looks out from.
+         * @param farPlane Capture far plane; geometry beyond it misses the cube.
+         * @param attach   Attaches the destination face + its viewport.
+         */
+        void captureFace(
+            Vkm::OpenGL::Context& gl,
+            int face,
+            const glm::vec3& position,
+            float farPlane,
+            const AttachFace& attach
+        );
+
+        /**
+         * @brief Draw what the six faces around @p position see as surfels, to be lit later.
+         *
+         * The nearest surface through each texel, packed as shaders/opengl/offline/irradiance/surfel.glsl
+         * says, into the RGBA32UI target the caller attached. Culling off: a probe inside a solid sees the
+         * back of what encloses it, and the surfel says so. No sky, and no clear: a probe's faces are tiles
+         * of one atlas, cleared once by the caller to zero, which reads as sky.
+         *
+         * @param gl       Live GL context the capture draws on.
+         * @param position World-space center the six faces look out from.
+         * @param farPlane Capture far plane; geometry beyond it misses the cube.
+         * @param attach   Sets the face's viewport, once per face.
+         */
+        void captureSurfels(
+            Vkm::OpenGL::Context& gl,
+            const glm::vec3& position,
+            float farPlane,
+            const AttachFace& attach
+        );
+
+        /**
+         * @brief Draw the baked environment behind whatever the bound camera frames.
+         *
+         * At the far plane, depth writes and culling off, no sun disc (it would blow out a
+         * capture). Leaves depth as the geometry after it wants: GLDepth::EYE_TEST, writes on.
+         *
+         * @param gl         Live context whose depth and cull state the backdrop sets.
+         * @param ibl        The baked environment, found ready by the caller.
+         * @param projection The bound camera's projection, which the sky draws by.
+         * @param intensity  What the environment's radiance is scaled by.
+         */
+        void drawSky(
+            Vkm::OpenGL::Context& gl,
+            const GLIBL& ibl,
+            const glm::mat4& projection,
+            float intensity = 1.0f
+        );
+
+        /**
+         * @brief The forward programs the capture draws with, for another offline drawing.
+         *
+         * Their uniforms are the last caller's: begin() puts every one back as linked before
+         * setting its own, so a borrower sets each it reads before drawing, and never draws
+         * between a begin() and the captures after it.
+         *
+         * @return The backend's forward programs.
+         */
+        GLForwardPrograms& programs() { return m_programs; }
+
+    private:
+        /**
+         * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
+         *
+         * @param view        Supplies the objects.
+         * @param mirror      GPU resource mirror whose materials sort them.
+         * @param castersOnly Gather the casters alone, the scene list's lead, for a map and no
+         *                    capture.
+         */
+        void gatherScene(const RenderView& view, const GLAssetMirror& mirror, bool castersOnly = false);
+
+        /**
+         * @brief Attach face @p face, clear it, and put the camera on it.
+         *
+         * @param gl       Live GL context.
+         * @param face     Cube face index (0..5).
+         * @param position World-space center the face looks out from.
+         * @param proj     The 90-degree projection shared by all six.
+         * @param attach   Attaches the destination face + its viewport.
+         */
+        void beginFace(
+            Vkm::OpenGL::Context& gl,
+            int face,
+            const glm::vec3& position,
+            const glm::mat4& proj,
+            const AttachFace& attach
+        );
+
+        /**
+         * @brief The draws of what one face sees: begin()'s opaque objects its frustum holds.
+         *
+         * A face drawing the whole scene would pay for the five others'. Bind pose: no palette.
+         *
+         * @param viewProjection The face's projection times its view.
+         * @return The face's draws, until the next call.
+         */
+        const std::vector<InstanceDraw>& faceDraws(const glm::mat4& viewProjection);
+
+    private:
+        GLForwardPrograms&  m_programs;        ///< Capture geometry, borrowed.
+        Vkm::OpenGL::Shader m_skybox;          ///< Capture background.
+        Vkm::OpenGL::Shader m_surfels;         ///< Capture what a probe sees, as surfels.
+        Vkm::OpenGL::Shader m_surfelsLayered;  ///< The same, for a layered material.
+
+        const GLMesh&         m_cube;     ///< Unit cube the skybox draws; the backend's.
+        const GLObjectBuffer& m_objects;  ///< The frame's transforms the batch indexes; the backend's.
+
+        GLCamera          m_camera;       ///< Per-face camera UBO.
+        GLLights          m_lights;       ///< The frame's lights, the sun alone shadowed.
+        GLInstanceBatcher m_faceBatcher;  ///< One cube face's draws: what its frustum holds.
+        GLCaptureShadow   m_shadow;       ///< The sun's map over what is captured.
+
+        std::vector<uint32_t> m_opaque;      ///< begin()'s opaque scene-wide objects.
+        std::vector<uint32_t> m_faceOpaque;  ///< Those a probe face sees.
+        std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
+
+        const GLAssetMirror* m_mirror   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
+        const RenderObjects* m_drawn    = nullptr;  ///< begin()'s objects, which m_opaque indexes.
+        const GLIBL*         m_ibl      = nullptr;
+        float                m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's
+                                                    ///< viewport.
+
+        const GLIrradianceVolume* m_volume = nullptr;  ///< The captured surfaces' ambient; null for the sky.
+        IrradianceVolumeData      m_volumeBox{};       ///< Where m_volume lies, as the captures read it.
+};
+
+} // namespace Vkm::Engine

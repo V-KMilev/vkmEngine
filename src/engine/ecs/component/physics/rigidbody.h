@@ -4,7 +4,11 @@
 
 #include <glm/glm.hpp>
 
-#include "core/reflect.h"
+#include "vkm_log/assert.h"
+#include "vkm_physics/body.h"
+
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -22,6 +26,23 @@ enum class RigidbodyMotion : uint8_t {
 };
 
 /**
+ * @brief @p motion as the physics reads it.
+ *
+ * @param motion A Rigidbody's motion.
+ * @return The physics' motion.
+ */
+inline Physics::Motion physicsMotionOf(RigidbodyMotion motion) {
+    switch (motion) {
+        case RigidbodyMotion::Dynamic:   return Physics::Motion::Dynamic;
+        case RigidbodyMotion::Kinematic: return Physics::Motion::Kinematic;
+        case RigidbodyMotion::Static:    return Physics::Motion::Static;
+        case RigidbodyMotion::Count:     break;
+    }
+    VKM_ASSERT(false, "Count is no motion");
+    return Physics::Motion::Static;
+}
+
+/**
  * @brief Dynamics state for a physics body: motion, material response and mass.
  *
  * PhysicsSystem integrates it each fixed tick and writes the pose back to the Transform. Derived mass
@@ -30,21 +51,20 @@ enum class RigidbodyMotion : uint8_t {
  * pose back into the parent's frame.
  */
 struct Rigidbody {
-    glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s)
+    glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s): of its center of mass,
+                                                     ///< for a dynamic body (solverCenter).
     glm::vec3 angularVelocity = {0.0f, 0.0f, 0.0f};  ///< World-space spin (rad/s, axis * speed)
 
-    /**
-     * @brief How the solver moves it.
-     *
-     * Kinematic ignores forces and impulses; its velocities are not integrated but still reach a contact -
-     * a platform pushes what stands on it - so a body that stops being driven should zero them. A bone an
-     * inactive Ragdoll poses moves as Kinematic whatever this says (isPosedByAnimation).
-     */
-    RigidbodyMotion motion = RigidbodyMotion::Dynamic;
+    RigidbodyMotion motion = RigidbodyMotion::Dynamic;  ///< How the solver moves it. Kinematic ignores forces
+                                                        ///< and impulses; its velocities are not integrated
+                                                        ///< but still reach a contact - a platform pushes
+                                                        ///< what stands on it - so a body that stops being
+                                                        ///< driven should zero them. A bone an inactive
+                                                        ///< Ragdoll poses moves as Kinematic whatever this
+                                                        ///< says (isPosedByAnimation).
 
-    /// Kilograms, read only when Dynamic. Must be positive: PhysicsSystem reports one that is not and holds
-    /// it still.
-    float mass = 1.0f;
+    float mass = 1.0f;  ///< Kilograms, read only when Dynamic. Must be positive: PhysicsSystem reports one
+                        ///< that is not and holds it still.
 
     float linearDamping  = 0.01f;  ///< Per-second velocity bleed (drag)
     float angularDamping = 0.05f;  ///< Per-second spin bleed
@@ -54,48 +74,43 @@ struct Rigidbody {
 
     float gravityScale = 1.0f;  ///< Multiplier on world gravity (0 = floats)
 
-    /**
-     * @brief Which group this body belongs to, as a single bit; paired with `collidesWith`.
-     *
-     * 0 collides with nothing, which switches collision off without disabling the collider that draws it.
-     */
-    int layer = 1;
+    int layer = 1;  ///< Which group this body belongs to, as a single bit; paired with `collidesWith`. 0
+                    ///< collides with nothing, which switches collision off without disabling the collider
+                    ///< that draws it.
 
-    /**
-     * @brief Which layers this body collides with, as a mask of their bits.
-     *
-     * A pair collides only if each body's layer is in the other's mask.
-     */
-    int collidesWith = ~0;
+    int collidesWith = ~0;  ///< Which layers this body collides with, as a mask of their bits. A pair
+                            ///< collides only if each body's layer is in the other's mask.
 
-    bool freezeRotation = false;  ///< Contacts never torque the body (character controllers)
-    bool canSleep       = true;   ///< False keeps a script-driven body responsive
-    bool sleeping       = false;  ///< Rested long enough; skipped until disturbed
+    bool freezeRotation = false;  ///< Contacts never torque the body: a character's, whose controller warns
+                                  ///< once without it
+    bool canSleep       = true;   ///< False never rests: its island stays awake, its contacts reported
+    bool sleeping       = false;  ///< Rested SLEEP_DELAY under SLEEP_SPEED at its fastest point; skipped
+                                  ///< until disturbed. It sleeps with its whole island, only while something
+                                  ///< outside the island holds it; whatever could push it wakes the island, a
+                                  ///< static body never. A sleeper still makes contacts, so a stack stays up.
 
     float sleepTimer = 0.0f;  ///< Runtime-only: seconds spent resting
 
-    /**
-     * @brief Whether a resolved contact reached this body last tick, and the most upward normal among them.
-     *
-     * Written by PhysicsSystem::writeback, never read by it; triggers never count. Most upward is the
-     * largest +Y component. The normal is as the surface acts on THIS body, so a contact's two bodies see
-     * opposite normals.
-     */
-    glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};
+    glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};  ///< Whether a resolved contact reached this body last
+                                                   ///< tick, and the most upward (largest +Y) normal among
+                                                   ///< them, as the surface acts on this body, so a contact's
+                                                   ///< two bodies see opposite normals. Written by
+                                                   ///< PhysicsSystem::writeback, never read by it; triggers
+                                                   ///< never count.
     bool      supported     = false;
-    EntityId  supportBody{};  ///< The body whose surface gave supportNormal; empty while unsupported.
+    EntityId  supportBody{};                       ///< The body whose surface gave supportNormal; empty while
+                                                   ///< unsupported.
+
+    glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};  ///< The most horizontal normal among the same contacts: what
+                                                 ///< blocks this body. Valid only while supported. A body
+                                                 ///< touching only level floor leaves it at world up.
 
     /**
-     * @brief The most horizontal normal among the same contacts: what blocks this body.
+     * @brief Wake a sleeping body so the next tick moves it, and restart its rest.
      *
-     * Valid only while supported. A body touching only level floor leaves it at world up.
-     */
-    glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};
-
-    /**
-     * @brief Wake a sleeping body so the next tick moves it.
-     *
-     * Clears the timer too: a cleared flag with a long rest on the timer falls asleep again that tick.
+     * A velocity set on a sleeper wakes it by itself; this is for a change that sets none - a
+     * teleport, a new shape - or to keep awake a body that would rest, such as a float. Clears the
+     * timer too: a cleared flag with a long rest on the timer falls asleep again that tick.
      *
      * @param rb Body to wake.
      */
@@ -113,15 +128,15 @@ VKM_ENUM_NAMES(::Vkm::Engine::RigidbodyMotion, "Dynamic", "Kinematic", "Static")
 VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
     VKM_F(linearVelocity)
     VKM_F(angularVelocity)
-    VKM_F(motion)
-    VKM_F(mass)
-    VKM_F(linearDamping)
-    VKM_F(angularDamping)
-    VKM_F(restitution)
-    VKM_F(friction)
-    VKM_F(gravityScale)
-    VKM_F(layer)
-    VKM_F(collidesWith)
-    VKM_F(freezeRotation)
-    VKM_F(canSleep)
+    VKM_F(motion, "Dynamic falls and is pushed, Kinematic is moved, Static never moves")
+    VKM_F(mass, 0.01f, 1000.0f, "Kilograms, while Dynamic")
+    VKM_F(linearDamping, 0.0f, 1.0f, "Speed it bleeds a second")
+    VKM_F(angularDamping, 0.0f, 1.0f, "Spin it bleeds a second")
+    VKM_F(restitution, 0.0f, 1.0f, "Bounciness")
+    VKM_F(friction, 0.0f, 2.0f, "How it grips what it slides on")
+    VKM_F(gravityScale, 0.0f, 10.0f, "Multiplies the world's gravity: 0 floats")
+    VKM_F(layer, "The layer it is on; None collides with nothing")
+    VKM_F(collidesWith, "A pair collides only if each is in the other's layers")
+    VKM_F(freezeRotation, "Contacts never turn it: for a character")
+    VKM_F(canSleep, "Off for one a script drives that must answer at rest")
 VKM_REFLECT_END()

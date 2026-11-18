@@ -22,15 +22,18 @@ than serving a game nobody can be in.
     src/            your gameplay code
     assets/         your art
     scenes/         your saved scenes
+    library/        how each asset is made or imported, written by the editor
     .gitignore      what the tools generate: build/ bin/ cooked/ logs/ dist/
+                    editor_settings.json
+
+`scenes/main.json` is the world the game starts in, named by `entryScene` in
+`project.json`; `library/` holds how its meshes and material are made. Save it
+from the editor and `vkm run` plays what you saved.
 
 `src/module.cpp` holds the entry points a host looks for, and
-`system/script/module_entry.h` in the engine says what each is for. Two are
-required and are already written: `vkmModuleEngineVersion`, which stamps the
-engine this was built against, and `vkmRegisterBehaviors`, which names your
-behaviors. `vkmBuildScene` is optional - it builds a world in code, and a
-project that authors scenes in the editor sets `entryScene` in `project.json`
-instead.
+`system/script/module/module_entry.h` in the engine says what each is for.
+`VKM_GAME_MODULE()` writes the two every module has; each behavior registers
+itself through its `VKM_BEHAVIOR` block.
 
 ## One thing that will catch you
 

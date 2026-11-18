@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
 namespace Vkm::Engine {
 
@@ -20,7 +20,7 @@ void BehaviorRegistry::registerBehavior(std::string name, Factory factory) {
     m_factories[std::move(name)] = std::move(factory);
 }
 
-std::unique_ptr<Behavior> BehaviorRegistry::create(const std::string& name) const {
+std::unique_ptr<BehaviorBase> BehaviorRegistry::create(const std::string& name) const {
     auto it = m_factories.find(name);
     if (it != m_factories.end()) return it->second();
 

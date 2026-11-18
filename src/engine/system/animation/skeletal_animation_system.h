@@ -4,12 +4,12 @@
 #include <vector>
 
 #include "core/system.h"
-#include "debug/fault_latch.h"
+#include "debug/error/fault_latch.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/entity.h"
-#include "system/animation/pose_buffer.h"
-#include "system/animation/ragdoll_pose.h"
-#include "system/animation/pose_evaluator.h"
+#include "core/frame/pose_buffer.h"
+#include "system/animation/pose/ragdoll_pose.h"
+#include "system/animation/playback.h"
 
 namespace Vkm::Engine {
 
@@ -21,15 +21,16 @@ struct AnimationClipAsset;
 struct SkeletonAsset;
 
 /**
- * @brief Poses every rig in the scene and publishes the result on FrameContext::poses.
+ * @brief Poses every rig in the scene and publishes the result on FrameProducts::poses.
  *
  * Runs in SystemStage::Simulation, since it advances clip time, ahead of whatever reads
- * FrameContext::poses, and writes no Transform. Only the evaluation is parallel; marker announcement is
- * serial, because the EventBus is main-thread only.
+ * FrameProducts::poses, and writes no Transform. The heads' advance and the composing are parallel;
+ * marker announcement is serial, because the EventBus is main-thread only.
  *
- * Time advances on the tick. The pose is also composed every paused frame, so a scrubbed Animator shows
- * its pose, and on the first frame after the world is replaced, because the buffer maps entity slots
- * the new world reuses. Composition is idempotent.
+ * Time advances on the tick. A running frame composes each rig a clip plays again where the frame falls
+ * between ticks (poseAhead), the heads left where the tick put them. The pose is also composed every
+ * paused frame, so a scrubbed Animator shows its pose, and on the first frame after the world is
+ * replaced, because the buffer maps entity slots the new world reuses. Composition is idempotent.
  */
 class SkeletalAnimationSystem : public System {
     public:
@@ -60,20 +61,16 @@ class SkeletalAnimationSystem : public System {
 
             const SkeletonAsset* skeleton = nullptr;
 
-            /**
-             * @brief The ragdoll driving this rig, or null when a clip is.
-             */
-            const Ragdoll* ragdoll   = nullptr;
+            const Ragdoll* ragdoll   = nullptr;          ///< The ragdoll driving this rig, or null when a
+                                                         ///< clip is.
             uint32_t       firstBody = 0;                ///< Where its bodies' poses start in m_ragdollBodies
             glm::mat4      rigWorld  = glm::mat4(1.0f);  ///< The rig entity's world matrix
 
             const AnimationClipAsset* clip     = nullptr;  ///< Null holds the bind pose.
             const AnimationClipAsset* fadeClip = nullptr;  ///< Clip being faded out of; null when nothing is.
 
-            /**
-             * @brief What the playing head did this frame, for the serial pass to announce markers from.
-             */
-            PlaybackStep step;
+            PlaybackStep step;  ///< What the playing head did this frame, for the serial pass to announce
+                                ///< markers from.
         };
 
         /**
@@ -86,6 +83,29 @@ class SkeletalAnimationSystem : public System {
          * @param announceMarkers Whether crossed clip markers reach the bus.
          */
         void run(FrameContext& ctx, float step, bool announceMarkers);
+
+        /**
+         * @brief Compose the active ragdolls' rigs again from their bodies, the rest left as the tick
+         *        posed them.
+         *
+         * Physics moves a ragdoll's bodies after the tick composed it, and nothing else in the
+         * buffer.
+         *
+         * @param ctx Scene the bodies and rigs are read from.
+         * @return False when a rig took or lost a ragdoll since the tick, or changed its skeleton:
+         *         the whole buffer is posed again then.
+         */
+        bool reposeRagdolls(FrameContext& ctx);
+
+        /**
+         * @brief Compose every rig a clip plays or a behavior adjusts again, @p seconds past its tick.
+         *
+         * For drawing alone: no head moves and no marker fires.
+         *
+         * @param ctx Scene the animators are read from.
+         * @param seconds How far the frame falls past the last tick; zero leaves the tick's poses.
+         */
+        void poseAhead(FrameContext& ctx, float seconds);
 
         /**
          * @brief Pose every rig in the scene into the already-cleared buffer.
@@ -171,11 +191,12 @@ class SkeletalAnimationSystem : public System {
         );
 
     private:
-        PoseBuffer m_poses;
-        std::vector<RigWork> m_work;  ///< Rebuilt each frame; keeps its capacity.
+        PoseBuffer                  m_poses;
+        std::vector<RigWork>        m_work;   ///< Rebuilt each frame; keeps its capacity.
+        std::vector<const RigWork*> m_ahead;  ///< The rigs poseAhead() composes; keeps its capacity.
 
-        /// Every ragdoll-driven rig's bodies, back to back; keeps its capacity.
-        std::vector<RagdollBodyPose> m_ragdollBodies;
+        std::vector<RagdollBodyPose> m_ragdollBodies;  ///< Every ragdoll-driven rig's bodies, back to back;
+                                                       ///< keeps its capacity.
 
         uint64_t m_epoch = 0;  ///< Scene::epoch() the pose buffer was last composed in.
 

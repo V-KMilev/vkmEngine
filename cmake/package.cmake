@@ -28,6 +28,9 @@ else()
     set(CPACK_GENERATOR TXZ)
 endif()
 
+# Compressed on every core: the archive carries the examples' art.
+set(CPACK_THREADS 0)
+
 # `package_source`: the tree less what the tools write into it - into the engine's
 # tree, and into each template and example as tools/generated.txt names it.
 set(CPACK_SOURCE_GENERATOR TXZ)

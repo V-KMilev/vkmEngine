@@ -8,7 +8,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/resource.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 
 namespace Vkm::Engine {
 
@@ -22,8 +22,8 @@ struct FontGlyph {
     glm::vec2 uvMin   = {0.0f, 0.0f};
     glm::vec2 uvMax   = {0.0f, 0.0f};
     glm::vec2 size    = {0.0f, 0.0f};  ///< Glyph quad size in baked pixels.
-    /// Quad top-left relative to the pen on the baseline (negative y is above it).
-    glm::vec2 offset  = {0.0f, 0.0f};
+    glm::vec2 offset  = {0.0f, 0.0f};  ///< Quad top-left relative to the pen on the baseline (negative y is
+                                       ///< above it).
     float     advance = 0.0f;          ///< Pen advance in baked pixels.
 };
 
@@ -51,7 +51,6 @@ struct FontAsset : public Resource {
     static constexpr uint32_t LATIN1_FIRST = 0xA0;  ///< No-break space.
     static constexpr uint32_t LATIN1_LAST  = 0xFF;  ///< y with diaeresis.
 
-    /// Dashes, curly quotes, the bullet, the ellipsis and the euro sign, ascending.
     static constexpr uint32_t MARKS[] = {
         0x2013,
         0x2014,
@@ -62,40 +61,31 @@ struct FontAsset : public Resource {
         0x2022,
         0x2026,
         0x20AC
-    };
+    };  ///< Dashes, curly quotes, the bullet, the ellipsis and the euro sign, ascending.
 
     static constexpr uint32_t ASCII_COUNT  = ASCII_LAST - ASCII_FIRST + 1;
     static constexpr uint32_t LATIN1_COUNT = LATIN1_LAST - LATIN1_FIRST + 1;
     static constexpr uint32_t MARK_COUNT   = sizeof(MARKS) / sizeof(MARKS[0]);
     static constexpr uint32_t GLYPH_COUNT  = ASCII_COUNT + LATIN1_COUNT + MARK_COUNT;
 
-    /**
-     * @brief How many levels of the atlas a renderer may sample, the full size included.
-     *
-     * bakeFontSDF's gutter is 2^(MIP_LEVELS - 1) texels; more levels would bleed
-     * neighbouring glyphs together.
-     */
-    static constexpr uint32_t MIP_LEVELS = 4;
+    static constexpr uint32_t MIP_LEVELS = 4;  ///< Levels of the atlas a renderer may sample, the full size
+                                               ///< included. bakeFontSDF's gutter is 2^(MIP_LEVELS-1) texels;
+                                               ///< more levels would bleed neighboring glyphs together.
 
-    std::vector<uint8_t> atlasPixels;   ///< Single-channel SDF atlas, atlasSize x atlasSize texels.
-    uint32_t atlasSize   = 0;           ///< Atlas dimension in texels (square).
+    std::vector<uint8_t> atlasPixels;    ///< Single-channel SDF atlas, atlasSize x atlasSize texels.
+    uint32_t             atlasSize = 0;  ///< Atlas dimension in texels (square).
 
     float pixelHeight = 0.0f;
-    float ascent      = 0.0f;           ///< Baseline-to-top, in baked pixels (positive).
-    /// Baseline-to-bottom, in baked pixels (negative below the baseline).
-    float descent     = 0.0f;
+    float ascent      = 0.0f;  ///< Baseline-to-top, in baked pixels (positive).
+    float descent     = 0.0f;  ///< Baseline-to-bottom, in baked pixels (negative below the
+                               ///< baseline).
 
-    /**
-     * @brief Baseline-to-baseline distance for stacked lines, in baked pixels.
-     *
-     * The face's own ascent - descent + line gap.
-     */
-    float lineHeight  = 0.0f;
+    float lineHeight  = 0.0f;  ///< Baseline-to-baseline distance for stacked lines, in baked pixels. The
+                               ///< face's own ascent - descent + line gap.
 
     std::array<FontGlyph, GLYPH_COUNT> glyphs{};
 
-    /// Sorted on KerningPair::pair; unkerned pairs are absent.
-    std::vector<KerningPair> kerning;
+    std::vector<KerningPair> kerning;  ///< Sorted on KerningPair::pair; unkerned pairs are absent.
 
     /**
      * @brief Where @p codepoint sits in the glyph table.
@@ -149,7 +139,7 @@ struct FontAsset : public Resource {
      */
     float kern(int left, int right) const {
         const uint32_t pair = static_cast<uint32_t>(left) * GLYPH_COUNT + static_cast<uint32_t>(right);
-        const auto found = std::lower_bound(
+        const auto found    = std::lower_bound(
             kerning.begin(),
             kerning.end(),
             pair,

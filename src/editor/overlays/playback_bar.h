@@ -3,16 +3,15 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
-class SceneIOController;
+class SceneSession;
 
 /**
- * @brief Top-centre simulation HUD (Play/Pause, Step, Stop, Eject) with play mode.
+ * @brief Top-center simulation HUD: Play/Pause, Step, Stop and Eject, with play mode.
  *
- * Play snapshots the scene and runs the Clock; Step enters a paused session and advances
- * one tick; Stop restores the snapshot; Eject toggles the editor's view of the game.
+ * Play snapshots the scene and runs the Clock; Step enters a paused session and advances one tick;
+ * Stop restores the snapshot; Eject toggles the editor's view of the game.
  *
- * Pause, Resume and Step also hold and release mixer voices, since audio runs off the
- * frame, not simulation time. A step ends like a pause: its tick is heard, then held.
+ * Pause, Resume and Step also hold and release mixer voices: audio runs off the frame, not the clock.
  */
 class PlaybackBar {
     public:
@@ -27,30 +26,25 @@ class PlaybackBar {
 
     public:
         /**
-         * @brief Draw the bar, and the play-mode frame and caption while a session runs.
+         * @brief Draw the bar, and the play-mode frame while a session runs.
          *
-         * Centred on the viewport, within the span the other top-row overlays leave free.
+         * Centered on the viewport, within the span the other top-row overlays leave free.
          *
-         * @param ec      The frame's editor context.
-         * @param sceneIO The session the buttons drive.
-         * @param left    The free span's left end, in viewport coordinates.
-         * @param right   Its right end.
+         * @param ec    The frame's editor context.
+         * @param left  The free span's left end, in viewport coordinates.
+         * @param right Its right end.
          */
-        void draw(EditorContext& ec, SceneIOController& sceneIO, float left, float right);
+        void draw(EditorContext& ec, float left, float right);
 
         /**
          * @brief Answer the transport keybinds: Play / Stop, Pause / Resume, Eject / Return.
          *
-         * Runs even when the bar is hidden or the game has the keyboard - they are the way
-         * out of a session that grabbed the cursor; the caller asks
-         * InputOwnership::editorHasSessionKeys first. None repeats while held. A game bound
-         * to the same keys sees them first; a pause withdraws only the edges latched for the
-         * next tick.
+         * Runs even when the bar is hidden or the game has the keyboard, as the way out of a session
+         * that grabbed the cursor; the caller asks InputOwnership::editorHasSessionKeys first.
          *
          * @param ec For the keybinds, the clock and the input.
-         * @param sceneIO The session the keys drive.
          */
-        void processKeys(EditorContext& ec, SceneIOController& sceneIO);
+        void processKeys(EditorContext& ec);
 
         /**
          * @brief Whether the mouse was over the bar as last drawn.
@@ -60,32 +54,27 @@ class PlaybackBar {
         bool isHovered() const { return m_hovered; }
 
         /**
-         * @brief Start the running session over, as a game's restartScene() asks: Stop puts back
-         *        the scene as Play found it, and Play takes it again.
+         * @brief Start the running session over, as a game's restartScene() asks: Stop, then Play.
+         *
+         * A Stop that could not put the scene back leaves the session paused, and nothing is played.
          *
          * @param ec For the clock and the audio device.
-         * @param sceneIO Restores and snapshots the scene.
          */
-        void restart(EditorContext& ec, SceneIOController& sceneIO);
+        void restart(EditorContext& ec);
 
     private:
         /**
          * @brief The first button: start a running session, or pause or resume the current one.
          *
          * @param ec For the clock and the audio device.
-         * @param sceneIO Snapshots a start.
          */
-        void playOrPause(EditorContext& ec, SceneIOController& sceneIO);
+        void playOrPause(EditorContext& ec);
 
     private:
         bool m_hovered = false;
 
-        /**
-         * @brief Whether a stepped tick has been queued and not yet held.
-         *
-         * Read on the next draw, the first moment the tick has run and its voices exist.
-         */
-        bool m_stepPending = false;
+        bool m_stepPending = false;  ///< A stepped tick is queued and its voices not yet held; read on
+                                     ///< the next draw, the first moment the tick has run.
 };
 
 } // namespace Vkm::Engine

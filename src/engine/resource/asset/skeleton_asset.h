@@ -7,9 +7,9 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/core/transform.h"
+#include "resource/asset/bone_pose.h"
 #include "resource/resource.h"
-#include "resource/resource_handle.h"
+#include "resource/handle.h"
 
 namespace Vkm::Engine {
 
@@ -26,21 +26,21 @@ struct Bone {
 /**
  * @brief A rig: a flat, parent-before-child bone array plus its bind pose.
  *
- * Bones are indices, not entities. `parent < index` is validated by
- * findSkeletonFault, so a pose composes in one forward loop and a cycle is
- * unrepresentable. The three vectors are parallel.
+ * Bones are indices, not entities, which would be walked, listed and saved for data rebuilt
+ * every frame. `parent < index` is validated by findSkeletonFault, so a pose composes in one
+ * forward loop and a cycle is unrepresentable. The three vectors are parallel.
  */
 struct SkeletonAsset : public Resource {
+    static constexpr uint32_t MAX_BONES = 1024;  ///< Bone count past which a rig is refused as corrupt rather
+                                                 ///< than read. A rejection threshold, not a capability: a
+                                                 ///< full character rig lands near three hundred bones.
+
     std::vector<Bone>      bones;
     std::vector<glm::mat4> inverseBind;  ///< Rig model space -> this bone's space, at bind.
 
-    /**
-     * @brief Each bone's local TRS at bind, used wherever a clip has no channel
-     *        for it.
-     *
-     * Stored: deriving it from `inverseBind` is lossy once a bone carries scale.
-     */
-    std::vector<Transform> bindPose;
+    std::vector<BonePose>  bindPose;  ///< Each bone's local TRS at bind, used wherever a clip has no channel
+                                      ///< for it. Stored: deriving it from `inverseBind` is lossy once a bone
+                                      ///< carries scale.
 
     /**
      * @brief The index of the bone called @p name, or -1 when the rig has none.
@@ -78,8 +78,8 @@ std::string_view unqualifiedBoneName(std::string_view name);
 /**
  * @brief Why @p skeleton cannot be posed, or an empty string when it can.
  *
- * What composing a pose relies on unchecked: parallel arrays, and every bone's
- * parent a bone before it.
+ * What composing a pose relies on unchecked - parallel arrays, every bone's parent a
+ * bone before it - and no more bones than MAX_BONES, past which a rig is taken for corrupt.
  *
  * @param skeleton Rig to judge.
  * @return The first fault found, worded to follow "cannot be posed - ".

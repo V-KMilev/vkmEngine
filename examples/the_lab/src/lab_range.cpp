@@ -3,19 +3,17 @@
 #include <optional>
 #include <string_view>
 
-#include "core/math/axes.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/net_local.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
+#include "base/math/axes.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/net/net_local.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/scene/world_transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
-#include "io/scene/prefab.h"
 #include "net/net_session.h"
-#include "net/wire/protocol.h"
 #include "resource/resource_manager.h"
 
 #include "lab_switch.h"
@@ -34,7 +32,7 @@ constexpr float KNOCK_DOWN_SHARE = 0.6f;
 // The blow that knocks a player down, kg m/s.
 constexpr float KNOCK_DOWN_MOMENTUM = 500.0f;
 
-// A body nearer the charge than this, metres, has no way out from it and is thrown straight up.
+// A body nearer the charge than this, meters, has no way out from it and is thrown straight up.
 constexpr float AT_THE_CHARGE = 1e-3f;
 
 // Show or hide every mesh in @p root's subtree, and switch its collider with it.
@@ -49,7 +47,7 @@ void stand(Scene& scene, EntityId root, bool standing) {
 
 void LabRange::onStart() {
     HierarchyOperations::forEachChild(scene(), entity(), [&](EntityId child) {
-        const Name* name = scene().tryGet<Name>(child);
+        const Name* name    = scene().tryGet<Name>(child);
         const Transform* at = scene().tryGet<Transform>(child);
         if (name && at && std::string_view(name->value).rfind("Charge", 0) == 0) {
             m_charges.push_back({child, at->position, at->rotation});
@@ -61,13 +59,13 @@ bool LabRange::detonate() {
     bool blew = false;
     for (const Charge& charge : m_charges) {
         const Transform* local = scene().tryGet<Transform>(charge.entity);
-        const EntityId   meshed = HierarchyOperations::findInSelfOrDescendants<Mesh>(scene(), charge.entity);
-        const Mesh*      shown  = scene().tryGet<Mesh>(meshed);
+        const EntityId meshed = HierarchyOperations::findInSelfOrDescendants<Mesh>(scene(), charge.entity);
+        const Mesh* shown = scene().tryGet<Mesh>(meshed);
         if (!local || (shown && !shown->visible)) continue;
 
         Transform where;
         where.position = resolvedWorldPosition(scene(), charge.entity, *local);
-        if (window() && !blast.empty()) Prefab::instantiate(scene(), resources(), blast, where);
+        if (window() && !blast.empty()) instantiate(blast, where);
         stand(scene(), charge.entity, false);
         blew = true;
     }
@@ -75,7 +73,7 @@ bool LabRange::detonate() {
 }
 
 void LabRange::throwFromCharges() {
-    const bool authority = isAuthority(net().role());
+    const bool authority = isAuthority();
     for (const Charge& charge : m_charges) {
         const Transform* local = scene().tryGet<Transform>(charge.entity);
         if (!local) continue;
@@ -88,7 +86,7 @@ void LabRange::throwFromCharges() {
             if (body.motion != RigidbodyMotion::Dynamic || id == charge.entity) return;
             if (!authority && !HierarchyOperations::findInSelfOrAncestors<NetLocal>(scene(), id)) return;
             const glm::vec3 offset = resolvedWorldPosition(scene(), id, t) - at;
-            const float     d      = glm::length(offset);
+            const float d = glm::length(offset);
             if (d >= radius) return;
             const glm::vec3 out  = d > AT_THE_CHARGE ? offset / d : Math::WORLD_UP;
             const float     kick = push * (1.0f - d / radius);
@@ -96,12 +94,12 @@ void LabRange::throwFromCharges() {
             body.angularVelocity += glm::vec3(out.z, 0.0f, -out.x) * kick * SPIN_PER_KICK;
         });
         if (!authority) continue;
-        scene().forEach<Transform>([&](EntityId id, const Transform& t) {
-            LabWalker* walker = findBehavior<LabWalker>(id);
-            if (!walker) return;
-            const glm::vec3 offset = resolvedWorldPosition(scene(), id, t) - at;
+        forEachBehavior<LabWalker>([&](EntityId id, LabWalker& walker) {
+            const Transform* t = scene().tryGet<Transform>(id);
+            if (!t) return;
+            const glm::vec3 offset = resolvedWorldPosition(scene(), id, *t) - at;
             if (glm::length(offset) >= radius * KNOCK_DOWN_SHARE) return;
-            walker->knockDown(glm::normalize(offset + Math::WORLD_UP) * KNOCK_DOWN_MOMENTUM, at);
+            walker.knockDown(glm::normalize(offset + Math::WORLD_UP) * KNOCK_DOWN_MOMENTUM, at);
         });
     }
 }
@@ -120,17 +118,10 @@ void LabRange::reset() {
     }
 }
 
-void LabRange::onFixedUpdate(float dt) {
-    if (m_throw) {
-        m_throw = false;
-        throwFromCharges();
-    }
-    if (m_resetIn > 0.0f) {
-        m_resetIn -= dt;
-        if (m_resetIn > 0.0f) return;
-        reset();
-        m_raise = true;
-    }
+void LabRange::onFixedUpdate(float) {
+    if (!m_throw) return;
+    m_throw = false;
+    throwFromCharges();
 }
 
 void LabRange::onUpdate(float) {
@@ -142,8 +133,12 @@ void LabRange::onUpdate(float) {
     const LabSwitch* button = findBehavior<LabSwitch>();
     const std::optional<uint32_t> presses = button ? button->presses() : std::nullopt;
     if (!presses || !m_presses.rose(*presses)) return;
-    m_resetIn = resetSeconds;
     m_throw = detonate();
+    if (!m_throw) return;
+    after(resetSeconds, [this] {
+        reset();
+        m_raise = true;
+    });
 }
 
 } // namespace Lab

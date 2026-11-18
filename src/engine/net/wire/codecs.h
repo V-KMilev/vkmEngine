@@ -1,48 +1,39 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <string_view>
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/core/transform.h"
+#include "vkm_network/bit_stream.h"
+
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
-#include "ecs/component/prefab/net_spawn.h"
-#include "net/wire/bit_stream.h"
+#include "ecs/component/net/net_spawn.h"
+#include "net/wire/project_path.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
 
-/**
- * @brief Longest prefab path a NetSpawn carries.
- *
- * Bounded because it arrives from the network and opens a file; see isSayable.
- */
-constexpr size_t NET_PREFAB_PATH_MAX = 200;
+constexpr size_t NET_SPAWN_MAX_SLOTS = 32;  ///< Most entities below a spawned root whose slots a NetSpawn
+                                            ///< names. A bigger instance is sent with none and built wherever
+                                            ///< a client's slots are free, so the two ends' slots can part.
 
-/**
- * @brief Most entities below a spawned root whose slots a NetSpawn names.
- *
- * A bigger instance is sent with none and built wherever a client's slots are
- * free, so the two ends' slots can part.
- */
-constexpr size_t NET_SPAWN_MAX_SLOTS = 32;
+constexpr uint32_t NET_SPAWN_SLOT_COUNT_BITS = 6;  ///< Bits for how many slots a spawn names, and for one
+                                                   ///< slot.
+constexpr uint32_t NET_SPAWN_SLOT_BITS       = 23;
 
-/**
- * @brief Most bytes a NetSpawn encodes to: the path's length, the longest path,
- *        the ten floats of the pose, then the slot count and NET_SPAWN_MAX_SLOTS
- *        entries of a 32-bit uid and a 23-bit slot, rounded up.
- */
-constexpr size_t NET_SPAWN_MAX_BYTES = 1 + NET_PREFAB_PATH_MAX + 10 * sizeof(float)
-    + (6 + NET_SPAWN_MAX_SLOTS * (32 + 23) + 7) / 8;
+constexpr size_t NET_SPAWN_MAX_BYTES = 1 + NET_PROJECT_PATH_MAX + 10 * sizeof(float)
+    + (NET_SPAWN_SLOT_COUNT_BITS + NET_SPAWN_MAX_SLOTS * (32 + NET_SPAWN_SLOT_BITS) + 7) / 8;
+    ///< Most bytes a NetSpawn encodes to: the path's length, the longest path, the ten floats of the
+    ///< pose, then the slot count and NET_SPAWN_MAX_SLOTS entries of a 32-bit uid and a slot, rounded up.
 
-/**
- * @brief NetSpawn's name in the schema.
- *
- * The one type written for an entity whose state is silent; see writeSnapshot.
- */
-constexpr const char* NET_SPAWN_TYPE = "NetSpawn";
+constexpr const char* NET_SPAWN_TYPE = "NetSpawn";  ///< NetSpawn's name in the schema. The one type written
+                                                    ///< for an entity whose state is silent; see
+                                                    ///< writeSnapshot.
 
 /**
  * @brief The scale a described Transform holds at both ends.
@@ -72,8 +63,8 @@ void netKeep(Transform& held, const Transform& incoming);
  * Scale only when it is not one. Local, not world: the hierarchy runs on both
  * ends, and world transforms would send a parent's motion once per child.
  */
-void netEncode(const Transform& value, BitWriter& out);
-void netDecode(Transform& value, BitReader& in);
+void netEncode(const Transform& value, Network::BitWriter& out);
+void netDecode(Transform& value, Network::BitReader& in);
 
 /**
  * @brief The part of a body that changes as it is simulated.
@@ -82,19 +73,19 @@ void netDecode(Transform& value, BitReader& in);
  * file; a script changing mass at runtime changes it on that end alone. Each
  * velocity is written only when large enough to matter.
  */
-void netEncode(const Rigidbody& value, BitWriter& out);
-void netDecode(Rigidbody& value, BitReader& in);
+void netEncode(const Rigidbody& value, Network::BitWriter& out);
+void netDecode(Rigidbody& value, Network::BitReader& in);
 
 /**
- * @brief Whether the character is standing on something, and whether crouched; nothing else.
+ * @brief Whether the character is standing on something, thrown off it, or crouched; nothing else.
  *
- * A non-simulating end cannot work either out: it applies no gravity, and the
+ * A non-simulating end cannot work these out: it applies no gravity, and the
  * wire's position precision is coarser than the contact; it never decides a
  * crouch, and shapes the capsule by this one. The rest is derived locally;
  * sending it would overwrite an owner's prediction with old news.
  */
-void netEncode(const CharacterController& value, BitWriter& out);
-void netDecode(CharacterController& value, BitReader& in);
+void netEncode(const CharacterController& value, Network::BitWriter& out);
+void netDecode(CharacterController& value, Network::BitReader& in);
 
 /**
  * @brief Whether physics has taken the rig over, and nothing else about it.
@@ -103,17 +94,17 @@ void netDecode(CharacterController& value, BitReader& in);
  * travel; while true every one does (see isPosedByAnimation). The bone list
  * comes from the scene file.
  */
-void netEncode(const Ragdoll& value, BitWriter& out);
-void netDecode(Ragdoll& value, BitReader& in);
+void netEncode(const Ragdoll& value, Network::BitWriter& out);
+void netDecode(Ragdoll& value, Network::BitReader& in);
 
 /**
  * @brief Whether @p spawn can be said on the wire and believed at the other end.
  *
  * A client opens the path on a server's say-so, so it must be a prefab inside
- * the project: relative, ".json", at most NET_PREFAB_PATH_MAX, no ".."
- * component, backslash, colon, control character or Windows device name -
- * judged on characters, so platforms agree. The pose must be finite, with a
- * rotation of some length and a scale within NET_MAX_SCALE either way.
+ * the project (isProjectJsonPath): else a hostile server names a network share and a Windows
+ * client hands it its login hash. The server asks before building, and the decoder refuses the
+ * same. The pose must be finite, with a rotation of some length and a scale within NET_MAX_SCALE
+ * either way.
  *
  * @param spawn The prefab path and pose to judge.
  * @return True when both can travel and be believed.
@@ -123,18 +114,18 @@ bool isSayable(const NetSpawn& spawn);
 /**
  * @brief Which prefab a spawned root is, and the pose it was built at, exactly.
  *
- * The pose unquantised: said once, and a static body is never corrected
+ * The pose unquantized: said once, and a static body is never corrected
  * later. What isSayable refuses decodes with no path, building nothing; every
  * field is read either way, so the stream stays in step.
  */
-void netEncode(const NetSpawn& value, BitWriter& out);
-void netDecode(NetSpawn& value, BitReader& in);
+void netEncode(const NetSpawn& value, Network::BitWriter& out);
+void netDecode(NetSpawn& value, Network::BitReader& in);
 
 /**
  * @brief Register everything the engine itself replicates.
  *
- * Called on an empty schema, before ScriptModule::setupNetwork, so the
- * engine's types take the first wire indices.
+ * Called on an empty schema by ScriptModule::setupNetwork, before the module's
+ * vkmSetupNetwork, so the engine's types take the first wire indices.
  *
  * @param schema The schema to register on; the one every end consults by default.
  */

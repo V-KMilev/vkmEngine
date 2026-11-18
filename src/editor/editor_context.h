@@ -10,15 +10,16 @@ struct FrameContext;
 struct EditorState;
 class EngineErrorLog;
 class AudioSystem;
+class LoadingSystem;
 class CameraControllerSystem;
-class MaterialPreviewSession;
+class PreviewCache;
 class EditorRenderHooks;
 class RenderSystem;
+class PlaySession;
+class SceneSession;
 
 /**
- * @brief Everything a panel needs for one frame, in one place.
- *
- * Collaborators are non-owning references. The event bus rides frame.events.
+ * @brief Everything a panel needs for one frame; non-owning references, the event bus in frame.events.
  */
 struct EditorContext {
     FrameContext& frame;
@@ -27,32 +28,23 @@ struct EditorContext {
     CameraControllerSystem& cameraController;
     RenderSystem&           renderSystem;
     EditorRenderHooks&      hooks;  ///< The backend's editor half, which the editor requires.
-    MaterialPreviewSession& materialPreviews;
+    PreviewCache&           previews;
 
-    /**
-     * @brief The mixer, for auditioning.
-     *
-     * An audition has no entity, so it reaches the device, not the components.
-     */
-    AudioSystem&            audioSystem;
+    AudioSystem&            audioSystem;  ///< The mixer, for auditioning: an audition has no entity,
+                                          ///< so it reaches the device, not the components.
 
-    /// Editor-owned recoverable-error log the engine reports into.
-    EngineErrorLog&         errorLog;
+    LoadingSystem&          loadingSystem;  ///< Shows the project's loading screen: given it as the
+                                            ///< project opens and as it is saved.
 
-    /**
-     * @brief The Viewport window's content rect in screen space.
-     *
-     * Set each frame just before the overlays are drawn.
-     */
-    ImVec2 viewportPos{};
+    EngineErrorLog&         errorLog;  ///< Editor-owned recoverable-error log the engine reports into.
+
+    SceneSession& session;  ///< The scene's file, and Stop putting Play's world back.
+    PlaySession&  play;     ///< Play until Stop: the world as Play found it, and the ejected view.
+
+    ImVec2 viewportPos{};   ///< The Viewport's content rect in screen space, set before the overlays draw.
     ImVec2 viewportSize{};  ///< See viewportPos.
 
-    /**
-     * @brief Who has the pointer and the keyboard.
-     *
-     * Decided before anything is drawn.
-     */
-    InputOwnership input{};
+    InputOwnership input{};  ///< Who has the pointer and the keyboard, decided before anything is drawn.
 };
 
 } // namespace Vkm::Engine

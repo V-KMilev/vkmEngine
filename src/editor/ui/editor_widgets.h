@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -10,43 +11,29 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
-#include "core/reflect.h"
-#include "core/math/curve.h"
+#include "base/reflect/enum_names.h"
+#include "base/math/curve.h"
 #include "system/render/editor_render_hooks.h"
-#include "ui/editor_style.h"
-#include "ui/editor_icons.h"
+#include "ui/style/editor_style.h"
+#include "ui/style/editor_icons.h"
 
 namespace Vkm::Engine {
 
-class Scene;
-enum class LightType;
-
 /**
- * @brief XYZ vector control: three drag floats with colored reset buttons (X/Y/Z).
+ * @brief The three fields of a vector row, each marked by its axis's color: drawVec3Control less its
+ *        label.
  *
- * Bounds hold on typed input too (PROP_CLAMP); lo == hi == 0 leaves an axis unbounded.
- *
- * @param label Row label.
  * @param values The three floats edited.
- * @param resetValue What an axis button restores.
- * @param speed Drag speed per axis.
- * @param lo Lower bound.
- * @param hi Upper bound.
+ * @param speed  Drag speed per axis.
+ * @param lo     Lower bound.
+ * @param hi     Upper bound.
+ * @param format printf format for each.
  * @return True the frame any axis is edited.
  */
-bool drawVec3Control(
-    const char* label,
-    float* values,
-    float resetValue = 0.0f,
-    float speed = 0.1f,
-    float lo = 0.0f,
-    float hi = 0.0f
-);
+bool vec3Fields(float* values, float speed, float lo, float hi, const char* format);
 
 /**
- * @brief Draw a right-aligned property label with a consistent column width.
- *
- * Sets the next item to full width so the paired widget fills the remainder.
+ * @brief Draw a right-aligned property label, and set the next item to fill the rest of the row.
  *
  * @param label Label column text.
  */
@@ -74,18 +61,20 @@ inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
 }
 
 /**
- * @brief The bounds a prop row passes are a constraint, not a hint.
+ * @brief A row that only says: @p label in the label column, @p value beside it.
  *
- * Clamps Ctrl+click typed input too. Not AlwaysClamp, which would also clamp the
- * lo == hi == 0 range that means "unbounded".
+ * @param label What it is.
+ * @param value What it says.
  */
+void factRow(const char* label, const char* value);
+
 inline constexpr ImGuiSliderFlags PROP_CLAMP = ImGuiSliderFlags_ClampOnInput;
+    ///< A prop row's bounds clamp typed input too; AlwaysClamp would also clamp lo == hi == 0, "unbounded".
 
 /**
- * @brief A slider that shows its value as a filled track.
+ * @brief The editor's slider: a filled track, the value written over the whole field.
  *
- * The value is written over the whole field, where ImGui's grab would cover it. Draw an
- * editor slider through this, so they all read the same. Ctrl+click is ImGui's own text field.
+ * Draw an editor slider through this, so they all read the same. Ctrl+click is ImGui's own text field.
  *
  * @param id     ImGui id; the label is hidden ("##...").
  * @param type   ImGuiDataType_Float or ImGuiDataType_S32.
@@ -151,17 +140,23 @@ inline bool sliderInt(
 }
 
 /**
- * @brief Begin a combo drawn as one flat field.
+ * @brief Begin a combo drawn as one flat field, the editor's chevron at its right.
  *
- * The arrow sits on the field's colour, not a button block. Begin an editor combo here,
- * and end it with ImGui::EndCombo when this returns true.
+ * End it with ImGui::EndCombo when this returns true.
  *
  * @param id      ImGui id.
- * @param preview What the closed combo shows.
+ * @param preview What the closed combo shows, cut short of the chevron.
  * @param flags   ImGui's combo flags.
  * @return Whether the popup is open.
  */
 bool beginCombo(const char* id, const char* preview, ImGuiComboFlags flags = 0);
+
+/**
+ * @brief A submenu inside a menu, its arrow the editor's chevron; closed with ImGui::EndMenu.
+ *
+ * @return Whether it is open.
+ */
+bool beginSubmenu(const char* label, bool enabled = true);
 
 /**
  * @brief A combo over a list of labels, edited by index.
@@ -203,71 +198,14 @@ inline bool propDrag(
     });
 }
 
-inline bool propDragInt(
-    const char* label,
-    int* v,
-    float speed,
-    int lo,
-    int hi,
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi, "%d", PROP_CLAMP); });
-}
-
-inline bool propDrag2(
-    const char* label,
-    float* v,
-    float speed,
-    float lo,
-    float hi,
-    const char* fmt = "%.3f",
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] {
-        return ImGui::DragFloat2("##v", v, speed, lo, hi, fmt, PROP_CLAMP);
-    });
-}
-
-inline bool propDrag3(
-    const char* label,
-    float* v,
-    float speed,
-    float lo,
-    float hi,
-    const char* fmt = "%.3f",
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] {
-        return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt, PROP_CLAMP);
-    });
-}
-
-inline bool propColor3(
-    const char* label,
-    float* v,
-    ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] { return ImGui::ColorEdit3("##v", v, flags); });
-}
-
-inline bool propColor4(
-    const char* label,
-    float* v,
-    ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] { return ImGui::ColorEdit4("##v", v, flags); });
-}
-
 inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::Checkbox("##v", v); });
 }
 
 /**
- * @brief A labelled combo that edits an index rather than a value.
+ * @brief A labeled combo that edits an index rather than a value.
  *
- * For entries that set more than one field, which propValueCombo cannot express.
+ * For entries that set more than one field, which valueCombo cannot express.
  *
  * @param label   Row label.
  * @param labels  Entry labels.
@@ -287,127 +225,25 @@ inline bool propIndexCombo(
 }
 
 /**
- * @brief Property row backed by a Combo over a fixed table of raw values.
+ * @brief A combo over a fixed table of raw values; a stored value missing from it previews as "?".
  *
- * A stored value missing from the table previews as "?" until edited.
- *
- * @tparam N      Entries in both arrays.
- * @param label   Row label and id scope.
- * @param labels  Display string per value.
- * @param values  The value each label maps to.
- * @param v       The edited value.
- * @param tooltip Hover tooltip, or null.
+ * @tparam N     Entries in both arrays.
+ * @param id     ImGui id.
+ * @param labels Display string per value.
+ * @param values The value each label maps to.
+ * @param v      The edited value.
  * @return Whether the value changed this frame.
  */
 template <size_t N>
-bool propValueCombo(
-    const char* label,
-    const char* const (&labels)[N],
-    const uint32_t (&values)[N],
-    uint32_t* v,
-    const char* tooltip = nullptr
-) {
+bool valueCombo(const char* id, const char* const (&labels)[N], const uint32_t (&values)[N], uint32_t* v) {
     const int count = static_cast<int>(N);
     int idx = -1;
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < count; ++i) {
         if (values[i] == *v) idx = i;
-
-    if (!propIndexCombo(label, labels, count, &idx, tooltip)) return false;
+    }
+    if (!comboList(id, &idx, labels, count)) return false;
     *v = values[idx];
     return true;
-}
-
-/// Property row: an integer drag staged over a uint32_t member.
-inline bool propDragU32(
-    const char* label,
-    uint32_t* v,
-    float speed,
-    uint32_t lo,
-    uint32_t hi,
-    const char* tooltip = nullptr
-) {
-    int staged = static_cast<int>(*v);
-    const bool changed = propDragInt(
-        label,
-        &staged,
-        speed,
-        static_cast<int>(lo),
-        static_cast<int>(hi),
-        tooltip
-    );
-    if (changed) *v = static_cast<uint32_t>(staged < 0 ? 0 : staged);
-    return changed;
-}
-
-/// Property row: a degrees drag staged over a radians-stored member.
-inline bool propAngleDrag(
-    const char* label,
-    float* radians,
-    float speed,
-    float loDeg,
-    float hiDeg,
-    const char* tooltip = nullptr
-) {
-    float deg = glm::degrees(*radians);
-    const bool changed = propDrag(label, &deg, speed, loDeg, hiDeg, "%.1f deg", tooltip);
-    if (changed) *radians = glm::radians(deg);
-    return changed;
-}
-
-/// Property row: a degrees slider staged over a radians-stored member.
-inline bool propAngleSlider(
-    const char* label,
-    float* radians,
-    float loDeg,
-    float hiDeg,
-    const char* tooltip = nullptr
-) {
-    float deg = glm::degrees(*radians);
-    const bool changed = propSlider(label, &deg, loDeg, hiDeg, "%.0f deg", tooltip);
-    if (changed) *radians = glm::radians(deg);
-    return changed;
-}
-
-/**
- * @brief Property row: a range, its least and greatest value side by side.
- *
- * @param label   The row's label and id scope.
- * @param range   The range; min never passes max.
- * @param speed   Drag speed.
- * @param lo      Lowest either end may be; lo == hi == 0 leaves it unbounded.
- * @param hi      Highest either end may be.
- * @param fmt     printf format for both ends.
- * @param tooltip Shown on hover, or null.
- * @return Whether it was edited this frame.
- */
-inline bool propRange(
-    const char* label,
-    Math::FloatRange& range,
-    float speed,
-    float lo,
-    float hi,
-    const char* fmt = "%.2f",
-    const char* tooltip = nullptr
-) {
-    return propRow(label, tooltip, [&] {
-        return ImGui::DragFloatRange2("##v", &range.min, &range.max, speed, lo, hi, fmt, fmt, PROP_CLAMP);
-    });
-}
-
-/// Property row: a range of angles in degrees, staged over a radians-stored range.
-inline bool propAngleRange(
-    const char* label,
-    Math::FloatRange& range,
-    float speed,
-    float loDeg,
-    float hiDeg,
-    const char* fmt = "%.0f deg",
-    const char* tooltip = nullptr
-) {
-    Math::FloatRange degrees{glm::degrees(range.min), glm::degrees(range.max)};
-    const bool changed = propRange(label, degrees, speed, loDeg, hiDeg, fmt, tooltip);
-    if (changed) range = {glm::radians(degrees.min), glm::radians(degrees.max)};
-    return changed;
 }
 
 /**
@@ -423,35 +259,31 @@ inline bool propString(const char* label, std::string& s, const char* tooltip = 
 }
 
 /**
- * @brief Full-width Rebake button: bumps @p bakeVersion when pressed.
+ * @brief A remove button at the right end of the current line: a cross, in danger's color only
+ *        under the pointer.
  *
- * @param bakeVersion The counter a bake compares against.
- * @return Whether it was pressed this frame.
+ * @param id      Unique among the line's items.
+ * @param tooltip What it removes, on hover.
+ * @return Whether it was pressed.
  */
-inline bool rebakeButton(uint32_t& bakeVersion) {
-    if (ImGui::Button("Rebake", ImVec2(-1, 0))) {
-        ++bakeVersion;
-        return true;
-    }
-    return false;
-}
+bool removeButton(const char* id, const char* tooltip);
 
 /**
- * @brief Section heading inside a panel or popup.
+ * @brief Section heading inside a panel or popup; TextDisabled is for hints and metadata.
  *
- * Distinct from TextDisabled, which is for hints and metadata.
- *
- * @param text Drawn in EditorStyle::HEADER_TEXT.
+ * @param text The heading.
  */
 inline void sectionLabel(const char* text) {
-    ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", text);
+    EditorStyle::pushHeadingFont();
+    ImGui::TextUnformatted(text);
+    ImGui::PopFont();
 }
 
 /**
  * @brief The top of a panel's empty state: a glyph, what is missing, and the way out.
  *
- * Placed a third of the way down, allowing for @p actionRows buttons the caller then
- * places with centreNextItem.
+ * Placed a third of the way down, allowing for @p actionRows rows of buttons the caller then
+ * places with centerNextItem.
  *
  * @param icon Glyph naming what the panel would show.
  * @param headline What is missing, e.g. "No entity selected".
@@ -461,61 +293,23 @@ inline void sectionLabel(const char* text) {
 void emptyStateHeading(EditorIcon icon, const char* headline, const char* detail, int actionRows);
 
 /**
- * @brief Put the next item of @p width at the centre of the row.
+ * @brief Put the next item of @p width at the center of the row.
  *
  * At the left edge when wider than the row, so the tail clips, not the head.
  *
  * @param width The next item's width.
  */
-void centreNextItem(float width);
+void centerNextItem(float width);
 
 /**
- * @brief The square face of an asset tile: its picture, or its glyph on a same-size square.
- *
- * Unframed, so tiles with and without a picture stand level (ImageButton insets by
- * FramePadding). Hover shows as an accent border, as a tint is invisible over a
- * picture. The face stays the last item and allows overlap, so later controls over it
- * are reachable.
- *
- * @param picture 0 shows @p glyph instead.
- * @param face Edge length, pixels.
- * @param accent The kind's colour, for the hover border.
- * @param glyph Drawn centred on a face with no picture.
- * @param glyphColor A faint one says a picture is still coming.
- * @param[out] faceMin Top-left corner of the face.
- * @param[out] faceMax Bottom-right corner of the face.
- * @return Whether the face was clicked.
- */
-bool tileFace(
-    ImTextureID picture,
-    float face,
-    const ImVec4& accent,
-    EditorIcon glyph,
-    const ImVec4& glyphColor,
-    ImVec2& faceMin,
-    ImVec2& faceMax
-);
-
-/**
- * @brief The accent strip down a tile's left edge.
- *
- * Call after the tile's group, so it lies over the face's edge, not under it.
- *
- * @param faceMin Top-left corner of the face.
- * @param faceMax Bottom-right corner of the face.
- * @param color The kind's colour, faded when the asset is unused.
- */
-void tileStrip(ImVec2 faceMin, ImVec2 faceMax, const ImVec4& color);
-
-/**
- * @brief Draw one line of text clipped to a width, ellipsised in the middle.
+ * @brief Draw one line of text cut to a width, elided in the middle.
  *
  * Mid-line, because these lines differ at their ends: a tail cut leaves every tile
  * reading "assets/audio/to...".
  *
  * @param text Empty draws the "(unnamed)" placeholder.
  * @param maxWidth Pixels.
- * @param dim Draw in the disabled colour.
+ * @param dim Draw in the disabled color.
  */
 void clippedLine(const char* text, float maxWidth, bool dim);
 
@@ -528,8 +322,46 @@ void clippedLine(const char* text, float maxWidth, bool dim);
  */
 std::string elidedLine(const char* text, float maxWidth);
 
+inline constexpr size_t SEARCH_FROM = 8;  ///< Past this many rows a picker's list opens with a search,
+                                          ///< focused.
+
 /**
- * @brief Test whether a string contains a filter substring, case-insensitively.
+ * @brief One row of a searchCombo's list.
+ */
+struct ComboRow {
+    std::string label;
+    bool        selected = false;
+    bool        dim      = false;    ///< In the secondary text: not loaded, not quite a choice.
+    int         indent   = 0;        ///< Steps in, as a tree's depth; none while a search narrows it.
+    const char* tip      = nullptr;
+};
+
+/**
+ * @brief The list of an open combo, narrowed as the search above it is typed into.
+ *
+ * @param rows The rows, in order.
+ * @return The index of the row picked, or -1.
+ */
+int searchComboRows(const std::vector<ComboRow>& rows);
+
+/**
+ * @brief A combo whose rows are asked for only while it is open, with a search past SEARCH_FROM.
+ *
+ * @param id      The combo's id.
+ * @param preview What the closed combo shows.
+ * @param rows    Called while the list is open; returns its rows.
+ * @return The index of the row picked this frame, or -1.
+ */
+template <typename ListRows>
+int searchCombo(const char* id, const char* preview, ListRows&& rows) {
+    if (!beginCombo(id, preview)) return -1;
+    const int picked = searchComboRows(rows());
+    ImGui::EndCombo();
+    return picked;
+}
+
+/**
+ * @brief Whether @p text contains @p filter, ignoring case.
  *
  * @param text Candidate string.
  * @param filter Needle; empty matches everything.
@@ -538,7 +370,53 @@ std::string elidedLine(const char* text, float maxWidth);
 bool matchesFilter(const char* text, const char* filter);
 
 /**
- * @brief The search box a type-to-narrow popup opens with.
+ * @brief One choice of a segmented control.
+ */
+struct Segment {
+    const char*   label;              ///< What it says; it is known by its place, not by this.
+    const ImVec4* tint    = nullptr;  ///< Its text's color, or null for the usual one.
+    const char*   tooltip = nullptr;  ///< Shown on hover, or null for none.
+};
+
+/**
+ * @brief A row of choices drawn as one joined control, the chosen one filled.
+ *
+ * For a few views of one thing, where tabs would nest inside a tab.
+ *
+ * @param id       ImGui id of the control.
+ * @param segments The choices, left to right.
+ * @param count    How many there are.
+ * @param chosen   Index of the chosen one; set when another is clicked.
+ * @return Whether the choice changed.
+ */
+bool segmentedControl(const char* id, const Segment* segments, int count, int* chosen);
+
+/**
+ * @brief A pill that toggles: tinted by @p color while on, dim while off.
+ *
+ * For filters whose state is the point, where a checkbox's tick says less than the color.
+ *
+ * @param label Its text; "###" hides a changing part from the id.
+ * @param on    Its state, flipped by a click.
+ * @param color What it means: the tint of its fill, ring and text while on.
+ * @return Whether it was clicked.
+ */
+bool toggleChip(const char* label, bool* on, const ImVec4& color);
+
+/**
+ * @brief A panel's search box: Escape empties it, and Ctrl+F reaches it while its panel has focus.
+ *
+ * @param id    ImGui id, unique within the panel.
+ * @param buf   The needle.
+ * @param size  Capacity of @p buf, including the terminator.
+ * @param width Screen pixels; negative leaves that much room at the right edge.
+ * @param hint  What it shows while empty.
+ * @return Whether the needle changed.
+ */
+bool searchField(const char* id, char* buf, size_t size, float width, const char* hint = "Search...");
+
+/**
+ * @brief The search box a type-to-narrow popup opens with, focused as the popup appears.
  *
  * @param id    ImGui id fragment, unique within the popup ("##compFilter").
  * @param buf   The needle, emptied whenever the popup appears.
@@ -556,110 +434,34 @@ inline void popupSearchField(const char* id, char* buf, size_t size, float width
 }
 
 /**
- * @brief Begin one of the strips that float over the viewport.
- *
- * End with endOverlayStrip whatever this returns.
- *
- * @param id    ImGui id.
- * @param size  Outer size; 0 on an axis fits the contents.
- * @return Whether its contents are drawn.
+ * @brief What a card's note says of its component: a fact, a surprise, or that it does nothing.
  */
-bool beginOverlayStrip(const char* id, ImVec2 size);
+enum class Note { Info, Warning, Danger };
 
 /**
- * @brief End a strip beginOverlayStrip began.
+ * @brief A card's line about its component: the kind's icon and wrapped text in its color, an Info
+ *        in the secondary text.
+ *
+ * @param kind   What the note is.
+ * @param format printf format of its one sentence.
  */
-void endOverlayStrip();
+void cardNote(Note kind, const char* format, ...) IM_FMTARGS(2);
 
 /**
- * @brief A MenuItem with a leading entity/tool glyph.
+ * @brief A component "card": a collapsible block under the editor's own header.
  *
- * @param icon     Glyph ahead of the label.
- * @param label    Menu item text.
- * @param shortcut Right-aligned shortcut label, or null.
- * @param enabled  MenuItem's enabled flag.
- * @return True on the frame the item is activated.
- */
-bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut = nullptr, bool enabled = true);
-
-/**
- * @brief A component "card": a framed, accent-colored collapsible block.
+ * The header is a chevron, the card's icon, its title and, given a menu, a "..." button that
+ * opens it, as a right click on the header does. Always pair with endComponentCard().
  *
- * Always pair with endComponentCard(); remove the component only after it.
- *
- * @param title         Header text and id.
- * @param accent        One of EditorStyle::Accent.
- * @param defaultOpen   Whether the card starts expanded.
- * @param removeClicked Set true the frame the header's "x" is pressed; null draws no "x".
+ * @param title       Header text and id.
+ * @param icon        What the card is for; None draws no glyph.
+ * @param defaultOpen Whether the card starts expanded.
+ * @param menu        The popup the header opens, which the caller begins before endComponentCard;
+ *                    null for none.
  * @return True when the body is expanded and should be drawn.
  */
-bool beginComponentCard(
-    const char* title,
-    const ImVec4& accent,
-    bool defaultOpen,
-    bool* removeClicked = nullptr
-);
+bool beginComponentCard(const char* title, EditorIcon icon, bool defaultOpen, const char* menu = nullptr);
 void endComponentCard();
-
-/**
- * @brief What a clip transport row did this frame.
- */
-struct ClipTransport {
-    bool rewound  = false;   ///< Stop pressed: at zero, not playing.
-    bool authored = false;   ///< Loop or Speed changed; the scene saves these.
-};
-
-/**
- * @brief A clip player's transport row: Play/Pause, Stop, Loop and Speed.
- *
- * Play, Pause and Stop are previews, not edits; Loop and Speed are authored and reported
- * for the caller to record. Leaves the cursor on the row for the caller's controls.
- *
- * @tparam Player Animation or Animator.
- * @param id Prefix unique among the transports in one window.
- * @param player The player the row drives.
- * @param minSpeed The drag's lowest speed: 0 where the player cannot run backwards.
- * @param speedWidth Width of the speed drag; -1 fills the row.
- * @return What was pressed or changed.
- */
-template <typename Player>
-ClipTransport clipTransport(const char* id, Player& player, float minSpeed, float speedWidth) {
-    ClipTransport result;
-    const float gap    = EditorStyle::px(8.0f);
-    const float height = ImGui::GetFrameHeight();
-
-    ImGui::PushID(id);
-    const EditorIcon playIcon = player.playing ? EditorIcon::Pause : EditorIcon::Play;
-    const char*      playTip  = player.playing ? "Pause" : "Play";
-    if (iconButton("play", playIcon, player.playing, true, playTip, height)) {
-        player.playing = !player.playing;
-    }
-    ImGui::SameLine(0, gap);
-    if (iconButton("stop", EditorIcon::Stop, false, true, "Stop (rewind to start)", height)) {
-        player.playing = false;
-        player.time    = 0.0f;
-        result.rewound = true;
-    }
-    ImGui::SameLine(0, gap);
-    const char* loopTip = player.looping ? "Looping" : "Play once";
-    if (iconButton("loop", EditorIcon::Loop, player.looping, true, loopTip, height)) {
-        player.looping  = !player.looping;
-        result.authored = true;
-    }
-    ImGui::SameLine(0, gap);
-    ImGui::SetNextItemWidth(speedWidth);
-    result.authored |= ImGui::DragFloat(
-        "##speed",
-        &player.speed,
-        0.005f,
-        minSpeed,
-        10.0f,
-        "Speed %.2fx",
-        PROP_CLAMP
-    );
-    ImGui::PopID();
-    return result;
-}
 
 /**
  * @brief Enum dropdown, one row per name, from the enum's VKM_ENUM_NAMES registration.
@@ -684,134 +486,68 @@ bool drawEnumCombo(const char* id, E& value) {
 }
 
 /**
- * @brief Property row wrapping drawEnumCombo.
- *
- * @tparam E The enum.
- * @param label The row's label.
- * @param value Written on a pick.
- * @param tooltip Shown on hover, or null.
- * @return Whether a pick changed it this frame.
- */
-template <typename E>
-bool propEnumCombo(const char* label, E& value, const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return drawEnumCombo("##v", value); });
-}
-
-/**
- * @brief Stable Euler-angle edit cache for quaternion-backed rotations.
- *
- * Quaternion -> Euler is many-to-one and singular at +/-90 deg, so re-deriving it each
- * frame snaps typed axes and jitters. The edited Euler stays the truth, reseeded only
- * when the quaternion changes from outside. Call sync() before drawing, then:
- * `if (drawVec3Control(..., cache.degrees(), ...)) q = cache.toQuat();`
- *
- * @tparam Key Identifies the rotation source (an EntityId, a keyframe index); a new key
- *         reseeds.
- */
-template<class Key>
-class EulerCache {
-    public:
-        EulerCache() = default;
-        ~EulerCache() = default;
-
-        EulerCache(const EulerCache& other) = default;
-        EulerCache& operator=(const EulerCache& other) = default;
-
-        EulerCache(EulerCache && other) = default;
-        EulerCache& operator=(EulerCache && other) = default;
-
-    public:
-        /**
-         * @brief Reseed from @p q if the key changed or @p q diverged from the cache.
-         *
-         * @param key This frame's rotation source.
-         * @param q   The stored rotation.
-         */
-        void sync(const Key& key, const glm::quat& q) {
-            const glm::quat cached = glm::quat(glm::radians(m_degrees));
-            const bool keyChanged   = !m_haveKey || !(m_key == key);
-            const bool quatDiverged = glm::abs(glm::dot(cached, q)) < 0.9999f;
-            if (keyChanged || quatDiverged) {
-                m_degrees = glm::degrees(glm::eulerAngles(q));
-                m_key     = key;
-                m_haveKey = true;
-            }
-        }
-
-        float* degrees() { return &m_degrees.x; }
-        glm::quat toQuat() const { return glm::normalize(glm::quat(glm::radians(m_degrees))); }
-
-    private:
-        glm::vec3 m_degrees{0.0f};
-        Key       m_key{};
-        bool      m_haveKey = false;
-};
-
-/**
- * @brief Write the user-visible name of @p id into @p buf.
- *
- * Falls back to kind and slot ("Camera 7") without a non-empty Name.
- *
- * @param scene   The scene @p id lives in.
- * @param id      Entity named; it need not carry a Name.
- * @param buf     Receives the name, truncated.
- * @param bufSize Capacity of @p buf.
- */
-void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
-
-/**
- * @brief Which entity-type glyph represents @p id.
- *
- * Shares getEntityDisplayName's fallback ladder, so glyph and label agree.
- *
- * @param scene The scene @p id lives in.
- * @param id Its components choose the glyph.
- * @return The glyph for its kind.
- */
-EditorIcon entityIconKind(const Scene& scene, EntityId id);
-
-/**
- * @brief The glyph for a light of @p type.
- *
- * entityIconKind's light rung on its own, so a light's row and marker agree.
- *
- * @param type The light's type.
- * @return Its glyph; the point light's for a value out of range.
- */
-EditorIcon lightIcon(LightType type);
-
-/**
- * @brief Draw a non-interactive icon centred in a @p size square at the cursor.
+ * @brief Draw a non-interactive icon centered in a @p size square at the cursor.
  *
  * @param icon  Glyph.
  * @param size  Square side, screen pixels.
- * @param color Glyph colour.
+ * @param color Glyph color.
  */
 void inlineIcon(EditorIcon icon, float size, ImU32 color);
 
 /**
- * @brief A tree node row prefixed with a type glyph: <arrow> <icon> <name>.
+ * @brief A row folding what follows it: the editor's chevron and @p label. A click flips @p open.
  *
- * The caller handles click, drag and context menu.
- *
- * @param idPtr The node's id.
- * @param flags TreeNodeEx's flags.
- * @param icon Glyph between the arrow and the name.
- * @param name The label.
- * @return Whether the node is open.
+ * @param label Shown, and the row's id; text after "###" is the id alone.
+ * @param open  Whether what follows is shown; the caller keeps it.
+ * @return @p open, as the click left it.
  */
-bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags, EditorIcon icon, const char* name);
+bool foldRow(const char* label, bool& open);
 
 /**
- * @brief A Selectable row prefixed with a type glyph.
+ * @brief foldRow keeping its state in ImGui's storage, as a tree node does, and indenting what
+ *        it opens. Pair an open one with endFold().
  *
- * @param idStr Keeps the ImGui id stable when names collide.
- * @param selected Whether the row draws as selected.
- * @param icon Glyph ahead of the name.
- * @param name The label.
- * @return True the frame it is clicked.
+ * @param label       As foldRow's; also the id scope of what it opens.
+ * @param defaultOpen Whether it starts open.
+ * @return Whether it is open.
  */
-bool entitySelectable(const char* idStr, bool selected, EditorIcon icon, const char* name);
+bool beginFold(const char* label, bool defaultOpen);
+void endFold();
+
+/**
+ * @brief What a click on a list row did.
+ */
+struct ListRowResult {
+    bool clicked = false;  ///< The row was clicked and let go of on it, not dragged off.
+    bool toggled = false;  ///< Its chevron was clicked: open it, or close it.
+};
+
+/**
+ * @brief One row of a list: a chevron when it has children, its icon and its label, indented.
+ *
+ * A Selectable spanning the row, so drag and drop, a context menu and hover act on it as on any
+ * item; it is the last item when this returns. A click on the chevron toggles, not selects.
+ *
+ * @param id          Unique among the window's rows; not shown.
+ * @param icon        What kind of thing the row is.
+ * @param label       What it is called.
+ * @param selected    Drawn in the selection's color.
+ * @param depth       Steps of indent.
+ * @param hasChildren Whether it draws a chevron.
+ * @param open        Which way the chevron points.
+ * @param linked      Draws the icon in the accent: the row is a prefab's.
+ * @return What was clicked.
+ */
+ListRowResult listRow(
+    const char* id,
+    EditorIcon icon,
+    const char* label,
+    bool selected,
+    int depth = 0,
+    bool hasChildren = false,
+    bool open = false,
+    bool linked = false
+);
 
 /**
  * @brief Wrap a backend texture as the handle ImGui's image widgets take.

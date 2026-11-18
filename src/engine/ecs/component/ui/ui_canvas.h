@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -16,6 +18,9 @@ class Scene;
  * live viewport. Several canvases draw in ascending sortOrder.
  */
 struct UICanvas {
+    static constexpr float REFERENCE_HEIGHT = 1080.0f;  ///< The screen height a canvas is authored at unless
+                                                        ///< it says otherwise, and anything sized as one.
+
     /**
      * @brief How the canvas maps authored pixels to on-screen pixels.
      */
@@ -25,13 +30,19 @@ struct UICanvas {
         Count            ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
     };
 
-    /// Authoring height in pixels; ScaleWithHeight scales against it.
-    float     referenceHeight = 1080.0f;
+    float     referenceHeight = REFERENCE_HEIGHT;  ///< Authoring height in pixels; ScaleWithHeight scales
+                                                   ///< against it.
     ScaleMode scaleMode       = ScaleMode::ScaleWithHeight;
-    /// Draw order across canvases; higher draws on top.
-    int32_t   sortOrder       = 0;
-    /// Skip the canvas and its whole subtree when false.
-    bool      visible         = true;
+    int32_t   sortOrder       = 0;                 ///< Draw order across canvases; higher draws on top.
+    bool      visible         = true;              ///< Skip the canvas and its whole subtree when false.
+
+    bool pausesGame = false;  ///< While it shows, the world stands still and the cursor is free: a pause
+                              ///< menu, an end screen. Only while the world runs, and offline: a session's
+                              ///< world is the server's, so only the cursor is freed. Shown at load, it holds
+                              ///< the world before any behavior starts, so a behavior shows it.
+
+    std::string toggleAction;  ///< An action whose press shows or hides it, the world paused or not: "Menu"
+                               ///< for a pause menu, opened and closed with no code. Empty for none.
 
     /**
      * @brief Screen pixels a pixel of @p canvas spans, drawn into a view @p viewHeight pixels tall.
@@ -64,8 +75,10 @@ bool hasCanvasAncestor(const Scene& scene, EntityId id);
 VKM_ENUM_NAMES(::Vkm::Engine::UICanvas::ScaleMode, "Fixed", "ScaleWithHeight")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::UICanvas)
-    VKM_F(referenceHeight)
+    VKM_F(referenceHeight, 1.0f, 8192.0f, "The height it is laid out at; Scale With Height scales to it")
     VKM_F(scaleMode)
-    VKM_F(sortOrder)
+    VKM_F(sortOrder, -1000.0f, 1000.0f, "Higher draws on top across canvases")
     VKM_F(visible)
+    VKM_F(pausesGame, "While it shows, the world stands still and the cursor is free")
+    VKM_F(toggleAction, "An action whose press shows or hides it, such as Menu")
 VKM_REFLECT_END()

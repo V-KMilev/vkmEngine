@@ -2,12 +2,19 @@
 
 namespace Vkm::Engine {
 
+// Out of line, where BehaviorBase is whole: the component's own header only names it.
+ScriptComponent::ScriptComponent() = default;
+ScriptComponent::~ScriptComponent() = default;
+
+ScriptComponent::ScriptComponent(ScriptComponent && other) noexcept = default;
+ScriptComponent& ScriptComponent::operator=(ScriptComponent && other) noexcept = default;
+
 void reportUnregisteredBehavior(const char* typeName) {
     reportError(
         "Behavior",
         typeName,
         "added in code but never registered: it runs, but a saved scene cannot load it "
-        "and a script reload drops it. Register it in vkmRegisterBehaviors."
+        "and a script reload drops it. Its module registers it from VKM_GAME_MODULE."
     );
 }
 

@@ -4,14 +4,28 @@
 
 #include <string_view>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/fnv1a.h"
-#include "net/prediction/command.h"
+#include "base/hash/fnv1a.h"
+#include "platform/input/input_command.h"
 #include "net/wire/protocol.h"
 #include "net/wire/quantize.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+thread_local std::vector<uint8_t> t_scratch[2];
+
+} // namespace
+
+namespace detail {
+
+std::vector<uint8_t>& wireScratch(bool second) {
+    return t_scratch[second ? 1 : 0];
+}
+
+} // namespace detail
 
 namespace {
 
@@ -22,7 +36,7 @@ namespace {
  * decodes every coordinate at another scale.
  *
  * @param hash The fingerprint so far.
- * @return @p hash folded with the quantiser's steps and the fields' widths.
+ * @return @p hash folded with the quantizer's steps and the fields' widths.
  */
 uint32_t foldWireLayout(uint32_t hash) {
     const float scales[] = {
@@ -78,6 +92,7 @@ uint32_t NetSchema::fingerprint() const {
         hash = fnv1a32(type.name, hash);
         // A terminator, so names differing only where one ends cannot collide.
         hash = fnv1a32(std::string_view("", 1), hash);
+        hash = fnv1a32(type.layout, hash);
     }
     return hash;
 }

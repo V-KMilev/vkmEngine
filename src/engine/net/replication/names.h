@@ -14,7 +14,7 @@ class Scene;
  * @brief What the server's slots name on this end, so a client can make entities of its own.
  *
  * A slot is an entity's name on the wire: the server's slot, always. The world both ends loaded
- * is the same entities at the same slots, which adoptWorld records as each naming itself.
+ * is the same entities at the same slots, so a slot names itself unless a claim placed it elsewhere.
  * Whatever the server names that this end has not heard of yet is made where there is room - at
  * that same slot when it is free here, which is the common case and keeps the ends' slot order
  * alike, and anywhere else when an entity of this end's own is standing in it. So an effect, a
@@ -48,10 +48,17 @@ class NetNames {
          */
         EntityId find(const Scene& scene, uint32_t slot) const;
 
-        /// Whether a slot of the server's names @p entity here: if not, it is this end's own.
-        bool names(const Scene& scene, EntityId entity) const {
-            return entity && find(scene, entity.slot()) == entity;
-        }
+        /**
+         * @brief Whether a slot of the server's names @p entity here: if not, it is this end's own.
+         *
+         * Asked by the server's slot for it, not its own: what the server made while an entity of
+         * this end's stood in that slot was made at another.
+         *
+         * @param scene  The world it is in.
+         * @param entity An entity of this end's.
+         * @return Whether it stands for one of the server's.
+         */
+        bool names(const Scene& scene, EntityId entity) const;
 
         /**
          * @brief What the server's @p slot names here, made if this end has nothing for it yet.
@@ -91,9 +98,11 @@ class NetNames {
         void clear();
 
     private:
-        std::unordered_map<uint32_t, EntityId> m_world;    ///< The world as loaded, by slot.
-        std::unordered_map<uint32_t, EntityId> m_claimed;  ///< What the server made since, by its slot.
-        std::vector<EntityId>                  m_ended;    ///< What the last session made, to sweep.
+        std::unordered_map<uint32_t, EntityId> m_world;      ///< The world as loaded, by slot.
+        std::unordered_map<uint32_t, EntityId> m_claimed;    ///< What the server made since, by its slot.
+        std::unordered_map<uint32_t, uint32_t> m_server;     ///< The server's slot, by this end's slot, for
+                                                             ///< what claim() made; any other is its own.
+        std::vector<EntityId>                  m_ended;      ///< What the last session made, to sweep.
         uint64_t                               m_epoch = 0;  ///< The world all of it names entities of.
 };
 

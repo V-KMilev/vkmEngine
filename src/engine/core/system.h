@@ -2,26 +2,9 @@
 
 #include <cstdint>
 
+#include "core/frame_context.h"
+
 namespace Vkm::Engine {
-
-class WindowManager;
-class Clock;
-class HostChrome;
-
-class Scene;
-class ResourceManager;
-class EventBus;
-class InputMap;
-class NetSession;
-class PoseBuffer;
-struct RenderSettings;
-struct HostView;
-struct Visibility;
-struct UIDrawData;
-struct SplashFrame;
-struct LiveParticles;
-struct OceanData;
-struct TerrainFrame;
 
 /**
  * @brief Named per-frame execution stages.
@@ -40,43 +23,6 @@ enum class SystemStage : uint8_t {
     Editor       = 5,
 
     Count  ///< Number of stages. Keep last.
-};
-
-/**
- * @brief Per-frame state bundle passed to every system.
- *
- * References are engine-owned services, valid for the session. Pointers are
- * per-frame products, null until their producer has run this frame, so a
- * consumer is registered after its producer (in setupEngineApp).
- *
- * Simulation state reads getSimDelta() and getFixedStep(); presentation and
- * services run every frame regardless, so a paused game keeps its music and menu.
- *
- * A null `hostView` means render through the scene's active camera.
- */
-struct FrameContext {
-    Scene&           scene;
-    ResourceManager& resources;
-
-    Clock&           clock;
-    EventBus&        events;
-    WindowManager&   window;
-    InputMap&        input;
-    NetSession&      net;
-    HostChrome&      chrome;
-    RenderSettings&  render;
-    /// The project's render settings, which a quality tier is built over; the host keeps them
-    /// (Engine::setProjectRenderSettings, EditorSystem::update).
-    RenderSettings&  projectRender;
-
-    const HostView*      hostView   = nullptr;  ///< From CameraControllerSystem.
-    const Visibility*    visibility = nullptr;  ///< From VisibilitySystem.
-    const PoseBuffer*    poses      = nullptr;  ///< From SkeletalAnimationSystem.
-    const UIDrawData*    ui         = nullptr;  ///< From UISystem.
-    const SplashFrame*   splash     = nullptr;  ///< From SplashSystem.
-    const LiveParticles* particles  = nullptr;  ///< From ParticleSystem.
-    const OceanData*     ocean      = nullptr;  ///< From OceanSystem.
-    const TerrainFrame*  terrain    = nullptr;  ///< From TerrainSystem.
 };
 
 /**

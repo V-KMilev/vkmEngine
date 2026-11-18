@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "core/reflect.h"
+#include "base/reflect/reflect.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -15,7 +15,9 @@ namespace Vkm::Engine {
  * frame it stands `knob`, if named, at its parent's left end when off and its right
  * when on (the toggle owns its UIElement::anchor.x and pivot.x) - so best the button's
  * child, to slide along the button - and while on draws
- * the button in `onColor` where it would have drawn normalColor, unless that is clear.
+ * the button in `onColor` where it would have drawn normalColor, unless that is clear. The knob
+ * wants UIElement::blocksPointer off, or it takes the press from the button. A value the game
+ * writes shows, and sends no UIValueEvent.
  */
 struct UIToggle {
     bool      on      = false;                     ///< Write it to set the toggle.

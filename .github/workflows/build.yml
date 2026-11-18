@@ -3,14 +3,21 @@
 # the same steps. All four archives are a release (release.yml), so a person picks the
 # compiler. Called by ci.yml when run by hand and by release.yml on every version tag.
 #
-# Two stages, a job each, so a run says which one failed and reruns only that:
-#   Build       - each compiler and platform builds, tests and packages the SDK;
+# Four stages, a job each, so a run says which one failed and reruns only that:
+#   Build       - each compiler and platform builds the shipping engine and what the
+#                 SDK carries, and packages the SDK;
+#   Test        - beside it, each builds everything and runs the suites but the GPU's, so
+#                 the archive Use the SDK waits for comes without their build;
+#   GPU suite   - the renderer's tests on the runner's software renderer, each compiler's,
+#                 split across machines, as on one it would outlast the rest of the run;
 #   Use the SDK - each archive, on a machine that never saw the source, installed by the
 #                 installers people run, its tools fetched as a person's are, then a
 #                 project and every example made and packaged with it: nothing it needs
 #                 is missing, and the examples ship as games (the GCC ones, which
 #                 release.yml publishes).
-# Plan says once what both run on.
+# Plan says once what every job runs on. Every job has a time limit well past its longest
+# run, and so does each step that runs what could wait for ever - a suite, an installer -
+# so a hang fails in minutes, not in GitHub's six hours.
 name: Build
 
 on:
@@ -21,33 +28,50 @@ on:
         type: string
         default: ""
 
+# What a Linux machine needs to build the engine: the window system's headers.
+env:
+  LINUX_HEADERS: >-
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
+    libwayland-dev libxkbcommon-dev wayland-protocols
+    libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+
 jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       builds: ${{ steps.plan.outputs.builds }}
+      linux: ${{ steps.plan.outputs.linux }}
+      gpu: ${{ steps.plan.outputs.gpu }}
     steps:
       # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
       - id: plan
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'PLAN'
           import json
+          linux = "ubuntu-22.04"
           platforms = [
-              {"platform": "linux-x64", "runner": "ubuntu-22.04", "python": "python3",
+              {"platform": "linux-x64", "runner": linux, "python": "python3",
                "archive": "tar.xz", "game": "tar.gz"},
               {"platform": "windows-x64", "runner": "windows-2022", "python": "python",
                "archive": "zip", "game": "zip"},
           ]
           compilers = [{"compiler": "gcc", "label": "GCC"}, {"compiler": "clang", "label": "Clang"}]
           builds = [{**compiler, **platform} for platform in platforms for compiler in compilers]
+          shards = 4
+          gpu = [{**compiler, "shard": shard, "shards": shards}
+                 for compiler in compilers for shard in range(1, shards + 1)]
           print("builds=" + json.dumps({"include": builds}))
+          print("linux=" + linux)
+          print("gpu=" + json.dumps({"include": gpu}))
           PLAN
 
   build:
     name: ${{ matrix.label }} (${{ matrix.platform }})
     needs: plan
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
@@ -67,15 +91,12 @@ jobs:
           submodules: recursive
           lfs: true
 
-      # Windows needs nothing.
+      # Windows needs nothing. apt tries a mirror that fails to answer again.
       - name: Install the window system's headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends $LINUX_HEADERS
 
       # CMake, Ninja and Python, as every SDK user gets them; the configures below fetch
       # the pinned compiler VKM_COMPILER names (cmake/pinned_toolchain.cmake).
@@ -87,18 +108,19 @@ jobs:
           cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON -DVKM_COMPILER=${{ matrix.compiler }}
           cmake --build build-shipping --target vkm_runtime_app vkm_server_app
 
+      # The hosts the SDK installs and what they link, which is all it carries of the build:
+      # the suites and the examples' modules are Test's.
       - name: Build the SDK
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVKM_COMPILER=${{ matrix.compiler }} \
             -DVKM_SHIPPING_ENGINE:PATH="$GITHUB_WORKSPACE/build-shipping" \
             -DVKM_PYTHON:PATH="$(${{ matrix.python }} tools/vkm.py toolchain python --dir)"
-          cmake --build build
+          cmake --build build --target vkm_runtime_app vkm_server_app vkm_editor_app vkm_cook_app
 
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
+      # cpack itself, as the package target would build everything first. The pinned
+      # CMake's, first on PATH: a Windows runner has another program of that name.
       - name: Package
-        run: cmake --build build --target package
+        run: cpack --config build/CPackConfig.cmake -B build
 
       - uses: actions/upload-artifact@v7
         with:
@@ -106,10 +128,94 @@ jobs:
           path: build/vkmEngine-*.${{ matrix.archive }}
           if-no-files-found: error
 
+  test:
+    name: Test, ${{ matrix.label }} (${{ matrix.platform }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      # The art LFS holds: the determinism tests cook and play the lab, and the editor's tests import the
+      # effects' pictures.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+          lfs: true
+
+      - name: Install the window system's headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends $LINUX_HEADERS
+
+      - name: Fetch the pinned tools
+        run: ${{ matrix.python }} tools/vkm.py toolchain cmake ninja python --path >> "$GITHUB_PATH"
+
+      # Everything, as Build does not: a target nothing ships must still compile.
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVKM_COMPILER=${{ matrix.compiler }}
+          cmake --build build
+
+      # Every test but the GPU's, which jobs of their own run. The lab's first cook takes minutes on
+      # its own (its ctest allows 30); a test that stops answering is ended at its own limit, its
+      # output so far in the log.
+      - name: Test
+        timeout-minutes: 40
+        run: ctest --test-dir build --output-on-failure --label-exclude '^gpu$' --timeout 600
+
+  gpu:
+    name: GPU suite, ${{ matrix.label }} ${{ matrix.shard }}/${{ matrix.shards }}
+    needs: plan
+    runs-on: ${{ needs.plan.outputs.linux }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.gpu) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - name: Install the window system's headers
+        run: |
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends $LINUX_HEADERS
+
+      - name: Fetch the pinned tools
+        run: python3 tools/vkm.py toolchain cmake ninja python --path >> "$GITHUB_PATH"
+
+      - name: Build the GPU suite
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVKM_COMPILER=${{ matrix.compiler }}
+          cmake --build build --target vkm_render_tests
+
+      # Every n-th test from this one: the runs together are the whole suite.
+      - name: Test
+        timeout-minutes: 30
+        env:
+          VKM_GPU_REQUIRED: 1
+        run: ctest --test-dir build --output-on-failure --label-regex '^gpu$' --tests-information ${{ matrix.shard }},,${{ matrix.shards }} --timeout 600
+
   use-sdk:
     name: Use the SDK, ${{ matrix.label }} (${{ matrix.platform }})
     needs: [plan, build]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
@@ -132,11 +238,8 @@ jobs:
       - name: Install the window system's headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends $LINUX_HEADERS
 
       - uses: actions/download-artifact@v8
         with:
@@ -146,6 +249,7 @@ jobs:
       # The archive as a release carries it - beside a SHA256SUMS - served, and installed by
       # the installer for this platform, as a person installs it.
       - name: Install the SDK
+        timeout-minutes: 15
         run: |
           cd "$RUNNER_TEMP/release"
           sha256sum * > SHA256SUMS
@@ -182,8 +286,11 @@ jobs:
           echo "SDK=$sdk" >> "$GITHUB_ENV"
 
       # A project made, checked and packaged with the installed SDK, then every example as
-      # a game, each archived as it is handed out.
+      # a game, each archived as it is handed out. The examples go at once, as the largest
+      # one's cook leaves cores the others' builds use; each one's output is shown whole
+      # once it is done.
       - name: Use the SDK
+        timeout-minutes: 30
         run: |
           work="$RUNNER_TEMP/use-the-sdk"
           mkdir -p "$work" "$RUNNER_TEMP/games"
@@ -193,12 +300,31 @@ jobs:
           "$SDK/vkm" doctor game
           "$SDK/vkm" package game
           ls game/dist
+          names=()
+          pids=()
           for example in "$SDK"/examples/*/; do
             name="$(basename "$example")"
-            "$SDK/vkm" new "$name" -t "$name"
-            "$SDK/vkm" package "$name" --archive
-            cp "$name"/dist/*.${{ matrix.game }} "$RUNNER_TEMP/games/"
+            {
+              "$SDK/vkm" new "$name" -t "$name" && "$SDK/vkm" package "$name" --archive
+            } > "$name.log" 2>&1 &
+            names+=("$name")
+            pids+=("$!")
           done
+          failed=0
+          for i in "${!names[@]}"; do
+            name="${names[$i]}"
+            if wait "${pids[$i]}"; then
+              echo "::group::$name"
+              cat "$name.log"
+              echo "::endgroup::"
+              cp "$name"/dist/*.${{ matrix.game }} "$RUNNER_TEMP/games/"
+            else
+              echo "$name did not package:"
+              cat "$name.log"
+              failed=1
+            fi
+          done
+          [ "$failed" = 0 ]
           ls "$RUNNER_TEMP/games"
 
       - name: Use the SDK from cmd.exe

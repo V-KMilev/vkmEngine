@@ -5,16 +5,16 @@
 #include <imgui.h>
 
 #include "resource/asset/audio_clip_asset.h"
-#include "ui/editor_icons.h"
-#include "ui/editor_style.h"
+#include "ui/style/editor_icons.h"
+#include "ui/style/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
 
 bool auditionTransport(
     const char* idStr,
-    AudioDevice& device,
-    VoiceId& voice,
+    Audio::Device& device,
+    Audio::VoiceId& voice,
     bool mine,
     const AudioClipAsset* clip,
     float size
@@ -29,8 +29,8 @@ bool auditionTransport(
 
     snprintf(id, sizeof(id), "%sPlay", idStr);
     const EditorIcon icon = sounding ? EditorIcon::Pause : EditorIcon::Play;
-    const bool enabled = open && (clip != nullptr || live);
-    const char* tooltip = !open ? "No audio device - this cannot be heard"
+    const bool enabled    = open && (clip != nullptr || live);
+    const char* tooltip   = !open ? "No audio device - this cannot be heard"
         : sounding ? "Pause the audition"
         : held ? "Resume the audition"
         : "Audition the clip (does not change the scene)";
@@ -41,10 +41,10 @@ bool auditionTransport(
             device.resumeVoice(voice);
         } else if (clip != nullptr) {
             device.stopVoice(voice);
-            VoiceParams audition;
+            Audio::VoiceParams audition;
             audition.spatial = false;
-            voice   = device.play(*clip, audition);
-            started = true;
+            voice            = device.play(*clip, audition);
+            started          = true;
         }
     }
 
@@ -59,7 +59,13 @@ bool auditionTransport(
     return started;
 }
 
-void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice, float duration, float width) {
+void auditionScrubber(
+    const char* idStr,
+    Audio::Device& device,
+    Audio::VoiceId voice,
+    float duration,
+    float width
+) {
     if (duration <= 0.0f) return;
 
     const bool live = device.isVoiceActive(voice);

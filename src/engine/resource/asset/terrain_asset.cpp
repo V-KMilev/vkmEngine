@@ -5,12 +5,19 @@
 #include <cmath>
 #include <iterator>
 
+#include <glm/ext/scalar_integer.hpp>
+
 namespace Vkm::Engine {
 
 bool TerrainAsset::validResolution(uint32_t resolution) {
     if (resolution < MIN_RESOLUTION || resolution > MAX_RESOLUTION) return false;
-    const uint32_t cells = resolution - 1;
-    return (cells & (cells - 1)) == 0;
+    return glm::isPowerOfTwo(resolution - 1);
+}
+
+bool TerrainAsset::holdsGrid() const {
+    const size_t vertices = static_cast<size_t>(resolution) * resolution;
+    return validResolution(resolution) && heights.size() == vertices
+        && weights.size() == vertices * WEIGHTS_PER_VERTEX;
 }
 
 float TerrainAsset::heightAt(float x, float z) const {
@@ -25,7 +32,7 @@ float TerrainAsset::heightAt(float x, float z) const {
     const float fx = gx - static_cast<float>(i);
     const float fz = gz - static_cast<float>(j);
 
-    const auto at  = [&](int a, int b) { return heights[static_cast<size_t>(b) * resolution + a]; };
+    const auto at   = [&](int a, int b) { return heights[static_cast<size_t>(b) * resolution + a]; };
     const float h00 = at(i, j);
     const float h10 = at(i + 1, j);
     const float h01 = at(i, j + 1);
@@ -36,14 +43,13 @@ float TerrainAsset::heightAt(float x, float z) const {
 }
 
 bool TerrainAsset::resample(uint32_t to) {
-    const size_t from  = resolution;
-    const bool   sound = from > 1 && heights.size() == from * from && weights.size() == from * from * 4;
-    if (!validResolution(to) || !sound) return false;
+    const size_t from = resolution;
+    if (!validResolution(to) || !holdsGrid()) return false;
     if (to == resolution) return true;
 
     const size_t side  = to;
     const float  scale = static_cast<float>(from - 1) / static_cast<float>(to - 1);
-    // Vertex (i, j) of the new grid in the old's, its four neighbours there, and its share of each.
+    // Vertex (i, j) of the new grid in the old's, its four neighbors there, and its share of each.
     struct Blend {
         std::array<size_t, 4> at;
         std::array<float, 4>  share;
@@ -63,31 +69,33 @@ bool TerrainAsset::resample(uint32_t to) {
     };
 
     std::vector<float>   newHeights(side * side);
-    std::vector<uint8_t> newWeights(side * side * 4);
+    std::vector<uint8_t> newWeights(side * side * WEIGHTS_PER_VERTEX);
     std::vector<std::vector<uint8_t>> newDensity(foliage.size());
     for (size_t f = 0; f < foliage.size(); ++f) {
         if (foliage[f].density.size() == from * from) newDensity[f].resize(side * side);
     }
     for (size_t j = 0; j < side; ++j) {
         for (size_t i = 0; i < side; ++i) {
-            const size_t v     = j * side + i;
-            const float  x     = (static_cast<float>(i) / static_cast<float>(to - 1) - 0.5f) * size;
-            const float  z     = (static_cast<float>(j) / static_cast<float>(to - 1) - 0.5f) * size;
-            const Blend  blend = blendAt(i, j);
+            const size_t v    = j * side + i;
+            const float x     = (static_cast<float>(i) / static_cast<float>(to - 1) - 0.5f) * size;
+            const float z     = (static_cast<float>(j) / static_cast<float>(to - 1) - 0.5f) * size;
+            const Blend blend = blendAt(i, j);
             newHeights[v] = heightAt(x, z);
 
             // The shares, blended, then rounded so they sum to full; the rounding goes to the most.
-            std::array<float, 4> mix{};
-            for (size_t n = 0; n < 4; ++n) {
-                for (size_t c = 0; c < 4; ++c) mix[c] += blend.share[n] * weights[blend.at[n] * 4 + c];
+            std::array<float, WEIGHTS_PER_VERTEX> mix{};
+            for (size_t n = 0; n < blend.at.size(); ++n) {
+                const uint8_t* neighbor = &weights[blend.at[n] * WEIGHTS_PER_VERTEX];
+                for (size_t c = 0; c < mix.size(); ++c) mix[c] += blend.share[n] * neighbor[c];
             }
+            uint8_t* shares = &newWeights[v * WEIGHTS_PER_VERTEX];
             int total = 0;
-            for (size_t c = 0; c < 4; ++c) {
-                newWeights[v * 4 + c] = static_cast<uint8_t>(std::lround(mix[c]));
-                total += newWeights[v * 4 + c];
+            for (size_t c = 0; c < mix.size(); ++c) {
+                shares[c] = static_cast<uint8_t>(std::lround(mix[c]));
+                total    += shares[c];
             }
             const auto most  = std::max_element(mix.begin(), mix.end());
-            uint8_t&   share = newWeights[v * 4 + static_cast<size_t>(std::distance(mix.begin(), most))];
+            uint8_t&   share = shares[std::distance(mix.begin(), most)];
             share = static_cast<uint8_t>(std::clamp(share + 255 - total, 0, 255));
 
             for (size_t f = 0; f < foliage.size(); ++f) {
@@ -121,6 +129,21 @@ glm::vec3 TerrainAsset::normalAt(int i, int j) const {
     const float dx = (at(i1, j) - at(i0, j)) / (static_cast<float>(i1 - i0) * spacing());
     const float dz = (at(i, j1) - at(i, j0)) / (static_cast<float>(j1 - j0) * spacing());
     return glm::normalize(glm::vec3(-dx, 1.0f, -dz));
+}
+
+void TerrainAsset::forEachReference(
+    const std::function<void(MaterialHandle)>& material,
+    const std::function<void(MeshHandle)>& mesh
+) const {
+    for (const MaterialHandle& layer : layers) {
+        if (layer) material(layer);
+    }
+    for (const TerrainFoliage& plant : foliage) {
+        for (const TerrainPlantPart& part : plant.parts) {
+            if (part.mesh) mesh(part.mesh);
+            if (part.material) material(part.material);
+        }
+    }
 }
 
 } // namespace Vkm::Engine

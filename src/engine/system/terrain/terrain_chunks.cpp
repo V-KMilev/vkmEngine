@@ -7,8 +7,8 @@ namespace Vkm::Engine::TerrainChunks {
 
 namespace {
 
-/// How far a level's skirt hangs below its rim at least, in its own grid steps.
-constexpr float SKIRT_STEPS = 4.0f;
+constexpr float SKIRT_STEPS = 4.0f;  ///< How far a level's skirt hangs below its rim at least, in its own
+                                     ///< grid steps.
 
 } // namespace
 
@@ -17,16 +17,17 @@ uint32_t perSide(const TerrainAsset& terrain) {
 }
 
 MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t level) {
-    const uint32_t step    = 1u << level;
-    const uint32_t n       = CELLS / step + 1;  // vertices a side at this level
-    const uint32_t fromI   = cx * CELLS;
-    const uint32_t fromJ   = cz * CELLS;
-    const float    spacing = terrain.spacing();
-    const float    half    = 0.5f * terrain.size;
-    const float    texels  = static_cast<float>(terrain.resolution);
+    const uint32_t step  = 1u << level;
+    const uint32_t n     = CELLS / step + 1;  // vertices a side at this level
+    const uint32_t fromI = cx * CELLS;
+    const uint32_t fromJ = cz * CELLS;
+    const float spacing  = terrain.spacing();
+    const float half     = 0.5f * terrain.size;
+    const float texels   = static_cast<float>(terrain.resolution);
 
     MeshAsset mesh;
     mesh.vertices.reserve(static_cast<size_t>(n) * n + 4 * n);
+    mesh.lightmapUVs.reserve(static_cast<size_t>(n) * n + 4 * n);
     for (uint32_t b = 0; b < n; ++b) {
         for (uint32_t a = 0; a < n; ++a) {
             const uint32_t i = fromI + a * step;
@@ -43,6 +44,8 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
             // from, so the handedness turns it.
             v.tangent = glm::vec4(glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f) - v.normal * v.normal.x), -1.0f);
             mesh.vertices.push_back(v);
+            // The chunk's grid as its lightmap, alike at every level.
+            mesh.lightmapUVs.emplace_back(glm::vec2(a * step, b * step) / static_cast<float>(CELLS));
         }
     }
 
@@ -60,10 +63,10 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
 
     // Each rim another chunk meets again, dropped, joined to the rim by a strip facing both ways:
     // either side of it may be the one a gap shows. The terrain's own edge meets none. A coarser
-    // neighbour's edge strays from this rim by no more than the rim rises along it, so the skirt
+    // neighbor's edge strays from this rim by no more than the rim rises along it, so the skirt
     // hangs at least that far.
     const float least = SKIRT_STEPS * spacing * static_cast<float>(step);
-    const auto  skirt = [&](const std::function<uint32_t(uint32_t)>& rim) {
+    const auto skirt = [&](const std::function<uint32_t(uint32_t)>& rim) {
         float low  = mesh.vertices[rim(0)].position.y;
         float high = low;
         for (uint32_t k = 1; k < n; ++k) {
@@ -76,6 +79,7 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
             Vertex v = mesh.vertices[rim(k)];
             v.position.y -= drop;
             mesh.vertices.push_back(v);
+            mesh.lightmapUVs.push_back(mesh.lightmapUVs[rim(k)]);
         }
         for (uint32_t k = 0; k + 1 < n; ++k) {
             const uint32_t top0 = rim(k);
@@ -94,16 +98,6 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
 
     mesh.computeAndSetBounds();
     return mesh;
-}
-
-uint32_t levelAt(float distance, float chunkWidth) {
-    uint32_t level = 0;
-    float    reach = REACH * chunkWidth;
-    while (level + 1 < LEVELS && distance > reach) {
-        ++level;
-        reach *= 2.0f;
-    }
-    return level;
 }
 
 } // namespace Vkm::Engine::TerrainChunks

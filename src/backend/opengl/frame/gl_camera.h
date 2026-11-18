@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class UniformBuffer;
 }
 
@@ -14,7 +14,7 @@ namespace Vkm::Engine {
 struct CameraData;
 
 /**
- * @brief std140 layout - must match CameraBlock in shaders/camera.glsl.
+ * @brief std140 layout - must match CameraBlock in shaders/opengl/include/camera.glsl.
  *
  * Everything a pass knows about the eye, so a pass need set no camera fact as a uniform of its
  * own. Ordered so std140 adds no padding; the asserts below hold it.
@@ -26,8 +26,8 @@ struct CameraUBO {
     glm::mat4 invView;
     glm::mat4 invProjection;
     glm::mat4 invViewProjection;
-    glm::vec4 cameraPosition;  ///< xyz = world position.
-    glm::vec2 viewport;        ///< The render target's size in pixels.
+    glm::vec4 cameraPosition;           ///< xyz = world position.
+    glm::vec2 viewport;                 ///< The render target's size in pixels.
     float     zNear;
     float     zFar;
     glm::mat4 viewmodelViewProjection;  ///< CameraData::viewmodelViewProjection.
@@ -67,8 +67,8 @@ class GLCamera {
         void update(const CameraData& camera, const glm::vec2& viewport);
 
     private:
-        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
-        CameraUBO                               m_last{};
+        std::unique_ptr<Vkm::OpenGL::UniformBuffer> m_ubo;
+        CameraUBO                                   m_last{};
 };
 
 } // namespace Vkm::Engine

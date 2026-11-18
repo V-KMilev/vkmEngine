@@ -5,7 +5,7 @@
 #include "ecs/entity.h"
 #include "resource/asset_ref.h"
 #include "resource/asset/audio_clip_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 #include "lab_state.h"
 
@@ -22,7 +22,7 @@ using namespace Vkm::Engine;
  * dips, and `boing` sounds. The count reaches clients only if the entity is on the wire - authored
  * with a Kinematic body, not a Static one - and onStart reports one that is not.
  */
-class LabJumpPad : public ReflectedBehavior<LabJumpPad> {
+class LabJumpPad : public Behavior<LabJumpPad> {
     public:
         void onStart() override;
         void onUpdate(float dt) override;
@@ -31,11 +31,11 @@ class LabJumpPad : public ReflectedBehavior<LabJumpPad> {
         void launched();
 
     public:
-        float launchSpeed = 13.0f;  ///< Upward speed it gives, m/s.
-        float forward     = 0.0f;   ///< Speed it adds along its own forward, m/s.
-        int   puff        = 24;     ///< Particles each child emitter bursts at a launch.
+        float launchSpeed = 13.0f;
+        float forward     = 0.0f;
+        int   puff        = 24;
 
-        AssetRef<AudioClipAsset> boing;  ///< Heard at each launch.
+        AssetRef<AudioClipAsset> boing;
 
     private:
         EntityId   m_bed{};
@@ -46,9 +46,9 @@ class LabJumpPad : public ReflectedBehavior<LabJumpPad> {
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabJumpPad)
-    VKM_F(launchSpeed)
-    VKM_F(forward)
-    VKM_F(puff)
-    VKM_F(boing)
+VKM_BEHAVIOR(::Lab::LabJumpPad)
+    VKM_F(launchSpeed, "Upward speed it gives, m/s.")
+    VKM_F(forward, "Speed it adds along its own forward, m/s.")
+    VKM_F(puff, "Particles each child emitter bursts at a launch.")
+    VKM_F(boing, "Heard at each launch.")
 VKM_REFLECT_END()

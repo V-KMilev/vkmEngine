@@ -1,13 +1,57 @@
 {
-  "description": "A small seaside world that shows the engine and plays as a game: a builder's yard of physics, a plaza of real models round a campfire, a gallery of materials under area lights with planar mirrors, a demolition range on the beach, a ship off the pier, tokens to find - and the multiplayer sample.",
-  "engineVersion": "1.0.15",
+  "actions": {
+    "Fire": [
+      "F"
+    ],
+    "Jump": [
+      "Space"
+    ],
+    "Look": [
+      "Right mouse"
+    ],
+    "Map": [
+      "M"
+    ],
+    "Menu": [
+      "Escape"
+    ],
+    "Move/Back": [
+      "S",
+      "Down"
+    ],
+    "Move/Forward": [
+      "W",
+      "Up"
+    ],
+    "Move/Left": [
+      "A",
+      "Left"
+    ],
+    "Move/Right": [
+      "D",
+      "Right"
+    ],
+    "Throw": [
+      "G"
+    ],
+    "Use": [
+      "E"
+    ],
+    "Walk": [
+      "Left Shift"
+    ]
+  },
+  "description": "A small seaside world that shows the engine and plays as a game: a builder's yard of physics, a plaza of real models round a campfire, a gallery of materials under colored lights, a demolition range on the beach, a ship off the pier, tokens to find - and the multiplayer sample.",
+  "engineVersion": "1.1.0",
   "entryScene": "scenes/obstacle_course.json",
   "maxPlayers": 4,
   "name": "The Lab",
+  "picture": "picture.png",
   "render": {
     "autoExposure": true,
     "exposureMaximum": 1.0,
-    "exposureMinimum": 0.0
+    "exposureMinimum": 0.0,
+    "showFrameRate": true
   },
   "tickRate": 128
 }

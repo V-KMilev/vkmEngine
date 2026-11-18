@@ -6,42 +6,30 @@
 #include <cstdio>
 #include <utility>
 
-#include "l_assert.h"
-#include "logger.h"
+#include "vkm_log/assert.h"
+#include "vkm_log/logger.h"
 
-#include "core/clock.h"
-#include "core/event/event_bus.h"
-#include "debug/profiler.h"
-#include "ecs/component/prefab/net_spawn.h"
+#include "base/event/event_bus.h"
+#include "base/profile/profiler.h"
+#include "ecs/component/net/net_spawn.h"
 #include "ecs/scene.h"
 #include "io/scene/prefab.h"
+#include "ecs/prefab_instances.h"
 #include "net/wire/codecs.h"
+#include "net/wire/project_path.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief Returned for an entity no player drives; reads as nothing held.
- */
-const InputCommand NO_COMMAND{};
+const InputCommand NO_COMMAND{};  ///< Returned for an entity no player drives; reads as nothing held.
+
+// The slots a client leaves the server past twice the world's: room for the server to make as many
+// entities again as the world holds, and these more, before its next slot meets one of the client's.
+constexpr uint32_t CLIENT_SLOT_ROOM = 1024;
 
 } // namespace
-
-void sendBare(NetCore& core, NetConnection& connection, NetMessage message, uint64_t token) {
-    BitWriter writer(core.payload, 16);
-    writeMessageHeader(writer, message, token);
-    writer.finish();
-    connection.frame(core.payload.data(), core.payload.size(), core.datagram);
-    core.socket.send(connection.peer(), core.datagram.data(), core.datagram.size());
-}
-
-BitReader receivedPayload(const NetCore& core) {
-    const size_t header = NetConnection::HEADER_BYTES;
-    if (core.datagram.size() < header) return BitReader(core.datagram.data(), 0);
-    return BitReader(core.datagram.data() + header, core.datagram.size() - header);
-}
 
 NetSession::NetSession()
     : m_server(m_core)
@@ -63,7 +51,13 @@ bool NetSession::acceptsTickRate(uint32_t tickRate) {
     return false;
 }
 
-bool NetSession::host(uint16_t port, uint32_t maxPlayers, uint32_t tickRate) {
+bool NetSession::host(
+    uint16_t port,
+    uint32_t maxPlayers,
+    uint32_t tickRate,
+    uint32_t actionCount,
+    uint64_t actionNames
+) {
     close();
 
     if (maxPlayers == 0) {
@@ -77,8 +71,10 @@ bool NetSession::host(uint16_t port, uint32_t maxPlayers, uint32_t tickRate) {
         LOG_ERROR("Cannot host on port %u: the port is in use or not permitted", port);
         return false;
     }
-    m_role          = NetRole::Server;
-    m_core.tickRate = tickRate;
+    m_role             = NetRole::Server;
+    m_core.tickRate    = tickRate;
+    m_core.actionCount = actionCount;
+    m_core.actionNames = actionNames;
     m_server.open(maxPlayers);
     m_core.lastError.clear();
     LOG_INFO(
@@ -90,7 +86,12 @@ bool NetSession::host(uint16_t port, uint32_t maxPlayers, uint32_t tickRate) {
     return true;
 }
 
-bool NetSession::connect(const NetAddress& server, uint32_t tickRate) {
+bool NetSession::connect(
+    const Network::Address& server,
+    uint32_t tickRate,
+    uint32_t actionCount,
+    uint64_t actionNames
+) {
     close();
     if (!acceptsTickRate(tickRate)) return false;
     if (!m_core.socket.open(0)) {
@@ -98,13 +99,12 @@ bool NetSession::connect(const NetAddress& server, uint32_t tickRate) {
         LOG_ERROR("Cannot join %s: no socket could be opened", server.toString().c_str());
         return false;
     }
-    m_role          = NetRole::Client;
-    m_core.tickRate = tickRate;
+    m_role             = NetRole::Client;
+    m_core.tickRate    = tickRate;
+    m_core.actionCount = actionCount;
+    m_core.actionNames = actionNames;
     m_client.open(server);
     m_core.lastError.clear();
-
-    // Nothing is sent yet: actions are defined inside the first tick, so a
-    // hello from here would carry a count of zero.
     LOG_INFO("Joining %s", server.toString().c_str());
     return true;
 }
@@ -165,6 +165,10 @@ bool NetSession::isMine(EntityId entity) const {
     return entity && entity == m_client.localEntity();
 }
 
+bool NetSession::isDriven(EntityId entity) const {
+    return m_role == NetRole::Server && entity && m_server.commandFor(entity);
+}
+
 const InputCommand& NetSession::commandFor(EntityId entity) const {
     if (entity && entity == m_client.localEntity()) return m_currentCommand;
 
@@ -176,23 +180,10 @@ const InputCommand& NetSession::commandFor(EntityId entity) const {
     return NO_COMMAND;
 }
 
-void NetSession::beginTick(
-    uint32_t tick,
-    const InputCommand& command,
-    uint32_t actionCount,
-    uint64_t actionNames
-) {
+void NetSession::beginTick(uint32_t tick, const InputCommand& command) {
     m_currentCommand = command;
-    m_core.ticked    = true;
     m_tickOpen       = true;
     m_client.ageLeases();
-
-    // A server's count comes from the joining client: its own behaviors may
-    // not have started, and a zero would misdecode every command.
-    if (m_role != NetRole::Server) m_core.actionCount = actionCount;
-
-    // Every role: a server resolves commands through its own map too.
-    m_core.actionNames = actionNames;
 
     if (m_role == NetRole::Client)      m_client.beginTick(command);
     else if (m_role == NetRole::Server) m_server.beginTick(tick);
@@ -215,11 +206,14 @@ void NetSession::endTick(Scene& scene, uint32_t tick) {
 NetSession::Drawn::Drawn(NetSession& session, Scene& scene, float deltaTime)
     : m_session(session)
     , m_scene(scene)
+    , m_epoch(scene.epoch())
 {
     if (m_session.m_role == NetRole::Client) m_session.m_client.applyDrawCorrection(m_scene, deltaTime);
 }
 
 NetSession::Drawn::~Drawn() {
+    // A world replaced in the scope never had the correction: its entities only share the old ids.
+    if (m_scene.epoch() != m_epoch) return;
     if (m_session.m_role == NetRole::Client) m_session.m_client.removeDrawCorrection(m_scene);
 }
 
@@ -233,11 +227,11 @@ float NetSession::renderDelay() const {
     return m_role == NetRole::Client ? m_client.renderDelay() : 0.0f;
 }
 
-double NetSession::worldTime(const Clock& clock) const {
-    const double step = static_cast<double>(clock.getFixedStep());
-    if (m_role == NetRole::Client && m_client.drawingServerTicks()) return m_client.drawnTick() * step;
-    const double tick = static_cast<double>(clock.getTick());
-    return (m_tickOpen ? tick : tick + static_cast<double>(clock.getFixedAlpha())) * step;
+double NetSession::worldTime(uint32_t tick, float alpha, float step) const {
+    const double seconds = static_cast<double>(step);
+    if (m_role == NetRole::Client && m_client.drawingServerTicks()) return m_client.drawnTick() * seconds;
+    const double at = static_cast<double>(tick);
+    return (m_tickOpen ? at : at + static_cast<double>(alpha)) * seconds;
 }
 
 void NetSession::advance(float seconds) {
@@ -258,18 +252,37 @@ void NetSession::receive(Scene& scene, ResourceManager& resources) {
     // Offline too, so the next session starts from the world as it is now; and the first time
     // too, for a host that never said which world it opened.
     if (scene.epoch() != m_worldEpoch) {
-        if (m_worldEpoch != NO_WORLD) {
-            if (m_role != NetRole::Offline) {
-                LOG_WARNING(
-                    "The world was replaced while a session was live; "
-                    "what this end remembered about it is dropped"
-                );
-            }
-            forgetWorld();
-        }
+        const bool replaced = m_worldEpoch != NO_WORLD;
         // The world is the one both ends share, slot for slot.
+        if (replaced) forgetWorld();
         m_client.adoptWorld(scene);
+        m_server.adoptWorld(scene);
         m_worldEpoch = scene.epoch();
+
+        // The session's next world: the server's players are spawned again in it, and a client
+        // that loaded the one it was told to plays on.
+        if (replaced && m_role == NetRole::Server) {
+            m_server.changeWorld(scene, resources);
+        } else if (replaced && m_role == NetRole::Client && m_client.awaitingWorld()) {
+            if (!m_client.completeWorld(scene)) {
+                disconnect();
+                return;
+            }
+        } else if (replaced && m_role != NetRole::Offline) {
+            LOG_WARNING(
+                "The world was replaced while a session was live, and not by the server; "
+                "what this end remembered about it is dropped"
+            );
+        }
+    }
+
+    // While it plays, a client's own entities go above every slot the server is likely to name, so each
+    // it names finds its own slot free here (docs/reference/networking.md#identity-is-the-servers-slot);
+    // once the session ends, closed or lost, any free slot is theirs again.
+    if (m_role == NetRole::Client && scene.slotFloor() == 0) {
+        scene.keepSlotsBelow(2 * scene.slotExtent() + CLIENT_SLOT_ROOM);
+    } else if (m_role != NetRole::Client && scene.slotFloor() != 0) {
+        scene.keepSlotsBelow(0);
     }
 
     if (m_role == NetRole::Offline) return;
@@ -287,9 +300,22 @@ EntityId NetSession::entityFor(const Scene& scene, uint32_t slot) const {
     return scene.isAliveAtIndex(slot) ? scene.entityAt(slot) : EntityId{};
 }
 
-void NetSession::setWorld(uint64_t fingerprint, const Scene& scene) {
-    m_core.world = fingerprint;
+void NetSession::setWorld(uint64_t fingerprint, const Scene& scene, const std::string& path) {
+    m_core.world     = fingerprint;
+    m_core.worldPath = path;
     m_client.adoptWorld(scene);
+    m_server.adoptWorld(scene);
+}
+
+std::string NetSession::takeSceneToLoad() {
+    return m_role == NetRole::Client ? m_client.takeSceneToLoad() : std::string{};
+}
+
+void NetSession::worldFailed() {
+    if (m_role != NetRole::Client || !m_client.awaitingWorld()) return;
+    disconnect();
+    m_core.lastError = "the world the server moved to did not load here";
+    LOG_ERROR("The world the server moved to did not load here; leaving");
 }
 
 void NetSession::deliver(EventBus& events) {
@@ -299,9 +325,12 @@ void NetSession::deliver(EventBus& events) {
 
 void NetSession::send(Scene& scene, uint32_t tick) {
     if (m_role == NetRole::Offline) return;
+    // A world replaced this frame is not the one the session holds until the next receive takes it
+    // in: described now, it would go out under the old world's number.
+    if (m_worldEpoch != NO_WORLD && scene.epoch() != m_worldEpoch) return;
     PROFILE_SCOPE("NetSession::send");
 
-    const float rate = m_role == NetRole::Server ? NET_SNAPSHOT_RATE : NET_COMMAND_RATE;
+    const float rate     = m_role == NetRole::Server ? snapshotRate(m_core.tickRate) : NET_COMMAND_RATE;
     const float interval = 1.0f / rate;
     if (m_sendAccumulator < interval) return;
 
@@ -332,7 +361,7 @@ EntityId NetSession::spawn(
                 "most %zu characters inside the project, and a finite pose with a "
                 "rotation and a scale within %.0f",
             prefab.c_str(),
-            NET_PREFAB_PATH_MAX,
+            NET_PROJECT_PATH_MAX,
             static_cast<double>(NET_MAX_SCALE)
         );
         return EntityId{};

@@ -39,11 +39,11 @@ void growSquare(
     float full,
     std::vector<Plant>& out
 ) {
-    const TerrainFoliage&       foliage = terrain.foliage[layer];
+    const TerrainFoliage& foliage = terrain.foliage[layer];
     const std::vector<uint8_t>& density = foliage.density;
     const uint32_t side = terrain.resolution;
-    const size_t   at   = static_cast<size_t>(j) * side + i;
-    const int      sum  = density[at] + density[at + 1] + density[at + side] + density[at + side + 1];
+    const size_t at = static_cast<size_t>(j) * side + i;
+    const int sum = density[at] + density[at + 1] + density[at + side] + density[at + side + 1];
     if (sum == 0) return;
 
     // As many as the square's share asks, the fraction left to chance.
@@ -52,19 +52,19 @@ void growSquare(
     // Capped before it becomes a count, which a huge or broken density would overflow.
     const float asked = static_cast<float>(sum) / (4.0f * 255.0f) * full;
     if (!(asked > 0.0f)) return;
-    const float    expected = std::min(asked, static_cast<float>(MAX_PER_SQUARE));
-    const float    whole    = std::floor(expected);
-    const bool     extra    = unit(square, seed, 0) < expected - whole;
-    const uint32_t count    = std::min(static_cast<uint32_t>(whole) + (extra ? 1u : 0u), MAX_PER_SQUARE);
-    const float    spacing  = terrain.spacing();
-    const float    half     = 0.5f * terrain.size;
+    const float expected = std::min(asked, static_cast<float>(MAX_PER_SQUARE));
+    const float whole    = std::floor(expected);
+    const bool extra     = unit(square, seed, 0) < expected - whole;
+    const uint32_t count = std::min(static_cast<uint32_t>(whole) + (extra ? 1u : 0u), MAX_PER_SQUARE);
+    const float spacing  = terrain.spacing();
+    const float half     = 0.5f * terrain.size;
     for (uint32_t k = 0; k < count; ++k) {
         const uint32_t first = 1 + k * 4;
-        const float    x     = (static_cast<float>(i) + unit(square, seed, first)) * spacing - half;
-        const float    z     = (static_cast<float>(j) + unit(square, seed, first + 1)) * spacing - half;
-        const float    turn  = unit(square, seed, first + 2) * glm::two_pi<float>();
-        const float    grown = unit(square, seed, first + 3);
-        const float    scale = foliage.minScale + (foliage.maxScale - foliage.minScale) * grown;
+        const float x     = (static_cast<float>(i) + unit(square, seed, first)) * spacing - half;
+        const float z     = (static_cast<float>(j) + unit(square, seed, first + 1)) * spacing - half;
+        const float turn  = unit(square, seed, first + 2) * glm::two_pi<float>();
+        const float grown = unit(square, seed, first + 3);
+        const float scale = foliage.minScale + (foliage.maxScale - foliage.minScale) * grown;
         glm::mat4 local = glm::translate(glm::mat4(1.0f), glm::vec3(x, terrain.heightAt(x, z), z));
         local = glm::rotate(local, turn, glm::vec3(0.0f, 1.0f, 0.0f));
         local = glm::scale(local, glm::vec3(scale));
@@ -76,20 +76,40 @@ void growSquare(
 
 void scatter(const TerrainAsset& terrain, std::vector<Plant>& out) {
     out.clear();
+    const uint32_t squares = terrain.resolution > 0 ? terrain.resolution - 1 : 0;
+    grow(terrain, 0, squares, 0, squares, out);
+}
+
+void grow(
+    const TerrainAsset& terrain,
+    uint32_t i0,
+    uint32_t i1,
+    uint32_t j0,
+    uint32_t j1,
+    std::vector<Plant>& out
+) {
     const uint32_t side = terrain.resolution;
     const size_t   grid = static_cast<size_t>(side) * side;
-    if (!TerrainAsset::validResolution(side) || terrain.heights.size() != grid) return;
+    if (!terrain.holdsGrid()) return;
 
     const float area = terrain.spacing() * terrain.spacing();
     for (uint32_t layer = 0; layer < terrain.foliage.size(); ++layer) {
         const TerrainFoliage& foliage = terrain.foliage[layer];
         if (foliage.density.size() != grid || foliage.parts.empty()) continue;
-        if (foliage.perSquareMetre <= 0.0f) continue;
-        const float full = foliage.perSquareMetre * area;
-        for (uint32_t j = 0; j + 1 < side; ++j) {
-            for (uint32_t i = 0; i + 1 < side; ++i) growSquare(terrain, layer, i, j, full, out);
+        if (foliage.perSquareMeter <= 0.0f) continue;
+        const float full = foliage.perSquareMeter * area;
+        for (uint32_t j = j0; j < std::min(j1, side - 1); ++j) {
+            for (uint32_t i = i0; i < std::min(i1, side - 1); ++i) {
+                growSquare(terrain, layer, i, j, full, out);
+            }
         }
     }
+}
+
+bool sameScatter(const TerrainFoliage& a, const TerrainFoliage& b) {
+    return a.parts.empty() == b.parts.empty() && a.density.size() == b.density.size()
+        && a.perSquareMeter == b.perSquareMeter && a.minScale == b.minScale && a.maxScale == b.maxScale
+        && a.seed == b.seed;
 }
 
 } // namespace Vkm::Engine::TerrainPlants

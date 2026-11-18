@@ -100,11 +100,13 @@ def cmd_new(args) -> int:
     pj.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
     print(f"created {dest}")
-    print(f"  cd {shlex.quote(args.name)} && vkm run")
+    print(f"  cd {shlex.quote(args.name)} && vkm edit")
+    print("  vkm run")
     return 0
 
 
-# What `vkm clean` deletes. Not library/: the recipes in it are source.
+# What `vkm clean` deletes. Not library/: the recipes in it are source. Not editor_settings.json,
+# though generated.txt lists it: it is a person's editor state for the project, not a build's.
 CLEANED = ("build", "bin", "cooked", "logs")
 
 

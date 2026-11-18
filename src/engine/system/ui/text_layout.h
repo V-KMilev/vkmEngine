@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string_view>
 
-#include "core/utf8.h"
+#include "base/encoding/utf8.h"
 #include "resource/asset/font_asset.h"
 
 namespace Vkm::Engine {
@@ -26,9 +26,9 @@ namespace Vkm::Engine {
  */
 template <typename Visit>
 float walkGlyphs(const FontAsset& font, std::string_view text, float scale, Visit&& visit) {
-    float       pen      = 0.0f;
-    int         previous = -1;
-    std::size_t at       = 0;
+    float pen = 0.0f;
+    int previous = -1;
+    std::size_t at = 0;
     while (at < text.size()) {
         const std::size_t start = at;
         const int index = FontAsset::glyphIndex(Utf8::next(text, at));

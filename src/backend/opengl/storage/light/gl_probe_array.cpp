@@ -1,0 +1,73 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
+#include "storage/light/gl_probe_array.h"
+
+#include <algorithm>
+
+#include "vkm_log/logger.h"
+
+#include "convention/gl_depth.h"
+#include "resource/asset/texture_params.h"
+#include "storage/light/gl_ibl.h"
+
+namespace Vkm::Engine {
+
+int GLProbeArray::clampResolution(int resolution) {
+    resolution = std::clamp(resolution, MIN_RESOLUTION, MAX_RESOLUTION);
+    // Round down to a power of two (immutable cube-array storage needs a fixed
+    // face size; power-of-two keeps the mip chain exact).
+    int pot = MIN_RESOLUTION;
+    while (pot * 2 <= resolution) pot *= 2;
+    return pot;
+}
+
+void GLProbeArray::createTargets(int capacity, int resolution) {
+    resolution = clampResolution(resolution);
+    if (m_capacity == capacity && m_resolution == resolution) return;
+    m_capacity   = capacity;
+    m_resolution = resolution;
+
+    // RGBA16F is the guaranteed color-renderable HDR format (RGB16F render
+    // support is optional), for the capture cube too. create() releases any
+    // prior allocation, so this doubles as a rebuild.
+    m_irradiance.create(irradianceSize(), 1, m_capacity + 1, GL_RGBA16F);
+    m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity + 1, GL_RGBA16F);
+    const auto side = uint32_t(m_resolution);
+    m_env.create(m_resolution, int(mipChainLength(side, side)), GL_RGBA16F, true);
+
+    // Shared capture depth for the six geometry captures (convolution runs
+    // depth-off and ignores it).
+    Vkm::OpenGL::Texture2DParams depth;
+    depth.width           = m_resolution;
+    depth.height          = m_resolution;
+    depth.internalFormat  = GLDepth::EYE_FORMAT;
+    depth.format          = GL_DEPTH_COMPONENT;
+    depth.type            = GL_FLOAT;
+    depth.minFilter       = Vkm::OpenGL::TextureMinFilter::Nearest;
+    depth.magFilter       = Vkm::OpenGL::TextureMagFilter::Nearest;
+    depth.wrapS           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    depth.wrapT           = Vkm::OpenGL::TextureWrap::ClampToEdge;
+    depth.generateMipmaps = false;
+    m_depth               = std::make_unique<Vkm::OpenGL::Texture2D>("probe_depth", depth);
+
+    m_fbo = std::make_unique<Vkm::OpenGL::FrameBuffer>();
+    m_fbo->attachTexture(GL_DEPTH_ATTACHMENT, m_depth->getID());
+    m_fbo->setDrawBuffer(GL_COLOR_ATTACHMENT0);
+    m_fbo->setReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    LOG_INFO(
+        "Probe array allocated: %d layers and one staging @ res %d (prefilter %d/%d mips, irradiance %d)",
+        capacity,
+        m_resolution,
+        prefilterSize(),
+        PREFILTER_MIPS,
+        irradianceSize()
+    );
+}
+
+void GLProbeArray::copyLayer(int from, int to) const {
+    m_irradiance.copyCube(from, to);
+    m_prefilter.copyCube(from, to);
+}
+
+} // namespace Vkm::Engine

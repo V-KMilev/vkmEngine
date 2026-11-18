@@ -1,5 +1,5 @@
 {
-  "entryScene": "",
+  "entryScene": "scenes/main.json",
   "maxPlayers": 10,
   "name": "New Project",
   "netPort": 27750,

@@ -1,5 +1,6 @@
 #include "system/render/probe_fill.h"
 
+#include <cstddef>
 #include <map>
 
 namespace Vkm::Engine {
@@ -16,7 +17,7 @@ std::vector<ProbeFill> probeFillWeights(
     // Each cell as a blend of trusted ones: a trusted cell is itself, a refused one nothing yet.
     std::vector<std::map<uint32_t, float>> blend(cells);
     std::vector<bool> reached = trusted;
-    uint32_t          refused = 0;
+    uint32_t refused = 0;
     for (size_t i = 0; i < cells; ++i) {
         if (trusted[i]) {
             blend[i][static_cast<uint32_t>(i)] = 1.0f;
@@ -35,7 +36,7 @@ std::vector<ProbeFill> probeFillWeights(
     // One cell of spread per round, so the L1 diameter bounds the count. Bounded, not
     // "until done", so a wrong connectedness assumption ends unrepaired, not hung.
     const uint32_t rounds = x + y + z;
-    uint32_t       filled = 0;
+    uint32_t filled = 0;
 
     for (uint32_t round = 0; round < rounds && filled < refused; ++round) {
         const std::vector<bool> sources = reached;

@@ -2,7 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "l_assert.h"
+#include "vkm_log/assert.h"
 
 namespace Vkm::Engine {
 

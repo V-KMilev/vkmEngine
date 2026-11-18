@@ -4,12 +4,12 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "core/math/rotation.h"
-#include "debug/profiler.h"
+#include "base/math/rotation.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/render/light.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/light/light.h"
 #include "ecs/hierarchy_operations.h"
 #include "system/sky/atmosphere.h"
 
@@ -45,14 +45,14 @@ void SkySystem::update(FrameContext& ctx) {
 
     // The rotation is world-space and a Transform local, so the parent's turn is
     // divided out; walked because WorldTransform is a frame behind here.
-    const Hierarchy* link        = ctx.scene.tryGet<Hierarchy>(key);
-    const EntityId   parent      = link ? link->parent : EntityId{};
-    const glm::quat  parentWorld = parent
+    const Hierarchy* link = ctx.scene.tryGet<Hierarchy>(key);
+    const EntityId parent = link ? link->parent : EntityId{};
+    const glm::quat parentWorld = parent
         ? Math::worldRotationOf(HierarchyOperations::computeWorldMatrix(ctx.scene, parent))
         : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
     Transform& transform = ctx.scene.get<Transform>(key);
-    Light&     light     = ctx.scene.get<Light>(key);
+    Light& light = ctx.scene.get<Light>(key);
     transform.rotation = glm::inverse(parentWorld) * rotation;
     light.color        = color;
     light.intensity    = intensity;

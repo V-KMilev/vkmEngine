@@ -104,7 +104,7 @@ def build_module(
     configure = [f"-DvkmEngine_DIR={engine.package}", f"-DCMAKE_PREFIX_PATH={engine.base}"]
     if engine.shipping:
         configure.append(f"-DVKM_MODULE_DIR={module_dir(d, engine)}")
-    # The engine's configuration, unless the caller names one; unset means no optimisation.
+    # The engine's configuration, unless the caller names one; unset means no optimization.
     build_type = engine.build_type()
     if build_type and not any(a.startswith("-DCMAKE_BUILD_TYPE") for a in cmake_args):
         configure.append(f"-DCMAKE_BUILD_TYPE={build_type}")

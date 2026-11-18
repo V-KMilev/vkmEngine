@@ -1,227 +1,119 @@
 #pragma once
 
 #include <algorithm>
+#include <any>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
-
-#include <imgui.h>
 
 #include "ecs/entity.h"
 #include "ecs/scene.h"
-#include "command/command_host.h"
-#include "command/command_stack.h"
-#include "core/reflect.h"
-#include "io/project.h"
-#include "input/camera_controller_system.h"
-#include "input/editor_keybinds.h"
+#include "undo/command_host.h"
+#include "undo/command_stack.h"
+#include "chrome/toasts.h"
+#include "core/graphics.h"
+#include "base/reflect/reflect.h"
+#include "base/reflect/enum_names.h"
+#include "editor_settings.h"
+#include "preferences.h"
+#include "workspace.h"
+#include "io/project/project.h"
+#include "view/editor_viewpoint.h"
+#include "view/view_placement.h"
 #include "overlays/terrain_tool.h"
-#include "overlays/transform_gizmo.h"
-#include "platform/window/window_manager.h"
+#include "panels/console/console_view.h"
 #include "resource/asset/material_asset.h"
+#include "requests.h"
+#include "resource/asset_type.h"
+#include "selection.h"
+#include "session/scene_actions.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief What a viewport drag does: the four tools on the tool strip.
- *
- * Select draws no gizmo, which is why it is a tool rather than a fourth GizmoOperation.
+ * @brief What Copy and Cut took: a scene document that names its assets, so it pastes into any scene.
  */
-enum class EditorTool {
-    Select,
-    Translate,
-    Rotate,
-    Scale,
-    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+struct EntityClipboard {
+    std::string                                scene;      ///< The plain subtrees in selection order, then
+                                                           ///< the instances, each root at its world pose.
+    std::vector<std::pair<uint32_t, EntityId>> parents;    ///< Each root's parent when taken, by its slot
+                                                           ///< in `scene`; null for a root.
+    uint64_t                                   world = 0;  ///< Scene::epoch() when taken: where those
+                                                           ///< parents mean anything.
 };
 
 /**
- * @brief The gizmo operation a tool asks the gizmo for.
- *
- * @param tool The active tool; Select answers Translate (GizmoOverlay draws none under it).
- * @return The matching operation.
+ * @brief The effects the viewport plays while the world stands still (HostChrome::EffectPreview).
  */
-inline GizmoOperation operationFor(EditorTool tool) {
-    switch (tool) {
-        case EditorTool::Rotate: return GizmoOperation::Rotate;
-        case EditorTool::Scale:  return GizmoOperation::Scale;
-        case EditorTool::Select:
-        case EditorTool::Translate:
-        case EditorTool::Count: break;
-    }
-    return GizmoOperation::Translate;
-}
-
-/**
- * @brief What follows the person rather than the project.
- *
- * Persisted in the user file (EditorSettings::saveUser), not the project, which
- * would carry them onto somebody else's desk. The owner of each value;
- * EditorSystem applies it to the camera controller and the window.
- */
-struct Preferences {
-    EditorKeybinds keybinds;
-
-    bool  snapEnabled   = false;
-    float snapTranslate = 1.0f;
-    float snapRotate    = 15.0f;    ///< Degrees
-    float snapScale     = 0.1f;
-
-    CameraControllerSystem::Settings camera;
-
-    /**
-     * @brief How much bigger the editor's UI is than the display asks for.
-     *
-     * A multiplier on the window's content scale, not a replacement for it.
-     */
-    float uiScale = 1.0f;
-
-    bool       vsync      = true;
-    /// Frames per second the window is held to; 0 is unlimited.
-    int        fpsCap     = 0;
-    WindowMode windowMode = WindowMode::Windowed;
-
-    static constexpr float MIN_UI_SCALE = 0.5f;   ///< Smallest uiScale that is still legible.
-    static constexpr float MAX_UI_SCALE = 4.0f;   ///< Largest uiScale that still leaves room to work.
-
-    /**
-     * @brief @p prefs held to what the Preferences window could have set.
-     *
-     * The file is hand-editable; nothing downstream was written for a value no control reaches.
-     *
-     * @param prefs Preferences as read.
-     * @return The same, with the UI scale and the pitch limits in range.
-     */
-    static Preferences bounded(Preferences prefs) {
-        prefs.uiScale = std::clamp(prefs.uiScale, MIN_UI_SCALE, MAX_UI_SCALE);
-        prefs.camera  = CameraControllerSystem::Settings::bounded(prefs.camera);
-        return prefs;
-    }
-};
-
-/**
- * @brief Which kinds of gizmo the viewport draws, by View > Show.
- *
- * A hidden kind draws no marker either, so a click cannot pick what is not shown.
- */
-struct GizmoVisibility {
-    bool lights    = true;
-    bool cameras   = true;
-    bool audio     = true;   ///< Sources and listeners.
-    bool probes    = true;   ///< Reflection probes, planar reflectors and irradiance volumes.
-    bool effects   = true;   ///< Decals and particle emitters.
-    bool colliders = false;  ///< Colliders and joints.
-    bool bounds    = false;  ///< Each drawn object's world box.
-    bool skeletons = false;  ///< Posed rigs as bone segments.
+struct EffectPreviewState {
+    bool     playing  = false;
+    bool     paused   = false;
+    bool     all      = false;  ///< Every emitter, not only the selection's.
+    uint64_t restarts = 0;
 };
 
 /**
  * @brief Shared editor state, owned by EditorSystem.
  */
 struct EditorState : CommandHost {
-    /// The ACTIVE entity (last clicked); always in `selection` when set.
-    EntityId selectedEntity{};
-    std::vector<EntityId> selection;         ///< Every selected entity, active included.
-    bool     worldSelected = false;
+    EffectPreviewState effects;  ///< The viewport's preview of the world's effects outside a play session.
 
-    /**
-     * @brief The selected id at each entity slot, null where none is.
-     *
-     * `selection` indexed by slot, so isSelected is one comparison, not a scan of
-     * thousands. The stored id carries the generation, so a reused slot cannot
-     * answer for its old occupant. Written only by the selection helpers below.
-     */
-    std::vector<EntityId> selectedAt;
+    Selection selection;  ///< The entities selected and the active one, or the World.
 
-    EditorTool     tool           = EditorTool::Translate;
-    GizmoMode      gizmoMode      = GizmoMode::Local;
-    /// The terrain brush; while the Terrain window is open with a tool picked, a drag brushes.
-    TerrainToolSettings terrainTool;
+    Workspace workspace;
+
+    TerrainToolSettings terrainTool;  ///< The brush: a drag brushes while the Terrain window has a tool.
 
     Preferences prefs;
 
-    // Which dockable window groups are shown, each named for its group's first
-    // window (see EditorSystem::drawPanels). Where each is docked is ImGui's ini.
-    bool showHierarchy   = true;
-    bool showInspector   = true;
-    bool showAssets      = true;
-    bool showTerrain     = false;  ///< The Terrain window, docked with the Inspector.
-
     bool showPreferences = false;
-    /// What the Material window edits (else: the selected entity's)
-    MaterialHandle materialEditorTarget{};
-    /**
-     * @brief The selection the pin above was chosen against.
-     *
-     * Here rather than on the panel, which only draws while its window is showing.
-     */
-    EntityId materialPinnedAt{};
-    bool revealMaterial    = false;             ///< Bring the Material window to the front
-    bool revealTerrain     = false;             ///< Bring the Terrain window to the front
-    bool showRenderSettings = false;
+
+    bool previewHovered      = false;  ///< A preview window had the pointer last frame: F frames it.
+    bool consoleHoldsKeys    = false;  ///< The Console's list had the keyboard and a selected line
+                                       ///< last frame: its Ctrl+C copies the line.
+    bool showRenderSettings  = false;
     bool showProjectSettings = false;
-    GizmoVisibility gizmos;                     ///< What the viewport draws over the scene
 
-    // A menu closes the frame its item is clicked, taking any modal opened inside it,
-    // so a menu item asks and the dialog, drawn at the root window's scope, answers.
-    // Flags rather than calls: each has several askers that cannot see the dialog.
-    bool requestModelImport = false;  ///< Consumed by ModelImportDialog
-    bool requestPlacePrefab = false;  ///< Consumed by PlacePrefabDialog
-    bool requestScriptReload = false; ///< Consumed by EditorSystem (hot-reload)
-    bool requestRestart      = false; ///< Consumed by EditorSystem: a game asked to start play over
-    bool requestNewProject   = false; ///< Consumed by NewProjectDialog
-    std::string newProjectTemplate;   ///< The project it copies; empty for templates/default
+    Requests requests;
 
-    /// A vkm command for BuildController: the words after `vkm`, and a project to open once
-    /// it succeeds (after `vkm new`). Empty for none.
-    std::vector<std::string> requestVkm;
-    std::string              requestVkmOpens;
-    bool requestOpenProject  = false; ///< Consumed by OpenProjectDialog
-    bool requestResetLayout  = false; ///< Consumed by the workspace before its dockspace
+    std::optional<GraphicsPreset> previewTier;  ///< The tier Render Settings shows over the project's
+                                                ///< settings, none while theirs show; Play ends it.
 
-    bool sceneDirty = false;    ///< Unsaved edits since last save/load.
+    bool sceneDirty = false;  ///< Unsaved edits since last save/load.
 
-    /**
-     * @brief The pending action that throws the live scene away, and how far the
-     *        unsaved-changes guard has got with it.
-     *
-     * Ask: unanswered; EditorSystem prompts if the scene is dirty, else goes to Run.
-     * Saving: "Save" was chosen and the write has not landed; backing out of the
-     * Save-As it opened drops the request. Run: approved; EditorSystem performs it
-     * with no ImGui window on the stack, as New, Open and OpenProject rebuild the world.
-     */
-    enum class SceneAction : uint8_t { None, Quit, New, Open, OpenProject };
-    enum class ActionStage : uint8_t { Ask, Saving, Run };
-    SceneAction pendingAction = SceneAction::None;
-    ActionStage actionStage   = ActionStage::Ask;
-    std::string actionPayload;    ///< The target: a scene file, a project root, or nothing.
+    SceneActions sceneActions;
 
-    /// MRU list (absolute paths; saved project-relative), most-recent first.
-    std::vector<std::string> recentScenes;
+    std::vector<std::string> recentScenes;    ///< Absolute paths, most-recent first; saved project-relative.
     std::vector<std::string> recentProjects;  ///< MRU project roots, most-recent first.
 
-    /**
-     * @brief Where the editor last viewed each scene from, keyed by project-relative
-     *        path (ProjectPaths::toProjectRelative) so it survives the project moving.
-     *
-     * The viewpoint is no entity's, so the project's editor_settings.json keeps it,
-     * not the scene file (SceneIOController::rememberView / restoreView).
-     */
-    std::map<std::string, EditorViewpoint> sceneViews;
+    std::map<std::string, EditorViewpoint> sceneViews;  ///< Each scene's last viewpoint, keyed by its
+                                                        ///< project-relative path; kept in the project's
+                                                        ///< editor_settings.json, not the scene file.
+
+    std::vector<EntityId> hiddenInView;  ///< The Hierarchy's eye: subtrees the editor's view leaves out.
+                                         ///< This session's alone: never saved, dropped by an open.
+    std::vector<EntityId> lockedInView;  ///< The Hierarchy's lock: subtrees a view click passes through.
+                                         ///< This session's alone, as hiddenInView is.
+
+    ViewAim viewAim;  ///< Where the editor's view looks, for Create to place at; restated every frame.
+
+    std::any componentClipboard;  ///< What a card header's Copy took, by value, for Paste Values.
+
+    std::shared_ptr<const EntityClipboard> entityClipboard;  ///< What Copy and Cut took, for Paste
+                                                             ///< (EditorActions::copySelection).
 
     Project project;              ///< The open project.json, as read and as edited.
+    Project projectSaved;         ///< The open project.json as last read or written.
     bool    projectOpen = false;  ///< Set by ProjectController::open; a failed open leaves it.
 
     static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
-    // Dropped when another scene replaces the world: entity IDs across scenes aren't comparable.
-    CommandStack commands;
+    CommandStack commands;  ///< Dropped when another scene replaces the world, whose ids do not carry over.
 
-    // Toast, ticked down by EditorSystem. ToastKind is the command layer's, so a
-    // command can raise one without knowing what an editor is.
-    std::string toastMessage;
-    float       toastTimeRemaining = 0.0f;
-    ToastKind   toastKind          = ToastKind::Info;
+    Toasts toasts;  ///< What the editor said lately, oldest first, ticked down as they are drawn.
 
     /**
      * @brief Mark the scene as having unsaved changes.
@@ -234,19 +126,63 @@ struct EditorState : CommandHost {
     CommandStack& commandStack() override { return commands; }
 
     /**
-     * @brief Ask for the Material window, showing @p material.
+     * @brief Carry a clipboard taken in the world of epoch @p from over to @p scene, as Stop restored it.
      *
-     * A request, not a focus: the caller may draw before the window, which may be hidden.
+     * Stop gives the world a new epoch, and a copy left on the old one pastes with its parents forgotten.
+     * The world comes back under its ids, so a parent it holds is kept as it is; one it does not is
+     * forgotten, as a slot free at Play hands out again the ids play took in it. A clipboard of any
+     * other world is left.
      *
-     * @param material The material to edit; the window follows the selection again
-     *        once another entity carrying one is picked.
+     * @param from  The epoch of the world as Play found it (PlaySnapshot::epochAtCapture).
+     * @param scene The world as it came back.
      */
-    void openMaterial(MaterialHandle material) {
-        materialEditorTarget = material;
-        materialPinnedAt     = selectedEntity;
-        showInspector        = true;
-        revealMaterial       = true;
+    void carryClipboard(uint64_t from, const Scene& scene) {
+        const std::shared_ptr<const EntityClipboard>& held = entityClipboard;
+        if (!held || held->world != from) return;
+        auto carried = std::make_shared<EntityClipboard>(*held);
+        carried->world = scene.epoch();
+        for (auto& [slot, parent] : carried->parents) {
+            if (!scene.isAlive(parent)) parent = {};
+        }
+        entityClipboard = std::move(carried);
     }
+
+    /**
+     * @brief Forget the history and the copied component, which name the world's entities and assets.
+     *
+     * For a world replaced or an asset removed, after which an undo or a paste would reach the wrong
+     * entities or a freed handle.
+     */
+    void forgetWorldState() {
+        commands.clear();
+        componentClipboard.reset();
+    }
+
+    /**
+     * @brief End a quality-tier preview, drawing with the project's settings again; nothing without one.
+     *
+     * @param graphics The frame's render settings.
+     */
+    void endRenderPreview(Graphics& graphics) {
+        if (!previewTier) return;
+        previewTier.reset();
+        graphics.reset();
+    }
+
+    /**
+     * @brief Ask for @p material's own window, as openAssetEditor does.
+     *
+     * @param material The material to edit.
+     */
+    void openMaterial(MaterialHandle material) { openAssetEditor(AssetType::Material, material.key); }
+
+    /**
+     * @brief Ask for the editor window of the asset @p key (AssetEditors).
+     *
+     * @param type Its kind.
+     * @param key  Its handle's slot and generation.
+     */
+    void openAssetEditor(AssetType type, StorageIndex key) { requests.ask(AssetToEdit{type, key}); }
 
     /**
      * @brief Ask for the Terrain window, editing @p terrain.
@@ -255,173 +191,42 @@ struct EditorState : CommandHost {
      */
     void openTerrain(EntityId terrain) {
         if (terrain) terrainTool.target = terrain;
-        showTerrain   = true;
-        revealTerrain = true;
+        workspace.showTerrain = true;
+        requests.ask(Ask::RevealTerrain);
     }
 
-    /**
-     * @brief Ask for an action that throws the live scene away.
-     *
-     * The one way in for Quit, New Scene, Open Scene and Open Project. Parked, not
-     * performed, so no caller has to ask about unsaved changes and the scene is never
-     * rebuilt inside the ImGui frame that asked. Ignored while an earlier request is
-     * unresolved, so a held key or a second click cannot stack prompts.
-     *
-     * @param action What to do once the guard clears.
-     * @param payload Scene file for Open, project root for OpenProject, else empty.
-     */
-    void requestSceneAction(SceneAction action, std::string payload = {}) {
-        if (pendingAction != SceneAction::None) return;
-        pendingAction = action;
-        actionStage   = ActionStage::Ask;
-        actionPayload = std::move(payload);
-    }
+    void selectEntity(EntityId id) override { selection.select(id); }
 
-    /**
-     * @brief Drop the pending request, whatever stage it had reached.
-     */
-    void clearSceneAction() {
-        pendingAction = SceneAction::None;
-        actionStage   = ActionStage::Ask;
-        actionPayload.clear();
-    }
-
-    /**
-     * @brief Replace the whole selection with @p id.
-     *
-     * Selection changes go through this and the helpers below, which keep a non-null
-     * selectedEntity in `selection`, `selectedAt` matching `selection`, and selection
-     * and worldSelected exclusive. clickSelect decides what a click does.
-     *
-     * @param id The entity to select.
-     */
-    void selectEntity(EntityId id) override {
-        clearSelection();
-        selectedEntity = id;
-        selection.assign(1, id);
-        markSelected(id);
-        worldSelected = false;
-    }
-
-    void addToSelection(EntityId id) {
-        if (!isSelected(id)) {
-            selection.push_back(id);
-            markSelected(id);
-        }
-        selectedEntity = id;
-        worldSelected  = false;
-    }
-
-    void toggleSelection(EntityId id) {
-        if (isSelected(id)) {
-            selection.erase(std::find(selection.begin(), selection.end(), id));
-            selectedAt[id.slot()] = {};
-            if (selectedEntity == id)
-                selectedEntity = selection.empty() ? EntityId{} : selection.back();
-        } else {
-            selection.push_back(id);
-            markSelected(id);
-            selectedEntity = id;
-        }
-        worldSelected = false;
-    }
-
-    /**
-     * @brief Drop every selected entity the scene no longer holds.
-     *
-     * Deletes and scene swaps leave dead ids behind; the active entity falls
-     * back to the last one still selected.
-     *
-     * @param scene The scene the selection names entities of.
-     */
-    void pruneSelection(const Scene& scene) {
-        const auto dead = [&](EntityId id) {
-            if (scene.isAlive(id)) return false;
-            if (id.slot() < selectedAt.size() && selectedAt[id.slot()] == id) selectedAt[id.slot()] = {};
-            return true;
-        };
-        selection.erase(std::remove_if(selection.begin(), selection.end(), dead), selection.end());
-        if (selectedEntity && !scene.isAlive(selectedEntity)) {
-            selectedEntity = selection.empty() ? EntityId{} : selection.back();
-        }
-    }
-
-    /**
-     * @brief Apply a click on @p id with the editor's one click policy.
-     *
-     * Plain replaces the selection, Ctrl toggles, Shift adds; there is no range.
-     * A null @p id clears the selection unless a modifier is held.
-     *
-     * @param id The entity clicked, or null for a click on empty space.
-     */
-    void clickSelect(EntityId id) {
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!id) {
-            if (!io.KeyCtrl && !io.KeyShift) deselect();
-        } else if (io.KeyCtrl) {
-            toggleSelection(id);
-        } else if (io.KeyShift) {
-            addToSelection(id);
-        } else {
-            selectEntity(id);
-        }
-    }
-
-    bool isSelected(EntityId id) const {
-        return id && id.slot() < selectedAt.size() && selectedAt[id.slot()] == id;
-    }
-
-    void selectWorld() {
-        clearSelection();
-        worldSelected = true;
-    }
-    void deselect() {
-        clearSelection();
-        worldSelected = false;
-    }
-
-    /// Empty the selection, and the slot index with it.
-    void clearSelection() {
-        for (EntityId id : selection) selectedAt[id.slot()] = {};
-        selection.clear();
-        selectedEntity = {};
-    }
-
-    /**
-     * @brief Make @p id, already selected, the active entity.
-     *
-     * @param id A member of the selection; ignored when it is not one.
-     */
-    void makeActive(EntityId id) {
-        if (isSelected(id)) selectedEntity = id;
-    }
-
-    /// Record @p id in the slot index; `selection` is the caller's to append.
-    void markSelected(EntityId id) {
-        if (id.slot() >= selectedAt.size()) selectedAt.resize(id.slot() + 1);
-        selectedAt[id.slot()] = id;
-    }
-
-    /**
-     * @brief Show a transient toast, replacing any shown before it.
-     *
-     * @param kind How loudly.
-     * @param msg What to say.
-     * @param seconds How long; 0 or less takes the length from @p kind.
-     */
     void pushToast(ToastKind kind, std::string msg, float seconds = 0.0f) override {
-        if (seconds <= 0.0f) {
-            seconds = (kind == ToastKind::Error) ? 6.0f
-                    : (kind == ToastKind::Warning) ? 4.0f : 2.5f;
-        }
-        toastKind          = kind;
-        toastMessage       = std::move(msg);
-        toastTimeRemaining = seconds;
+        toasts.push(kind, std::move(msg), std::nullopt, seconds);
     }
 };
 
 /**
- * @brief Push @p value to the front of an MRU path list, de-duplicated and capped.
+ * @brief Whether @p set holds @p id itself (not an ancestor of it).
+ *
+ * @param set One of the eye's or the lock's sets.
+ * @param id  The entity asked about.
+ * @return True when it was put there.
+ */
+inline bool isIn(const std::vector<EntityId>& set, EntityId id) {
+    return std::find(set.begin(), set.end(), id) != set.end();
+}
+
+/**
+ * @brief Put @p id in @p set, or take it out if it is there.
+ *
+ * @param set One of the eye's or the lock's sets.
+ * @param id  The entity a row toggles.
+ */
+inline void toggleIn(std::vector<EntityId>& set, EntityId id) {
+    const auto at = std::find(set.begin(), set.end(), id);
+    if (at == set.end()) set.push_back(id);
+    else                 set.erase(at);
+}
+
+/**
+ * @brief Move @p value to the front of @p mru, de-duplicated and capped at EditorState::MAX_RECENT_ENTRIES.
  *
  * @param mru   The list to promote into, most-recent first.
  * @param value The path to move to the front.
@@ -433,5 +238,3 @@ inline void pushRecentPath(std::vector<std::string>& mru, const std::string& val
 }
 
 } // namespace Vkm::Engine
-
-VKM_ENUM_NAMES(::Vkm::Engine::EditorTool, "Select", "Translate", "Rotate", "Scale")

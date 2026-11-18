@@ -2,12 +2,14 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 #include "resource/asset/material_asset.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class ComputeShader;
     class Texture2D;
+    class Texture2DArray;
 }
 
 namespace Vkm::Engine {
@@ -17,17 +19,18 @@ namespace Vkm::Engine {
  *        albedo, the normal and the AO/roughness/metallic maps, a layer of each per layer, which the
  *        LAYERED programs read.
  *
- * Built on the GPU from the layers' own uploaded maps (shaders/material/layer_copy), whatever their
+ * Built on the GPU from the layers' own uploaded maps (shaders/opengl/offline/layer_maps), whatever their
  * format or size: each array takes its largest map's size, to MAX_SIZE, with every level read from
  * the matching level of its source. A layer without a map holds what its factors alone describe -
  * white albedo, a flat normal, full AO, roughness and metallic for the factors to scale.
  */
 class GLLayerMaps {
     public:
-        /// The largest edge an array takes.
-        static constexpr uint32_t MAX_SIZE = 2048;
+        static constexpr uint32_t MAX_SIZE = 2048;  ///< The largest edge an array takes.
 
-        /// What a source map holds, so what of it a layer keeps: LAYER_COPY_* in the shader prelude.
+        /**
+         * @brief What a source map holds, so what of it a layer keeps: LAYER_COPY_* in the shader prelude.
+         */
         enum class Copy : int {
             Fill,                 ///< No map: a constant.
             Albedo,               ///< An albedo map, kept sRGB-encoded.
@@ -37,16 +40,19 @@ class GLLayerMaps {
             Count
         };
 
-        /// One layer's maps: null where it has none, or where one has no pixels yet.
+        /**
+         * @brief One layer's maps: null where it has none, or where one has no pixels yet.
+         */
         struct Layer {
-            const Vkm::GL::Texture2D* albedo  = nullptr;
-            const Vkm::GL::Texture2D* normal  = nullptr;
-            const Vkm::GL::Texture2D* surface = nullptr;
-            bool gltfSurface = false;  ///< surface is glTF's roughness/metallic map, not the combined one
+            const Vkm::OpenGL::Texture2D* albedo      = nullptr;
+            const Vkm::OpenGL::Texture2D* normal      = nullptr;
+            const Vkm::OpenGL::Texture2D* surface     = nullptr;
+            bool                          gltfSurface = false;    ///< surface is glTF's roughness/metallic
+                                                                  ///< map, not the combined one
         };
 
     public:
-        GLLayerMaps() = default;
+        GLLayerMaps();
         ~GLLayerMaps();
 
         GLLayerMaps(const GLLayerMaps& other) = delete;
@@ -57,35 +63,26 @@ class GLLayerMaps {
 
     public:
         /**
-         * @brief Build the arrays from @p layers, unless they were last built from @p key.
+         * @brief Build the arrays from @p layers, remaking one whose size changed.
          *
          * @param layers Each layer's maps.
-         * @param key    Names what @p layers are built from: their materials' and maps' versions.
-         * @param copy   The layer copy program (shaders/material/layer_copy).
+         * @param copy   The layer copy program (shaders/opengl/offline/layer_maps).
          */
         void build(
             const std::array<Layer, MaterialAsset::MAX_LAYERS>& layers,
-            uint64_t key,
-            const Vkm::GL::ComputeShader& copy
+            const Vkm::OpenGL::ComputeShader& copy
         );
 
         /// Bind the arrays to the units the LAYERED programs read them on.
         void bind() const;
 
     private:
-        /// One array: its storage, the view it is sampled through, and its size.
-        struct Array {
-            uint32_t texture = 0;
-            uint32_t view    = 0;  ///< The albedo's sRGB view; the storage itself for the others.
-            uint32_t width   = 0;
-            uint32_t height  = 0;
-            uint32_t levels  = 0;
-        };
-
-        /// The maps one array is filled from, what each holds, and what fills a layer without one.
+        /**
+         * @brief The maps one array is filled from, what each holds, and what fills a layer without one.
+         */
         struct Fill {
-            std::array<const Vkm::GL::Texture2D*, MaterialAsset::MAX_LAYERS> sources{};
-            std::array<Copy, MaterialAsset::MAX_LAYERS>                      copies{};
+            std::array<const Vkm::OpenGL::Texture2D*, MaterialAsset::MAX_LAYERS> sources{};
+            std::array<Copy, MaterialAsset::MAX_LAYERS>                          copies{};
             float empty[4] = {1.0f, 1.0f, 1.0f, 1.0f};
             bool  srgb     = false;
         };
@@ -98,15 +95,15 @@ class GLLayerMaps {
          * @param fill  Its sources.
          * @param copy  The layer copy program.
          */
-        static void fillArray(Array& array, const Fill& fill, const Vkm::GL::ComputeShader& copy);
-
-        /// Delete @p array's textures.
-        static void release(Array& array);
+        static void fillArray(
+            std::unique_ptr<Vkm::OpenGL::Texture2DArray>& array,
+            const Fill& fill,
+            const Vkm::OpenGL::ComputeShader& copy
+        );
 
     private:
-        std::array<Array, 3> m_arrays;      ///< Albedo, normal, AO/roughness/metallic.
-        uint64_t             m_key   = 0;   ///< What they were last built from.
-        bool                 m_built = false;
+        std::array<std::unique_ptr<Vkm::OpenGL::Texture2DArray>, 3> m_arrays;
+            ///< Albedo, normal, AO/roughness/metallic.
 };
 
 } // namespace Vkm::Engine

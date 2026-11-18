@@ -3,7 +3,7 @@
   "source": {
     "kind": "generator",
     "params": {
-      "innerRadius": 0.4000000059604645,
+      "innerRadius": 0.4,
       "outerRadius": 0.5,
       "segments": 40
     },

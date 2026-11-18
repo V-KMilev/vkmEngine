@@ -7,16 +7,19 @@
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/name.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/name.h"
+#include "ecs/component/scene/transform.h"
 
 namespace Vkm::Engine::HierarchyOperations {
 
 /**
  * @brief Attach a child entity to a parent entity, as its last child or in front of one of its children.
  *
- * A cycle-forming parent or a dead entity at either end is refused with a warning.
+ * A cycle-forming parent, a chain made deeper than MAX_DEPTH entities, or a dead entity at either
+ * end is refused with a warning. Hierarchy and a placeholder WorldTransform are added here, so the
+ * parallel resolve each frame never adds a component, a structural change that is not thread-safe;
+ * linking entities any other way brings that hazard back.
  *
  * @param scene  Scene both entities live in; Hierarchy and WorldTransform are
  *               added to whichever endpoint lacks them.
@@ -48,13 +51,10 @@ void removeFromParent(Scene& scene, EntityId entity);
  */
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 
-/**
- * @brief Deepest chain a walk along the hierarchy's links follows.
- *
- * Public so a walk outside this file cuts a too-deep or cyclic chain where
- * forSelfAndAncestors does.
- */
-constexpr uint32_t MAX_DEPTH = 32;
+constexpr uint32_t MAX_DEPTH = 64;  ///< Most entities a chain from a root down holds: setParent makes none
+                                    ///< deeper, so every walk along the links that follows this many sees a
+                                    ///< whole chain. Public so a walk outside this file cuts a cyclic chain,
+                                    ///< or one written past setParent, where forSelfAndAncestors does.
 
 /**
  * @brief Report a walk over the hierarchy that ran into its bound, once for the process.
@@ -114,7 +114,7 @@ void forEachChild(const Scene& scene, EntityId parent, Fn&& fn) {
     if (!node) return;
 
     const size_t bound = scene.entityCount();
-    size_t       step  = 0;
+    size_t step = 0;
     for (EntityId child = node->firstChild; child; ++step) {
         if (step >= bound) {
             warnWalkBound("sibling-list walk", bound);

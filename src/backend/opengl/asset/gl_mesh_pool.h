@@ -4,10 +4,10 @@
 #include <memory>
 #include <vector>
 
-#include "gl_stream_ring.h"
-#include "gl_vertex_array.h"
+#include "vkm_opengl/buffer/buffer.h"
+#include "vkm_opengl/vertex/vertex_array.h"
 
-namespace Vkm::GL {
+namespace Vkm::OpenGL {
     class VertexBuffer;
 }
 
@@ -19,25 +19,10 @@ struct MeshAsset;
  * @brief Which vertex streams a mesh carries, and so which of the pool's vertex arrays draws it.
  */
 enum class VertexLayout : uint8_t {
-    Static,   ///< Vertex alone.
+    Static,   ///< Vertex, and its lightmap coordinates in a parallel stream.
     Skinned,  ///< Vertex, and its SkinVertex in a parallel stream.
     Count,
 };
-
-/**
- * @brief One record of glMultiDrawElementsIndirect's command list, laid out as GL reads it.
- *
- * baseInstance offsets every attribute at a non-zero divisor, so each command reads its own
- * slice of one object-index list.
- */
-struct DrawCommand {
-    uint32_t count         = 0;  ///< Indices per instance.
-    uint32_t instanceCount = 0;
-    uint32_t firstIndex    = 0;  ///< Into the pool's index buffer.
-    int32_t  baseVertex    = 0;  ///< Added to every index: where the mesh's vertices start.
-    uint32_t baseInstance  = 0;  ///< First entry of the instance list the command reads.
-};
-static_assert(sizeof(DrawCommand) == 20, "GL reads the indirect command as five packed words");
 
 /**
  * @brief Where one mesh's vertices and indices sit in a GLMeshPool.
@@ -56,7 +41,9 @@ struct MeshRange {
  * Meshes come and go with assets, not frames, so the list stays short and cheap to walk.
  */
 struct SpanList {
-    /// One free run of elements.
+    /**
+     * @brief One free run of elements.
+     */
     struct Span {
         uint32_t offset = 0;
         uint32_t size   = 0;
@@ -74,10 +61,11 @@ struct SpanList {
  * VertexLayout.
  *
  * The skin stream sits at divisor 0, so locations 8/9 stay enabled while a program that never
- * declares them draws a skinned mesh in bind pose. Location 4, the object index, is at divisor
- * 1 on both arrays; a draw with no list reads a zero the pool owns, since drawing with an
- * enabled attribute that has no buffer is an error. A full stream doubles, copying on the GPU;
- * every GLMesh keeps its range, since offsets do not move.
+ * declares them draws a skinned mesh in bind pose. The static layout carries a lightmap stream
+ * beside its vertices (location 5), zero for a mesh with none (MeshAsset::lightmapUVs). Location
+ * 4, the object index, is at divisor 1 on both arrays; a draw with no list reads a zero the pool
+ * owns, since drawing with an enabled attribute that has no buffer is an error. A full stream
+ * doubles, copying on the GPU; every GLMesh keeps its range, since offsets do not move.
  */
 class GLMeshPool {
     public:
@@ -96,7 +84,7 @@ class GLMeshPool {
          *
          * @param mesh The geometry; a non-empty `skin` puts it in the skinned layout.
          * @return Where it went, for remove() and the draw commands; empty for no geometry, a
-         *         skin not one entry per vertex, or no room.
+         *         skin or lightmap stream not one entry per vertex, or no room.
          */
         MeshRange add(const MeshAsset& mesh);
 
@@ -124,14 +112,14 @@ class GLMeshPool {
          *
          * @param layout    The vertex array every command's mesh lives in.
          * @param instances The object indices the commands' baseInstance address.
-         * @param commands  DrawCommand records, bound as the indirect buffer.
+         * @param commands  DrawElementsIndirectCommand records, bound as the indirect buffer.
          * @param first     First command to draw.
          * @param count     Commands to draw.
          */
         void drawIndirect(
             VertexLayout layout,
-            const Vkm::GL::BufferSpan& instances,
-            const Vkm::GL::BufferSpan& commands,
+            const Vkm::OpenGL::BufferSpan& instances,
+            const Vkm::OpenGL::BufferSpan& commands,
             uint32_t first,
             uint32_t count
         ) const;
@@ -143,7 +131,7 @@ class GLMeshPool {
          * @param layout    Which vertex array: static, or skinned with its second stream.
          * @param instances The object indices the draw reads, one per instance.
          */
-        void bind(VertexLayout layout, const Vkm::GL::BufferSpan& instances) const;
+        void bind(VertexLayout layout, const Vkm::OpenGL::BufferSpan& instances) const;
 
         /**
          * @brief Point the vertex arrays at the current buffers.
@@ -153,13 +141,15 @@ class GLMeshPool {
         void wire();
 
     private:
-        Vkm::GL::VertexArray m_arrays[static_cast<size_t>(VertexLayout::Count)];
+        mutable Vkm::OpenGL::VertexArray m_arrays[static_cast<size_t>(VertexLayout::Count)];
+            ///< A layout's vertex array; mutable as each draw points its instance binding afresh.
 
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_indices;
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_vertices[static_cast<size_t>(VertexLayout::Count)];
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_skin;      ///< Parallel to m_vertices[Skinned].
-        /// One zero, behind location 4 for a draw with no list.
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_noObject;
+        std::unique_ptr<Vkm::OpenGL::VertexBuffer> m_indices;
+        std::unique_ptr<Vkm::OpenGL::VertexBuffer> m_vertices[static_cast<size_t>(VertexLayout::Count)];
+        std::unique_ptr<Vkm::OpenGL::VertexBuffer> m_skin;      ///< Parallel to m_vertices[Skinned].
+        std::unique_ptr<Vkm::OpenGL::VertexBuffer> m_lightmap;  ///< Parallel to m_vertices[Static].
+        std::unique_ptr<Vkm::OpenGL::VertexBuffer> m_noObject;  ///< One zero, behind location 4 for a draw
+                                                                ///< with no list.
 
         SpanList m_indexSpans;
         SpanList m_vertexSpans[static_cast<size_t>(VertexLayout::Count)];

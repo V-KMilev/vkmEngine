@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_stream_ring.h"
+#include "vkm_opengl/buffer/stream_ring.h"
 
 namespace Vkm::Engine {
 
@@ -31,10 +31,11 @@ class GLSkinPalette {
         /**
          * @brief Write this frame's palettes into @p stream.
          *
-         * @param matrices RenderView::skinMatrices, indexed by skinFirst; null when nothing posed.
-         * @param stream   The frame's streaming memory (GLView::stream).
+         * @param matrices RenderView::SceneLists::skinMatrices, indexed by skinFirst; null when nothing
+         *                 posed.
+         * @param stream   The frame's streaming memory (GLAssetMirror::stream).
          */
-        void update(const std::vector<glm::mat4>* matrices, Vkm::GL::StreamRing& stream);
+        void update(const std::vector<glm::mat4>* matrices, Vkm::OpenGL::StreamRing& stream);
 
         /**
          * @brief Bind the palettes to their SSBO point.
@@ -48,8 +49,8 @@ class GLSkinPalette {
         uint32_t count() const { return m_count; }
 
     private:
-        Vkm::GL::DeviceStream m_device;  ///< Read by every skinned draw, so in video memory.
-        uint32_t              m_count = 0;
+        Vkm::OpenGL::DeviceStream m_device;  ///< Read by every skinned draw, so in video memory.
+        uint32_t                  m_count = 0;
 };
 
 } // namespace Vkm::Engine

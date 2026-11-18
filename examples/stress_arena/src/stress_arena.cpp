@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "STRESS"
-
 #include "stress_arena.h"
 
 #include <algorithm>
@@ -10,49 +8,44 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "logger.h"
+#include "vkm_log/logger.h"
 
-#include "core/math/axes.h"
-#include "core/math/easing.h"
-#include "core/math/rotation.h"
-#include "core/reflect.h"
+#include "base/math/axes.h"
+#include "base/math/easing.h"
+#include "base/math/rotation.h"
 #include "ecs/scene.h"
-#include "io/asset/asset_library.h"
-#include "io/asset/cooked_loader.h"
 #include "ecs/component/animation/animation.h"
-#include "ecs/component/core/transform.h"
+#include "ecs/component/scene/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/render/camera.h"
-#include "ecs/component/render/decal.h"
-#include "ecs/component/render/irradiance_volume.h"
-#include "ecs/component/render/light.h"
+#include "ecs/component/effect/decal.h"
+#include "ecs/component/light/irradiance_volume.h"
+#include "ecs/component/light/light.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
-#include "ecs/component/render/particle_emitter.h"
-#include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/effect/particle_emitter.h"
+#include "ecs/component/light/reflection_probe.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_text.h"
 #include "ecs/hierarchy_operations.h"
-#include "platform/window/glfw_include.h"
-#include "platform/input/input_map.h"
-#include "platform/input/input_handle.h"
-#include "resource/generate/mesh_generators.h"
+#include "core/input_map.h"
+#include "io/asset/generate/mesh_generators.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
-#include "resource/texture_format.h"
+#include "resource/asset/texture_params.h"
 
 namespace Arena {
 
 namespace {
 
-// A square city block centred on the origin; everything is placed inside this radius.
+// A square city block centered on the origin; everything is placed inside this radius.
 constexpr float ARENA_HALF = 150.0f;
 constexpr float GROUND_Y   = 0.0f;
 
-// The pit the physics pile falls into, at the centre of the block.
+// The pit the physics pile falls into, at the center of the block.
 constexpr float PIT_HALF  = 14.0f;
 constexpr float PIT_DEPTH = 3.0f;
 
@@ -93,21 +86,6 @@ constexpr const char* ACTION_UI        = "Toggle/UI";
 constexpr const char* ACTION_RESET     = "Toggle/Reset";
 constexpr const char* ACTION_CAMERA    = "Toggle/Camera";
 
-void installStressBindings(InputMap& map) {
-    const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
-    map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });
-    map.define(ACTION_SHADOWS,   { key(GLFW_KEY_2) });
-    map.define(ACTION_PROPS,     { key(GLFW_KEY_3) });
-    map.define(ACTION_PARTICLES, { key(GLFW_KEY_4) });
-    map.define(ACTION_PHYSICS,   { key(GLFW_KEY_5) });
-    map.define(ACTION_ANIM,      { key(GLFW_KEY_6) });
-    map.define(ACTION_DECALS,    { key(GLFW_KEY_7) });
-    map.define(ACTION_FOG,       { key(GLFW_KEY_8) });
-    map.define(ACTION_UI,        { key(GLFW_KEY_9) });
-    map.define(ACTION_RESET,     { key(GLFW_KEY_0) });
-    map.define(ACTION_CAMERA,    { key(GLFW_KEY_F) });
-}
-
 // Generated paving: the arena ships no source art.
 constexpr uint32_t GROUND_TEXTURE_SIZE = 512;
 constexpr uint32_t GROUND_SLABS        = 4;      ///< Per texture edge.
@@ -141,11 +119,11 @@ TextureAsset makeGroundTexture() {
 
     for (uint32_t y = 0; y < SIZE; ++y) {
         for (uint32_t x = 0; x < SIZE; ++x) {
-            const bool grout = (x % SLAB) < GROUT || (y % SLAB) < GROUT;
-            const float base = grout ? 0.13f : slabTint[(y / SLAB) * GROUND_SLABS + (x / SLAB)];
+            const bool grout  = (x % SLAB) < GROUT || (y % SLAB) < GROUT;
+            const float base  = grout ? 0.13f : slabTint[(y / SLAB) * GROUND_SLABS + (x / SLAB)];
             const float value = glm::clamp(base + rng.nextFloat(-0.045f, 0.045f), 0.0f, 1.0f);
 
-            // A hair warm, not a pure grey card.
+            // A hair warm, not a pure gray card.
             uint8_t* pixel = &texture.pixelData[(static_cast<size_t>(y) * SIZE + x) * 4];
             pixel[0] = static_cast<uint8_t>(value * 255.0f);
             pixel[1] = static_cast<uint8_t>(value * 251.0f);
@@ -175,7 +153,7 @@ MeshAsset makeGroundMesh(const glm::vec3& extents) {
  * @brief Place item @p index of @p count evenly across a ground annulus.
  *
  * Golden-angle (Vogel) placement spreads points evenly by area; random placement
- * clumps at these counts. Jitter scales with local spacing, so neighbours never collide.
+ * clumps at these counts. Jitter scales with local spacing, so neighbors never collide.
  *
  * @param index   Item index; consecutive values land far apart.
  * @param count   Total items sharing the annulus, which sets the spacing.
@@ -195,14 +173,14 @@ glm::vec3 scatterOnGround(
 ) {
     constexpr float GOLDEN_ANGLE = 2.39996323f;
 
-    const int   total = std::max(1, count);
-    const float u     = (static_cast<float>(index) + 0.5f) / static_cast<float>(total);
+    const int total = std::max(1, count);
+    const float u      = (static_cast<float>(index) + 0.5f) / static_cast<float>(total);
     const float radius = std::sqrt(inner * inner + u * (outer * outer - inner * inner));
 
-    // Mean centre-to-centre distance at this density.
+    // Mean center-to-center distance at this density.
     const float spacing = (outer - inner) / std::sqrt(static_cast<float>(total));
 
-    const float radial  = rng.nextFloat(-1.0f, 1.0f) * spacing * jitter;
+    const float radial   = rng.nextFloat(-1.0f, 1.0f) * spacing * jitter;
     const float jittered = glm::clamp(radius + radial, inner, outer);
     // The same linear jitter as an angle, so spacing does not tighten toward the middle.
     const float angular = rng.nextFloat(-1.0f, 1.0f) * spacing * jitter / std::max(1.0f, jittered);
@@ -222,11 +200,11 @@ glm::vec3 scatterOnGround(
  */
 Animation makeSpin(float period, float phase) {
     Animation anim;
-    anim.rotationTrack.setEasing(Easing::Linear);
+    anim.rotationTrack.setEasing(Math::Easing::Linear);
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y)
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_UP)
         );
     }
     anim.time    = phase;
@@ -245,7 +223,7 @@ Animation makeSpin(float period, float phase) {
  */
 Animation makeBob(float period, float height, float phase) {
     Animation anim;
-    anim.positionTrack.setEasing(Easing::EaseInOutSine);
+    anim.positionTrack.setEasing(Math::Easing::EaseInOutSine);
     anim.positionTrack.addKeyframe(0.0f,          {0.0f, 0.0f, 0.0f});
     anim.positionTrack.addKeyframe(period * 0.5f, {0.0f, height, 0.0f});
     anim.positionTrack.addKeyframe(period,        {0.0f, 0.0f, 0.0f});
@@ -265,7 +243,7 @@ Animation makeBob(float period, float height, float phase) {
  */
 Animation makePulse(float period, float amount, float phase) {
     Animation anim;
-    anim.scaleTrack.setEasing(Easing::EaseInOutSine);
+    anim.scaleTrack.setEasing(Math::Easing::EaseInOutSine);
     anim.scaleTrack.addKeyframe(0.0f,          glm::vec3(1.0f));
     anim.scaleTrack.addKeyframe(period * 0.5f, glm::vec3(1.0f + amount));
     anim.scaleTrack.addKeyframe(period,        glm::vec3(1.0f));
@@ -286,9 +264,9 @@ Animation makePulse(float period, float amount, float phase) {
  */
 Animation makeOrbitHop(float period, float radius, float height, float phase) {
     Animation anim;
-    anim.positionTrack.setEasing(Easing::EaseInOutSine);
-    anim.rotationTrack.setEasing(Easing::Linear);
-    anim.scaleTrack.setEasing(Easing::EaseInOutSine);
+    anim.positionTrack.setEasing(Math::Easing::EaseInOutSine);
+    anim.rotationTrack.setEasing(Math::Easing::Linear);
+    anim.scaleTrack.setEasing(Math::Easing::EaseInOutSine);
 
     for (int k = 0; k <= 4; ++k) {
         const float t     = period * static_cast<float>(k) / 4.0f;
@@ -301,7 +279,7 @@ Animation makeOrbitHop(float period, float radius, float height, float phase) {
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y)
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_UP)
         );
     }
     anim.scaleTrack.addKeyframe(0.0f,          glm::vec3(1.0f));
@@ -319,49 +297,15 @@ Animation makeOrbitHop(float period, float radius, float height, float phase) {
 } // namespace
 
 void StressArena::onStart() {
+    // A scene load that fails starts this behavior again in the arena it built.
     if (m_built) return;
     m_built = true;
 
     m_rng.seed(ARENA_SEED);
-    installStressBindings(input());
     m_churnRng.seed(ARENA_SEED, CHURN_STREAM);
 
-    // Procedural, not an HDR file, so the lighting is identical on every machine.
-    Environment& environment = scene().environment();
-    environment.sky.showSkybox = true;
-    environment.sky.procedural = true;
-    environment.sky.intensity  = 1.0f;
-
-    // Off-axis, so tower shadows fall onto the block and the cascades span varied
-    // depth. A large Mie term at this elevation washes the sky white.
-    environment.sky.lightColor        = {1.0f, 0.96f, 0.90f};
-    environment.sky.lightIntensity    = 3.2f;
-    environment.sky.sunElevation      = 70.0f;
-    environment.sky.sunAzimuth        = -145.0f;
-    environment.sky.rayleigh          = 1.0f;
-    environment.sky.mie               = 3.5f;
-    environment.sky.mieG              = 0.76f;
-    environment.sky.sunDiscIntensity  = 5.0f;
-
-    // On: one of the heaviest passes. Thin enough to read as haze; the froxel grid
-    // costs the same either way.
-    environment.fog.enabled       = true;
-    environment.fog.density       = 0.006f;
-    environment.fog.height        = 18.0f;
-    environment.fog.heightFalloff = 0.05f;
-    environment.fog.anisotropy    = 0.7f;
-
-    scene().physics().gravity = {0.0f, -18.0f, 0.0f};
-
     m_camera = findActiveCamera(scene());
-    if (Camera* camera = scene().tryGet<Camera>(m_camera)) {
-        camera->zFar  = CAMERA_FAR;
-        camera->zNear = 0.2f;
-
-        // The DoF pass early-outs at amount 0.
-        camera->dofAmount     = 0.35f;
-        camera->focusDistance = CAM_RADIUS;
-    }
+    m_fogOn  = scene().environment().fog.enabled;
 
     buildMaterials();
     buildGround();
@@ -372,7 +316,6 @@ void StressArena::onStart() {
     buildDecals();
     buildProbes();
     buildPhysics();
-    buildModels();
     buildDrones();
     buildUI();
 
@@ -391,10 +334,6 @@ void StressArena::onStart() {
         m_drones.size(),
         uniqueMaterials
     );
-    LOG_INFO(
-        "keys: 1 lights  2 shadows  3 props  4 particles  5 physics  "
-        "6 anim  7 decals  8 fog  9 UI  0 all   F camera"
-    );
 }
 
 MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char* name) {
@@ -404,8 +343,8 @@ MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char
 
 void StressArena::buildMaterials() {
     m_cube       = resources().add(generateCube(), "stress:cube");
-    m_sphere     = resources().add(generateSphere(12), "stress:sphere");
-    m_cylinder   = resources().add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
+    m_sphere     = resources().add(generateSphere({12}), "stress:sphere");
+    m_cylinder   = resources().add(generateCylinder({0.5f, 1.0f, 20}), "stress:cylinder");
 
     // One mesh per ground slab shape, so the paving keeps the same world scale
     // across all four and meets cleanly at the seams.
@@ -418,12 +357,12 @@ void StressArena::buildMaterials() {
         "stress:ground_side"
     );
 
-    m_sphereMid = resources().add(generateSphere(6), "stress:sphere_mid");
-    m_sphereLow = resources().add(generateSphere(3), "stress:sphere_low");
-    m_cylMid    = resources().add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
-    m_cylLow    = resources().add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
+    m_sphereMid = resources().add(generateSphere({6}), "stress:sphere_mid");
+    m_sphereLow = resources().add(generateSphere({3}), "stress:sphere_low");
+    m_cylMid    = resources().add(generateCylinder({0.5f, 1.0f, 10}),  "stress:cyl_mid");
+    m_cylLow    = resources().add(generateCylinder({0.5f, 1.0f, 6}),   "stress:cyl_low");
 
-    // Mid-grey, roughly 40-55% albedo: dark surfaces would hide the shadowing and GI.
+    // Mid-gray, roughly 40-55% albedo: dark surfaces would hide the shadowing and GI.
     MaterialAsset base;
     base.roughness = 0.85f;
     base.metallic  = 0.0f;
@@ -432,18 +371,21 @@ void StressArena::buildMaterials() {
     MaterialAsset ground = base;
     ground.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};
     ground.albedoTexture = resources().add(makeGroundTexture(), "stress:ground_albedo");
-    m_matGround = makeMaterial(ground, "stress:ground");
+    m_matGround          = makeMaterial(ground, "stress:ground");
 
     base.albedo    = {0.55f, 0.54f, 0.51f, 1.0f};
     base.roughness = 0.7f;
-    m_matTower = makeMaterial(base, "stress:tower");
+    m_matTower     = makeMaterial(base, "stress:tower");
 
-    // A share of the palette carries clearcoat, anisotropy or sheen, which the shader branches on.
+    // A share of the palette carries clearcoat or sheen, which the shader branches on.
     const int paletteSize = std::max(1, uniqueMaterials);
     m_propMaterials.reserve(static_cast<size_t>(paletteSize));
     for (int i = 0; i < paletteSize; ++i) {
         MaterialAsset m;
-        m.albedo    = glm::vec4(frand(0.15f, 0.9f), frand(0.15f, 0.9f), frand(0.15f, 0.9f), 1.0f);
+        const float red   = frand(0.15f, 0.9f);
+        const float green = frand(0.15f, 0.9f);
+        const float blue  = frand(0.15f, 0.9f);
+        m.albedo    = glm::vec4(red, green, blue, 1.0f);
         m.metallic  = (i % 3 == 0) ? frand(0.7f, 1.0f) : frand(0.0f, 0.25f);
         m.roughness = frand(0.12f, 0.85f);
 
@@ -451,11 +393,11 @@ void StressArena::buildMaterials() {
             m.clearcoat          = frand(0.4f, 1.0f);
             m.clearcoatRoughness = frand(0.05f, 0.4f);
         }
-        if (i % 5 == 0) {
-            m.anisotropy = frand(0.3f, 0.9f);
-        }
         if (i % 7 == 0) {
-            m.sheenColor     = glm::vec3(frand(0.2f, 0.8f), frand(0.2f, 0.8f), frand(0.2f, 0.8f));
+            const float sheenRed   = frand(0.2f, 0.8f);
+            const float sheenGreen = frand(0.2f, 0.8f);
+            const float sheenBlue  = frand(0.2f, 0.8f);
+            m.sheenColor     = glm::vec3(sheenRed, sheenGreen, sheenBlue);
             m.sheenRoughness = frand(0.2f, 0.6f);
         }
 
@@ -472,13 +414,13 @@ void StressArena::buildMaterials() {
     glass.transmission    = 0.85f;
     glass.ior             = 1.45f;
     glass.thicknessFactor = 0.4f;
-    m_matGlass = makeMaterial(glass, "stress:glass");
+    m_matGlass            = makeMaterial(glass, "stress:glass");
 
     MaterialAsset chrome;
     chrome.albedo    = {0.92f, 0.93f, 0.96f, 1.0f};
     chrome.metallic  = 1.0f;
     chrome.roughness = 0.06f;
-    m_matChrome = makeMaterial(chrome, "stress:chrome");
+    m_matChrome      = makeMaterial(chrome, "stress:chrome");
 
     // Bright enough to clear the bloom threshold in daylight.
     MaterialAsset emissive;
@@ -486,14 +428,14 @@ void StressArena::buildMaterials() {
     emissive.emission         = {1.0f, 0.80f, 0.45f};
     emissive.emissiveStrength = 6.0f;
     emissive.roughness        = 0.4f;
-    m_matEmissive = makeMaterial(emissive, "stress:emissive");
+    m_matEmissive             = makeMaterial(emissive, "stress:emissive");
 
     // The projector blends on albedo alpha, so it must be < 1.
     MaterialAsset decal;
     decal.type      = MaterialType::Transparent;
     decal.albedo    = {0.05f, 0.06f, 0.09f, 0.8f};
     decal.roughness = 0.9f;
-    m_matDecal = makeMaterial(decal, "stress:decal");
+    m_matDecal      = makeMaterial(decal, "stress:decal");
 }
 
 EntityId StressArena::spawnMesh(
@@ -565,8 +507,8 @@ void StressArena::buildGround() {
     scene().add(floor, std::move(floorCol));
 
     for (int i = 0; i < 4; ++i) {
-        const bool  alongX = (i % 2) == 0;
-        const float sign   = (i < 2) ? 1.0f : -1.0f;
+        const bool alongX = (i % 2) == 0;
+        const float sign = (i < 2) ? 1.0f : -1.0f;
         const glm::vec3 position = alongX
             ? glm::vec3(sign * PIT_HALF, GROUND_Y - PIT_DEPTH * 0.5f, 0.0f)
             : glm::vec3(0.0f, GROUND_Y - PIT_DEPTH * 0.5f, sign * PIT_HALF);
@@ -600,10 +542,10 @@ void StressArena::buildTowers() {
             0.55f
         );
 
-        const int   floors = m_rng.nextInt(2, 7);
-        const float width  = frand(4.0f, 9.0f);
-        const float depth  = frand(4.0f, 9.0f);
-        float       y      = GROUND_Y;
+        const int floors = m_rng.nextInt(2, 7);
+        const float width = frand(4.0f, 9.0f);
+        const float depth = frand(4.0f, 9.0f);
+        float y = GROUND_Y;
 
         for (int f = 0; f < floors; ++f) {
             const float height = frand(3.0f, 6.0f);
@@ -630,7 +572,7 @@ void StressArena::buildProps() {
 
     for (int i = 0; i < propCount; ++i) {
         const glm::vec3 spot = scatterOnGround(i, propCount, PROP_ZONE_INNER, PROP_ZONE_OUTER, m_rng);
-        const float scale = frand(0.5f, 2.2f);
+        const float scale    = frand(0.5f, 2.2f);
 
         const int shape = i % 3;
         const MeshHandle mesh = (shape == 0) ? m_cube : (shape == 1) ? m_sphere : m_cylinder;
@@ -660,26 +602,34 @@ void StressArena::buildProps() {
 
         if (static_cast<int>(m_spinners.size()) < animatedCount) {
             switch (i % 4) {
-                case 0:
-                    scene().add(prop, makeSpin(frand(2.0f, 6.0f), frand(0.0f, 4.0f)));
+                case 0: {
+                    const float period = frand(2.0f, 6.0f);
+                    const float phase  = frand(0.0f, 4.0f);
+                    scene().add(prop, makeSpin(period, phase));
                     break;
-                case 1:
-                    scene().add(prop, makeBob(frand(1.5f, 4.0f), frand(0.5f, 2.5f), frand(0.0f, 3.0f)));
+                }
+                case 1: {
+                    const float period = frand(1.5f, 4.0f);
+                    const float height = frand(0.5f, 2.5f);
+                    const float phase  = frand(0.0f, 3.0f);
+                    scene().add(prop, makeBob(period, height, phase));
                     break;
-                case 2:
-                    scene().add(prop, makePulse(frand(1.2f, 3.5f), frand(0.2f, 0.7f), frand(0.0f, 3.0f)));
+                }
+                case 2: {
+                    const float period = frand(1.2f, 3.5f);
+                    const float amount = frand(0.2f, 0.7f);
+                    const float phase  = frand(0.0f, 3.0f);
+                    scene().add(prop, makePulse(period, amount, phase));
                     break;
-                default:
-                    scene().add(
-                        prop,
-                        makeOrbitHop(
-                            frand(3.0f, 7.0f),
-                            frand(0.6f, 2.4f),
-                            frand(0.8f, 2.6f),
-                            frand(0.0f, 5.0f)
-                        )
-                    );
+                }
+                default: {
+                    const float period = frand(3.0f, 7.0f);
+                    const float radius = frand(0.6f, 2.4f);
+                    const float height = frand(0.8f, 2.6f);
+                    const float phase  = frand(0.0f, 5.0f);
+                    scene().add(prop, makeOrbitHop(period, radius, height, phase));
                     break;
+                }
             }
             m_spinners.push_back(prop);
         }
@@ -694,11 +644,11 @@ void StressArena::buildLights() {
 
     for (int i = 0; i < lightCount; ++i) {
         // A third light the tower ring, so the skyline is not a black cutout.
-        const bool  inField = (i % 3) != 0;
+        const bool inField   = (i % 3) != 0;
         const glm::vec3 spot = inField
             ? scatterOnGround(i, lightCount, PIT_HALF, PROP_ZONE_OUTER, m_rng, 0.5f)
             : scatterOnGround(i, lightCount, TOWER_ZONE_INNER, TOWER_ZONE_OUTER, m_rng, 0.5f);
-        const float height  = inField ? frand(4.0f, 18.0f) : frand(8.0f, 34.0f);
+        const float height = inField ? frand(4.0f, 18.0f) : frand(8.0f, 34.0f);
         const glm::vec3 position(spot.x, GROUND_Y + height, spot.z);
 
         EntityId entity = spawn("Light");
@@ -706,14 +656,18 @@ void StressArena::buildLights() {
         Transform transform;
         transform.position = position;
         // Read only for spots. Negative: with forward -Z, a positive turn about X tilts up.
-        transform.rotation = glm::angleAxis(-frand(0.6f, 1.4f), Math::WORLD_AXIS_X);
+        transform.rotation = glm::angleAxis(-frand(0.6f, 1.4f), Math::WORLD_RIGHT);
         scene().add(entity, std::move(transform));
 
+        const float red   = frand(0.5f, 1.0f);
+        const float green = frand(0.5f, 1.0f);
+        const float blue  = frand(0.6f, 1.0f);
+
         Light light;
-        light.type  = (i % 3 == 0) ? LightType::Spot : LightType::Point;
-        light.color = glm::vec3(frand(0.5f, 1.0f), frand(0.5f, 1.0f), frand(0.6f, 1.0f));
-        light.intensity = frand(8.0f, 22.0f);
-        light.radius    = frand(10.0f, 24.0f);
+        light.type           = (i % 3 == 0) ? LightType::Spot : LightType::Point;
+        light.color          = glm::vec3(red, green, blue);
+        light.intensity      = frand(8.0f, 22.0f);
+        light.radius         = frand(10.0f, 24.0f);
         light.innerConeAngle = 0.35f;
         light.outerConeAngle = 0.7f;
         // Only static points (the first movingLights patrol), up to the cube budget:
@@ -753,8 +707,8 @@ void StressArena::buildLights() {
     scene().add(sun, std::move(sunTransform));
 
     Light sunLight;
-    sunLight.type           = LightType::Directional;
-    // Colour and intensity come from the sky, set in onStart.
+    sunLight.type = LightType::Directional;
+    // Color and intensity come from the scene's sky.
     sunLight.castShadows    = true;
     sunLight.shadowDistance = 280.0f;
     scene().add(sun, std::move(sunLight));
@@ -820,11 +774,15 @@ void StressArena::buildDecals() {
 
         EntityId entity = spawn("Decal");
 
+        const float turn  = frand(0.0f, glm::two_pi<float>());
+        const float width = frand(3.0f, 8.0f);
+        const float depth = frand(3.0f, 8.0f);
+
         Transform transform;
         // The box's Y extent is the projection depth, so it must reach the ground.
         transform.position = {spot.x, GROUND_Y + 2.0f, spot.z};
-        transform.rotation = glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
-        transform.scale    = glm::vec3(frand(3.0f, 8.0f), 5.0f, frand(3.0f, 8.0f));
+        transform.rotation = glm::angleAxis(turn, Math::WORLD_UP);
+        transform.scale    = glm::vec3(width, 5.0f, depth);
         scene().add(entity, std::move(transform));
 
         Decal decal;
@@ -838,9 +796,9 @@ void StressArena::buildDecals() {
 }
 
 void StressArena::buildProbes() {
-    // Each bakes six faces on first sight (throttled by GLProbeManager): long frames at startup.
+    // Each bakes six faces on first sight (throttled by the renderer): long frames at startup.
     for (int i = 0; i < reflectionProbes; ++i) {
-        const float angle  = glm::two_pi<float>() * static_cast<float>(i)
+        const float angle = glm::two_pi<float>() * static_cast<float>(i)
             / static_cast<float>(std::max(1, reflectionProbes));
         const float radius = ARENA_HALF * 0.45f;
 
@@ -877,11 +835,10 @@ void StressArena::buildPhysics() {
 
     for (int i = 0; i < physicsBodies; ++i) {
         const float size = frand(0.6f, 1.4f);
-        const glm::vec3 position(
-            frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f),
-            GROUND_Y + frand(2.0f, 40.0f),
-            frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f)
-        );
+        const float x    = frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f);
+        const float y    = GROUND_Y + frand(2.0f, 40.0f);
+        const float z    = frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f);
+        const glm::vec3 position(x, y, z);
 
         const MaterialHandle material =
             m_propMaterials[static_cast<size_t>(i) % m_propMaterials.size()];
@@ -901,134 +858,6 @@ void StressArena::buildPhysics() {
         scene().add(entity, std::move(col));
 
         m_bodies.push_back(entity);
-    }
-}
-
-void StressArena::buildModels() {
-    if (modelInstances <= 0) return;
-
-    AssetLibrary& library = AssetLibrary::get();
-
-    // Discovered, not hardcoded; the list is sorted, so every run picks the same meshes.
-    const std::vector<std::string> meshNames = library.namesOf(AssetType::Mesh);
-    const std::vector<std::string> textureNames = library.namesOf(AssetType::Texture);
-
-    // Skip the engine's generated primitives; the props already use them.
-    std::vector<std::string> usable;
-    for (const std::string& name : meshNames) {
-        if (name.rfind("mesh:generator:", 0) == 0) continue;
-        usable.push_back(name);
-    }
-
-    if (usable.empty()) {
-        LOG_INFO("no cooked meshes in the library - running procedural props only");
-        return;
-    }
-
-    // Every kind costs a cooked read at startup.
-    const size_t kinds = std::min(usable.size(), static_cast<size_t>(std::max(1, modelKinds)));
-
-    // A model's embedded colour image is an albedo map (ModelPartNames::embeddedName).
-    const std::string colorSuffix = std::string("#") + Reflect::enumName(TextureUsage::Color);
-    std::vector<MaterialHandle> materials;
-    for (size_t i = 0; i < textureNames.size() && materials.size() < 8; ++i) {
-        const std::string& texture = textureNames[i];
-        if (texture.size() < colorSuffix.size()
-            || texture.compare(texture.size() - colorSuffix.size(), colorSuffix.size(), colorSuffix) != 0) {
-            continue;
-        }
-
-        MaterialAsset m;
-        m.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};
-        m.roughness     = 0.65f;
-        m.metallic      = 0.0f;
-        m.albedoTexture = loadCookedTexture(texture, resources());
-        if (!m.albedoTexture) continue;
-
-        const std::string name = "stress:model_mat_" + std::to_string(materials.size());
-        materials.push_back(makeMaterial(m, name.c_str()));
-    }
-    if (materials.empty()) materials = m_propMaterials;
-
-    m_models.reserve(kinds);
-    for (size_t k = 0; k < kinds; ++k) {
-        MeshHandle mesh = loadCookedMesh(usable[k], resources());
-        if (!mesh) continue;
-        m_models.push_back(ModelKind{mesh, {}, {}, false});
-        ++m_unfittedKinds;
-    }
-
-    if (m_models.empty()) {
-        LOG_WARNING("cooked meshes present but none resolved - procedural props only");
-        return;
-    }
-
-    for (int i = 0; i < modelInstances; ++i) {
-        ModelKind& kind = m_models[static_cast<size_t>(i) % m_models.size()];
-
-        // Offset, so models interleave with the props instead of sharing their spiral.
-        const glm::vec3 spot = scatterOnGround(
-            i * 3 + 1,
-            modelInstances * 3,
-            PIT_HALF + 8.0f,
-            PROP_ZONE_OUTER,
-            m_rng
-        );
-        const float size = frand(2.5f, 7.0f);
-
-        EntityId entity = spawnMesh(
-            kind.mesh,
-            materials[static_cast<size_t>(i) % materials.size()],
-            "Model",
-            {spot.x, GROUND_Y, spot.z},
-            glm::vec3(1.0f)
-        );
-
-        scene().get<Transform>(entity).rotation =
-            glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
-
-        kind.instances.push_back(entity);
-        kind.sizes.push_back(size);
-    }
-
-    LOG_INFO(
-        "models: %zu kinds, %d instances, %zu textured materials",
-        m_models.size(),
-        modelInstances,
-        materials.size()
-    );
-}
-
-void StressArena::updateModelScales() {
-    if (m_unfittedKinds == 0) return;
-
-    // Sources vary wildly in extent, so each kind is fitted the frame its vertices arrive.
-    for (ModelKind& kind : m_models) {
-        if (kind.fitted) continue;
-
-        const MeshAsset& asset = resources().get(kind.mesh);
-        if (asset.loading || asset.vertices.empty()) continue;
-
-        const glm::vec3 extent = asset.boundsMax - asset.boundsMin;
-        const float     longest = std::max({extent.x, extent.y, extent.z});
-        if (longest <= glm::epsilon<float>()) {
-            kind.fitted = true;
-            --m_unfittedKinds;
-            continue;
-        }
-
-        for (size_t i = 0; i < kind.instances.size(); ++i) {
-            Transform* held = scene().tryGet<Transform>(kind.instances[i]);
-            if (!held) continue;
-
-            Transform& transform = *held;
-            const float scale = kind.sizes[i] / longest;
-            transform.scale = glm::vec3(scale);
-            // The origin is wherever the exporter left it, so lift by the scaled underside.
-            transform.position.y = GROUND_Y - asset.boundsMin.y * scale;
-        }
-        kind.fitted = true;
-        --m_unfittedKinds;
     }
 }
 
@@ -1072,7 +901,7 @@ void StressArena::buildDrones() {
             lampTransform.position = {0.0f, -0.4f, 0.0f};
             // Straight down: with forward -Z, the floorward quarter turn about X is negative.
             lampTransform.rotation =
-                glm::angleAxis(-glm::half_pi<float>(), Math::WORLD_AXIS_X);
+                glm::angleAxis(-glm::half_pi<float>(), Math::WORLD_RIGHT);
             scene().add(lamp, std::move(lampTransform));
 
             Light spot;
@@ -1126,7 +955,7 @@ void StressArena::updateDrones() {
         Transform* held = scene().tryGet<Transform>(drone.body);
         if (!held) continue;
 
-        const float angle = drone.phase + m_motionTime * drone.speed;
+        const float angle    = drone.phase + m_motionTime * drone.speed;
         Transform& transform = *held;
         transform.position = {
             std::cos(angle) * drone.radius,
@@ -1134,27 +963,16 @@ void StressArena::updateDrones() {
             std::sin(angle) * drone.radius
         };
         // Bank and face the tangent; the half turn maps yaw from +Z onto forward -Z.
-        transform.rotation = glm::angleAxis(-angle, Math::WORLD_AXIS_Y)
-            * glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z)
-            * glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
+        transform.rotation = glm::angleAxis(-angle, Math::WORLD_UP)
+            * glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, -Math::WORLD_FORWARD)
+            * glm::angleAxis(glm::pi<float>(), Math::WORLD_UP);
     }
 }
 
 void StressArena::updateDebris(float dt) {
-    // Age first, so a piece spawned this frame is not considered for destruction.
-    for (size_t i = 0; i < m_debris.size();) {
-        Debris& piece = m_debris[i];
-        piece.life -= dt;
-
-        if (piece.life > 0.0f && scene().isAlive(piece.entity)) {
-            ++i;
-            continue;
-        }
-
-        if (scene().isAlive(piece.entity)) destroy(piece.entity);
-        m_debris[i] = m_debris.back();
-        m_debris.pop_back();
-    }
+    // destroyAfter takes each piece; those still standing count against the cap.
+    const auto gone = [this](EntityId piece) { return !scene().isAlive(piece); };
+    m_debris.erase(std::remove_if(m_debris.begin(), m_debris.end(), gone), m_debris.end());
 
     if (debrisRate <= 0.0f) return;
 
@@ -1211,7 +1029,8 @@ void StressArena::updateDebris(float dt) {
         col.enabled = m_physicsOn;
         scene().add(piece, std::move(col));
 
-        m_debris.push_back(Debris{piece, m_churnRng.nextFloat(2.5f, 5.0f)});
+        destroyAfter(piece, m_churnRng.nextFloat(2.5f, 5.0f));
+        m_debris.push_back(piece);
     }
 }
 
@@ -1226,19 +1045,18 @@ void StressArena::updateBlast(float dt) {
     const glm::vec3 origin(0.0f, GROUND_Y - PIT_DEPTH, 0.0f);
     for (EntityId body : m_bodies) {
         const Transform* at = scene().tryGet<Transform>(body);
-        Rigidbody*       held = at ? scene().tryGet<Rigidbody>(body) : nullptr;
+        Rigidbody* held     = at ? scene().tryGet<Rigidbody>(body) : nullptr;
         if (!held) continue;
 
         const glm::vec3 offset = at->position - origin;
-        const float     dist   = std::max(1.0f, glm::length(offset));
+        const float dist = std::max(1.0f, glm::length(offset));
 
         Rigidbody& rb = *held;
         rb.linearVelocity  += (offset / dist) * (28.0f / dist) + glm::vec3(0.0f, 9.0f, 0.0f);
-        rb.angularVelocity += glm::vec3(
-            m_churnRng.nextFloat(-5.0f, 5.0f),
-            m_churnRng.nextFloat(-5.0f, 5.0f),
-            m_churnRng.nextFloat(-5.0f, 5.0f)
-        );
+        const float spinX = m_churnRng.nextFloat(-5.0f, 5.0f);
+        const float spinY = m_churnRng.nextFloat(-5.0f, 5.0f);
+        const float spinZ = m_churnRng.nextFloat(-5.0f, 5.0f);
+        rb.angularVelocity += glm::vec3(spinX, spinY, spinZ);
         Rigidbody::wake(rb);
     }
 }
@@ -1255,14 +1073,13 @@ void StressArena::updateMaterialPulse() {
         MaterialAsset& material = resources().edit(handle);
         material.emission         = glm::vec3(0.9f, 0.45f, 0.15f) * glow;
         material.emissiveStrength = 1.0f + glow * 3.0f;
-        // commit bumps the version, so GLView re-uploads the UBO next sync.
+        // commit bumps the version, so the renderer uploads the material again on its next sync.
         resources().commit(handle);
     }
 }
 
 void StressArena::buildUI() {
-    EntityId canvas = spawn("HUD");
-    scene().add(canvas, UICanvas{});
+    const EntityId canvas = UI::canvas(scene(), "HUD");
     m_hudCanvas = canvas;
 
     auto addLine = [&](const char* name, float y, float pixelSize, const glm::vec4& color) {
@@ -1283,7 +1100,7 @@ void StressArena::buildUI() {
     // Filler widgets, to load the UI layout walk and draw pass.
     m_uiWidgets.reserve(static_cast<size_t>(uiWidgetCount));
     for (int i = 0; i < uiWidgetCount; ++i) {
-        EntityId widget = spawn("Widget", canvas);
+        EntityId widget    = spawn("Widget", canvas);
         const float column = static_cast<float>(i % 6);
         const float row    = static_cast<float>(i / 6);
         const glm::vec2 position{-20.0f - column * 108.0f, 20.0f + row * 40.0f};
@@ -1305,64 +1122,66 @@ void StressArena::buildUI() {
     }
 }
 
+void StressArena::onFixedUpdate(float dt) {
+    // What changes the bodies runs on the tick, so the world is the same however many ticks a frame
+    // holds; the toggles too, as one turns colliders off.
+    readInput();
+    updateDebris(dt);
+    updateBlast(dt);
+    updatePhysics();
+}
+
 void StressArena::onUpdate(float dt) {
     // One clock for every scripted motion, so the scene stays phase-locked.
     m_motionTime += dt;
 
-    readInput();
     updateCamera(dt);
     updatePatrolLights();
     updateDrones();
-    updateDebris(dt);
-    updateBlast(dt);
     updateMaterialPulse();
-    updatePhysics();
-    updateModelScales();
     refreshUI(dt);
 }
 
 void StressArena::readInput() {
-    const InputMap& input = this->input();
-
-    if (input.pressed(ACTION_LIGHTS)) {
+    if (pressed(ACTION_LIGHTS)) {
         m_lightsOn = !m_lightsOn;
         setLightsEnabled(m_lightsOn);
     }
-    if (input.pressed(ACTION_SHADOWS)) {
+    if (pressed(ACTION_SHADOWS)) {
         m_shadowsOn = !m_shadowsOn;
         setShadowsEnabled(m_shadowsOn);
     }
-    if (input.pressed(ACTION_PROPS)) {
+    if (pressed(ACTION_PROPS)) {
         m_propsOn = !m_propsOn;
         setPropsVisible(m_propsOn);
     }
-    if (input.pressed(ACTION_PARTICLES)) {
+    if (pressed(ACTION_PARTICLES)) {
         m_particlesOn = !m_particlesOn;
         setParticlesEnabled(m_particlesOn);
     }
-    if (input.pressed(ACTION_PHYSICS)) {
+    if (pressed(ACTION_PHYSICS)) {
         m_physicsOn = !m_physicsOn;
         setPhysicsEnabled(m_physicsOn);
     }
-    if (input.pressed(ACTION_ANIM)) {
+    if (pressed(ACTION_ANIM)) {
         m_animationsOn = !m_animationsOn;
         setAnimationsEnabled(m_animationsOn);
     }
-    if (input.pressed(ACTION_DECALS)) {
+    if (pressed(ACTION_DECALS)) {
         m_decalsOn = !m_decalsOn;
         setDecalsEnabled(m_decalsOn);
     }
-    if (input.pressed(ACTION_FOG)) {
+    if (pressed(ACTION_FOG)) {
         m_fogOn = !m_fogOn;
         scene().environment().fog.enabled = m_fogOn;
     }
-    if (input.pressed(ACTION_UI)) {
+    if (pressed(ACTION_UI)) {
         m_uiOn = !m_uiOn;
         setUIVisible(m_uiOn);
     }
 
-    if (input.pressed(ACTION_RESET)) {
-        m_lightsOn = m_shadowsOn = m_propsOn = m_particlesOn = true;
+    if (pressed(ACTION_RESET)) {
+        m_lightsOn  = m_shadowsOn = m_propsOn = m_particlesOn = true;
         m_physicsOn = m_animationsOn = m_decalsOn = m_fogOn = m_uiOn = true;
         setLightsEnabled(true);
         setShadowsEnabled(true);
@@ -1376,7 +1195,7 @@ void StressArena::readInput() {
     }
 
     // F pauses the camera; the loop resumes from where it stopped.
-    if (input.pressed(ACTION_CAMERA)) {
+    if (pressed(ACTION_CAMERA)) {
         scriptedCamera = !scriptedCamera;
         LOG_INFO("camera: %s", scriptedCamera ? "scripted" : "held");
     }
@@ -1410,11 +1229,6 @@ void StressArena::updateCamera(float dt) {
     const glm::vec3 target(0.0f, GROUND_Y + CAM_LOOK_Y, 0.0f);
     const glm::vec3 forward = glm::normalize(target - position);
 
-    // Focus on the look target.
-    if (Camera* camera = scene().tryGet<Camera>(m_camera)) {
-        camera->focusDistance = glm::distance(position, target);
-    }
-
     view->position = position;
     view->rotation = Math::lookRotation(forward);
 }
@@ -1428,7 +1242,7 @@ void StressArena::updatePhysics() {
         if (!held) continue;
 
         Transform& transform = *held;
-        const bool escaped = std::abs(transform.position.x) > PIT_HALF + 6.0f
+        const bool escaped   = std::abs(transform.position.x) > PIT_HALF + 6.0f
             || std::abs(transform.position.z) > PIT_HALF + 6.0f
             || transform.position.y < GROUND_Y - PIT_DEPTH - 6.0f;
         if (!escaped) continue;
@@ -1467,33 +1281,27 @@ void StressArena::refreshUI(float dt) {
         std::snprintf(
             buffer,
             sizeof(buffer),
-            "%.1f fps   %.2f ms   %zu entities   %zu debris   camera:%s",
+            "%.1f fps   %.2f ms   %zu entities   %zu debris   camera:%s [%s]",
             static_cast<double>(fps),
             static_cast<double>(ms),
             scene().entityCount(),
             m_debris.size(),
-            scriptedCamera ? "scripted [F]" : "held [F]"
+            scriptedCamera ? "scripted" : "held",
+            input().keyName(ACTION_CAMERA).c_str()
         );
         stats->text = buffer;
     }
 
     if (UIText* toggles = scene().tryGet<UIText>(m_uiToggles)) {
-        std::snprintf(
-            buffer,
-            sizeof(buffer),
-            "1 light:%s  2 shadow:%s  3 props:%s  4 fx:%s  5 phys:%s  "
-            "6 anim:%s  7 decal:%s  8 fog:%s  9 ui:%s  0 reset",
-            m_lightsOn ? "on" : "OFF",
-            m_shadowsOn ? "on" : "OFF",
-            m_propsOn ? "on" : "OFF",
-            m_particlesOn ? "on" : "OFF",
-            m_physicsOn ? "on" : "OFF",
-            m_animationsOn ? "on" : "OFF",
-            m_decalsOn ? "on" : "OFF",
-            m_fogOn ? "on" : "OFF",
-            m_uiOn ? "on" : "OFF"
-        );
-        toggles->text = buffer;
+        const auto toggle = [this](const char* action, const char* name, bool on) {
+            return input().keyName(action) + " " + name + (on ? ":on  " : ":OFF  ");
+        };
+        toggles->text = toggle(ACTION_LIGHTS, "light", m_lightsOn)
+            + toggle(ACTION_SHADOWS, "shadow", m_shadowsOn) + toggle(ACTION_PROPS, "props", m_propsOn)
+            + toggle(ACTION_PARTICLES, "fx", m_particlesOn) + toggle(ACTION_PHYSICS, "phys", m_physicsOn)
+            + toggle(ACTION_ANIM, "anim", m_animationsOn) + toggle(ACTION_DECALS, "decal", m_decalsOn)
+            + toggle(ACTION_FOG, "fog", m_fogOn) + toggle(ACTION_UI, "ui", m_uiOn)
+            + input().keyName(ACTION_RESET) + " reset";
     }
 }
 
@@ -1533,8 +1341,8 @@ void StressArena::setPhysicsEnabled(bool enabled) {
         if (Collider* col = scene().tryGet<Collider>(body)) col->enabled = enabled;
     }
     // Live debris too; new pieces read m_physicsOn at spawn.
-    for (Debris& piece : m_debris) {
-        if (Collider* col = scene().tryGet<Collider>(piece.entity)) col->enabled = enabled;
+    for (EntityId piece : m_debris) {
+        if (Collider* col = scene().tryGet<Collider>(piece)) col->enabled = enabled;
     }
 }
 

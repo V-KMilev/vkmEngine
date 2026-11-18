@@ -6,22 +6,21 @@
 
 #include <glm/glm.hpp>
 
-#include "core/math/random.h"
+#include "base/math/random.h"
 #include "ecs/entity.h"
-#include "ecs/component/core/transform.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Potion {
 
 using namespace Vkm::Engine;
 
 /**
- * @brief A Subway-Surfers-style endless runner, built as one self-contained Behavior.
+ * @brief A three-lane endless runner, built as one self-contained behavior.
  *
- * Attach it to an empty entity (see src/module.cpp); the first play tick builds
+ * Attach it to an empty entity, as its scene does; the first play tick builds
  * the whole world from one cube mesh, never serialized. The run is decided on the
  * fixed tick; a frame only draws, carrying the last tick forward, so the run
  * plays the same at any frame rate.
@@ -30,18 +29,15 @@ using namespace Vkm::Engine;
  * (the jump cannot reach a roof). Roof coins pay double, and convoys of trains
  * in one lane make the roofs the best line. The solver owns the DYNAMIC player
  * body vertically; the behavior owns the lateral axes and the ramp assist.
+ *
+ * Its scene draws no sky and holds no sun: the run is underground, and with no
+ * cascades the headlights get the whole 2D shadow atlas.
  */
-class PotionRunner : public ReflectedBehavior<PotionRunner> {
+class PotionRunner : public Behavior<PotionRunner> {
     public:
-        /**
-         * @brief The look the run is authored under.
-         *
-         * Public so the module's scene can show it before Play; the run reapplies it.
-         */
-        static constexpr float SKY_INTENSITY  = 0.08f;
-        static constexpr float CAMERA_REST_Y  = 4.0f;   ///< Eye height at rest; rises while riding.
-        static constexpr float CAMERA_BACK_Z  = -8.5f;  ///< How far behind the player the eye sits.
-        static constexpr float CAMERA_PITCH   = 0.34f;  ///< Downward tilt, radians.
+        static constexpr float CAMERA_REST_Y = 4.0f;   ///< Eye height at rest; rises while riding.
+        static constexpr float CAMERA_BACK_Z = -8.5f;  ///< How far behind the player the eye sits.
+        static constexpr float CAMERA_PITCH  = 0.34f;  ///< Downward tilt, radians.
 
     public:
         void onStart() override;
@@ -53,20 +49,13 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         float startSpeed   = 16.0f;  ///< Initial forward (world-scroll) speed, in units per second.
         float maxSpeed     = 44.0f;  ///< Upper bound the ramping speed is clamped to.
         float acceleration = 0.7f;   ///< Speed ramp, in units per second squared.
-        /**
-         * @brief Vertical launch velocity applied on jump.
-         *
-         * The apex (v^2/2g ~ 1.74) clears hurdles and convoy hops, but not a
-         * train's roof from the ground.
-         */
-        float jumpSpeed    = 9.5f;
-        /**
-         * @brief Downward acceleration (m/s^2), shared with the ragdoll via PhysicsSettings.
-         *
-         * Keep jumpSpeed^2 / (2 * g) ~ 1.74 if you retune either.
-         */
-        float gravity      = 26.0f;
-        int   coinValue    = 5;  ///< Score awarded per collected coin.
+        float jumpSpeed    = 9.5f;   ///< Vertical launch velocity applied on jump. The apex (v^2/2g ~ 1.74)
+                                     ///< clears hurdles and convoy hops, but not a train's roof from the
+                                     ///< ground.
+        float gravity      = 26.0f;  ///< Downward acceleration (m/s^2), shared with the ragdoll via
+                                     ///< PhysicsSettings. Keep jumpSpeed^2 / (2 * g) ~ 1.74 if you retune
+                                     ///< either.
+        int   coinValue    = 5;      ///< Score awarded per collected coin.
 
     private:
         /**
@@ -74,8 +63,7 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          */
         struct Obstacle {
             EntityId entity;
-            /// Per-type glow detail (train windscreen / hazard bar).
-            EntityId accent;
+            EntityId accent;  ///< Per-type glow detail (train windscreen / hazard bar).
             // The train headlight spot, trains only.
             EntityId  lamp;
             // Boarding ramp on steady trains' leading face; updatePlayer's assist climbs it.
@@ -92,13 +80,12 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
             EntityId auxB;
             float    z         = 0.0f;
             int      lane      = 1;
-            float    top       = 1.4f; ///< Top of the box (its walkable roof, for rideables).
-            /// Underside; >0 leaves a gap to crouch through (overhead gantry).
-            float    bottom    = 0.0f;
-            float    length    = 1.0f; ///< Z extent.
-            float    relFactor = 0.0f; ///< 0 scrolls with the track; >0 approaches faster.
-            bool     rideable  = true; ///< Can the player stand on the roof?
-            // Detail placement, set per recycle; offsets from the box centre.
+            float    top       = 1.4f;  ///< Top of the box (its walkable roof, for rideables).
+            float    bottom    = 0.0f;  ///< Underside; >0 leaves a gap to crouch through (overhead gantry).
+            float    length    = 1.0f;  ///< Z extent.
+            float    relFactor = 0.0f;  ///< 0 scrolls with the track; >0 approaches faster.
+            bool     rideable  = true;  ///< Can the player stand on the roof?
+            // Detail placement, set per recycle; offsets from the box center.
             glm::vec3 accentScale{0.0f};
             glm::vec3 accentOffset{0.0f};
             bool      auxVisible = false;
@@ -113,8 +100,8 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
             EntityId entity;
             float    z      = 0.0f;
             int      lane   = 1;
-            float    y      = 1.0f; ///< Float height; lifted onto a train roof when one is under it.
-            bool     active = true; ///< False once collected, until it recycles.
+            float    y      = 1.0f;  ///< Float height; lifted onto a train roof when one is under it.
+            bool     active = true;  ///< False once collected, until it recycles.
         };
 
         /**
@@ -122,7 +109,7 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          */
         struct Scenery {
             EntityId entity;
-            float    z = 0.0f;   ///< Where it stands when a run begins; placeScenery scrolls it from there.
+            float    z = 0.0f;  ///< Where it stands when a run begins; placeScenery scrolls it from there.
         };
 
     private:
@@ -197,9 +184,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         void poseRunner(float ahead);
 
         /**
-         * @brief Draw the runner this frame: its last tick carried forward.
+         * @brief Draw the runner this frame: its lane, bank, crouch and ramp carried past the last tick.
          *
-         * Keeps the tick pose in m_tickBody; onFixedUpdate restores it before simulating.
+         * The engine carries its body by its velocity and puts the tick's pose back after the frame.
          *
          * @param ahead Seconds past the last tick.
          */
@@ -265,32 +252,31 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
     private:
         MeshHandle      m_cubeMesh;
         MaterialHandle  m_matPlayer;
-        MaterialHandle  m_matPlayerGlow;    ///< Emissive accent on the runner (visor band, pack).
-        MaterialHandle  m_matTrain;         ///< Hull livery A: navy metal.
-        MaterialHandle  m_matTrainB;        ///< Hull livery B: teal metal.
-        MaterialHandle  m_matTrainC;        ///< Hull livery C: graphite metal.
-        MaterialHandle  m_matWindow;        ///< Train windscreen / window glow.
-        MaterialHandle  m_matHeadlamp;      ///< Warm nose light bar.
-        MaterialHandle  m_matBarrier;       ///< Hazard body: matte red.
-        MaterialHandle  m_matStripe;        ///< White reflective band on every hazard.
-        MaterialHandle  m_matSignalRed;     ///< Trackside signal lamp heads (left wall).
-        MaterialHandle  m_matSignalGreen;   ///< Trackside signal lamp heads (right wall).
+        MaterialHandle  m_matPlayerGlow;   ///< Emissive accent on the runner (visor band, pack).
+        MaterialHandle  m_matTrain;        ///< Hull livery A: navy metal.
+        MaterialHandle  m_matTrainB;       ///< Hull livery B: teal metal.
+        MaterialHandle  m_matTrainC;       ///< Hull livery C: graphite metal.
+        MaterialHandle  m_matWindow;       ///< Train windscreen / window glow.
+        MaterialHandle  m_matHeadlamp;     ///< Warm nose light bar.
+        MaterialHandle  m_matBarrier;      ///< Hazard body: matte red.
+        MaterialHandle  m_matStripe;       ///< White reflective band on every hazard.
+        MaterialHandle  m_matSignalRed;    ///< Trackside signal lamp heads (left wall).
+        MaterialHandle  m_matSignalGreen;  ///< Trackside signal lamp heads (right wall).
         MaterialHandle  m_matCoin;
         MaterialHandle  m_matGround;
-        MaterialHandle  m_matBallast;       ///< Raised gravel bed under each lane's track.
+        MaterialHandle  m_matBallast;      ///< Raised gravel bed under each lane's track.
         MaterialHandle  m_matRail;
         MaterialHandle  m_matTie;
         MaterialHandle  m_matWall;
         MaterialHandle  m_matTrim;
         MaterialHandle  m_matPillar;
         MaterialHandle  m_matArch;
-        AudioClipHandle m_footstep;         ///< Played per stride marker.
-        AudioClipHandle m_coinChime;        ///< Played per coin.
+        AudioClipHandle m_footstep;        ///< Played per stride marker.
+        AudioClipHandle m_coinChime;       ///< Played per coin.
 
-        /// Invisible rig root the gameplay drives; visible parts parent under it.
-        EntityId              m_player{};
-        /// Part entity and its normal material, restored on reset.
-        std::vector<std::pair<EntityId, MaterialHandle>> m_playerParts;
+        EntityId m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.
+        std::vector<std::pair<EntityId, MaterialHandle>> m_playerParts;  ///< Part entity and its normal
+                                                                         ///< material, restored on reset.
         EntityId              m_camera{};
         std::vector<Obstacle> m_obstacles;
         std::vector<Coin>     m_coins;
@@ -328,43 +314,42 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         int      m_shownCoins = -1;
         int      m_shownSpeed = -1;
 
-        bool  m_built    = false;
-        bool  m_started  = false;  ///< False on the start screen.
-        bool  m_alive    = true;
-        bool  m_restartAsked = false;   ///< Game-over button clicked; the next tick restarts.
-        int   m_lane     = 1;
-        float m_playerX  = 0.0f;   ///< Lane position, eased toward m_lane each tick.
-        float m_height   = 0.0f;   ///< Feet height, from the solver-owned Transform.
+        EntityId m_playButton{};   ///< The start screen's.
+        EntityId m_againButton{};  ///< The game over screen's.
+
+        bool  m_built        = false;
+        bool  m_started      = false;  ///< False on the start screen.
+        bool  m_alive        = true;
+        bool  m_restartAsked = false;  ///< Game-over button clicked; the next tick restarts.
+        int   m_lane         = 1;
+        float m_playerX      = 0.0f;   ///< Lane position, eased toward m_lane each tick.
+        float m_height       = 0.0f;   ///< Feet height, from the solver-owned Transform.
         // The last tick's solver support or ramp slope, held for COYOTE_TIME after leaving it.
         bool  m_grounded    = true;
         float m_coyoteTimer = 0.0f;
-        int   m_climbRamp   = -1;   ///< Obstacle whose ramp was climbed this tick, or -1.
-        bool  m_crouchHeld = false;   ///< On this tick's command.
-        float m_crouch     = 0.0f;    ///< Smoothed crouch amount 0..1.
-        float m_speed    = 0.0f;
-        float m_distance = 0.0f;
-        int   m_convoyLeft = 0;    ///< Recycles still owed to the convoy lane as trains.
-        int   m_convoyLane = 1;
-        int   m_convoyStyle = 0;   ///< Leader's livery; followers reuse it.
+        int   m_climbRamp   = -1;     ///< Obstacle whose ramp was climbed this tick, or -1.
+        bool  m_crouchHeld  = false;  ///< On this tick's command.
+        float m_crouch      = 0.0f;   ///< Smoothed crouch amount 0..1.
+        float m_speed       = 0.0f;
+        float m_distance    = 0.0f;
+        int   m_convoyLeft  = 0;      ///< Recycles still owed to the convoy lane as trains.
+        int   m_convoyLane  = 1;
+        int   m_convoyStyle = 0;      ///< Leader's livery; followers reuse it.
         // The obstacle recycled just before: randomizeObstacle's solvability guards
         // compare against it so two z-overlapping blockers never wall off the lanes.
-        int   m_prevLane     = 1;
-        float m_prevRel      = 0.0f;   ///< Its relFactor.
-        bool  m_prevBlocking = false;  ///< Full blocker (train hull or barrier)?
-        int   m_coinCount = 0;
-        int   m_bonusScore = 0;    ///< Extra score from roof coins (they pay double).
-        int   m_best     = 0;      ///< Best score this session.
-        bool  m_newBest  = false;  ///< Set by the run that just ended.
+        int       m_prevLane        = 1;
+        float     m_prevRel         = 0.0f;           ///< Its relFactor.
+        bool      m_prevBlocking    = false;          ///< Full blocker (train hull or barrier)?
+        int       m_coinCount       = 0;
+        int       m_bonusScore      = 0;              ///< Extra score from roof coins (they pay double).
+        int       m_best            = 0;              ///< Best score this session.
+        bool      m_newBest         = false;          ///< Set by the run that just ended.
         glm::vec2 m_camFollow{0.0f, CAMERA_REST_Y};   ///< Where the eye heads: x, then height.
-        float m_camX     = 0.0f;   ///< Smoothed.
-        float m_camY     = CAMERA_REST_Y;  ///< Smoothed.
-        float m_camTime  = 0.0f;   ///< Phases the idle sway and light flicker.
-        float m_milestoneTimer = 0.0f;  ///< Seconds left on the distance-milestone flash.
-        float m_nextDistanceLog = 0.0f;
-
-        // The last tick's pose, held while the Transform shows the drawn one (m_drawnAhead).
-        Transform m_tickBody;
-        bool      m_drawnAhead = false;
+        float     m_camX            = 0.0f;           ///< Smoothed.
+        float     m_camY            = CAMERA_REST_Y;  ///< Smoothed.
+        float     m_camTime         = 0.0f;           ///< Phases the idle sway and light flicker.
+        float     m_milestoneTimer  = 0.0f;           ///< Seconds left on the distance-milestone flash.
+        float     m_nextDistanceLog = 0.0f;
 
         // This tick's edges, read off its command in readInput.
         bool m_edgeLeft    = false;
@@ -372,18 +357,13 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         bool m_edgeJump    = false;
         bool m_edgeRestart = false;
 
-        /**
-         * @brief The track's layout stream.
-         *
-         * Reseeded with RUN_SEED every run, so every run deals the same track.
-         * Not reflected, so clone() does not copy it.
-         */
-        Math::Rng m_rng;
+        Math::Rng m_rng;  ///< The track's layout stream. Reseeded with RUN_SEED every run, so every run deals
+                          ///< the same track. Not reflected, so clone() does not copy it.
 };
 
 } // namespace Potion
 
-VKM_REFLECT_BEGIN(::Potion::PotionRunner)
+VKM_BEHAVIOR(::Potion::PotionRunner)
     VKM_F(laneWidth)
     VKM_F(startSpeed)
     VKM_F(maxSpeed)

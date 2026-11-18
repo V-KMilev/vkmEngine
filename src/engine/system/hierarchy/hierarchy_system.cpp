@@ -2,15 +2,15 @@
 
 #include <glm/glm.hpp>
 
-#include "l_assert.h"
+#include "vkm_log/assert.h"
 
-#include "debug/profiler.h"
+#include "base/profile/profiler.h"
 #include "ecs/scene.h"
-#include "ecs/component/core/hierarchy.h"
-#include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
+#include "ecs/component/scene/hierarchy.h"
+#include "ecs/component/scene/transform.h"
+#include "ecs/component/scene/world_transform.h"
 #include "ecs/hierarchy_operations.h"
-#include "platform/threading/thread_pool.h"
+#include "vkm_platform/threading/thread_pool.h"
 
 namespace Vkm::Engine {
 
@@ -21,9 +21,9 @@ void HierarchySystem::update(FrameContext& ctx) {
 
 void HierarchySystem::resolve(Scene& scene) {
     PROFILE_SCOPE("Hierarchy/ResolveWorld");
-    SparseSet<Hierarchy>*       hierarchies = scene.storage<Hierarchy>();
-    SparseSet<WorldTransform>*  worlds      = scene.storage<WorldTransform>();
-    const SparseSet<Transform>* transforms  = scene.storage<Transform>();
+    SparseSet<Hierarchy>* hierarchies = scene.storage<Hierarchy>();
+    SparseSet<WorldTransform>* worlds = scene.storage<WorldTransform>();
+    const SparseSet<Transform>* transforms = scene.storage<Transform>();
     if (!hierarchies || !worlds) return;
 
     // No WorldTransform, no descent: the parallel pass reads a parent's slot unchecked.
@@ -45,7 +45,7 @@ void HierarchySystem::resolve(Scene& scene) {
         }
 
         // Without a Transform the matrix is kept, and children compose onto it.
-        parallelFor(m_level.size(), [&](size_t i) {
+        Platform::parallelFor(m_level.size(), [&](size_t i) {
             const uint32_t slot = m_level[i].slot();
             if (!transforms || !transforms->contains(slot)) return;
 

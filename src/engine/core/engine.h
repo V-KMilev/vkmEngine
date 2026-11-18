@@ -7,14 +7,19 @@
 
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
-#include "platform/window/window_manager.h"
+#include "vkm_platform/window/window_manager.h"
 #include "core/system.h"
-#include "system/render/render_settings.h"
+#include "frame/render_readiness.h"
+#include "core/frame/tick_hold.h"
 #include "core/clock.h"
-#include "core/event/event_bus.h"
+#include "base/event/event_bus.h"
+#include "core/graphics.h"
 #include "core/host_chrome.h"
-#include "platform/input/input_map.h"
+#include "ecs/component/render/camera.h"
+#include "debug/draw/debug_draw.h"
+#include "core/input_map.h"
 #include "net/net_session.h"
+#include "system/physics/drawn_ahead.h"
 
 namespace Vkm::Engine {
 
@@ -22,7 +27,7 @@ namespace Vkm::Engine {
  * @brief Engine context: owns core state and runs the main loop.
  *
  * Owns the services handed to systems on FrameContext, and the per-stage system
- * pipeline. Stack-constructible, so tests and headless tooling can make their own.
+ * pipeline. Stack-constructible: each host builds its own, as the tests' harness does.
  */
 class Engine {
     public:
@@ -36,13 +41,6 @@ class Engine {
         Engine& operator=(Engine && other) = delete;
 
     public:
-        /**
-         * @brief Log "FPS: N (M ms)" to the console once a second.
-         *
-         * @param enabled False to stop.
-         */
-        void setFPSLog(bool enabled = true) { m_fpsLog = enabled; }
-
         /**
          * @brief Run the main loop, blocking until the window closes or the process is interrupted.
          */
@@ -87,8 +85,8 @@ class Engine {
         InputMap& getInput()             { return m_input; }
         const InputMap& getInput() const { return m_input; }
 
-        WindowManager& getWindow()             { return m_window; }
-        const WindowManager& getWindow() const { return m_window; }
+        Platform::WindowManager& getWindow()             { return m_window; }
+        const Platform::WindowManager& getWindow() const { return m_window; }
 
         /**
          * @brief What an authoring host says about the frame it draws over.
@@ -99,27 +97,13 @@ class Engine {
         const HostChrome& getChrome() const { return m_chrome; }
 
         /**
-         * @brief The quality settings this session draws at.
+         * @brief The render settings this session draws with: the project's, and a game's changes.
          *
-         * The project.json render block, after a player's changes; writable
-         * while the game runs.
+         * The host gives it the project's (Graphics::setProject); systems and behaviors use the
+         * frame context.
          */
-        RenderSettings& getRenderSettings()             { return m_render; }
-        const RenderSettings& getRenderSettings() const { return m_render; }
-
-        /**
-         * @brief Start the session from @p project, the project.json render block: the session's
-         *        settings and the copy gameplay builds a quality tier over (withPreset).
-         *
-         * @param project The block, as loadProject read it.
-         */
-        void setProjectRenderSettings(const RenderSettings& project) {
-            m_projectRender = project;
-            m_render        = project;
-        }
-
-        /// The project.json render block the session started from (setProjectRenderSettings).
-        const RenderSettings& getProjectRenderSettings() const { return m_projectRender; }
+        Graphics& getGraphics()             { return m_graphics; }
+        const Graphics& getGraphics() const { return m_graphics; }
 
         /**
          * @brief The session this end is playing in, offline until told otherwise.
@@ -137,25 +121,33 @@ class Engine {
         void shutdownSystems();
 
     private:
-        /// Declared before the scene so it outlives it: a behavior the scene
-        /// destroys unsubscribes from it, even on a throw out of run().
-        EventBus m_events;
+        EventBus m_events;  ///< Declared before the scene so it outlives it: a behavior the scene destroys
+                            ///< unsubscribes from it, even on a throw out of run().
 
-        Scene m_scene;
+        Scene           m_scene;
         ResourceManager m_resources;
 
-        Clock          m_clock;
-        InputMap       m_input;
-        WindowManager  m_window;
-        NetSession     m_net;
-        HostChrome     m_chrome;
-        RenderSettings m_render;
-        RenderSettings m_projectRender;
+        Clock                   m_clock;
+        InputMap                m_input;
+        Platform::WindowManager m_window;
+        NetSession              m_net;
+        HostChrome              m_chrome;
+        Graphics                m_graphics;
+        ActiveCamera            m_camera;      ///< FrameContext::camera, and the eye the commands steer by.
+        RenderReadiness         m_readiness;   ///< FrameContext::readiness: written by one frame, read by
+                                               ///< the next.
+        TickHold                m_tickHold;    ///< Holds m_clock while a mesh its colliders or water need
+                                               ///< decodes.
+        DebugDraw               m_debug;       ///< FrameContext::debug while frames show; a shipped
+                                               ///< game's never.
+        DrawnAhead              m_drawnAhead;  ///< Moving bodies as each frame draws them.
+
+        FrameContext m_frame;  ///< The services above and this frame's products, handed to every system for
+                               ///< the session.
 
         std::array<SystemList, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 
         bool m_initialized = false;
-        bool m_fpsLog      = false;
 };
 
 } // namespace Vkm::Engine

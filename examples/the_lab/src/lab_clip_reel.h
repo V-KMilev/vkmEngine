@@ -3,7 +3,7 @@
 #include "ecs/entity.h"
 #include "resource/asset_ref.h"
 #include "resource/asset/animation_clip_asset.h"
-#include "system/script/reflected_behavior.h"
+#include "system/script/behavior.h"
 
 namespace Lab {
 
@@ -16,9 +16,8 @@ using namespace Vkm::Engine;
  * Drives the Animator at or under its entity. Each clip loops for `holdSeconds` before the next
  * fades in; an empty clip is skipped.
  */
-class LabClipReel : public ReflectedBehavior<LabClipReel> {
+class LabClipReel : public Behavior<LabClipReel> {
     public:
-        void onStart() override;
         void onUpdate(float dt) override;
 
     public:
@@ -27,8 +26,8 @@ class LabClipReel : public ReflectedBehavior<LabClipReel> {
         AssetRef<AnimationClipAsset> runClip;
         AssetRef<AnimationClipAsset> jumpClip;
 
-        float holdSeconds = 3.0f;   ///< How long each clip plays.
-        float fadeSeconds = 0.35f;  ///< Crossfade length between clips.
+        float holdSeconds = 3.0f;
+        float fadeSeconds = 0.35f;
 
     private:
         /**
@@ -37,18 +36,17 @@ class LabClipReel : public ReflectedBehavior<LabClipReel> {
         void playNext();
 
     private:
-        EntityId m_animator{};
-        int      m_playing = -1;    ///< Index into the clips in field order; -1 before the first
-        float    m_left    = 0.0f;  ///< Seconds until the next clip
+        int   m_playing = -1;    ///< Index into the clips in field order; -1 before the first
+        float m_left    = 0.0f;  ///< Seconds until the next clip
 };
 
 } // namespace Lab
 
-VKM_REFLECT_BEGIN(::Lab::LabClipReel)
+VKM_BEHAVIOR(::Lab::LabClipReel)
     VKM_F(idleClip)
     VKM_F(walkClip)
     VKM_F(runClip)
     VKM_F(jumpClip)
-    VKM_F(holdSeconds)
-    VKM_F(fadeSeconds)
+    VKM_F(holdSeconds, "How long each clip plays.")
+    VKM_F(fadeSeconds, "Crossfade length between clips.")
 VKM_REFLECT_END()

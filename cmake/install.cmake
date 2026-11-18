@@ -26,9 +26,12 @@ set(VKM_EXPORTED_DEPS
     glm-header-only
     glfw
     vkm_log
+    vkm_platform
     nlohmann_json
-    stb
     miniaudio
+    vkm_audio
+    vkm_network
+    vkm_physics
     vkm_build_info
     vkm_warnings
 )
@@ -46,7 +49,7 @@ install(TARGETS vkm_core ${VKM_EXPORTED_DEPS}
 
 # Shared libraries the hosts load but a project never links: they ship as files,
 # not as imported targets.
-install(TARGETS vkm_render vkm_gl glew
+install(TARGETS vkm_render vkm_opengl glew
     LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
@@ -77,12 +80,10 @@ if(VKM_SHIPPING_ENGINE AND NOT VKM_SHIPPING)
     ")
 endif()
 
-# src/engine's headers alone, laid out as the include path ("ecs/scene.h"). Not
-# build_info.h, whose macros vkm_core keeps private, so no consumer compiles it.
+# src/engine's headers alone, laid out as the include path ("ecs/scene.h").
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/engine/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
-    PATTERN "build_info.h" EXCLUDE
 )
 
 # The third-party headers the engine's own public headers include - the complete
@@ -94,16 +95,33 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/glm/glm
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/json/single_include/nlohmann
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/glfw/include/GLFW
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
 
-# No GL headers: nothing a project can reach names a graphics API. GLEW is the
-# OpenGL backend's, through vkmGL.
-install(FILES
-    ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/logger.h
-    ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/l_assert.h
+# No GL or GLFW headers: nothing a project can reach names a graphics or a window
+# API. GLEW is the OpenGL backend's, through vkmOpenGL; GLFW the window's, whose
+# shared library ships as vkm_core's link-only dependency.
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/vkm_log
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/vkmPlatform/src/vkm_platform
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "glfw_api.h" EXCLUDE       # GLFW, for code that links glfw itself: never a game's
+    PATTERN "windows_api.h" EXCLUDE    # Windows, for its own sources alone
+    PATTERN "profile.h" EXCLUDE        # its own sources' zones, never a consumer's
+)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/vkmAudio/src/vkm_audio
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/vkmNetwork/src/vkm_network
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/vkmPhysics/src/vkm_physics
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "profile.h" EXCLUDE    # its own sources' zones, never a consumer's
 )
 
 # Tracy's headers, when the engine profiles. Three directories under
@@ -157,11 +175,14 @@ if(NOT VKM_SHIPPING)
     endforeach()
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates ${CMAKE_SOURCE_DIR}/examples DESTINATION . ${_vkm_skip})
 
-    # What the editor's Create > Effect copies into a project: packs laid out as a project is.
+    # What the editor copies into a project - Create > Effect's effects, Render Settings' neutral
+    # grading table: packs laid out as a project is.
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/content DESTINATION .)
 
-    # The engine's license, and what to do first, at the SDK root.
+    # The engine's license, what to do first, and every module's license (modules/CMakeLists.txt), at
+    # the SDK root.
     install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/licenses DESTINATION .)
     install(FILES ${CMAKE_SOURCE_DIR}/tools/install/sdk_readme.md DESTINATION . RENAME README.md)
 
     # The command at the root, as a person runs it; the program and the tools it

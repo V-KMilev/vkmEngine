@@ -17,6 +17,14 @@ $entry    = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\vkmEngine
 
 function Say($text) { Write-Host "vkmEngine: $text" }
 
+# A download tried three times, two seconds apart, as install.sh's curl --retry 3.
+function Get-Download($uri, $out) {
+    for ($try = 1; $true; $try++) {
+        try { Invoke-WebRequest -UseBasicParsing $uri -OutFile $out; return }
+        catch { if ($try -ge 3) { throw }; Start-Sleep -Seconds 2 }
+    }
+}
+
 if (-not [Environment]::Is64BitOperatingSystem) {
     throw 'vkmEngine ships for 64-bit Windows only'
 }
@@ -41,11 +49,11 @@ New-Item -ItemType Directory -Path $work | Out-Null
 try {
     Say "downloading $version, for $compiler"
     $release = if ($env:VKM_DOWNLOADS) { $env:VKM_DOWNLOADS } else { "https://github.com/$repo/releases/download/v$version" }
-    Invoke-WebRequest -UseBasicParsing "$release/$name.zip" -OutFile $archive
+    Get-Download "$release/$name.zip" $archive
 
     # Checked before it is unpacked: a download cut short or changed on its way is not installed.
     $sums = Join-Path $work 'SHA256SUMS'
-    try { Invoke-WebRequest -UseBasicParsing "$release/SHA256SUMS" -OutFile $sums }
+    try { Get-Download "$release/SHA256SUMS" $sums }
     catch { throw "release v$version carries no SHA256SUMS to check $name.zip against" }
     # A name marked '*' was summed in binary mode, as Windows builds of sha256sum write it.
     $expected = Get-Content $sums | ForEach-Object {

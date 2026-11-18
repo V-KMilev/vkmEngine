@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "ui/editor_style.h"
+#include "ui/style/editor_style.h"
 
 namespace Vkm::Engine {
 
@@ -12,9 +12,8 @@ namespace {
 /**
  * @brief Open a dock node on @p window's tab.
  *
- * Without this a new node opens on the window docked into it last. The tab id
- * ("#TAB" in the window's id space) is unpublished ImGui; tests/editor/authoring_tests.cpp
- * fails when it moves.
+ * Without it a new node opens on the window docked into it last. The tab id ("#TAB" in the
+ * window's id space) is unpublished ImGui, so an ImGui update may move it.
  *
  * @param node   Node already holding the window.
  * @param window Window to open on.
@@ -37,10 +36,10 @@ void buildDefaultLayout(unsigned int dockspace, float width, float height) {
     // Sides are cut first so they run full height. The remainder of each split
     // keeps the central node, so the viewport's is what is left after the third cut.
     ImGuiID rest   = 0;
-    ImGuiID centre = 0;
+    ImGuiID center = 0;
     const ImGuiID left   = ImGui::DockBuilderSplitNode(dockspace, ImGuiDir_Left, 0.2f, nullptr, &rest);
     const ImGuiID right  = ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.25f, nullptr, &rest);
-    const ImGuiID bottom = ImGui::DockBuilderSplitNode(rest, ImGuiDir_Down, 0.25f, nullptr, &centre);
+    const ImGuiID bottom = ImGui::DockBuilderSplitNode(rest, ImGuiDir_Down, 0.25f, nullptr, &center);
 
     // Sizes, not shares: the first frame can come before the window is sized.
     const float bottomWidth = width - EditorStyle::px(HIERARCHY_WIDTH + INSPECTOR_WIDTH);
@@ -49,22 +48,15 @@ void buildDefaultLayout(unsigned int dockspace, float width, float height) {
     ImGui::DockBuilderSetNodeSize(right,  ImVec2(EditorStyle::px(INSPECTOR_WIDTH), height));
 
     ImGui::DockBuilderDockWindow(HIERARCHY_WINDOW, left);
-    ImGui::DockBuilderDockWindow(VIEWPORT_WINDOW,  centre);
+    ImGui::DockBuilderDockWindow(VIEWPORT_WINDOW,  center);
     ImGui::DockBuilderDockWindow(INSPECTOR_WINDOW, right);
-    ImGui::DockBuilderDockWindow(MATERIAL_WINDOW,  right);
     ImGui::DockBuilderDockWindow(TERRAIN_WINDOW,   right);
     ImGui::DockBuilderDockWindow(ASSETS_WINDOW,    bottom);
     ImGui::DockBuilderDockWindow(ANIMATION_WINDOW, bottom);
-    ImGui::DockBuilderDockWindow(ERRORS_WINDOW,    bottom);
-    ImGui::DockBuilderDockWindow(BUILD_WINDOW,     bottom);
+    ImGui::DockBuilderDockWindow(CONSOLE_WINDOW,   bottom);
     openOnTab(right,  INSPECTOR_WINDOW);
     openOnTab(bottom, ASSETS_WINDOW);
     ImGui::DockBuilderFinish(dockspace);
-}
-
-void dockBesideOnFirstUse(const char* beside) {
-    const ImGuiWindow* docked = ImGui::FindWindowByName(beside);
-    if (docked && docked->DockId) ImGui::SetNextWindowDockID(docked->DockId, ImGuiCond_FirstUseEver);
 }
 
 void setViewportWindowClass() {

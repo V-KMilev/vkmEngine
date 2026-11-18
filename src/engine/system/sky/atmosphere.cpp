@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ecs/environment.h"
+#include "ecs/settings/sky_settings.h"
 
 namespace Vkm::Engine::Atmosphere {
 
 namespace {
 
 // Optical depth toward (cos e, sin e): x Rayleigh, y Mie, z ozone, in density-weighted
-// metres. Negative when the planet is in the way.
+// meters. Negative when the planet is in the way.
 glm::vec3 opticalDepth(float sinElevation) {
     const double r0   = PLANET_RADIUS + EYE_ALTITUDE;
     const double mu   = sinElevation;
@@ -48,19 +48,22 @@ glm::vec3 extinction(const Coefficients& air, glm::vec3 depth) {
 
 Coefficients coefficients(const SkySettings& sky) {
     Coefficients air;
-    air.rayleighScattering = RAYLEIGH_SCATTERING * sky.rayleigh;
+    air.rayleighScattering = RAYLEIGH_SCATTERING;
     air.mieScattering      = glm::vec3(MIE_SCATTERING * sky.mie);
     air.mieExtinction      = air.mieScattering * MIE_EXTINCTION;
     return air;
 }
 
-glm::vec3 sunTransmittance(const SkySettings& sky) {
-    const glm::vec3 toSun = opticalDepth(std::sin(glm::radians(sky.sunElevation)));
+glm::vec3 sunTransmittance(const Coefficients& air, float sunHeight) {
+    const glm::vec3 toSun = opticalDepth(sunHeight);
     if (toSun.x < 0.0f) return glm::vec3(0.0f);
 
     // The ratio of transmittances, in the exponent.
-    const Coefficients air = coefficients(sky);
     return glm::exp(-(extinction(air, toSun) - extinction(air, zenithDepth())));
+}
+
+glm::vec3 sunTransmittance(const SkySettings& sky) {
+    return sunTransmittance(coefficients(sky), std::sin(glm::radians(sky.sunElevation)));
 }
 
 glm::vec3 solarIlluminance(const SkySettings& sky) {

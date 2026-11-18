@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "core/reflect.h"
+#include "base/reflect/enum_names.h"
 #include "ecs/entity.h"
 #include "resource/asset/terrain_asset.h"
 #include "system/terrain/terrain_brush.h"
@@ -10,6 +10,8 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
+struct EditorState;
+class Scene;
 
 /**
  * @brief What a left drag over the edited terrain does, picked in the Terrain window.
@@ -29,24 +31,23 @@ enum class TerrainTool : uint8_t {
  * @brief The terrain brush as the Terrain window sets it, and the terrain it works on.
  */
 struct TerrainToolSettings {
-    EntityId    target{};            ///< The terrain edited: the last terrain entity selected.
-    EntityId    followed{};          ///< The selection last seen; see followTerrainSelection.
+    EntityId    target{};             ///< The terrain edited: the last terrain entity selected.
+    EntityId    followed{};           ///< The selection last seen; see followTerrainSelection.
     TerrainTool tool        = TerrainTool::None;
-    float       radius      = 4.0f;  ///< Metres.
-    float       strength    = 0.5f;  ///< 0 to 1: how fast a held brush works.
-    float       hardness    = 0.3f;  ///< TerrainBrush::Dab::hardness.
-    uint32_t    layer       = 0;     ///< What Paint paints.
-    uint32_t    foliage     = 0;     ///< What Plants grows.
-    bool        fixedHeight = false; ///< Flatten to height, not to where the stroke began.
-    float       height      = 0.0f;  ///< Flatten's fixed height, local metres.
+    float       radius      = 4.0f;   ///< Meters.
+    float       strength    = 0.5f;   ///< 0 to 1: how fast a held brush works.
+    float       hardness    = 0.3f;   ///< TerrainBrush::Dab::hardness.
+    uint32_t    layer       = 0;      ///< What Paint paints.
+    uint32_t    foliage     = 0;      ///< What Plants grows.
+    bool        fixedHeight = false;  ///< Flatten to height, not to where the stroke began.
+    float       height      = 0.0f;   ///< Flatten's fixed height, local meters.
 };
 
-/// The smallest and largest brush, metres.
-inline constexpr float TERRAIN_BRUSH_MIN_RADIUS = 0.25f;
-inline constexpr float TERRAIN_BRUSH_MAX_RADIUS = 200.0f;
+inline constexpr float TERRAIN_BRUSH_MIN_RADIUS = 0.25f;   ///< The smallest brush's radius, meters.
+inline constexpr float TERRAIN_BRUSH_MAX_RADIUS = 200.0f;  ///< The largest brush's radius, meters.
 
 /**
- * @brief The terrain the brush edits, if it is still one: alive, with a Terrain and a Transform.
+ * @brief The terrain the brush edits, if still alive with a Terrain and a Transform.
  *
  * @param ec The frame's editor context.
  * @return Its entity, or a null id.
@@ -54,8 +55,7 @@ inline constexpr float TERRAIN_BRUSH_MAX_RADIUS = 200.0f;
 EntityId terrainToolTarget(const EditorContext& ec);
 
 /**
- * @brief Whether the terrain tool has the viewport's left button: the Terrain window open with a
- *        tool picked, and a terrain to edit whose asset is loaded.
+ * @brief Whether a left drag brushes: Terrain window open, a tool picked, a terrain with its asset loaded.
  *
  * @param ec The frame's editor context.
  * @return True while a drag would brush rather than move or pick.
@@ -63,63 +63,23 @@ EntityId terrainToolTarget(const EditorContext& ec);
 bool terrainToolApplies(const EditorContext& ec);
 
 /**
- * @brief What the picked tool does under the left button, and what Shift does, in a few words.
+ * @brief What a tool and Shift do under the left button, in a few words.
  *
- * @param tool The tool.
+ * @param tool Any tool, None included.
  * @return A hint for a tooltip or the viewport's strip; empty for None.
  */
 const char* terrainToolHint(TerrainTool tool);
 
 /**
- * @brief The terrain brush in the viewport: its circle on the surface, the strip saying what a drag
- *        does, and the strokes a held left button makes, one undo step each.
+ * @brief Point the terrain brush at the selection when the selection is a terrain.
+ *
+ * Call every frame, the window shown or not. It acts only when the selection changes, so a terrain
+ * chosen in the window holds; selecting anything else leaves the brush where it was.
+ *
+ * @param state The selection and the brush.
+ * @param scene Says whether the selection is a terrain.
  */
-class TerrainToolOverlay {
-    public:
-        TerrainToolOverlay() = default;
-        ~TerrainToolOverlay() = default;
-
-        TerrainToolOverlay(const TerrainToolOverlay& other) = delete;
-        TerrainToolOverlay& operator=(const TerrainToolOverlay& other) = delete;
-
-        TerrainToolOverlay(TerrainToolOverlay && other) = delete;
-        TerrainToolOverlay& operator=(TerrainToolOverlay && other) = delete;
-
-    public:
-        /**
-         * @brief Draw the brush where the cursor meets the edited terrain, and stroke while the
-         *        left button is held; Ctrl+click with Flatten takes the height clicked instead.
-         *
-         * @param ec The frame's editor context.
-         * @return True when the brush took this frame's click, which then picks nothing.
-         */
-        bool update(EditorContext& ec);
-
-        /**
-         * @brief Whether a stroke is held: begun and its undo step not yet pushed.
-         *
-         * @return True from the press that began it to the release that ends it.
-         */
-        bool stroking() const { return static_cast<bool>(m_terrain); }
-
-    private:
-        /// Push the stroke's undo step, if it changed anything, and forget it.
-        void finish(EditorContext& ec);
-
-        /**
-         * @brief The strip along the viewport's foot naming the tool, its size and its keys.
-         *
-         * @param ec The frame's editor context.
-         */
-        void drawStrip(const EditorContext& ec) const;
-
-    private:
-        TerrainHandle        m_terrain;    ///< The terrain being stroked; null between strokes.
-        TerrainAsset         m_before;     ///< Its grid when the stroke began.
-        TerrainBrush::Region m_touched;    ///< What the stroke has touched so far.
-        float                m_flatten = 0.0f;  ///< Flatten's height, local.
-        const char*          m_label   = "";    ///< The stroke's undo step.
-};
+void followTerrainSelection(EditorState& state, const Scene& scene);
 
 } // namespace Vkm::Engine
 
