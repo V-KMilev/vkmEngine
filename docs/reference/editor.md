@@ -69,6 +69,9 @@ session.
 While the game holds the viewport, the playbar and the view bar sit in a band above the game's
 view rather than over it, so they cover nothing a game draws at the top of its screen.
 
+A session frames the viewport in yellow, and the status bar says in words that Stop discards
+its edits and, ejected, that the game hears no input: off the picture, where it covers nothing.
+
 The playbar's speed (`Clock::setHostScale`) multiplies the game's own time scale, never
 writes it, and outlives the session.
 

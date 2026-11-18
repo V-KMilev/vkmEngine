@@ -26,17 +26,15 @@ class PlaybackBar {
 
     public:
         /**
-         * @brief Draw the bar, and the play-mode frame and caption while a session runs.
+         * @brief Draw the bar, and the play-mode frame while a session runs.
          *
          * Centered on the viewport, within the span the other top-row overlays leave free.
          *
-         * @param ec      The frame's editor context.
-         * @param left    The free span's left end, in viewport coordinates.
-         * @param right   Its right end.
-         * @param inBand  Whether the bar has a band of its own above the game's view: the caption goes
-         *                beside it rather than below, over the game.
+         * @param ec    The frame's editor context.
+         * @param left  The free span's left end, in viewport coordinates.
+         * @param right Its right end.
          */
-        void draw(EditorContext& ec, float left, float right, bool inBand);
+        void draw(EditorContext& ec, float left, float right);
 
         /**
          * @brief Answer the transport keybinds: Play / Stop, Pause / Resume, Eject / Return.

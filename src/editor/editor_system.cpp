@@ -762,7 +762,7 @@ void EditorSystem::drawViewport(EditorContext& ec) {
         const float  width = ImGui::GetContentRegionAvail().x;
         const ImU32  fill  = ImGui::GetColorU32(ImGuiCol_WindowBg);
         ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + width, at.y + band), fill);
-        m_playbar.draw(ec, 0.0f, width - ViewportToolbar::viewBarWidth() - OverlayStrip::groupGap(), true);
+        m_playbar.draw(ec, 0.0f, width - ViewportToolbar::viewBarWidth() - OverlayStrip::groupGap());
         m_viewportToolbar.drawViewBar(ec);
         ImGui::SetCursorPosY(ImGui::GetCursorStartPos().y + band);
     }
@@ -820,8 +820,7 @@ void EditorSystem::drawViewport(EditorContext& ec) {
             m_playbar.draw(
                 ec,
                 inset + ViewportToolbar::toolStripWidth() + OverlayStrip::groupGap(),
-                vpSize.x - inset - ViewportToolbar::viewBarWidth() - OverlayStrip::groupGap(),
-                false
+                vpSize.x - inset - ViewportToolbar::viewBarWidth() - OverlayStrip::groupGap()
             );
         }
         acceptViewportDrop(ec);

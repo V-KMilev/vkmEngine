@@ -11,6 +11,7 @@
 #include "core/frame_context.h"
 #include "debug/error/engine_error_log.h"
 #include "panels/console/console_panel.h"
+#include "session/play_session.h"
 #include "ui/style/editor_icons.h"
 #include "ecs/component/scene/transform.h"
 #include "ecs/scene.h"
@@ -106,7 +107,11 @@ void draw(EditorContext& ec, ConsolePanel& console) {
             ImGui::TextDisabled("No selection");
         }
 
-        // On the right, what wants a look, each a click from its Console view, then the frame rate.
+        // On the right, what wants a look: a session, whose edits Stop throws away (ejected, the game hears
+        // nothing, and nothing else shows it), the problems, each a click from its Console view, then the rate.
+        const char* session = !ec.play.isPlaying() ? nullptr
+            : ec.play.isEjected() ? "PLAY MODE, EJECTED - the game hears no input; edits are discarded on Stop"
+            : "PLAY MODE - edits are discarded on Stop";
         const size_t errors   = ec.errorLog.entries().size();
         const size_t warnings = console.warnings();
         char errorText[32];
@@ -119,9 +124,14 @@ void draw(EditorContext& ec, ConsolePanel& console) {
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
         const float glyphW  = ImGui::GetTextLineHeight() + EditorStyle::px(4.0f);
         float wide = ImGui::CalcTextSize(rateText).x;
+        if (session)      wide += ImGui::CalcTextSize(session).x + spacing;
         if (errors > 0)   wide += glyphW + ImGui::CalcTextSize(errorText).x + spacing;
         if (warnings > 0) wide += glyphW + ImGui::CalcTextSize(warningText).x + spacing;
         ImGui::SameLine(ImGui::GetWindowWidth() - wide - EditorStyle::px(10.0f));
+        if (session) {
+            ImGui::TextColored(EditorStyle::WARNING, "%s", session);
+            ImGui::SameLine();
+        }
         if (errors > 0) {
             const std::string tip = std::string("What the project caused - open the Console's ")
                 + consoleViewName(ConsoleView::Errors);

@@ -1,7 +1,6 @@
 #include "overlays/playback_bar.h"
 
 #include <algorithm>
-#include <cstdio>
 
 #include <imgui.h>
 
@@ -57,24 +56,11 @@ void drawSpeed(Clock& clock) {
 }
 
 /**
- * @brief Frame the viewport during a session, whose edits Stop throws away.
+ * @brief Frame the viewport during a session, whose edits Stop throws away; the status bar says so in words.
  *
- * The label also says when ejected, as nothing else shows the game is deaf.
- *
- * @param ec      Supplies the viewport's rect.
- * @param bar     The playback bar's window-relative top left; the label goes below the bar.
- * @param barSize The bar's size.
- * @param beside  The label goes left of the bar instead, where it fits: the bar has a band of its own.
- * @param ejected Whether the session is ejected.
+ * @param ec Supplies the viewport's rect.
  */
-void drawSessionMarker(
-    EditorContext& ec,
-    const ImVec2& bar,
-    const ImVec2& barSize,
-    bool beside,
-    bool ejected
-) {
-    const ImU32 accent = ImGui::GetColorU32(EditorStyle::WARNING);
+void drawSessionFrame(EditorContext& ec) {
     ImVec2 min = ec.viewportPos;
     ImVec2 max(min.x + ec.viewportSize.x, min.y + ec.viewportSize.y);
     // Inset so the border is not half under the neighboring panel.
@@ -83,28 +69,7 @@ void drawSessionMarker(
     min.y += stroke * 0.5f;
     max.x -= stroke * 0.5f;
     max.y -= stroke * 0.5f;
-    ImGui::GetWindowDrawList()->AddRect(min, max, accent, 0.0f, 0, stroke);
-
-    const char* label = ejected
-        ? "PLAY MODE, EJECTED - the game hears no input; edits are discarded on Stop"
-        : "PLAY MODE - edits are discarded on Stop";
-    // On the overlays' backing, as the viewport's other notices are: bare, a bright scene washes it out.
-    const float  width = ImGui::GetWindowSize().x;
-    const ImVec2 words = ImGui::CalcTextSize(label);
-    const float  left  = bar.x - OverlayStrip::groupGap() - words.x;
-    const ImVec2 at    = beside && left >= OverlayStrip::inset()
-        ? ImVec2(left, bar.y + (barSize.y - words.y) * 0.5f)
-        : ImVec2((width - words.x) * 0.5f, bar.y + barSize.y + OverlayStrip::gap());
-    const ImVec2 pad(EditorStyle::px(10.0f), EditorStyle::px(4.0f));
-    const ImVec2 corner = ImGui::GetWindowPos();
-    const ImVec2 from(corner.x + at.x - pad.x, corner.y + at.y - pad.y);
-    const ImVec2 to(corner.x + at.x + words.x + pad.x, corner.y + at.y + words.y + pad.y);
-    const ImU32 backing = ImGui::GetColorU32(EditorStyle::OVERLAY_BG);
-    ImGui::GetWindowDrawList()->AddRectFilled(from, to, backing, EditorStyle::px(6.0f));
-    ImGui::SetCursorPos(at);
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
-    ImGui::TextUnformatted(label);
-    ImGui::PopStyleColor();
+    ImGui::GetWindowDrawList()->AddRect(min, max, ImGui::GetColorU32(EditorStyle::WARNING), 0.0f, 0, stroke);
 }
 
 /**
@@ -157,7 +122,7 @@ void PlaybackBar::processKeys(EditorContext& ec) {
     }
 }
 
-void PlaybackBar::draw(EditorContext& ec, float left, float right, bool inBand) {
+void PlaybackBar::draw(EditorContext& ec, float left, float right) {
     PlaySession& play = ec.play;
     FrameContext& ctx = ec.frame;
     Clock& clock = ctx.clock;
@@ -240,7 +205,7 @@ void PlaybackBar::draw(EditorContext& ec, float left, float right, bool inBand) 
     }
     OverlayStrip::end();
 
-    if (playing) drawSessionMarker(ec, corner, ImVec2(barW, barH), inBand, play.isEjected());
+    if (playing) drawSessionFrame(ec);
 }
 
 } // namespace Vkm::Engine
