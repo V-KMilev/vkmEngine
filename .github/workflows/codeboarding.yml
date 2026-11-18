@@ -1,0 +1,60 @@
+name: CodeBoarding
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [master]
+
+permissions: {}
+
+# One review at a time per pull request, and one sync at a time per branch. Two
+# pushes in quick succession would otherwise analyze concurrently, both starting
+# from the same older analysis instead of the newer one continuing from its
+# predecessor, and both writing the one sticky comment, so the run for the older
+# commit could win. Queue rather than cancel, so a /codeboarding command waits for
+# a running review instead of killing it.
+concurrency:
+  group: codeboarding-${{ github.event.pull_request.number || github.event.issue.number || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: >
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/codeboarding') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read        # download the analysis an earlier run published
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: CodeBoarding/CodeBoarding-action@v1
+        with:
+          llm: license
+          license_key: ${{ secrets.CODEBOARDING_LICENSE }}
+          depth_cap: 4
+
+  sync:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read        # catch up from an analysis a review saved
+      id-token: write
+    steps:
+      - uses: CodeBoarding/CodeBoarding-action@v1
+        with:
+          mode: sync
+          llm: license
+          license_key: ${{ secrets.CODEBOARDING_LICENSE }}
+          depth_cap: 4
